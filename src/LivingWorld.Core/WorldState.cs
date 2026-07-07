@@ -378,7 +378,8 @@ public sealed class WorldState
     {
         AdvanceToTick(tick);
 
-        var drifter = CreateDrifter(name, age, sex);
+        Drifter drifter = null!;
+        RunWithoutEvents(() => drifter = CreateDrifter(name, age, sex));
         _drifters.Remove(drifter.Id);
         AppendEvent(
             WorldEventKind.DrifterMaterialized,

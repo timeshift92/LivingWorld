@@ -1498,6 +1498,7 @@ static void TestMaterializeNewArrivalRecordsWithoutGrowingPool()
 
     AssertEqual(before, state.Drifters.Count);
     AssertEqual(1, state.Events.Count(e => e.Kind == WorldEventKind.DrifterMaterialized));
+    AssertEqual(0, state.Events.Count(e => e.Kind == WorldEventKind.DrifterArrived));
 }
 
 static void TestDrifterAssimilationJoinsSettlement()
