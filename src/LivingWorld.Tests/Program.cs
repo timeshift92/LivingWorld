@@ -94,6 +94,7 @@ var tests = new List<(string Name, Action Test)>
     ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
     ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
+    ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2067,6 +2068,47 @@ static void TestDiplomacyPersists()
 
     AssertEqual(-40, DiplomacyService.GetGoodwill(restored, "Raiders", "Settlers"));
     AssertEqual(true, restored.IsFactionIrreconcilable("Pirates"));
+}
+
+static void TestWorldWarLaunchesAndResolvesWarband()
+{
+    var state = new WorldState(4242);
+    var horde = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 10; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", horde.Id);
+    }
+
+    var village = state.CreateSettlement("village", "Village", "Settlers");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "settler", village.Id);
+    }
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Cautious);
+
+    var totalCitizens = state.Citizens.Count;
+
+    // Day 1: the warmonger plans and launches a warband (2 days travel).
+    var day1 = WorldWarService.SimulateDay(state, new WorldWarRequest(1 * 60_000, TravelDays: 2, RaidCombatants: 6));
+    AssertEqual(1, day1.WarbandsLaunched);
+    AssertEqual(0, day1.BattlesResolved);
+
+    // Day 2: still travelling; the faction already has an army in flight, so nothing new launches.
+    var day2 = WorldWarService.SimulateDay(state, new WorldWarRequest(2 * 60_000, TravelDays: 2, RaidCombatants: 6));
+    AssertEqual(0, day2.WarbandsLaunched);
+    AssertEqual(0, day2.BattlesResolved);
+
+    // Day 3: the army arrives and the stronger warband captures the village.
+    var day3 = WorldWarService.SimulateDay(state, new WorldWarRequest(3 * 60_000, TravelDays: 2, RaidCombatants: 6));
+    AssertEqual(1, day3.BattlesResolved);
+    AssertEqual(1, day3.SettlementsCaptured);
+    AssertEqual("Raiders", state.GetSettlement(village.Id)!.FactionId);
+
+    // The attack soured relations, and population is conserved (only battle losses turned Dead).
+    AssertEqual(-WorldWarService.AggressionSeverity, DiplomacyService.GetGoodwill(state, "Raiders", "Settlers"));
+    AssertEqual(totalCitizens, state.Citizens.Count);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()
