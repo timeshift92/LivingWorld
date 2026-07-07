@@ -11,7 +11,8 @@ public sealed record WorldWarRequest(
     int SettlerCount = 4,
     string CaravanResourceKey = "Steel",
     int CaravanQuantity = 10,
-    int DiplomatGoodwill = 5);
+    int DiplomatGoodwill = 5,
+    int ResolvedMovementRetentionDays = 30);
 
 public sealed record WorldWarResult(
     int PlansConsidered,
@@ -62,7 +63,13 @@ public static class WorldWarService
             var attackerFaction = state.GetArmy(movement.ArmyId)?.FactionId;
             var defenderFaction = state.GetSettlement(movement.TargetSettlementId)?.FactionId;
 
-            var outcome = WorldBattleService.Resolve(state, movement.ArmyId);
+            var battle = WorldBattleService.TryResolve(state, movement.ArmyId);
+            if (battle.Status == BattleResolutionStatus.BlockedPlayerSettlement)
+            {
+                continue;
+            }
+
+            var outcome = battle.Outcome!;
             battles++;
             if (outcome.Captured)
             {
@@ -122,6 +129,10 @@ public static class WorldWarService
                 }
             }
         }
+
+        ArmyMovementPruneService.Prune(
+            state,
+            new ArmyMovementPruneRequest(request.Tick, request.ResolvedMovementRetentionDays));
 
         return new WorldWarResult(
             plans.Count,

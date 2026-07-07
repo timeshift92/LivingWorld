@@ -18,6 +18,9 @@ public static class WorldStateCodec
                 new XAttribute("version", "1"),
                 new XAttribute("worldSeed", snapshot.WorldSeed),
                 new XAttribute("currentTick", snapshot.CurrentTick),
+                snapshot.PlayerFactionId == null
+                    ? null
+                    : new XAttribute("playerFactionId", snapshot.PlayerFactionId),
                 new XElement(
                     "Settlements",
                     snapshot.Settlements.Select(settlement =>
@@ -253,7 +256,8 @@ public static class WorldStateCodec
                                 new XAttribute("targetId", movement.TargetSettlementId.Value),
                                 new XAttribute("departTick", movement.DepartTick),
                                 new XAttribute("arrivalTick", movement.ArrivalTick),
-                                new XAttribute("status", movement.Status)))),
+                                new XAttribute("status", movement.Status),
+                                new XAttribute("statusTick", movement.StatusTick)))),
                 new XElement(
                     "FactionBehaviors",
                     state.FactionBehaviors
@@ -449,7 +453,10 @@ public static class WorldStateCodec
                     RequiredInt(element, "arrivalTick"),
                     OptionalInt(element, "combatAptitude", 0),
                     OptionalInt(element, "organizationAptitude", 0)))
-                .ToList());
+                .ToList())
+        {
+            PlayerFactionId = OptionalString(root, "playerFactionId")
+        };
 
         var state = WorldState.FromSnapshot(snapshot);
 
@@ -491,7 +498,10 @@ public static class WorldStateCodec
                 ReadEntityId(element, "targetKind", "targetId"),
                 RequiredInt(element, "departTick"),
                 RequiredInt(element, "arrivalTick"),
-                RequiredEnum<ArmyMovementStatus>(element, "status")));
+                RequiredEnum<ArmyMovementStatus>(element, "status"))
+            {
+                StatusTick = OptionalInt(element, "statusTick", RequiredInt(element, "departTick"))
+            });
         }
 
         foreach (var element in OptionalContainer(root, "FactionBehaviors").Elements("FactionBehavior"))
@@ -563,6 +573,11 @@ public static class WorldStateCodec
     {
         return element.Attribute(name)?.Value
             ?? throw new InvalidOperationException($"Living World state payload is missing '{name}'.");
+    }
+
+    private static string? OptionalString(XElement element, string name)
+    {
+        return element.Attribute(name)?.Value;
     }
 
     private static int RequiredInt(XElement element, string name)

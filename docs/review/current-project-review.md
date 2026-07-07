@@ -6,6 +6,11 @@ Date: 2026-07-08
 
 Repository: `timeshift92/LivingWorld`
 
+Update after C4/C5: Core player-faction defense-in-depth and resolved army
+movement pruning have been implemented. The historical review below remains useful
+for rationale, but the next open hardening work is now service split, cached
+aggregates and large-save serialization.
+
 ---
 
 ## Executive summary
@@ -184,11 +189,11 @@ send at most one aggregated letter
 
 `docs/design/world-war-open-gaps.md` records what is done and what is not done:
 
-- G1 partially done;
-- G2 movement pruning not done;
+- G1 done: scanner guard + Core defense-in-depth;
+- G2 movement pruning done;
 - G3 war-loop scale not done;
-- C4 Core player-faction defense-in-depth still needed;
-- C5 movement pruning still needed.
+- C4 Core player-faction defense-in-depth done;
+- C5 movement pruning done.
 
 This is good process hygiene. It avoids the common problem where acceptance criteria are written once and then forgotten.
 
@@ -379,21 +384,22 @@ LivingWorld.Core/WorldWar
   WorldWarActionDispatcher.cs
 ```
 
-## 3. G1 is only partially solved
+## 3. G1 is solved in scanner and Core
 
-The player settlement scanner guard is good, but not enough for defense-in-depth.
+The player settlement scanner guard was the first layer. C4 adds Core defense-in-depth.
 
 Current status:
 
 ```text
 Scanner excludes player settlements: DONE
-Core never targets player faction: NOT fully guaranteed
-FactionLifecycle never collapses player faction: NOT fully guaranteed
+Core never targets player faction: DONE
+FactionLifecycle never collapses player faction: DONE
+WorldBattleService blocks silent battle resolution: DONE
 ```
 
 If another importer accidentally imports a player-owned world object, the Core layer should still refuse to target or collapse it.
 
-### Required fix: C4
+### Implemented fix: C4
 
 Add a player-faction concept to the ledger or request context:
 
@@ -410,13 +416,13 @@ FactionLifecycleService: never collapse PlayerFactionId
 WorldBattleService: never silently resolve battle against PlayerFactionId settlement
 ```
 
-This should have tests that fail if player faction can be targeted or collapsed.
+Tests now fail if the player faction can be targeted, collapsed or silently resolved
+through a ledger battle.
 
-## 4. Army movements still need pruning
+## 4. Army movement pruning is implemented
 
-The docs already identify this as G2.
-
-If every launched army movement stays forever, long games will suffer:
+The docs identified this as G2. If every launched army movement stayed forever,
+long games would suffer:
 
 - bigger saves;
 - more memory;
@@ -424,7 +430,7 @@ If every launched army movement stays forever, long games will suffer:
 - slower UI summaries;
 - slower history queries.
 
-### Required fix: C5
+### Implemented fix: C5
 
 Introduce retention policy:
 
@@ -587,17 +593,15 @@ Then drifters are not created from nothing; they are materialized from the reser
 
 ## 1. Freeze feature expansion briefly
 
-Before adding ecology, diseases, families or deeper economy, finish the current stabilization tasks.
+Before adding ecology, diseases, families or deeper economy, finish the remaining stabilization tasks.
 
 Recommended order:
 
 ```text
-1. C4 player-faction defense-in-depth
-2. C5 army movement pruning
-3. WorldWarService split
-4. Population/faction aggregates
-5. WorldCaravan entity
-6. Save format migration/chunking review
+1. WorldWarService split
+2. Population/faction aggregates
+3. WorldCaravan entity
+4. Save format migration/chunking review
 ```
 
 ## 2. Keep RimWorld layer thin
@@ -692,7 +696,7 @@ Then the daily loop becomes easier to audit.
 
 ## Recommended next tasks
 
-## Task 1 — C4: Core player-faction defense-in-depth
+## Task 1 — C4: Core player-faction defense-in-depth (done)
 
 ### Goal
 
@@ -712,7 +716,7 @@ Even if a player settlement somehow enters the ledger, Core must not silently ta
 - Faction lifecycle never collapses player faction.
 - Scanner still excludes player settlement.
 
-## Task 2 — C5: Army movement pruning
+## Task 2 — C5: Army movement pruning (done)
 
 ### Goal
 
@@ -808,8 +812,8 @@ Turn caravan from instant transfer into real entity.
 
 | Risk | Severity | Status | Recommendation |
 |---|---:|---|---|
-| Core can still target/collapse player if imported by non-vanilla path | Medium | Partially mitigated | Do C4 |
-| `_armyMovements` grows forever | Medium | Open | Do C5 |
+| Core can still target/collapse player if imported by non-vanilla path | Medium | Closed by C4 | Keep tests around planner/lifecycle/battle guard |
+| `_armyMovements` grows forever | Medium | Closed by C5 | Monitor retention value during long-play saves |
 | WorldWarService grows too broad | Medium | Emerging | Split executors |
 | War-loop scans citizens daily | Medium later | Open | Add aggregates |
 | Caravan is instant transfer | Low now / High later | Accepted abstraction | Design WorldCaravan |
@@ -832,8 +836,8 @@ Milestone 1.1 — Core hardening and world-war stabilization
 It should complete:
 
 ```text
-C4 — Player faction defense-in-depth
-C5 — Army movement pruning
+C4 — Player faction defense-in-depth (done)
+C5 — Army movement pruning (done)
 C6 — WorldWarService split
 C7 — Population/faction aggregates foundation
 ```

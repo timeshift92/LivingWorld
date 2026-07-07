@@ -19,6 +19,8 @@ public sealed record WorldStateSnapshot(
     IReadOnlyList<WorldEvent> Events,
     IReadOnlyList<Drifter> Drifters)
 {
+    public string? PlayerFactionId { get; init; }
+
     public IReadOnlyList<SettlementCapability> SettlementCapabilities { get; init; } =
         Array.Empty<SettlementCapability>();
 

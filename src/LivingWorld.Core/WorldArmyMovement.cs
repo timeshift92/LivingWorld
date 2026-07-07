@@ -24,4 +24,7 @@ public sealed record WorldArmyMovement(
     EntityId TargetSettlementId,
     int DepartTick,
     int ArrivalTick,
-    ArmyMovementStatus Status);
+    ArmyMovementStatus Status)
+{
+    public int StatusTick { get; init; } = DepartTick;
+}

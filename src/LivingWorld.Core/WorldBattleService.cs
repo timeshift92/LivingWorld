@@ -20,6 +20,14 @@ public sealed record BattleOutcome(
     int DefenderLosses,
     bool Captured);
 
+public enum BattleResolutionStatus
+{
+    Resolved,
+    BlockedPlayerSettlement
+}
+
+public sealed record BattleResolutionResult(BattleResolutionStatus Status, BattleOutcome? Outcome);
+
 /// <summary>
 /// Resolves an arrived army's attack on its target settlement, using the shared power curve
 /// (<see cref="SettlementPowerService.CombatPowerOf"/>) over each side's living adult combatants.
@@ -37,6 +45,17 @@ public static class WorldBattleService
     public const int LoserLossPercent = 60;
 
     public static BattleOutcome Resolve(WorldState state, EntityId armyId)
+    {
+        var result = TryResolve(state, armyId);
+        if (result.Status == BattleResolutionStatus.BlockedPlayerSettlement)
+        {
+            throw new InvalidOperationException("Battle against player faction settlement requires active-map materialization.");
+        }
+
+        return result.Outcome!;
+    }
+
+    public static BattleResolutionResult TryResolve(WorldState state, EntityId armyId)
     {
         if (state == null)
         {
@@ -57,6 +76,11 @@ public static class WorldBattleService
         if (targetSettlement == null)
         {
             throw new InvalidOperationException($"Target settlement {targetId} does not exist.");
+        }
+
+        if (state.IsPlayerFaction(targetSettlement.FactionId))
+        {
+            return new BattleResolutionResult(BattleResolutionStatus.BlockedPlayerSettlement, null);
         }
 
         var attackers = Combatants(state, armyId);
@@ -92,15 +116,17 @@ public static class WorldBattleService
         // The battle is over; the army stands down either way.
         state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
 
-        return new BattleOutcome(
-            armyId,
-            targetId,
-            attackerWins ? BattleWinner.Attacker : BattleWinner.Defender,
-            attackerPower,
-            defenderPower,
-            attackerLosses,
-            defenderLosses,
-            captured);
+        return new BattleResolutionResult(
+            BattleResolutionStatus.Resolved,
+            new BattleOutcome(
+                armyId,
+                targetId,
+                attackerWins ? BattleWinner.Attacker : BattleWinner.Defender,
+                attackerPower,
+                defenderPower,
+                attackerLosses,
+                defenderLosses,
+                captured));
     }
 
     private static int LossCount(int combatants, int percent)

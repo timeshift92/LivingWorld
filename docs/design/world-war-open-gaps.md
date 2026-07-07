@@ -71,17 +71,18 @@ G1 is the textbook "acceptance written, guard/test never added." Adopt: **every
 acceptance bullet gets a test that would fail without the change** — the split doc's
 Review Contract should reject a task whose acceptance has no enforcing test.
 
-## Status (as of 2026-07-08 review)
+## Status (updated after Codex C4/C5)
 
-- **G1 — PARTIALLY DONE.** Primary fix landed: `VanillaSettlementImporter` drops
-  `Faction.OfPlayer` settlements (commit on `main`, `TestRimWorldWorldObjectScanner`
-  asserts the guard), so player settlements no longer enter the ledger and the world war
-  can't reach them. **Core defense-in-depth (C4) NOT DONE** — `FindEnemyTarget` and
-  `FactionLifecycleService` still have no player-faction exclusion (grep-confirmed). Now
-  low severity because the scanner closes the only known entry path; keep C4 as belt-and-
-  suspenders for other importer/mod paths.
-- **G2 (movement pruning) — NOT DONE.** `WorldState._armyMovements` still keeps every
-  resolved movement forever (grep-confirmed no `Remove`/prune). Save bloat over long games.
+- **G1 — DONE.** Primary RimWorld scanner guard landed earlier:
+  `VanillaSettlementImporter` drops `Faction.OfPlayer` settlements. Codex C4 now adds
+  Core defense-in-depth: `WorldState.PlayerFactionId`, planner exclusion, lifecycle
+  collapse exclusion, and `WorldBattleService.TryResolve` returning
+  `BlockedPlayerSettlement` instead of silently resolving a ledger battle against the
+  player. Tests cover target selection, lifecycle collapse, battle blocking and save/load.
+- **G2 (movement pruning) — DONE.** Codex C5 adds `ArmyMovementPruneService`, persisted
+  movement `StatusTick`, daily world-war pruning through `WorldWarService`, and tests that
+  old resolved movements are pruned while traveling/recent movements and history events
+  remain.
 - **G3 (war-loop scale) — NOT DONE.** `PlanDay`/`FactionPower` still scan citizens per
   faction each day; awaits C3 cached aggregates.
 
@@ -109,7 +110,5 @@ not allied with — intended trade, not a bug.
 
 ## Owner / order (remaining)
 
-1. **Codex — C4** (G1 Core defense-in-depth): player-faction id in ledger + exclusion in
-   `FindEnemyTarget` and `FactionLifecycleService` + test. Low severity (scanner covers it).
-2. **Codex — C5** (G2 movement pruning), folds into C3.
-3. **Codex — G3** covered by C3 cached aggregates.
+1. **Codex — G3/O1** cached population/power aggregates for war-loop scale.
+2. **Codex — O2** compact/cohort serialization for large saves.

@@ -83,6 +83,8 @@ var tests = new List<(string Name, Action Test)>
     ("keeps factions alive while prisoners or migrants exist", TestFactionLifecycleCountsNonResidentSurvivors),
     ("collapses each faction only once", TestFactionLifecycleIsIdempotent),
     ("serializes collapsed faction records", TestFactionLifecycleSerializationRoundTrip),
+    ("keeps the player faction out of lifecycle collapse", TestFactionLifecycleSkipsPlayerFaction),
+    ("serializes player faction identity", TestPlayerFactionIdentitySerialization),
     ("computes settlement combat power from living adults", TestSettlementPowerFromLivingAdults),
     ("prospering settlements develop housing over time", TestSettlementDevelopmentGrowsHousing),
     ("wires settlement development into the daily tick", TestRimWorldSettlementDevelopmentWiring),
@@ -91,14 +93,17 @@ var tests = new List<(string Name, Action Test)>
     ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
     ("army arrives at its target when the eta passes", TestArmyMovementArrivesOnEta),
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
+    ("prunes old resolved army movements without losing history", TestArmyMovementPrunesOldResolvedMovements),
     ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
     ("attacker survivors occupy captured settlement", TestBattleAttackerSurvivorsOccupyCapturedSettlement),
     ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
     ("attacker survivors return home after failed attack", TestBattleAttackerSurvivorsReturnHomeAfterDefeat),
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
+    ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
+    ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
     ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
@@ -1962,6 +1967,33 @@ static void TestRimWorldSettlementDevelopmentWiring()
     AssertContains("public int settlementHousingHeadroom", settings);
 }
 
+static void TestFactionLifecycleSkipsPlayerFaction()
+{
+    var state = new WorldState(4242);
+    state.SetPlayerFactionId("PlayerFaction");
+    state.CreateSettlement("player-base", "Player Base", "PlayerFaction");
+    state.CreateSettlement("empty-raiders", "Empty Raiders", "Raiders");
+
+    var result = FactionLifecycleService.SimulateCollapses(
+        state,
+        new FactionLifecycleRequest(60_000));
+
+    AssertEqual(1, result.CollapsedFactions);
+    AssertEqual(false, state.IsFactionCollapsed("PlayerFaction"));
+    AssertEqual(true, state.IsFactionCollapsed("Raiders"));
+}
+
+static void TestPlayerFactionIdentitySerialization()
+{
+    var state = new WorldState(4242);
+    state.SetPlayerFactionId("PlayerFaction");
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual("PlayerFaction", restored.PlayerFactionId);
+    AssertEqual(true, restored.IsPlayerFaction("PlayerFaction"));
+}
+
 static void TestSettlementPowerFromLivingAdults()
 {
     var state = new WorldState(4242);
@@ -2091,6 +2123,38 @@ static void TestArmyMovementSerializationRoundTrip()
     AssertEqual(target.Id, movement.TargetSettlementId);
     AssertEqual(5 * 60_000, movement.ArrivalTick);
     AssertEqual(ArmyMovementStatus.Traveling, movement.Status);
+}
+
+static void TestArmyMovementPrunesOldResolvedMovements()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+
+    var oldResolved = state.CreateArmy("Old", "Pirates", source.Id);
+    state.DispatchArmy(oldResolved.Id, target.Id, arrivalTick: 60_000);
+    state.AdvanceToTick(2 * 60_000);
+    state.SetArmyMovementStatus(oldResolved.Id, ArmyMovementStatus.Disbanded);
+
+    var recentResolved = state.CreateArmy("Recent", "Pirates", source.Id);
+    state.DispatchArmy(recentResolved.Id, target.Id, arrivalTick: 8 * 60_000);
+    state.AdvanceToTick(9 * 60_000);
+    state.SetArmyMovementStatus(recentResolved.Id, ArmyMovementStatus.Recalled);
+
+    var traveling = state.CreateArmy("Traveling", "Pirates", source.Id);
+    state.DispatchArmy(traveling.Id, target.Id, arrivalTick: 20 * 60_000);
+    var historyEventsBeforePrune = state.Events.Count;
+
+    var result = ArmyMovementPruneService.Prune(
+        state,
+        new ArmyMovementPruneRequest(CurrentTick: 10 * 60_000, RetentionDays: 5));
+
+    AssertEqual(1, result.Pruned);
+    AssertEqual(null, state.GetArmyMovement(oldResolved.Id));
+    AssertEqual(ArmyMovementStatus.Recalled, state.GetArmyMovement(recentResolved.Id)!.Status);
+    AssertEqual(ArmyMovementStatus.Traveling, state.GetArmyMovement(traveling.Id)!.Status);
+    AssertEqual(historyEventsBeforePrune, state.Events.Count);
+    AssertEqual(true, state.Events.Any(worldEvent => worldEvent.Kind == WorldEventKind.WarbandLaunched));
 }
 
 static void TestBattleAttackerCapturesWeakSettlement()
@@ -2275,6 +2339,37 @@ static void TestBattleAppliesFactionCombatBehaviorMultiplier()
     AssertEqual(400, outcome.DefenderPower);
 }
 
+static void TestBattleAgainstPlayerFactionIsBlocked()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("P" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var playerBase = state.CreateSettlement("player-base", "Player Base", "PlayerFaction");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen("C" + i, 30, Sex.Female, "colonist", playerBase.Id);
+    }
+
+    state.SetPlayerFactionId("PlayerFaction");
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Pirates", "Raiders", 4, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+    state.DispatchArmy(army.Id, playerBase.Id, 0);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    var result = WorldBattleService.TryResolve(state, army.Id);
+
+    AssertEqual(BattleResolutionStatus.BlockedPlayerSettlement, result.Status);
+    AssertEqual(null, result.Outcome);
+    AssertEqual("PlayerFaction", state.GetSettlement(playerBase.Id)!.FactionId);
+    AssertEqual(ArmyMovementStatus.Arrived, state.GetArmyMovement(army.Id)!.Status);
+    AssertEqual(0, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
+}
+
 static void TestFactionBehaviorPersists()
 {
     var state = new WorldState(4242);
@@ -2318,6 +2413,25 @@ static void TestFactionActionPlannerSkipsAlliedTargets()
     state.CreateSettlement("ally", "Ally", "Settlers");
     state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
     DiplomacyService.AdjustGoodwill(state, "Raiders", "Settlers", 80);
+
+    var plan = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+
+    AssertEqual(WarAction.ScoutingParty, plan.Action);
+    AssertEqual(null, plan.TargetSettlementId);
+}
+
+static void TestFactionActionPlannerSkipsPlayerFactionTarget()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    state.CreateSettlement("player-base", "Player Base", "PlayerFaction");
+    state.SetPlayerFactionId("PlayerFaction");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
 
     var plan = FactionActionPlanner.Plan(state, "Raiders", 60_000);
 

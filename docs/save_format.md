@@ -96,6 +96,8 @@ CacheChunks
 - `FactionRecords` читается как optional container для обратной совместимости со старыми сейвами;
 - `SettlementCapabilities` читается как optional container для обратной совместимости со старыми сейвами;
 - `SpecialistPools` читается как optional container для обратной совместимости со старыми сейвами;
+- `playerFactionId` читается как optional root attribute: старые сейвы без него
+  считаются не имеющими Core-защиты игрока, пока RimWorld layer не передаст id;
 - каждый `Alive` citizen должен иметь owner;
 - ownership asset и owner должны ссылаться на существующие entities;
 - settlement population считается только из `Alive` citizens, которыми владеет settlement;
@@ -186,6 +188,27 @@ objects:
 
 `FactionRecords` is optional on load. Missing records mean no faction lifecycle
 state has been recorded yet; they do not imply that every faction is healthy.
+
+Army movements also persist `statusTick` so old resolved movements can be pruned
+without deleting recent UI/cooldown context:
+
+```xml
+<ArmyMovements>
+  <Movement
+    armyKind="Army"
+    armyId="12"
+    targetKind="Settlement"
+    targetId="4"
+    departTick="60000"
+    arrivalTick="180000"
+    status="Disbanded"
+    statusTick="180000" />
+</ArmyMovements>
+```
+
+`statusTick` is optional on load. Older saves fall back to `departTick`, then the
+next pruning pass can remove stale resolved records while preserving `WorldEvent`
+history.
 
 ## Header
 

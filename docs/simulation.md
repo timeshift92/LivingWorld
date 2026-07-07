@@ -441,12 +441,23 @@ It does not destroy or create RimWorld `Faction` objects. It records that, from
 Living World's point of view, a tracked faction has collapsed because no living
 citizens remain.
 
+Core now has a defense-in-depth player faction guard. If
+`WorldState.PlayerFactionId` is set, the world-war planner never selects that
+faction as an autonomous target, `FactionLifecycleService` never collapses it,
+and `WorldBattleService.TryResolve` returns `BlockedPlayerSettlement` rather than
+silently resolving a ledger battle. The RimWorld layer must materialize a real
+player-visible incident for such attacks.
+
 Counting is deliberately broader than settlement population:
 
 - `Alive`, `Prisoner`, `Refugee` and `Migrating` citizens still keep their
   original faction alive;
 - `Dead` and `Missing` citizens do not;
 - empty settlements alone are not enough to preserve a faction.
+
+Resolved army movements are not permanent history. `ArmyMovementPruneService`
+keeps traveling and recent resolved movements for UI/cooldown context, then
+removes old resolved movement records. Durable history remains in `WorldEvent`.
 
 The service is idempotent. Once `WorldFactionRecord.Status == Collapsed`, later
 daily passes do not emit duplicate collapse events. This keeps history readable

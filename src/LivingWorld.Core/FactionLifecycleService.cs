@@ -61,6 +61,11 @@ public static class FactionLifecycleService
                 continue;
             }
 
+            if (state.IsPlayerFaction(factionId))
+            {
+                continue;
+            }
+
             if (CountLivingFactionCitizens(state, factionId) > 0)
             {
                 continue;

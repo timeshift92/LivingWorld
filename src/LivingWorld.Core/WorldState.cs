@@ -26,6 +26,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityKind, long> _nextIds = new();
     private int eventSuppressionDepth;
     private int initialWorldSeedingDepth;
+    private string? playerFactionId;
 
     public WorldState(int worldSeed)
     {
@@ -35,6 +36,8 @@ public sealed class WorldState
     public int WorldSeed { get; }
 
     public int CurrentTick { get; private set; }
+
+    public string? PlayerFactionId => playerFactionId;
 
     public IReadOnlyCollection<WorldCitizen> Citizens => _citizens.Values;
 
@@ -152,6 +155,7 @@ public sealed class WorldState
             _events.OrderBy(worldEvent => worldEvent.Id.Value).ToList(),
             _drifters.Values.OrderBy(drifter => drifter.Id.Value).ToList())
         {
+            PlayerFactionId = playerFactionId,
             SettlementCapabilities = _settlementCapabilities.Values
                 .OrderBy(capability => capability.SettlementId.Kind)
                 .ThenBy(capability => capability.SettlementId.Value)
@@ -172,7 +176,8 @@ public sealed class WorldState
 
         var state = new WorldState(snapshot.WorldSeed)
         {
-            CurrentTick = snapshot.CurrentTick
+            CurrentTick = snapshot.CurrentTick,
+            playerFactionId = snapshot.PlayerFactionId
         };
 
         foreach (var settlement in snapshot.Settlements)
@@ -380,7 +385,10 @@ public sealed class WorldState
             targetSettlementId,
             CurrentTick,
             Math.Max(CurrentTick, arrivalTick),
-            ArmyMovementStatus.Traveling);
+            ArmyMovementStatus.Traveling)
+        {
+            StatusTick = CurrentTick
+        };
 
         _armyMovements[armyId] = movement;
         AppendEvent(WorldEventKind.WarbandLaunched, armyId, $"Army {armyId} set out for {targetSettlementId}.");
@@ -401,7 +409,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Army {armyId} has no movement.");
         }
 
-        var updated = movement with { Status = status };
+        var updated = movement with { Status = status, StatusTick = CurrentTick };
         _armyMovements[armyId] = updated;
         return updated;
     }
@@ -409,6 +417,11 @@ public sealed class WorldState
     internal void RestoreArmyMovementForLedger(WorldArmyMovement movement)
     {
         _armyMovements[movement.ArmyId] = movement;
+    }
+
+    internal bool RemoveArmyMovementForLedger(EntityId armyId)
+    {
+        return _armyMovements.Remove(armyId);
     }
 
     public WorldCitizen MarkCitizenDead(EntityId citizenId, string reason)
@@ -507,6 +520,19 @@ public sealed class WorldState
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
         _factionBehaviors[factionId] = behavior;
+    }
+
+    public void SetPlayerFactionId(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        playerFactionId = factionId;
+    }
+
+    public bool IsPlayerFaction(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        return playerFactionId != null
+            && string.Equals(playerFactionId, factionId, StringComparison.Ordinal);
     }
 
     public FactionBehavior GetFactionBehavior(string factionId)

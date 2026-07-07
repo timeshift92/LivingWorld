@@ -248,20 +248,27 @@ the player faction. Add a test that the scanner drops player settlements.
 Acceptance: no player-faction settlement enters the ledger from the scanner; existing
 scanner tests still pass. Owner: Claude. Status: DONE — `VanillaSettlementImporter`
 returns null for `faction.IsPlayer` settlements; `TestRimWorldWorldObjectScanner` asserts
-the guard. Build 0/0. Codex C4 (Core defense-in-depth) still recommended.
+the guard. Build 0/0. Codex C4 (Core defense-in-depth) is also done now.
 
 ### Codex Task C4: Player-faction exclusion in Core (G1, defense in depth)
 
 Scope: the ledger knows its player faction id; `FactionActionPlanner.FindEnemyTarget` and
 `FactionLifecycleService` never target or collapse the player faction, even if a player
 settlement reaches the ledger by another path. Acceptance: tests prove the world war
-never targets/collapses the player faction. Owner: Codex. Status: NOT DONE (grep-confirmed 2026-07-08 — no player exclusion in `FindEnemyTarget`/`FactionLifecycleService`). Low severity now: Claude K4 scanner fix keeps player settlements out of the ledger, closing the only known entry path; C4 remains as defense-in-depth.
+never targets/collapses the player faction. Owner: Codex. Status: DONE — Core now persists
+`PlayerFactionId`, excludes it from warband target selection and lifecycle collapse, and
+blocks `WorldBattleService.TryResolve` with `BlockedPlayerSettlement` if a player-owned
+settlement still reaches the battle path. Tests cover planner, lifecycle, battle blocking
+and save/load.
 
 ### Codex Task C5: Prune resolved army movements (G2)
 
 Scope: `WorldState._armyMovements` currently keeps every Disbanded/Arrived/Recalled
 movement forever (save bloat + growth). Prune resolved movements past a retention window,
-back-compat load. Folds into C3. Owner: Codex. Status: NOT DONE (grep-confirmed 2026-07-08 — `_armyMovements` still has no prune/Remove; grows unbounded).
+back-compat load. Folds into C3. Owner: Codex. Status: DONE — `ArmyMovementPruneService`
+removes old resolved movements, movement `StatusTick` is persisted with optional
+back-compat load, and `WorldWarService` runs pruning after the daily world-war phase.
+Tests prove traveling/recent movements remain and `WorldEvent` history survives pruning.
 
 ## Economy / Empire / Optimization Backlog (2026-07-08 gap analysis)
 

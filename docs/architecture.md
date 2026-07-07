@@ -227,6 +227,12 @@ LivingWorld/
 - демографическое старение и естественная смертность живут в `DemographyService`;
 - миграция использует `WorldMigrationGroup`: гражданин выходит из settlement, принадлежит группе и прибывает только после `ArrivalTick`;
 - коллапс фракции фиксируется в `WorldFactionRecord` через `FactionLifecycleService`, не удаляя vanilla `Faction` напрямую;
+- player faction identity can be stored in `WorldState.PlayerFactionId`; Core refuses to
+  target/collapse it and `WorldBattleService.TryResolve` blocks silent ledger battles
+  against player-owned settlements so the RimWorld layer can materialize them instead;
+- resolved `WorldArmyMovement` records have `StatusTick` and are pruned by
+  `ArmyMovementPruneService` after a retention window; long-term history remains in
+  `WorldEvent`;
 - population query считает только `Alive` citizens, которыми реально владеет settlement;
 - RimWorld world-object bootstrap идет через importer whitelist: по умолчанию импортируется только vanilla `Settlement`, а sites/camps/quest objects остаются rejected diagnostics.
 
