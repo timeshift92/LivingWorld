@@ -194,9 +194,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             DrifterAssimilationService.SimulateAssimilation(
                 State,
                 new DrifterAssimilationRequest(dayTick, settings.maxDrifterAssimilationsPerDay));
-            FactionLifecycleService.SimulateCollapses(
-                State,
-                new FactionLifecycleRequest(dayTick));
 
             cachedTargetPopulation = target;
             cachedWorldPopulation = State.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive) + State.Drifters.Count;
