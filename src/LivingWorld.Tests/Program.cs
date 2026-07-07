@@ -3514,6 +3514,9 @@ static void TestRimWorldWorldObjectScanner()
     AssertContains("StableKey", source);
     AssertContains("obj is Settlement", source);
     AssertContains("SafeRead(() => obj.Faction", source);
+    // The player's own colony is the active map, not a ledger NPC settlement, so it must never be
+    // imported — otherwise the world war could silently target/capture the player (see G1).
+    AssertContains("faction.IsPlayer", source);
 }
 
 static void TestRimWorldWorldObjectScannerUsesImporterWhitelist()

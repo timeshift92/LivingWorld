@@ -246,7 +246,9 @@ ledger, so NPC world war can never silently target/capture the player's base or 
 the player faction. Add a test that the scanner drops player settlements.
 
 Acceptance: no player-faction settlement enters the ledger from the scanner; existing
-scanner tests still pass. Owner: Claude. Status: IN PROGRESS.
+scanner tests still pass. Owner: Claude. Status: DONE — `VanillaSettlementImporter`
+returns null for `faction.IsPlayer` settlements; `TestRimWorldWorldObjectScanner` asserts
+the guard. Build 0/0. Codex C4 (Core defense-in-depth) still recommended.
 
 ### Codex Task C4: Player-faction exclusion in Core (G1, defense in depth)
 

@@ -206,6 +206,14 @@ public sealed class VanillaSettlementImporter : IWorldObjectImporter
             return null;
         }
 
+        // The player's own colony is the active map, not a ledger NPC settlement. Never import it,
+        // so the world war can never silently target/capture the player's base or collapse the
+        // player faction (see docs/design/world-war-open-gaps.md, G1).
+        if (faction.IsPlayer)
+        {
+            return null;
+        }
+
         var defName = SafeRead(() => obj.def?.defName, ref scanErrorCount) ?? obj.GetType().Name;
         var factionId = SafeRead(() => faction.def?.defName, ref scanErrorCount) ?? "UnknownFaction";
         var label = SafeRead(() => obj.LabelCap, ref scanErrorCount);
