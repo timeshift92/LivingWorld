@@ -121,6 +121,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines English and Russian keyed translations", TestRimWorldKeyedTranslations),
     ("keeps Odyssey Russian faction namer grammar valid", TestRimWorldRussianOdysseyRulePackOverride),
     ("uses translations in RimWorld UI", TestRimWorldUiUsesTranslations),
+    ("defines the drifter arrival incident def", TestRimWorldDrifterArrivalIncidentDef),
 };
 
 var failures = new List<string>();
@@ -2782,6 +2783,24 @@ static void TestRimWorldUiUsesTranslations()
     AssertContains("\"LW_DiagnosticLine\".Translate(", combinedSource);
     AssertContains("\"LW_Settings_BootstrapLedger\".Translate()", combinedSource);
     AssertContains("\"LW_WorldGenTitle\".Translate()", combinedSource);
+}
+
+static void TestRimWorldDrifterArrivalIncidentDef()
+{
+    var path = Path.Combine(FindRepoRoot(), "mod", "Defs", "IncidentDefs", "LivingWorld_DrifterArrival.xml");
+    AssertFileExists(path);
+    var xml = File.ReadAllText(path);
+
+    AssertContains("<defName>LivingWorld_DrifterArrival</defName>", xml);
+    AssertContains("<category>AllyArrival</category>", xml);
+    AssertContains("<workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldDrifterArrival</workerClass>", xml);
+    AssertContains("<targetTags>", xml);
+    AssertContains("<li>Map_PlayerHome</li>", xml);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_DrifterArrivalLetterLabel>", en);
+    AssertContains("<LW_DrifterArrivalLetterLabel>", ru);
 }
 
 static string FindRepoRoot()

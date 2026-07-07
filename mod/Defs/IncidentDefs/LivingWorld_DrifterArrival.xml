@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <IncidentDef>
+    <defName>LivingWorld_DrifterArrival</defName>
+    <label>drifter arrival</label>
+    <category>AllyArrival</category>
+    <targetTags>
+      <li>Map_PlayerHome</li>
+    </targetTags>
+    <workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldDrifterArrival</workerClass>
+    <baseChance>1.0</baseChance>
+    <minRefireDays>1</minRefireDays>
+  </IncidentDef>
+</Defs>

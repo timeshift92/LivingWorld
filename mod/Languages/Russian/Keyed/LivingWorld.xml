@@ -47,4 +47,6 @@
   <LW_SettingDrifterArrivals>Макс. приходов дрифтеров в день</LW_SettingDrifterArrivals>
   <LW_SettingDrifterCeiling>Потолок населения мира</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
+  <LW_DrifterArrivalLetterLabel>Приход дрифтера</LW_DrifterArrivalLetterLabel>
+  <LW_DrifterArrivalLetterText>{0} — дрифтер из-за края мира — прибыл и хочет вступить в вашу колонию.</LW_DrifterArrivalLetterText>
 </LanguageData>

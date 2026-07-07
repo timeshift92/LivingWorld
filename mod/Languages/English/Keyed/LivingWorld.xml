@@ -47,4 +47,6 @@
   <LW_SettingDrifterArrivals>Max drifter arrivals per day</LW_SettingDrifterArrivals>
   <LW_SettingDrifterCeiling>World population ceiling</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
+  <LW_DrifterArrivalLetterLabel>Drifter arrival</LW_DrifterArrivalLetterLabel>
+  <LW_DrifterArrivalLetterText>{0}, a drifter from beyond the world, has arrived and wishes to join your colony.</LW_DrifterArrivalLetterText>
 </LanguageData>
