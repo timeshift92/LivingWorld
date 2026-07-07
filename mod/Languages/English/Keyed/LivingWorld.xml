@@ -26,7 +26,7 @@
   <LW_KnowledgeLine>Known info: source {source} | confidence {confidence} | tick {tick} | population {populationBand} | food {food} | migration {migration}</LW_KnowledgeLine>
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Alive {citizens} | Dead {deadCitizens} | Returned {returnedCitizens} | Captured {prisonerCitizens} | Meals {meals} | Steel {steel}</LW_ArmyLine>
-  <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner}</LW_RaidOutcomeLine>
+  <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner} | Missing {missing}</LW_RaidOutcomeLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_InspectPopulationMissingLine>Living World population: no data for this settlement (ledger settlements: {settlements})</LW_InspectPopulationMissingLine>

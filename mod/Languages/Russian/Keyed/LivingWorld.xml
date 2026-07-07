@@ -26,7 +26,7 @@
   <LW_KnowledgeLine>Известные сведения: источник {source} | уверенность {confidence} | тик {tick} | население {populationBand} | еда {food} | миграция {migration}</LW_KnowledgeLine>
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
-  <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner}</LW_RaidOutcomeLine>
+  <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner} | Пропало {missing}</LW_RaidOutcomeLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_InspectPopulationMissingLine>Население Living World: нет данных для этого поселения (в ledger-е поселений: {settlements})</LW_InspectPopulationMissingLine>

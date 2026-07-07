@@ -215,7 +215,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     outcome.Sent.Named("sent"),
                     outcome.Dead.Named("dead"),
                     outcome.Returned.Named("returned"),
-                    outcome.Prisoner.Named("prisoner")).ToString();
+                    outcome.Prisoner.Named("prisoner"),
+                    outcome.Missing.Named("missing")).ToString();
             })
             .ToList();
         cachedEventRows = state.Events
