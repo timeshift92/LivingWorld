@@ -47,6 +47,11 @@ var tests = new List<(string Name, Action Test)>
     ("never pushes world population past the hard ceiling", TestDrifterArrivalRespectsHardCeiling),
     ("adds no drifters when the arrival tap is disabled", TestDrifterArrivalDisabled),
     ("records arrivals as unaffiliated drifters with events", TestDrifterArrivalRecordsUnaffiliated),
+    ("assimilates drifters into settlements as citizens", TestDrifterAssimilationJoinsSettlement),
+    ("spreads assimilation toward the least populated settlement", TestDrifterAssimilationSpreadsAcrossSettlements),
+    ("leaves drifters in the pool when there is no settlement to join", TestDrifterAssimilationWithoutSettlement),
+    ("respects the per-step assimilation cap", TestDrifterAssimilationRespectsCap),
+    ("keeps world population conserved across arrival then assimilation", TestDrifterArrivalThenAssimilationConservesPopulation),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -949,6 +954,105 @@ static void TestDrifterArrivalRecordsUnaffiliated()
     AssertEqual(true, !string.IsNullOrWhiteSpace(drifter.Name));
     // A drifter belongs to no settlement and no owner yet.
     AssertEqual(null, state.GetOwner(drifter.Id));
+}
+
+static void TestDrifterAssimilationJoinsSettlement()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
+    var drifter = state.Drifters.OrderBy(d => d.Id.Value).First();
+
+    var result = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 5));
+
+    AssertEqual(2, result.Assimilated);
+    AssertEqual(0, state.Drifters.Count);
+    AssertEqual(2, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(2, state.Events.Count(e => e.Kind == WorldEventKind.DrifterAssimilated));
+    // The new citizen carries the drifter's identity into the settlement.
+    var citizen = state.Citizens.First(c => c.Name == drifter.Name);
+    AssertEqual(drifter.Age, citizen.Age);
+    AssertEqual(drifter.Sex, citizen.Sex);
+    AssertEqual(settlement.Id, state.GetOwner(citizen.Id));
+}
+
+static void TestDrifterAssimilationSpreadsAcrossSettlements()
+{
+    var state = new WorldState(4242);
+    var first = state.CreateSettlement("a", "A", "Outlander");
+    var second = state.CreateSettlement("b", "B", "Outlander");
+    DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
+
+    DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 2));
+
+    // Two empty settlements get one drifter each, not both into one.
+    AssertEqual(1, state.GetSettlementPopulation(first.Id).Total);
+    AssertEqual(1, state.GetSettlementPopulation(second.Id).Total);
+}
+
+static void TestDrifterAssimilationWithoutSettlement()
+{
+    var state = new WorldState(4242);
+    DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
+
+    var result = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 5));
+
+    AssertEqual(0, result.Assimilated);
+    AssertEqual(2, state.Drifters.Count);
+}
+
+static void TestDrifterAssimilationRespectsCap()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 3, HardCeiling: 100, MaxArrivalsPerStep: 3));
+
+    var result = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 1));
+
+    AssertEqual(1, result.Assimilated);
+    AssertEqual(2, state.Drifters.Count);
+    AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Total);
+}
+
+static void TestDrifterArrivalThenAssimilationConservesPopulation()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+
+    // Arrive 2 drifters, then assimilate them: world population (alive citizens +
+    // drifters) is conserved at 2 — nobody appears or vanishes.
+    DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
+    DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 2));
+
+    var worldPopulation = state.Citizens.Count(c => c.Status == CitizenStatus.Alive) + state.Drifters.Count;
+    AssertEqual(2, worldPopulation);
+    AssertEqual(0, state.Drifters.Count);
+
+    // The tap now idles because the settlement already holds the target population.
+    var refill = DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(180_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
+    AssertEqual(0, refill.Arrived);
 }
 
 static void TestDrifterSerializationRoundTrip()

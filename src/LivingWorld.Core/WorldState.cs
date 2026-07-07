@@ -305,6 +305,28 @@ public sealed class WorldState
             : null;
     }
 
+    public WorldCitizen AssimilateDrifter(EntityId drifterId, EntityId settlementId)
+    {
+        if (!_drifters.TryGetValue(drifterId, out var drifter))
+        {
+            throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
+        }
+
+        if (!_settlements.ContainsKey(settlementId))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        _drifters.Remove(drifterId);
+        var citizen = CreateCitizen(drifter.Name, drifter.Age, drifter.Sex, "settler", settlementId);
+        AppendEvent(
+            WorldEventKind.DrifterAssimilated,
+            citizen.Id,
+            $"Drifter {drifterId} assimilated into {settlementId} as {citizen.Id}.");
+
+        return citizen;
+    }
+
     public WorldCitizen? GetCitizen(EntityId id)
     {
         return _citizens.TryGetValue(id, out var citizen)
