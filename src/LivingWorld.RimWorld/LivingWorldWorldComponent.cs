@@ -212,7 +212,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 new WorldWarRequest(
                     day * TicksPerDay,
                     settings.worldWarTravelDays,
-                    settings.worldWarRaidCombatants));
+                    settings.worldWarRaidCombatants,
+                    settings.worldWarWarbandCooldownDays));
         }
 
         FactionLifecycleService.SimulateCollapses(

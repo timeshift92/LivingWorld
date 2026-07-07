@@ -357,6 +357,7 @@ public sealed class WorldState
             ArmyMovementStatus.Traveling);
 
         _armyMovements[armyId] = movement;
+        AppendEvent(WorldEventKind.WarbandLaunched, armyId, $"Army {armyId} set out for {targetSettlementId}.");
         return movement;
     }
 
@@ -414,10 +415,14 @@ public sealed class WorldState
         }
 
         // Surviving residents keep their SettlementId and ownership, so they simply belong to
-        // the capturing faction now. No dedicated world-history event kind yet (avoids enum
-        // churn while the core-loop is in flight); a SettlementCaptured event lands at integration.
+        // the capturing faction now.
+        var previousFaction = settlement.FactionId;
         var captured = settlement with { FactionId = newFactionId };
         _settlements[settlementId] = captured;
+        AppendEvent(
+            WorldEventKind.SettlementCaptured,
+            settlementId,
+            $"Settlement {settlementId} captured by {newFactionId} from {previousFaction}.");
         return captured;
     }
 

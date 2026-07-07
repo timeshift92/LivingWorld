@@ -3,7 +3,7 @@ using System.Linq;
 
 namespace LivingWorld.Core;
 
-public sealed record WorldWarRequest(int Tick, int TravelDays, int RaidCombatants);
+public sealed record WorldWarRequest(int Tick, int TravelDays, int RaidCombatants, int WarbandCooldownDays = 0);
 
 public sealed record WorldWarResult(
     int PlansConsidered,
@@ -73,7 +73,8 @@ public static class WorldWarService
                 continue;
             }
 
-            if (FactionHasArmyInFlight(state, plan.FactionId))
+            if (FactionHasArmyInFlight(state, plan.FactionId)
+                || FactionOnWarbandCooldown(state, plan.FactionId, request.Tick, request.WarbandCooldownDays))
             {
                 continue;
             }
@@ -106,5 +107,27 @@ public static class WorldWarService
         return state.ArmyMovements.Any(movement =>
             movement.Status == ArmyMovementStatus.Traveling
             && string.Equals(state.GetArmy(movement.ArmyId)?.FactionId, factionId, StringComparison.Ordinal));
+    }
+
+    // After a warband sets out the faction waits out a cooldown before launching another, so a
+    // warmonger paces its attacks instead of firing one off every single day.
+    private static bool FactionOnWarbandCooldown(WorldState state, string factionId, int tick, int cooldownDays)
+    {
+        if (cooldownDays <= 0)
+        {
+            return false;
+        }
+
+        var factionMovements = state.ArmyMovements
+            .Where(movement => string.Equals(state.GetArmy(movement.ArmyId)?.FactionId, factionId, StringComparison.Ordinal))
+            .ToList();
+
+        if (factionMovements.Count == 0)
+        {
+            return false;
+        }
+
+        var lastDepartTick = factionMovements.Max(movement => movement.DepartTick);
+        return tick - lastDepartTick < cooldownDays * 60_000;
     }
 }

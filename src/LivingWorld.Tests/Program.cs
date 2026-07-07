@@ -98,6 +98,7 @@ var tests = new List<(string Name, Action Test)>
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
     ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
+    ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
@@ -2219,6 +2220,48 @@ static void TestWorldWarLaunchesAndResolvesWarband()
     // The attack soured relations, and population is conserved (only battle losses turned Dead).
     AssertEqual(-WorldWarService.AggressionSeverity, DiplomacyService.GetGoodwill(state, "Raiders", "Settlers"));
     AssertEqual(totalCitizens, state.Citizens.Count);
+
+    // The war is legible in world history: the warband set out and the settlement fell.
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WarbandLaunched));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestWorldWarWarbandCooldownThrottlesLaunches()
+{
+    var state = new WorldState(4242);
+    var horde = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 20; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", horde.Id);
+    }
+
+    var villageOne = state.CreateSettlement("v1", "Village One", "Settlers");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen("A" + i, 30, Sex.Male, "settler", villageOne.Id);
+    }
+
+    var villageTwo = state.CreateSettlement("v2", "Village Two", "Settlers");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen("B" + i, 30, Sex.Male, "settler", villageTwo.Id);
+    }
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Cautious);
+
+    var totalLaunched = 0;
+    for (var day = 1; day <= 6; day++)
+    {
+        var result = WorldWarService.SimulateDay(
+            state,
+            new WorldWarRequest(day * 60_000, TravelDays: 1, RaidCombatants: 6, WarbandCooldownDays: 10));
+        totalLaunched += result.WarbandsLaunched;
+    }
+
+    // Despite a standing second enemy village, the 10-day cooldown lets only one warband launch
+    // in a 6-day window — the warmonger paces itself instead of attacking every day.
+    AssertEqual(1, totalLaunched);
 }
 
 static void TestRimWorldWorldWarIntegration()

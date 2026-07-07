@@ -24,6 +24,7 @@ public sealed class LivingWorldSettings : ModSettings
     public bool worldWarEnabled = true;
     public int worldWarTravelDays = 3;
     public int worldWarRaidCombatants = 8;
+    public int worldWarWarbandCooldownDays = 8;
 
     public LivingWorldSettings()
     {
@@ -50,5 +51,6 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref worldWarEnabled, "worldWarEnabled", true);
         Scribe_Values.Look(ref worldWarTravelDays, "worldWarTravelDays", 3);
         Scribe_Values.Look(ref worldWarRaidCombatants, "worldWarRaidCombatants", 8);
+        Scribe_Values.Look(ref worldWarWarbandCooldownDays, "worldWarWarbandCooldownDays", 8);
     }
 }
