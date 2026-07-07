@@ -53,15 +53,20 @@ public static class WorldBattleService
         var army = state.GetArmy(armyId)
             ?? throw new InvalidOperationException($"Army {armyId} does not exist.");
         var targetId = movement.TargetSettlementId;
-        if (state.GetSettlement(targetId) == null)
+        var targetSettlement = state.GetSettlement(targetId);
+        if (targetSettlement == null)
         {
             throw new InvalidOperationException($"Target settlement {targetId} does not exist.");
         }
 
         var attackers = Combatants(state, armyId);
         var defenders = Combatants(state, targetId);
-        var attackerPower = SettlementPowerService.CombatPowerOf(attackers.Count);
-        var defenderPower = SettlementPowerService.CombatPowerOf(defenders.Count);
+        var attackerPower = ApplyCombatMultiplier(
+            SettlementPowerService.CombatPowerOf(attackers.Count),
+            state.GetFactionBehavior(army.FactionId));
+        var defenderPower = ApplyCombatMultiplier(
+            SettlementPowerService.CombatPowerOf(defenders.Count),
+            state.GetFactionBehavior(targetSettlement.FactionId));
 
         // Attacker must strictly out-power the defender; a tie is held by the defender.
         var attackerWins = attackerPower > defenderPower;
@@ -78,6 +83,11 @@ public static class WorldBattleService
             state.CaptureSettlement(targetId, army.FactionId);
             captured = true;
         }
+
+        var attackerDestinationId = attackerWins
+            ? targetId
+            : army.SourceSettlementId;
+        TransferSurvivingAttackers(state, attackers, army.Id, attackerDestinationId);
 
         // The battle is over; the army stands down either way.
         state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
@@ -98,6 +108,12 @@ public static class WorldBattleService
         return combatants * percent / 100;
     }
 
+    private static int ApplyCombatMultiplier(int basePower, FactionBehavior behavior)
+    {
+        var profile = FactionBehaviorService.GetProfile(behavior);
+        return (int)Math.Round(basePower * profile.CombatMultiplier, MidpointRounding.AwayFromZero);
+    }
+
     private static List<WorldCitizen> Combatants(WorldState state, EntityId ownerId)
     {
         return state.Citizens
@@ -114,6 +130,32 @@ public static class WorldBattleService
         foreach (var citizen in combatants.Take(count))
         {
             state.MarkCitizenDead(citizen.Id, reason);
+        }
+    }
+
+    private static void TransferSurvivingAttackers(
+        WorldState state,
+        List<WorldCitizen> attackers,
+        EntityId armyId,
+        EntityId destinationId)
+    {
+        foreach (var attacker in attackers)
+        {
+            var current = state.GetCitizen(attacker.Id);
+            if (current?.Status != CitizenStatus.Alive || state.GetOwner(attacker.Id) != armyId)
+            {
+                continue;
+            }
+
+            var transfer = state.TransferAsset(
+                attacker.Id,
+                armyId,
+                destinationId,
+                "world battle resolved");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
         }
     }
 }

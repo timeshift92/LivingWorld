@@ -87,7 +87,10 @@ var tests = new List<(string Name, Action Test)>
     ("army arrives at its target when the eta passes", TestArmyMovementArrivesOnEta),
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
     ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
+    ("attacker survivors occupy captured settlement", TestBattleAttackerSurvivorsOccupyCapturedSettlement),
     ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
+    ("attacker survivors return home after failed attack", TestBattleAttackerSurvivorsReturnHomeAfterDefeat),
+    ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
@@ -1941,6 +1944,44 @@ static void TestBattleAttackerCapturesWeakSettlement()
     AssertEqual(2, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
 }
 
+static void TestBattleAttackerSurvivorsOccupyCapturedSettlement()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    for (var i = 0; i < 12; i++)
+    {
+        state.CreateCitizen("P" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("O" + i, 30, Sex.Male, "settler", target.Id);
+    }
+
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Pirates", "Raiders", 8, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+    var attackerIds = state.Citizens
+        .Where(citizen => state.GetOwner(citizen.Id) == army.Id)
+        .Select(citizen => citizen.Id)
+        .ToList();
+
+    state.DispatchArmy(army.Id, target.Id, 0);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    WorldBattleService.Resolve(state, army.Id);
+
+    var survivingAttackers = attackerIds
+        .Where(id => state.GetCitizen(id)!.Status == CitizenStatus.Alive)
+        .ToList();
+    AssertEqual(7, survivingAttackers.Count);
+    foreach (var attackerId in survivingAttackers)
+    {
+        AssertEqual(target.Id, state.GetOwner(attackerId));
+    }
+}
+
 static void TestBattleDefenderHoldsAndArmyStandsDown()
 {
     var state = new WorldState(4242);
@@ -1976,6 +2017,74 @@ static void TestBattleDefenderHoldsAndArmyStandsDown()
     AssertEqual(
         outcome.AttackerLosses + outcome.DefenderLosses,
         state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
+}
+
+static void TestBattleAttackerSurvivorsReturnHomeAfterDefeat()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("P" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var target = state.CreateSettlement("fortress", "Fortress", "Outlanders");
+    for (var i = 0; i < 20; i++)
+    {
+        state.CreateCitizen("O" + i, 30, Sex.Male, "settler", target.Id);
+    }
+
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Pirates", "Raiders", 2, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+    var attackerIds = state.Citizens
+        .Where(citizen => state.GetOwner(citizen.Id) == army.Id)
+        .Select(citizen => citizen.Id)
+        .ToList();
+
+    state.DispatchArmy(army.Id, target.Id, 0);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    WorldBattleService.Resolve(state, army.Id);
+
+    var survivingAttackers = attackerIds
+        .Where(id => state.GetCitizen(id)!.Status == CitizenStatus.Alive)
+        .ToList();
+    AssertEqual(1, survivingAttackers.Count);
+    foreach (var attackerId in survivingAttackers)
+    {
+        AssertEqual(source.Id, state.GetOwner(attackerId));
+    }
+}
+
+static void TestBattleAppliesFactionCombatBehaviorMultiplier()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("P" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var target = state.CreateSettlement("fortress", "Fortress", "Outlanders");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen("O" + i, 30, Sex.Male, "settler", target.Id);
+    }
+
+    state.AssignFactionBehavior("Pirates", FactionBehavior.Warmonger);
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Pirates", "Raiders", 4, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+
+    state.DispatchArmy(army.Id, target.Id, 0);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    var outcome = WorldBattleService.Resolve(state, army.Id);
+
+    AssertEqual(BattleWinner.Attacker, outcome.Winner);
+    AssertEqual(480, outcome.AttackerPower);
+    AssertEqual(400, outcome.DefenderPower);
 }
 
 static void TestFactionBehaviorPersists()
