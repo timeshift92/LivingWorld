@@ -10,6 +10,44 @@ Living World is not planned as a small raid overhaul. It is intended to become a
 
 ---
 
+## Important implementation policy
+
+Living World is an **original implementation**.
+
+Existing RimWorld mods are used only as research references. They help us understand what works, what does not work, where compatibility problems appear, and which high-level mechanics are worth designing in our own way.
+
+Living World must not copy:
+
+- source code;
+- compiled DLLs;
+- XML definitions;
+- formulas/balancing tables;
+- UI graphics;
+- icons;
+- textures;
+- preview images;
+- text descriptions;
+- naming schemes that are unique to another mod;
+- internal class structures as direct clones.
+
+What we can use:
+
+- general ideas;
+- observed gameplay behavior;
+- architectural lessons;
+- compatibility lessons;
+- known limitations of existing approaches;
+- public mod descriptions as research context;
+- independently designed systems inspired by the same problem domain.
+
+In short:
+
+```text
+Study ideas, learn lessons, write our own code.
+```
+
+---
+
 ## Core idea
 
 In vanilla RimWorld, many events are generated on demand:
@@ -232,7 +270,9 @@ Living World is a standalone project. It is **not** intended to be built on top 
 
 The following mods are used as research sources for architecture, design lessons and feature comparison only.
 
-No code, art assets, XML definitions, text, compiled DLLs or proprietary resources should be copied into Living World unless the license explicitly allows it and the project deliberately accepts the license consequences.
+No code, art assets, XML definitions, text, compiled DLLs, formulas, balancing tables or proprietary resources should be copied into Living World.
+
+These projects are treated as prior art and design inspiration. Living World will implement its own data models, algorithms, APIs, Harmony patches and simulation flow.
 
 ### RimWar Threaded
 
@@ -243,10 +283,10 @@ https://github.com/TorannD/RimWar---Threaded
 License:
 
 - MIT License.
-- This is permissive, but Living World still should not copy code unless there is a clear reason.
-- If any code is ever reused, the MIT copyright notice and license text must be preserved.
+- Although the license is permissive, Living World will not copy RimWar code by default.
+- RimWar is used as a research source for planet-layer gameplay and world-object simulation concepts.
 
-Useful ideas:
+Ideas to study and redesign independently:
 
 - planet-layer activity;
 - `WorldComponent`-based simulation;
@@ -258,13 +298,15 @@ Useful ideas:
 - interaction between caravans and war objects;
 - world object pathing and detection concepts.
 
-What not to copy directly:
+What must not be copied directly:
 
-- point-based settlement strength as the only truth;
-- generated pawns as final source of truth;
-- tight Harmony coupling to many vanilla methods;
-- world simulation that is not ledger-first;
-- architecture where war objects own too much mutable gameplay state.
+- source code;
+- class structures as direct clones;
+- exact Harmony patches;
+- exact balancing values;
+- art assets;
+- text strings;
+- XML definitions.
 
 How Living World should improve on it:
 
@@ -285,9 +327,9 @@ License status:
 - No `LICENSE` file was found in the repository during research.
 - No explicit license statement was found in the README during research.
 - Treat the project as **source-available but not reusable** unless the author adds a license or gives permission.
-- Do not copy code, XML, text, balancing formulas or assets from this project.
+- Do not copy code, XML, text, balancing formulas, tables or assets from this project.
 
-Useful ideas:
+Ideas to study and redesign independently:
 
 - population counters per settlement/faction;
 - adults/children/elders as demographic groups;
@@ -304,11 +346,15 @@ Useful ideas:
 - global inflation/homeostasis model;
 - low-TPS background simulation.
 
-What not to copy directly:
+What must not be copied directly:
 
-- aggregate counters as the only population model;
-- formulas without independent redesign;
-- any source code or data tables while license is unclear.
+- source code;
+- formulas;
+- balancing tables;
+- exact economy implementation;
+- text descriptions;
+- XML definitions;
+- assets.
 
 How Living World should improve on it:
 
@@ -332,10 +378,10 @@ License:
 
 - GNU General Public License v3.0.
 - GPL-3.0 is copyleft.
-- Do not copy GPL code into Living World unless Living World intentionally adopts GPL-compatible licensing for the affected work.
-- It is safe to study ideas and public behavior, but implementation should be original.
+- Living World will not copy GPL code unless the project intentionally changes its own licensing strategy.
+- The safe approach is to study gameplay ideas and write an original implementation.
 
-Useful ideas:
+Ideas to study and redesign independently:
 
 - player-controlled colony/vassal layer;
 - taxes paid in silver or goods;
@@ -348,12 +394,15 @@ Useful ideas:
 - settlement/resource types defined by XML;
 - submod-friendly architecture designed to avoid Harmony patching.
 
-What not to copy directly:
+What must not be copied directly:
 
-- GPL code unless the project accepts GPL implications;
+- GPL source code;
 - icons, banners, UI graphics, faction flags or other assets;
-- exact XML schema or implementation classes;
-- player-empire gameplay as the core model of Living World.
+- exact XML schema;
+- implementation classes;
+- text strings;
+- balancing tables;
+- player-empire gameplay flow as a direct clone.
 
 How Living World should improve on it:
 
@@ -372,12 +421,15 @@ Living World should be developed as an original implementation.
 Rules:
 
 1. Ideas, mechanics and architectural lessons can be studied.
-2. Code must not be copied unless the license allows it and the project explicitly accepts the consequences.
+2. Code must not be copied from other mods.
 3. Art assets must not be copied from other mods.
-4. XML definitions must not be copied from other mods unless explicitly permitted.
-5. Public documentation should credit research sources.
-6. If GPL code is used, the affected project/license strategy must be reviewed before merging.
-7. If a repository has no license, treat it as copyrighted and not reusable.
+4. XML definitions must not be copied from other mods.
+5. Text descriptions must not be copied from other mods.
+6. Formulas and balancing tables must be independently designed.
+7. Public documentation should credit research sources.
+8. If a repository has no license, treat it as copyrighted and not reusable.
+9. If GPL code is used, the affected project/license strategy must be reviewed before merging.
+10. Every Living World module should be written as original code.
 
 Recommended license for Living World:
 
