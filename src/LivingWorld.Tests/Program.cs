@@ -42,7 +42,13 @@ var tests = new List<(string Name, Action Test)>
     ("leaves a vanilla raid untouched when the faction has no living world population", TestVanillaRaidPassesThroughWithoutPopulation),
     ("consumes a standing opportunity when intercepting a vanilla raid", TestVanillaRaidConsumesOpportunityWhenPresent),
     ("frees orphaned reserves before intercepting a new vanilla raid", TestVanillaRaidInterceptionFreesPriorOrphans),
+    ("adds drifters toward the target world population in metered steps", TestDrifterArrivalFillsTowardTarget),
+    ("idles the arrival tap when the world already meets its target", TestDrifterArrivalIdlesWhenWorldPopulated),
+    ("never pushes world population past the hard ceiling", TestDrifterArrivalRespectsHardCeiling),
+    ("adds no drifters when the arrival tap is disabled", TestDrifterArrivalDisabled),
+    ("records arrivals as unaffiliated drifters with events", TestDrifterArrivalRecordsUnaffiliated),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
+    ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
     ("defines RimWorld 1.6 load folders", TestRimWorldLoadFolders),
     ("defines RimWorld loader project", TestRimWorldLoaderProject),
@@ -860,6 +866,108 @@ static void TestAbortedRaidReleaseReturnsOrphanedReserves()
 
     AssertEqual(3, released);
     AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
+}
+
+static void TestDrifterArrivalFillsTowardTarget()
+{
+    var state = new WorldState(4242);
+    var request = new DrifterArrivalRequest(
+        Tick: 0,
+        TargetWorldPopulation: 5,
+        HardCeiling: 100,
+        MaxArrivalsPerStep: 2);
+
+    // Empty world: metered arrivals of 2 fill toward the target, then a final 1,
+    // then the tap idles at the target.
+    AssertEqual(2, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 60_000 }).Arrived);
+    AssertEqual(2, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 120_000 }).Arrived);
+    var third = DrifterArrivalService.SimulateArrivals(state, request with { Tick = 180_000 });
+    AssertEqual(1, third.Arrived);
+    AssertEqual(5, third.PoolSize);
+    AssertEqual(0, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 240_000 }).Arrived);
+    AssertEqual(5, state.Drifters.Count);
+}
+
+static void TestDrifterArrivalIdlesWhenWorldPopulated()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen($"Settler {i + 1}", 25, Sex.Male, "settler", settlement.Id);
+    }
+
+    // Existing settlement population counts toward the target, so the tap stays idle.
+    var result = DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 5, HardCeiling: 100, MaxArrivalsPerStep: 2));
+
+    AssertEqual(0, result.Arrived);
+    AssertEqual(0, state.Drifters.Count);
+}
+
+static void TestDrifterArrivalRespectsHardCeiling()
+{
+    var state = new WorldState(4242);
+    var request = new DrifterArrivalRequest(
+        Tick: 0,
+        TargetWorldPopulation: 100,
+        HardCeiling: 4,
+        MaxArrivalsPerStep: 2);
+
+    AssertEqual(2, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 60_000 }).Arrived);
+    AssertEqual(2, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 120_000 }).Arrived);
+    // At the ceiling the tap stops even though the target is far higher.
+    AssertEqual(0, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 180_000 }).Arrived);
+    AssertEqual(4, state.Drifters.Count);
+}
+
+static void TestDrifterArrivalDisabled()
+{
+    var state = new WorldState(4242);
+    var result = DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 50, HardCeiling: 100, MaxArrivalsPerStep: 0));
+
+    AssertEqual(0, result.Arrived);
+    AssertEqual(0, state.Drifters.Count);
+}
+
+static void TestDrifterArrivalRecordsUnaffiliated()
+{
+    var state = new WorldState(4242);
+    var result = DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 3, HardCeiling: 100, MaxArrivalsPerStep: 2));
+
+    AssertEqual(2, result.Arrived);
+    AssertEqual(2, state.Drifters.Count);
+    AssertEqual(2, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.DrifterArrived));
+
+    var drifter = state.Drifters.OrderBy(d => d.Id.Value).First();
+    AssertEqual(EntityKind.Drifter, drifter.Id.Kind);
+    AssertEqual(true, !string.IsNullOrWhiteSpace(drifter.Name));
+    // A drifter belongs to no settlement and no owner yet.
+    AssertEqual(null, state.GetOwner(drifter.Id));
+}
+
+static void TestDrifterSerializationRoundTrip()
+{
+    var state = new WorldState(4242);
+    DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 3, HardCeiling: 100, MaxArrivalsPerStep: 3));
+    AssertEqual(3, state.Drifters.Count);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(3, restored.Drifters.Count);
+    var original = state.Drifters.OrderBy(drifter => drifter.Id.Value).First();
+    var roundTripped = restored.GetDrifter(original.Id)!;
+    AssertEqual(original.Name, roundTripped.Name);
+    AssertEqual(original.Age, roundTripped.Age);
+    AssertEqual(original.Sex, roundTripped.Sex);
+    AssertEqual(original.ArrivalTick, roundTripped.ArrivalTick);
 }
 
 static WorldState BuildFactionWithCombatants(int seed, string faction, int adults)

@@ -148,7 +148,17 @@ public static class WorldStateCodec
                             worldEvent.SubjectId.HasValue
                                 ? new XAttribute("subjectId", worldEvent.SubjectId.Value.Value)
                                 : null,
-                            new XAttribute("summary", worldEvent.Summary))))));
+                            new XAttribute("summary", worldEvent.Summary)))),
+                new XElement(
+                    "Drifters",
+                    snapshot.Drifters.Select(drifter =>
+                        new XElement(
+                            "Drifter",
+                            IdAttributes(drifter.Id),
+                            new XAttribute("name", drifter.Name),
+                            new XAttribute("age", drifter.Age),
+                            new XAttribute("sex", drifter.Sex),
+                            new XAttribute("arrivalTick", drifter.ArrivalTick))))));
 
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -269,6 +279,15 @@ public static class WorldStateCodec
                     RequiredInt(element, "tick"),
                     TryReadEntityId(element, "subjectKind", "subjectId"),
                     RequiredString(element, "summary")))
+                .ToList(),
+            OptionalContainer(root, "Drifters")
+                .Elements("Drifter")
+                .Select(element => new Drifter(
+                    ReadId(element),
+                    RequiredString(element, "name"),
+                    RequiredInt(element, "age"),
+                    RequiredEnum<Sex>(element, "sex"),
+                    RequiredInt(element, "arrivalTick")))
                 .ToList());
 
         return WorldState.FromSnapshot(snapshot);

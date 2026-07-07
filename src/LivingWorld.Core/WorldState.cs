@@ -10,6 +10,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, RaidOpportunity> _raidOpportunities = new();
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
+    private readonly Dictionary<EntityId, Drifter> _drifters = new();
     private readonly Dictionary<EntityId, EntityId> _owners = new();
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
     private readonly List<WorldEvent> _events = new();
@@ -40,6 +41,8 @@ public sealed class WorldState
     public IReadOnlyCollection<RaidPawnLink> RaidPawnLinks => _raidPawnLinks.Values;
 
     public IReadOnlyCollection<WorldRaidOutcome> RaidOutcomes => _raidOutcomes.Values;
+
+    public IReadOnlyCollection<Drifter> Drifters => _drifters.Values;
 
     public IReadOnlyList<WorldEvent> Events => _events;
 
@@ -95,7 +98,8 @@ public sealed class WorldState
                 .ThenBy(pair => pair.Key.ResourceKey, StringComparer.Ordinal)
                 .Select(pair => new ResourceStack(pair.Key.OwnerId, pair.Key.ResourceKey, pair.Value))
                 .ToList(),
-            _events.OrderBy(worldEvent => worldEvent.Id.Value).ToList());
+            _events.OrderBy(worldEvent => worldEvent.Id.Value).ToList(),
+            _drifters.Values.OrderBy(drifter => drifter.Id.Value).ToList());
     }
 
     public static WorldState FromSnapshot(WorldStateSnapshot snapshot)
@@ -169,6 +173,12 @@ public sealed class WorldState
         {
             state._events.Add(worldEvent);
             state.ReserveExistingId(worldEvent.Id);
+        }
+
+        foreach (var drifter in snapshot.Drifters)
+        {
+            state._drifters.Add(drifter.Id, drifter);
+            state.ReserveExistingId(drifter.Id);
         }
 
         return state;
@@ -264,6 +274,35 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.OwnershipAssigned, army.Id, $"Army {army.Id} assigned to {sourceSettlementId}.");
 
         return army;
+    }
+
+    public Drifter CreateDrifter(string name, int age, Sex sex)
+    {
+        ThrowIfNullOrWhiteSpace(name, nameof(name));
+
+        if (age < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(age), "Drifter age cannot be negative.");
+        }
+
+        var drifter = new Drifter(
+            NextId(EntityKind.Drifter),
+            name,
+            age,
+            sex,
+            CurrentTick);
+
+        _drifters.Add(drifter.Id, drifter);
+        AppendEvent(WorldEventKind.DrifterArrived, drifter.Id, $"Drifter {drifter.Id} arrived from beyond the world.");
+
+        return drifter;
+    }
+
+    public Drifter? GetDrifter(EntityId id)
+    {
+        return _drifters.TryGetValue(id, out var drifter)
+            ? drifter
+            : null;
     }
 
     public WorldCitizen? GetCitizen(EntityId id)

@@ -13,4 +13,5 @@ public sealed record WorldStateSnapshot(
     IReadOnlyList<WorldRaidOutcome> RaidOutcomes,
     IReadOnlyList<OwnershipRecord> Ownership,
     IReadOnlyList<ResourceStack> Resources,
-    IReadOnlyList<WorldEvent> Events);
+    IReadOnlyList<WorldEvent> Events,
+    IReadOnlyList<Drifter> Drifters);

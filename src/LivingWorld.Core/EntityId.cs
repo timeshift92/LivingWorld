@@ -8,7 +8,8 @@ public enum EntityKind
     Army,
     Event,
     IntelReport,
-    RaidOpportunity
+    RaidOpportunity,
+    Drifter
 }
 
 public readonly record struct EntityId(EntityKind Kind, long Value)
