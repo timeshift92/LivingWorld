@@ -32,6 +32,20 @@ public static class PlayerKnowledgeService
             summary);
     }
 
+    public static KnownSettlementInfo RecordScoutSettlementInfo(
+        WorldState state,
+        EntityId settlementId,
+        string summary)
+    {
+        return RecordSettlementInfo(
+            state,
+            settlementId,
+            IntelSourceKind.Scout,
+            KnowledgeConfidence.High,
+            exactValuesVisible: false,
+            summary);
+    }
+
     public static KnownSettlementInfo RecordDirectVisitSettlementInfo(
         WorldState state,
         EntityId settlementId,

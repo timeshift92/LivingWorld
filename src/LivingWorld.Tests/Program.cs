@@ -93,6 +93,7 @@ var tests = new List<(string Name, Action Test)>
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
+    ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
     ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
@@ -100,6 +101,12 @@ var tests = new List<(string Name, Action Test)>
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
     ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
+    ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
+    ("expansion creates unique colony slugs", TestWorldWarExpansionUsesUniqueColonySlugs),
+    ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
+    ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
+    ("world war diplomat changes faction goodwill", TestWorldWarDiplomatChangesGoodwill),
+    ("world war non-warband effects survive save load", TestWorldWarNonWarbandEffectsPersistThroughSaveLoad),
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
@@ -2122,6 +2129,25 @@ static void TestFactionActionPlannerWarband()
     AssertEqual(victim.Id, plan.TargetSettlementId);
 }
 
+static void TestFactionActionPlannerSkipsAlliedTargets()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    state.CreateSettlement("ally", "Ally", "Settlers");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    DiplomacyService.AdjustGoodwill(state, "Raiders", "Settlers", 80);
+
+    var plan = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+
+    AssertEqual(WarAction.ScoutingParty, plan.Action);
+    AssertEqual(null, plan.TargetSettlementId);
+}
+
 static void TestFactionActionPlannerFiltersPassive()
 {
     var state = new WorldState(4242);
@@ -2293,6 +2319,156 @@ static void TestWorldWarExpansionistFoundsColony()
     var colony = state.Settlements.First(settlement => settlement.Id != home.Id);
     AssertEqual(6, state.GetSettlementPopulation(colony.Id).Adults);
     AssertEqual("Settlers", state.GetSettlement(colony.Id)!.FactionId);
+}
+
+static void TestExpandSettlementRejectsEmptyOrInsufficientSettlers()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("home", "Home", "Settlers");
+    state.CreateCitizen("Only Adult", 30, Sex.Female, "settler", home.Id);
+
+    AssertThrows<ArgumentOutOfRangeException>(
+        () => state.ExpandSettlement(home.Id, "empty", "Empty", 0));
+    AssertThrows<InvalidOperationException>(
+        () => state.ExpandSettlement(home.Id, "underfilled", "Underfilled", 2));
+    AssertEqual(1, state.Settlements.Count);
+    AssertEqual(1, state.GetSettlementPopulation(home.Id).Adults);
+}
+
+static void TestWorldWarExpansionUsesUniqueColonySlugs()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("home", "Home", "Settlers");
+    for (var i = 0; i < 30; i++)
+    {
+        state.CreateCitizen("Home Settler " + i, 30, Sex.Male, "settler", home.Id);
+    }
+
+    var existing = state.CreateSettlement("Settlers-colony-3", "Old Colony", "Settlers");
+    for (var i = 0; i < 9; i++)
+    {
+        state.CreateCitizen("Old Settler " + i, 30, Sex.Female, "settler", existing.Id);
+    }
+
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Expansionist);
+
+    var result = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, result.ColoniesFounded);
+    AssertEqual(true, state.Settlements.Any(settlement => settlement.Slug == "Settlers-colony-4"));
+    AssertEqual(false, state.Validate().Any(error => error.Contains("Duplicate settlement slug", StringComparison.Ordinal)));
+}
+
+static void TestWorldWarCaravanTransfersRealGoods()
+{
+    var state = new WorldState(4242);
+    var market = state.CreateSettlement("market", "Market", "Traders");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Trader " + i, 30, Sex.Female, "merchant", market.Id);
+    }
+
+    state.AddResource(market.Id, "Steel", 40);
+    var village = state.CreateSettlement("village", "Village", "Settlers");
+    state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+
+    AssertEqual(30, state.GetOwnedResourceQuantity(market.Id, "Steel"));
+    AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+}
+
+static void TestWorldWarScoutingRecordsIntel()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("watch", "Watch", "Scouts");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Scout " + i, 30, Sex.Male, "scout", scouts.Id);
+    }
+
+    var village = state.CreateSettlement("village", "Village", "Settlers");
+    for (var i = 0; i < 12; i++)
+    {
+        state.CreateCitizen("Settler " + i, 30, Sex.Female, "settler", village.Id);
+    }
+
+    state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+
+    var known = state.GetKnownSettlementInfo(village.Id)!;
+    AssertEqual(IntelSourceKind.Scout, known.SourceKind);
+    AssertEqual(KnowledgeConfidence.High, known.Confidence);
+    AssertEqual(SettlementPopulationBand.Small, known.PopulationBand);
+    AssertEqual(1, state.IntelReports.Count(report => report.SourceKind == IntelSourceKind.Scout));
+}
+
+static void TestWorldWarDiplomatChangesGoodwill()
+{
+    var state = new WorldState(4242);
+    var envoys = state.CreateSettlement("envoys", "Envoys", "Envoys");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Envoy " + i, 30, Sex.Female, "diplomat", envoys.Id);
+    }
+
+    state.CreateSettlement("neighbor", "Neighbor", "Neighbors");
+    state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
+
+    AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", "Neighbors"));
+}
+
+static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
+{
+    var state = new WorldState(4242);
+    var village = state.CreateSettlement("village", "Village", "Villagers");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen("Villager " + i, 30, Sex.Female, "settler", village.Id);
+    }
+
+    var market = state.CreateSettlement("market", "Market", "Traders");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Trader " + i, 30, Sex.Male, "merchant", market.Id);
+    }
+
+    var watch = state.CreateSettlement("watch", "Watch", "Scouts");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Scout " + i, 30, Sex.Male, "scout", watch.Id);
+    }
+
+    var envoys = state.CreateSettlement("envoys", "Envoys", "Envoys");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Envoy " + i, 30, Sex.Female, "diplomat", envoys.Id);
+    }
+
+    state.AddResource(market.Id, "Steel", 40);
+    state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+
+    state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
+    state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(2 * 60_000, TravelDays: 1, RaidCombatants: 3));
+
+    state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
+    state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(10, restored.GetOwnedResourceQuantity(village.Id, "Steel"));
+    AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(village.Id)!.SourceKind);
+    AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", "Villagers"));
 }
 
 static void TestRimWorldWorldWarIntegration()
@@ -3772,6 +3948,27 @@ static void AssertDoesNotContain(string unexpected, string actual)
     {
         throw new InvalidOperationException($"Expected content not to contain '{unexpected}'.");
     }
+}
+
+static void AssertThrows<TException>(Action action)
+    where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException(
+            $"Expected exception {typeof(TException).Name}, got {ex.GetType().Name}.",
+            ex);
+    }
+
+    throw new InvalidOperationException($"Expected exception {typeof(TException).Name}.");
 }
 
 static void AssertRimWorldMethodExists(string typeName, string methodName)

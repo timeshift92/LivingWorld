@@ -96,6 +96,7 @@ public static class FactionActionPlanner
     {
         var enemy = state.Settlements
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+            .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
             .OrderBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
 

@@ -433,9 +433,19 @@ public sealed class WorldState
         ThrowIfNullOrWhiteSpace(slug, nameof(slug));
         ThrowIfNullOrWhiteSpace(name, nameof(name));
 
+        if (settlerCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(settlerCount), "Expansion requires at least one settler.");
+        }
+
         if (!_settlements.TryGetValue(sourceSettlementId, out var source))
         {
             throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
+        }
+
+        if (_settlements.Values.Any(settlement => string.Equals(settlement.Slug, slug, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException($"Settlement slug {slug} already exists.");
         }
 
         var settlers = _citizens.Values
@@ -444,8 +454,14 @@ public sealed class WorldState
                 && citizen.IsAdult
                 && GetOwner(citizen.Id) == sourceSettlementId)
             .OrderBy(citizen => citizen.Id.Value)
-            .Take(Math.Max(0, settlerCount))
+            .Take(settlerCount)
             .ToList();
+
+        if (settlers.Count < settlerCount)
+        {
+            throw new InvalidOperationException(
+                $"Settlement {sourceSettlementId} has {settlers.Count} available adult settlers but expansion requested {settlerCount}.");
+        }
 
         var colony = CreateSettlement(slug, name, source.FactionId);
         foreach (var settler in settlers)

@@ -35,7 +35,8 @@ public enum WorldEventKind
     SettlementTradeRecorded,
     DrifterMaterialized,
     WarbandLaunched,
-    SettlementCaptured
+    SettlementCaptured,
+    DiplomaticMissionSent
 }
 
 public sealed record WorldEvent(
