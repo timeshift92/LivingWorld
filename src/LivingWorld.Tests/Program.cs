@@ -88,6 +88,9 @@ var tests = new List<(string Name, Action Test)>
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
     ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
     ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
+    ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
+    ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
+    ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -1968,6 +1971,58 @@ static void TestBattleDefenderHoldsAndArmyStandsDown()
     AssertEqual(
         outcome.AttackerLosses + outcome.DefenderLosses,
         state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
+}
+
+static void TestFactionBehaviorPersists()
+{
+    var state = new WorldState(4242);
+    state.CreateSettlement("horde", "Horde", "Raiders");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(FactionBehavior.Warmonger, restored.GetFactionBehavior("Raiders"));
+    // Unassigned factions default to Undefined.
+    AssertEqual(FactionBehavior.Undefined, restored.GetFactionBehavior("Nobody"));
+}
+
+static void TestFactionActionPlannerWarband()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var victim = state.CreateSettlement("village", "Village", "Settlers");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+
+    var plan = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+
+    AssertEqual(WarAction.Warband, plan.Action);
+    AssertEqual(victim.Id, plan.TargetSettlementId);
+}
+
+static void TestFactionActionPlannerFiltersPassive()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    state.CreateSettlement("village", "Village", "Settlers");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Player);
+
+    var plans = FactionActionPlanner.PlanDay(state, 60_000);
+
+    // Only the warmonger acts; the player-controlled faction is excluded.
+    AssertEqual(1, plans.Count);
+    AssertEqual("Raiders", plans[0].FactionId);
+    AssertEqual(WarAction.Warband, plans[0].Action);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

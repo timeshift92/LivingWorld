@@ -220,7 +220,16 @@ public static class WorldStateCodec
                                 new XAttribute("targetId", movement.TargetSettlementId.Value),
                                 new XAttribute("departTick", movement.DepartTick),
                                 new XAttribute("arrivalTick", movement.ArrivalTick),
-                                new XAttribute("status", movement.Status))))));
+                                new XAttribute("status", movement.Status)))),
+                new XElement(
+                    "FactionBehaviors",
+                    state.FactionBehaviors
+                        .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                        .Select(pair =>
+                            new XElement(
+                                "FactionBehavior",
+                                new XAttribute("factionId", pair.Key),
+                                new XAttribute("behavior", pair.Value))))));
 
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -400,6 +409,13 @@ public static class WorldStateCodec
                 RequiredInt(element, "departTick"),
                 RequiredInt(element, "arrivalTick"),
                 RequiredEnum<ArmyMovementStatus>(element, "status")));
+        }
+
+        foreach (var element in OptionalContainer(root, "FactionBehaviors").Elements("FactionBehavior"))
+        {
+            state.RestoreFactionBehaviorForLedger(
+                RequiredString(element, "factionId"),
+                RequiredEnum<FactionBehavior>(element, "behavior"));
         }
 
         return state;

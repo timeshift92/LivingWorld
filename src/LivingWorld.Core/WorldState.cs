@@ -13,6 +13,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
     private readonly Dictionary<EntityId, WorldArmyMovement> _armyMovements = new();
+    private readonly Dictionary<string, FactionBehavior> _factionBehaviors = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
@@ -38,6 +39,8 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldArmy> Armies => _armies.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
+
+    public IReadOnlyDictionary<string, FactionBehavior> FactionBehaviors => _factionBehaviors;
 
     public IReadOnlyCollection<WorldMigrationGroup> MigrationGroups => _migrationGroups.Values;
 
@@ -410,6 +413,25 @@ public sealed class WorldState
         var captured = settlement with { FactionId = newFactionId };
         _settlements[settlementId] = captured;
         return captured;
+    }
+
+    public void AssignFactionBehavior(string factionId, FactionBehavior behavior)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        _factionBehaviors[factionId] = behavior;
+    }
+
+    public FactionBehavior GetFactionBehavior(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        return _factionBehaviors.TryGetValue(factionId, out var behavior)
+            ? behavior
+            : FactionBehavior.Undefined;
+    }
+
+    internal void RestoreFactionBehaviorForLedger(string factionId, FactionBehavior behavior)
+    {
+        _factionBehaviors[factionId] = behavior;
     }
 
     public Drifter CreateDrifter(string name, int age, Sex sex, int combatAptitude = 0, int organizationAptitude = 0)
