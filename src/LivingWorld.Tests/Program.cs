@@ -122,6 +122,7 @@ var tests = new List<(string Name, Action Test)>
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
+    ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2863,6 +2864,23 @@ static void TestRimWorldWorldEconomyMainTab()
     AssertContains("<LW_WorldEconomyHeader>", ru);
     AssertContains("<LW_FactionEconomyLine>", en);
     AssertContains("<LW_FactionEconomyLine>", ru);
+}
+
+static void TestRimWorldMainTabFactionIcons()
+{
+    var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    // Per-faction strength/economy rows draw the faction's native icon and colour (looked up by
+    // the ledger FactionId, which is the RimWorld faction defName) instead of a plain label.
+    AssertContains("DrawFactionRow", mainTab);
+    AssertContains("FactionIcon", mainTab);
+    AssertContains("GUI.DrawTexture", mainTab);
+    AssertContains("faction.Color", mainTab);
+    // Both per-faction lists route through the icon renderer, and the cached rows carry the
+    // FactionId so the icon can be resolved at draw time.
+    AssertContains("DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text)", mainTab);
+    // Cached rows carry the FactionId so the icon can be resolved at draw time.
+    AssertContains("List<(string FactionId, string Text)> cachedFactionStrengthRows", mainTab);
+    AssertContains("List<(string FactionId, string Text)> cachedFactionEconomyRows", mainTab);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

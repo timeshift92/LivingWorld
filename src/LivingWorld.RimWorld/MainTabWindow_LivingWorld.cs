@@ -34,9 +34,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedProductionProfileCount = -1;
     private int cachedArmyMovementCount = -1;
     private List<string> cachedActiveWarbandRows = new();
-    private List<string> cachedFactionStrengthRows = new();
+    private List<(string FactionId, string Text)> cachedFactionStrengthRows = new();
     private List<string> cachedWarHistoryRows = new();
-    private List<string> cachedFactionEconomyRows = new();
+    private List<(string FactionId, string Text)> cachedFactionEconomyRows = new();
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
@@ -202,7 +202,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         foreach (var row in cachedFactionStrengthRows)
         {
-            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text);
             y += 26f;
         }
 
@@ -217,7 +217,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         foreach (var row in cachedFactionEconomyRows)
         {
-            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text);
             y += 26f;
         }
 
@@ -405,9 +405,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
                     .Sum(settlement => SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower);
                 var strength = debugExact ? power.ToString() : StrengthBand(power);
-                return "LW_FactionStrengthLine".Translate(
+                return (factionId, "LW_FactionStrengthLine".Translate(
                     factionId.Named("faction"),
-                    strength.Named("strength")).ToString();
+                    strength.Named("strength")).ToString());
             })
             .ToList();
 
@@ -437,9 +437,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
                     .Sum(settlement => FactionMaterialStock(state, settlement.Id));
                 var wealth = debugExact ? stock.ToString() : WealthBand(stock);
-                return "LW_FactionEconomyLine".Translate(
+                return (factionId, "LW_FactionEconomyLine".Translate(
                     factionId.Named("faction"),
-                    wealth.Named("wealth")).ToString();
+                    wealth.Named("wealth")).ToString());
             })
             .ToList();
     }
@@ -478,6 +478,31 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         return power < 2000
             ? "LW_FactionStrengthBandModerate".Translate()
             : "LW_FactionStrengthBandStrong".Translate();
+    }
+
+    // Draws a per-faction ledger row with the faction's native icon and colour in front of the
+    // text, so the world-war/economy lists read like a real RimWorld faction list instead of a
+    // wall of plain labels. Falls back to a plain label when the faction has left the world.
+    private static void DrawFactionRow(Rect rect, string factionId, string text)
+    {
+        const float IconSize = 22f;
+        var faction = Find.FactionManager?.AllFactionsListForReading
+            .FirstOrDefault(candidate =>
+                candidate.def != null
+                && string.Equals(candidate.def.defName, factionId, System.StringComparison.Ordinal));
+
+        var labelX = rect.x;
+        if (faction?.def?.FactionIcon != null)
+        {
+            var iconRect = new Rect(rect.x, rect.y + ((rect.height - IconSize) / 2f), IconSize, IconSize);
+            var previousColor = GUI.color;
+            GUI.color = faction.Color;
+            GUI.DrawTexture(iconRect, faction.def.FactionIcon);
+            GUI.color = previousColor;
+            labelX += IconSize + 6f;
+        }
+
+        Widgets.Label(new Rect(labelX, rect.y, rect.width - (labelX - rect.x), rect.height), text);
     }
 
     private static string FormatKnowledgeLine(KnownSettlementInfo? known, int currentTick)
