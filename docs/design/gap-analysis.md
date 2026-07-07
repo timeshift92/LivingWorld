@@ -78,11 +78,15 @@ Emancipate даёт goodwill исходной фракции; есть рабо�
   RocketMan гонит животных 60→5 Гц; Missile Girl «учится», как часто пересчитывать;
 - **кэш производных** — сила фракции, доступность, пулы; не пересчитывать каждый
   тик (RocketMan «убирает 90% ванильных пересчётов»);
-- **предрасчёт world-reachability** — если добавим движение армий/караванов.
+- **предрасчёт world-reachability** — если добавим движение армий/караванов;
+- **никаких дорогих per-tick lookup'ов** — конкретный анти-паттерн: ванильная
+  яйцекладка тикала пищевые нужды каждый тик (Red's Performance Fixes её чинит).
+  Наш аналог — не гонять LINQ по всем гражданам/связям в горячих путях.
 
 Источники: [Perf guide](https://steamcommunity.com/sharedfiles/filedetails/?id=2894425236),
 [RocketMan (time-dilation, кэш, reachability)](https://steamcommunity.com/sharedfiles/filedetails/?id=2479389928),
 [Missile Girl (поддерж. форк RocketMan, адаптивный кэш, open-source)](https://steamcommunity.com/sharedfiles/filedetails/?id=3712928623),
+[Red's Performance Fixes (пример: убирает per-tick lookup в яйцекладке)](https://steamcommunity.com/sharedfiles/filedetails/?id=3343465955),
 [Rim73 (референс приёмов, заброшен)](https://steamcommunity.com/sharedfiles/filedetails/?id=2573814850).
 
 ### WorldPawns-блоат подтверждён на практике
