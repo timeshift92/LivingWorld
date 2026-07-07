@@ -113,6 +113,7 @@ var tests = new List<(string Name, Action Test)>
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
+    ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2659,6 +2660,24 @@ static void TestRimWorldWorldWarNotifications()
     AssertContains("<LW_WorldWarLetterLabel>", ru);
     AssertContains("<LW_WorldWarLetterText>", en);
     AssertContains("<LW_WorldWarLetterText>", ru);
+}
+
+static void TestRimWorldEmpireInterop()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // Detect Empire (Matathias.Empire) like the Rim War flag, so the UI can tell the player who
+    // manages their empire vs the NPC world Living World tracks.
+    AssertContains("public bool IsEmpireActive", component);
+    AssertContains("Matathias.Empire", component);
+
+    var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    AssertContains("IsEmpireActive", mainTab);
+    AssertContains("LW_EmpireActiveNote", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_EmpireActiveNote>", en);
+    AssertContains("<LW_EmpireActiveNote>", ru);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

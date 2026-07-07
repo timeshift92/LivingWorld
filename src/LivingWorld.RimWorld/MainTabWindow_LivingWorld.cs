@@ -185,6 +185,12 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             y += 26f;
         }
 
+        if (component.IsEmpireActive)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), "LW_EmpireActiveNote".Translate());
+            y += 26f;
+        }
+
         foreach (var row in cachedActiveWarbandRows)
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);

@@ -291,7 +291,9 @@ coarse model.
 - **EMP1 (Claude): Detect Empire + interop.** Detect `Empire` (packageId) like the Rim War
   flag and avoid double-driving the player-empire's world settlements (K4 player-exclusion
   already keeps player settlements out of the ledger); surface the state to the player.
-  Status: NOT STARTED.
+  Status: DONE — `LivingWorldWorldComponent.IsEmpireActive` (`Matathias.Empire`) + a main-tab
+  note (`LW_EmpireActiveNote`, EN/RU); no guard needed since K4 already keeps player-empire
+  settlements out of the ledger. Test `TestRimWorldEmpireInterop`. Build 0/0.
 - **EMP2 (Codex, backlog): Settlement depth.** prosperity/loyalty/unrest/buildings/worker
   allocation on ledger settlements (inspiration from Empire, not a port). Secondary per the
   plan. Status: BACKLOG.

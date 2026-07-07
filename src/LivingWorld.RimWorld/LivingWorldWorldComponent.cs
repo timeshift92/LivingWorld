@@ -27,6 +27,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int cachedWorldPopulation;
     private int cachedTargetPopulation;
     private bool? rimWarActive;
+    private bool? empireActive;
     private int lastWorldWarLetterTick = int.MinValue;
     private int notifiedCaptureCount;
 
@@ -85,6 +86,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
     // True when Rim War is driving world factions, so the Living World world-war loop stays off.
     public bool IsRimWarActive => RimWarIsActive;
+
+    // True when Empire is active. Empire manages the player's own empire (player-faction
+    // settlements, which K4 already keeps out of the ledger), so there is nothing to disable —
+    // this is surfaced only so the UI can tell the player who owns what.
+    public bool IsEmpireActive => EmpireIsActive;
 
     public string GetSummary()
     {
@@ -266,6 +272,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // Rim War (Torann.RimWar) drives world factions the same way; when it is active Living
     // World's own world-war loop stays off so the two never fight over the same world.
     private bool RimWarIsActive => rimWarActive ??= ModsConfig.IsActive("Torann.RimWar");
+
+    // Empire (Matathias.Empire): the player-empire manager. Detected only to inform the player.
+    private bool EmpireIsActive => empireActive ??= ModsConfig.IsActive("Matathias.Empire");
 
     // Gives every ledger faction a behavior once, derived from its RimWorld faction: permanent
     // enemies (pirates) become irreconcilable warmongers, the player is passive, other humanlike
