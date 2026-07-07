@@ -80,6 +80,8 @@ var tests = new List<(string Name, Action Test)>
     ("keeps factions alive while prisoners or migrants exist", TestFactionLifecycleCountsNonResidentSurvivors),
     ("collapses each faction only once", TestFactionLifecycleIsIdempotent),
     ("serializes collapsed faction records", TestFactionLifecycleSerializationRoundTrip),
+    ("computes settlement combat power from living adults", TestSettlementPowerFromLivingAdults),
+    ("diminishes settlement combat power past the threshold", TestSettlementPowerDiminishesPastThreshold),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -1753,6 +1755,46 @@ static void TestFactionLifecycleIsIdempotent()
     AssertEqual(1, state.FactionRecords.Count);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.FactionCollapsed));
     AssertEqual(60_000, state.GetFactionRecord("Pirates")!.Tick);
+}
+
+static void TestSettlementPowerFromLivingAdults()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Pirates");
+
+    // Empty settlement has no combat power.
+    AssertEqual(0, SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower);
+
+    // Children are not combatants.
+    state.CreateCitizen("Kid", 10, Sex.Male, "child", settlement.Id);
+    AssertEqual(0, SettlementPowerService.GetSettlementPower(state, settlement.Id).Combatants);
+
+    // Living adult residents are combatants.
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Adult" + i, 30, Sex.Male, "settler", settlement.Id);
+    }
+
+    var power = SettlementPowerService.GetSettlementPower(state, settlement.Id);
+    AssertEqual(3, power.Combatants);
+    AssertEqual(300, power.CombatPower);
+}
+
+static void TestSettlementPowerDiminishesPastThreshold()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("city", "City", "Empire");
+
+    for (var i = 0; i < 60; i++)
+    {
+        state.CreateCitizen("Adult" + i, 30, Sex.Male, "settler", settlement.Id);
+    }
+
+    var power = SettlementPowerService.GetSettlementPower(state, settlement.Id);
+    AssertEqual(60, power.Combatants);
+    // 50 * 100 + 10 * 50 = 5500: diminishing returns past the 50-combatant threshold
+    // keep a huge settlement from producing unbounded, linear military power.
+    AssertEqual(5500, power.CombatPower);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()
