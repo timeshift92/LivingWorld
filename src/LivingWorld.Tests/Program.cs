@@ -82,6 +82,8 @@ var tests = new List<(string Name, Action Test)>
     ("serializes collapsed faction records", TestFactionLifecycleSerializationRoundTrip),
     ("computes settlement combat power from living adults", TestSettlementPowerFromLivingAdults),
     ("diminishes settlement combat power past the threshold", TestSettlementPowerDiminishesPastThreshold),
+    ("maps faction behavior archetypes to profiles", TestFactionBehaviorProfiles),
+    ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -1795,6 +1797,57 @@ static void TestSettlementPowerDiminishesPastThreshold()
     // 50 * 100 + 10 * 50 = 5500: diminishing returns past the 50-combatant threshold
     // keep a huge settlement from producing unbounded, linear military power.
     AssertEqual(5500, power.CombatPower);
+}
+
+static void TestFactionBehaviorProfiles()
+{
+    // Warmonger reaches furthest and hits hardest; Cautious/Merchant stay close.
+    var warmonger = FactionBehaviorService.GetProfile(FactionBehavior.Warmonger);
+    AssertEqual(4, warmonger.EngagementRange);
+    AssertEqual(1.2f, warmonger.CombatMultiplier);
+    AssertEqual(true, warmonger.ParticipatesInWorldWar);
+
+    AssertEqual(3, FactionBehaviorService.GetProfile(FactionBehavior.Aggressive).EngagementRange);
+    AssertEqual(2, FactionBehaviorService.GetProfile(FactionBehavior.Expansionist).EngagementRange);
+    AssertEqual(1, FactionBehaviorService.GetProfile(FactionBehavior.Cautious).EngagementRange);
+    AssertEqual(1, FactionBehaviorService.GetProfile(FactionBehavior.Merchant).EngagementRange);
+
+    // Merchant grows fastest but fights weakest among the active archetypes.
+    AssertEqual(1.05f, FactionBehaviorService.GetProfile(FactionBehavior.Merchant).GrowthMultiplier);
+    AssertEqual(0.85f, FactionBehaviorService.GetProfile(FactionBehavior.Merchant).CombatMultiplier);
+}
+
+static void TestFactionBehaviorNonParticipants()
+{
+    // Player-controlled, vassal, excluded and unassigned factions never drive world war,
+    // and have a neutral (range 0, all-1.0) profile so nothing is fabricated for them.
+    foreach (var behavior in new[]
+    {
+        FactionBehavior.Player,
+        FactionBehavior.Vassal,
+        FactionBehavior.Excluded,
+        FactionBehavior.Undefined,
+    })
+    {
+        var profile = FactionBehaviorService.GetProfile(behavior);
+        AssertEqual(false, profile.ParticipatesInWorldWar);
+        AssertEqual(0, profile.EngagementRange);
+        AssertEqual(1f, profile.CombatMultiplier);
+    }
+
+    // Every one of the six active archetypes participates.
+    foreach (var behavior in new[]
+    {
+        FactionBehavior.Expansionist,
+        FactionBehavior.Cautious,
+        FactionBehavior.Merchant,
+        FactionBehavior.Aggressive,
+        FactionBehavior.Warmonger,
+        FactionBehavior.Random,
+    })
+    {
+        AssertEqual(true, FactionBehaviorService.GetProfile(behavior).ParticipatesInWorldWar);
+    }
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()
