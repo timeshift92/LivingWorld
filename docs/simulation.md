@@ -53,6 +53,51 @@ Living World обязан поддерживать несколько уровн
 7. Run integrity checks
 ```
 
+### Deterministic seed
+
+Living World uses the RimWorld world seed (`World.info.seedString`) as the
+source for deterministic simulation. The seed is converted with a stable hash
+and stored in `WorldState`.
+
+Reason: two different RimWorld worlds must not share the same deterministic
+birth/production/migration pattern merely because the mod used a constant seed.
+
+### Daily catch-up
+
+The RimWorld world component runs daily services by advancing
+`lastSimulatedDay` one day at a time:
+
+```text
+while lastSimulatedDay < currentDay and catch-up cap not reached
+  lastSimulatedDay++
+  run production
+  run food/birth simulation
+  run demography
+  run migration pressure
+  run faction lifecycle collapse checks
+```
+
+The cap protects the game from a large load-time catch-up spike. Remaining days
+continue on later ticks instead of being silently skipped.
+
+### Initial seeding vs runtime generation
+
+Initial bootstrap is explicitly marked as `RunInitialWorldSeeding(...)`.
+During that phase Living World may create baseline citizens/resources from
+RimWorld world objects to seed an existing save/world.
+
+After bootstrap, runtime systems should transform existing ledger entities:
+
+- births create citizens through demographic rules;
+- ageing and natural mortality are handled by `DemographyService`, so population can shrink without combat;
+- raids move citizens settlement -> army -> returned/dead/prisoner/missing;
+- trade moves resources into/out of settlement ledgers;
+- migration creates `WorldMigrationGroup` records rather than instant fake population.
+- faction collapse is recorded by `FactionLifecycleService` when a tracked faction has no living citizens left.
+
+This distinction preserves the "nothing appears from nowhere" design rule while
+still allowing first-run world seeding.
+
 ## Pawn lifecycle
 
 ### Birth
@@ -268,7 +313,7 @@ Wildlife spawn на карте должен выбирать существую�
 Daily settlement update:
 
 ```text
-1. Produce food and goods
+1. Produce food and goods from settlement production profile
 2. Consume food and medicine
 3. Update health and diseases
 4. Run births/deaths/aging
@@ -278,7 +323,121 @@ Daily settlement update:
 8. Emit crisis or recovery events
 ```
 
+### Settlement production profile (current implementation)
+
+Каждое импортированное RimWorld-поселение получает `SettlementProductionProfile`.
+Профиль строится из:
+
+- biome / tile plant density;
+- hilliness;
+- average temperature;
+- estimated growing days;
+- faction technology estimate.
+
+Daily tick запускает `SettlementProductionService` до потребления еды. Сервис
+добавляет реальные owned resources в ledger поселения:
+
+- `PackagedSurvivalMeal`;
+- `Steel`;
+- `MedicineIndustrial`;
+- `ComponentIndustrial`.
+
+Это не просто UI-цифры: произведенные ресурсы становятся частью `WorldState`,
+сохраняются в сейв и могут быть потрачены на питание, рейды, миграцию и будущие
+караваны. Производство намеренно зависит от местности и технологии, а не только
+от числа жителей.
+
+### Settlement knowledge visibility (current implementation)
+
+Player-facing settlement UI не должен показывать глобальный ledger напрямую.
+Сведения проходят через `KnownSettlementInfo`:
+
+- `Public` и `Trade` дают оценки, но не точные значения;
+- `DirectVisit` дает `Confirmed` и разрешает точные значения;
+- у записи есть `Tick`, поэтому UI показывает давность и признак устаревания;
+- более слабый источник не затирает уже подтвержденное прямым посещением знание.
+
+Сейчас в знание входят:
+
+- population band;
+- food status;
+- migration status;
+- production band.
+
+Точное производство (`workers`, `food/day`, `steel/day`, `medicine/day`,
+`components/day`, biome, hilliness, tech) показывается только если
+`ExactValuesVisible = true`. Иначе UI показывает, что точные сведения неизвестны
+и нужны свежие разведданные или посещение карты поселения.
+
+### Trade ledger (current implementation)
+
+Торговля больше не является только источником `IntelReport`. Закрытие RimWorld
+trade dialog теперь проходит через `SettlementTradeLedgerService`:
+
+- выбирается первое известное Living World поселение той же фракции;
+- товары, проданные игроком торговцу, добавляются в owned resources поселения;
+- товары, купленные игроком у торговца, списываются из owned resources поселения;
+- если у поселения недостаточно товара, списывается только доступное количество;
+- если фракция есть в игре, но ее поселения нет в ledger, ресурсы не создаются
+  из воздуха, но trade intel всё равно записывается.
+
+Trade intel остается отдельным следом: дорогие или чувствительные товары
+(`Gold`, psychoid/psychite drugs, luciferium и т.п.) по-прежнему могут создать
+`RaidOpportunity`. Отличие в том, что теперь торговый след одновременно меняет
+экономику поселения и объясняет будущий интерес фракции к игроку.
+
+### Demography lifecycle (current implementation)
+
+Daily simulation now has an explicit demographic lifecycle:
+
+- `DemographyService` ages `Alive` citizens on a configured age interval
+  (`AgeIntervalDays`, currently one RimWorld year);
+- citizens crossing the natural death age can die from old age;
+- deaths write `CitizenDied` and remove that citizen from settlement population
+  through status filtering;
+- ageing writes `CitizenAged` for surviving citizens.
+
+This is deterministic and capped per day. The goal is to prevent population from
+only growing through births while avoiding a large one-tick death spike in old
+saves.
+
+### Migration groups (current implementation)
+
+Migration is no longer a direct settlement-to-settlement teleport when a safe
+target exists:
+
+```text
+starving settlement
+  -> citizen becomes Refugee
+  -> WorldMigrationGroup is created if a stable target exists
+  -> citizen becomes Migrating and is owned by the group
+  -> on/after ArrivalTick, citizen joins target settlement
+```
+
+If no target exists, the citizen stays a self-owned `Refugee` and remains visible
+to migration pressure queries. This keeps the "nothing from nowhere" rule:
+people move through ledger ownership instead of being silently copied into
+another settlement.
+
 Destroyed settlements remain destroyed unless rebuilt, occupied or resettled.
+
+### Faction lifecycle (current implementation)
+
+`FactionLifecycleService` is the ledger-level answer to population collapse.
+It does not destroy or create RimWorld `Faction` objects. It records that, from
+Living World's point of view, a tracked faction has collapsed because no living
+citizens remain.
+
+Counting is deliberately broader than settlement population:
+
+- `Alive`, `Prisoner`, `Refugee` and `Migrating` citizens still keep their
+  original faction alive;
+- `Dead` and `Missing` citizens do not;
+- empty settlements alone are not enough to preserve a faction.
+
+The service is idempotent. Once `WorldFactionRecord.Status == Collapsed`, later
+daily passes do not emit duplicate collapse events. This keeps history readable
+and prevents repeated effects.
 
 ## Real consequence chain
 

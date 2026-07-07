@@ -2,7 +2,7 @@
 <LanguageData>
   <LW_MainTitle>Живой мир</LW_MainTitle>
   <LW_WaitingForWorld>Живой мир ждёт загрузки мира RimWorld.</LW_WaitingForWorld>
-  <LW_SummaryLine>Поселения: {settlements}, Жители: {citizens}, Армии: {armies}, Разведданные: {intelReports}, Поводы для рейда: {activeRaidOpportunities}, События: {events}</LW_SummaryLine>
+  <LW_SummaryLine>Поселения: {settlements}, Жители: {citizens}, Армии: {armies}, Профили производства: {productionProfiles}, Разведданные: {intelReports}, Поводы для рейда: {activeRaidOpportunities}, События: {events}</LW_SummaryLine>
   <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Источник: {source} | Статус: {status} | Объектов мира: {totalWorldObjects} | Vanilla-поселений: {vanillaSettlements} | Объектов с фракцией: {factionWorldObjects} | Импортируемых: {importableWorldObjects} | Ошибок сканирования: {scanErrors} | Отброшено: {rejectedTypes}</LW_DiagnosticLine>
   <LW_EmptyLedgerHint>Ledger Living World пуст. Повтори bootstrap, если в мире есть поселения, или создай видимый тестовый ledger для проверки цепочки мода.</LW_EmptyLedgerHint>
   <LW_BootstrapErrorHint>Living World поймал ошибку bootstrap и не дал окну упасть: {error}</LW_BootstrapErrorHint>
@@ -23,12 +23,15 @@
   <LW_MigrationReasonNone>нет</LW_MigrationReasonNone>
   <LW_MigrationReasonStarvation>голод</LW_MigrationReasonStarvation>
   <LW_KnowledgeUnknown>Известные сведения: неизвестно</LW_KnowledgeUnknown>
-  <LW_KnowledgeLine>Известные сведения: источник {source} | уверенность {confidence} | тик {tick} | население {populationBand} | еда {food} | миграция {migration}</LW_KnowledgeLine>
-  <LW_SettlementLine>{name} [{faction}]\n{knowledge}</LW_SettlementLine>
+  <LW_KnowledgeLine>Известные сведения: источник {source} | уверенность {confidence} | давность {ageDays} дн. | устарело {stale} | население {populationBand} | еда {food} | миграция {migration} | производство {production}</LW_KnowledgeLine>
+  <LW_ProductionLine>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_ProductionLine>
+  <LW_ProductionHiddenLine>Точное производство неизвестно. Нужны свежие сведения или посещение карты поселения.</LW_ProductionHiddenLine>
+  <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner} | Пропало {missing}</LW_RaidOutcomeLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
+  <LW_MapVisiblePawnsLine>На загруженной карте видно пешек: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Население Living World: нет данных для этого поселения (в ledger-е поселений: {settlements})</LW_InspectPopulationMissingLine>
   <LW_Settings_BootstrapLedger>Создавать ledger при генерации мира</LW_Settings_BootstrapLedger>
   <LW_Settings_BootstrapLedgerTip>Если включено, Living World создаёт стартовое население поселений и ресурсный ledger при создании мира RimWorld.</LW_Settings_BootstrapLedgerTip>

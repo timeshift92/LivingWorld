@@ -26,8 +26,29 @@ public sealed record WorldObjectScanResult(
     WorldObjectScanSummary Summary,
     IReadOnlyList<WorldObjectSettlementCandidate> Candidates);
 
+public interface IWorldObjectImporter
+{
+    bool CanImport(WorldObject obj);
+
+    WorldObjectSettlementCandidate? ImportCandidate(WorldObject obj, ref int scanErrorCount);
+}
+
 public sealed class WorldObjectScanner
 {
+    private readonly IReadOnlyList<IWorldObjectImporter> importers;
+
+    public WorldObjectScanner()
+        : this(new IWorldObjectImporter[] { new VanillaSettlementImporter() })
+    {
+    }
+
+    internal WorldObjectScanner(IReadOnlyList<IWorldObjectImporter> importers)
+    {
+        this.importers = importers.Count > 0
+            ? importers
+            : throw new ArgumentException("At least one world object importer is required.", nameof(importers));
+    }
+
     public WorldObjectScanResult Scan()
     {
         var worldObjects = Find.WorldObjects.AllWorldObjects
@@ -57,28 +78,19 @@ public sealed class WorldObjectScanner
             candidates);
     }
 
-    private static WorldObjectSettlementCandidate? ToCandidateOrNull(WorldObject obj, ref int scanErrorCount)
+    private WorldObjectSettlementCandidate? ToCandidateOrNull(WorldObject obj, ref int scanErrorCount)
     {
-        var faction = SafeRead(() => obj.Faction, ref scanErrorCount);
-        var tile = SafeRead(() => obj.Tile, ref scanErrorCount, -1);
-        if (faction == null || tile < 0)
+        foreach (var importer in importers)
         {
-            return null;
+            if (!importer.CanImport(obj))
+            {
+                continue;
+            }
+
+            return importer.ImportCandidate(obj, ref scanErrorCount);
         }
 
-        var defName = SafeRead(() => obj.def?.defName, ref scanErrorCount) ?? obj.GetType().Name;
-        var factionId = SafeRead(() => faction.def?.defName, ref scanErrorCount) ?? "UnknownFaction";
-        var label = SafeRead(() => obj.LabelCap, ref scanErrorCount);
-        var name = string.IsNullOrWhiteSpace(label) ? defName : label!;
-        var stableKey = $"worldobject:{defName}:{tile}:{factionId}";
-
-        return new WorldObjectSettlementCandidate(
-            stableKey,
-            name,
-            factionId,
-            tile,
-            defName,
-            obj is Settlement);
+        return null;
     }
 
     private static T? SafeRead<T>(Func<T?> read, ref int scanErrorCount)
@@ -170,5 +182,71 @@ public sealed class WorldObjectScanner
         return countComparison != 0
             ? countComparison
             : string.CompareOrdinal(left.Key, right.Key);
+    }
+}
+
+public sealed class VanillaSettlementImporter : IWorldObjectImporter
+{
+    public bool CanImport(WorldObject obj)
+    {
+        return obj is Settlement;
+    }
+
+    public WorldObjectSettlementCandidate? ImportCandidate(WorldObject obj, ref int scanErrorCount)
+    {
+        if (obj is not Settlement)
+        {
+            return null;
+        }
+
+        var faction = SafeRead(() => obj.Faction, ref scanErrorCount);
+        var tile = SafeRead(() => obj.Tile, ref scanErrorCount, -1);
+        if (faction == null || tile < 0)
+        {
+            return null;
+        }
+
+        var defName = SafeRead(() => obj.def?.defName, ref scanErrorCount) ?? obj.GetType().Name;
+        var factionId = SafeRead(() => faction.def?.defName, ref scanErrorCount) ?? "UnknownFaction";
+        var label = SafeRead(() => obj.LabelCap, ref scanErrorCount);
+        var name = string.IsNullOrWhiteSpace(label) ? defName : label!;
+        var stableKey = $"worldobject:{defName}:{tile}:{factionId}";
+
+        return new(
+            stableKey,
+            name,
+            factionId,
+            tile,
+            defName,
+            true);
+    }
+
+    private static T? SafeRead<T>(Func<T?> read, ref int scanErrorCount)
+        where T : class
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex)
+        {
+            scanErrorCount++;
+            Log.Warning($"[LivingWorld] Failed to read world object data: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static int SafeRead(Func<int> read, ref int scanErrorCount, int fallback)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex)
+        {
+            scanErrorCount++;
+            Log.Warning($"[LivingWorld] Failed to read world object integer data: {ex.GetType().Name}: {ex.Message}");
+            return fallback;
+        }
     }
 }

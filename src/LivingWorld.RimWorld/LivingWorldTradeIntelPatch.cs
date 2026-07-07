@@ -38,8 +38,7 @@ public static class LivingWorldTradeIntelPatch
             return;
         }
 
-        var observedMarketValue = 0;
-        var sensitiveGoodsCount = 0;
+        var transfers = new Dictionary<(string ResourceKey, SettlementTradeDirection Direction), TradeTransferAccumulator>();
         foreach (var tradeable in tradeables.Where(item => item != null && item.HasAnyThing))
         {
             var thingDef = tradeable.ThingDef;
@@ -54,25 +53,44 @@ public static class LivingWorldTradeIntelPatch
                 continue;
             }
 
-            observedMarketValue += Math.Max(1, (int)Math.Round(tradeable.BaseMarketValue * count));
+            var direction = ToTradeDirection(tradeable.CountToTransfer);
+            var key = (thingDef.defName ?? thingDef.label ?? "UnknownThing", direction);
+            transfers.TryGetValue(key, out var current);
+            current.Quantity += count;
+            current.ObservedMarketValue += Math.Max(1, (int)Math.Round(tradeable.BaseMarketValue * count));
             if (IsSensitiveGood(thingDef))
             {
-                sensitiveGoodsCount += count;
+                current.SensitiveGoodsCount += count;
             }
+
+            transfers[key] = current;
         }
 
-        if (observedMarketValue <= 0 && sensitiveGoodsCount <= 0)
+        if (transfers.Count == 0)
         {
             return;
         }
 
-        RaidIntelService.RecordTradeIntel(
-            component.State,
-            new TradeIntelRequest(
-                factionId!,
-                observedMarketValue + sensitiveGoodsCount * SensitiveGoodsIntelValue,
-                sensitiveGoodsCount,
-                $"Trade with {factionId} revealed colony valuables."));
+        foreach (var transfer in transfers)
+        {
+            SettlementTradeLedgerService.RecordTrade(
+                component.State,
+                new SettlementTradeLedgerRequest(
+                    factionId!,
+                    transfer.Key.ResourceKey,
+                    transfer.Value.Quantity,
+                    transfer.Key.Direction,
+                    transfer.Value.ObservedMarketValue + transfer.Value.SensitiveGoodsCount * SensitiveGoodsIntelValue,
+                    transfer.Value.SensitiveGoodsCount,
+                    $"Trade with {factionId} moved {transfer.Value.Quantity} {transfer.Key.ResourceKey}."));
+        }
+    }
+
+    private static SettlementTradeDirection ToTradeDirection(int countToTransfer)
+    {
+        return countToTransfer < 0
+            ? SettlementTradeDirection.SettlementReceives
+            : SettlementTradeDirection.SettlementProvides;
     }
 
     private static bool IsSensitiveGood(ThingDef thingDef)
@@ -85,5 +103,12 @@ public static class LivingWorldTradeIntelPatch
             || defName.IndexOf("Flake", StringComparison.OrdinalIgnoreCase) >= 0
             || defName.IndexOf("GoJuice", StringComparison.OrdinalIgnoreCase) >= 0
             || defName.IndexOf("Luciferium", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private struct TradeTransferAccumulator
+    {
+        public int Quantity;
+        public int ObservedMarketValue;
+        public int SensitiveGoodsCount;
     }
 }

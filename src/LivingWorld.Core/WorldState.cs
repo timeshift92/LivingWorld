@@ -5,17 +5,21 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldCitizen> _citizens = new();
     private readonly Dictionary<EntityId, WorldSettlement> _settlements = new();
     private readonly Dictionary<EntityId, WorldArmy> _armies = new();
+    private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
     private readonly Dictionary<EntityId, RaidOpportunity> _raidOpportunities = new();
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
+    private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
+    private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
     private readonly List<WorldEvent> _events = new();
     private readonly Dictionary<EntityKind, long> _nextIds = new();
     private int eventSuppressionDepth;
+    private int initialWorldSeedingDepth;
 
     public WorldState(int worldSeed)
     {
@@ -32,6 +36,8 @@ public sealed class WorldState
 
     public IReadOnlyCollection<WorldArmy> Armies => _armies.Values;
 
+    public IReadOnlyCollection<WorldMigrationGroup> MigrationGroups => _migrationGroups.Values;
+
     public IReadOnlyCollection<WorldIntelReport> IntelReports => _intelReports.Values;
 
     public IReadOnlyCollection<KnownSettlementInfo> KnownSettlementInfos => _knownSettlementInfos.Values;
@@ -44,7 +50,13 @@ public sealed class WorldState
 
     public IReadOnlyCollection<Drifter> Drifters => _drifters.Values;
 
+    public IReadOnlyCollection<SettlementProductionProfile> ProductionProfiles => _productionProfiles.Values;
+
+    public IReadOnlyCollection<WorldFactionRecord> FactionRecords => _factionRecords.Values;
+
     public IReadOnlyList<WorldEvent> Events => _events;
+
+    public bool IsInitialWorldSeedingActive => initialWorldSeedingDepth > 0;
 
     public void AdvanceToTick(int tick)
     {
@@ -74,6 +86,24 @@ public sealed class WorldState
         }
     }
 
+    public void RunInitialWorldSeeding(Action action)
+    {
+        if (action == null)
+        {
+            throw new ArgumentNullException(nameof(action));
+        }
+
+        initialWorldSeedingDepth++;
+        try
+        {
+            RunWithoutEvents(action);
+        }
+        finally
+        {
+            initialWorldSeedingDepth--;
+        }
+    }
+
     public WorldStateSnapshot CreateSnapshot()
     {
         return new WorldStateSnapshot(
@@ -82,11 +112,14 @@ public sealed class WorldState
             _settlements.Values.OrderBy(settlement => settlement.Id.Value).ToList(),
             _citizens.Values.OrderBy(citizen => citizen.Id.Value).ToList(),
             _armies.Values.OrderBy(army => army.Id.Value).ToList(),
+            _migrationGroups.Values.OrderBy(group => group.Id.Value).ToList(),
             _intelReports.Values.OrderBy(report => report.Id.Value).ToList(),
             _knownSettlementInfos.Values.OrderBy(info => info.SettlementId.Value).ToList(),
             _raidOpportunities.Values.OrderBy(opportunity => opportunity.Id.Value).ToList(),
             _raidPawnLinks.Values.OrderBy(link => link.PawnThingId).ToList(),
             _raidOutcomes.Values.OrderBy(outcome => outcome.ArmyId.Value).ToList(),
+            _productionProfiles.Values.OrderBy(profile => profile.SettlementId.Value).ToList(),
+            _factionRecords.Values.OrderBy(record => record.FactionId, StringComparer.Ordinal).ToList(),
             _owners
                 .OrderBy(pair => pair.Key.Kind)
                 .ThenBy(pair => pair.Key.Value)
@@ -132,6 +165,12 @@ public sealed class WorldState
             state.ReserveExistingId(army.Id);
         }
 
+        foreach (var group in snapshot.MigrationGroups)
+        {
+            state._migrationGroups.Add(group.Id, group);
+            state.ReserveExistingId(group.Id);
+        }
+
         foreach (var report in snapshot.IntelReports)
         {
             state._intelReports.Add(report.Id, report);
@@ -157,6 +196,16 @@ public sealed class WorldState
         foreach (var outcome in snapshot.RaidOutcomes)
         {
             state._raidOutcomes.Add(outcome.ArmyId, outcome);
+        }
+
+        foreach (var profile in snapshot.ProductionProfiles)
+        {
+            state._productionProfiles.Add(profile.SettlementId, profile);
+        }
+
+        foreach (var factionRecord in snapshot.FactionRecords)
+        {
+            state._factionRecords[factionRecord.FactionId] = factionRecord;
         }
 
         foreach (var ownership in snapshot.Ownership)
@@ -368,6 +417,60 @@ public sealed class WorldState
         return CreateCitizen(drifter.Name, drifter.Age, drifter.Sex, profession, settlementId);
     }
 
+    public WorldMigrationGroup CreateMigrationGroup(
+        EntityId sourceSettlementId,
+        EntityId? targetSettlementId,
+        string factionId,
+        int createdTick,
+        int arrivalTick,
+        string reason)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (!_settlements.ContainsKey(sourceSettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
+        }
+
+        if (targetSettlementId.HasValue && !_settlements.ContainsKey(targetSettlementId.Value))
+        {
+            throw new InvalidOperationException($"Settlement {targetSettlementId.Value} does not exist.");
+        }
+
+        var group = new WorldMigrationGroup(
+            NextId(EntityKind.MigrationGroup),
+            sourceSettlementId,
+            targetSettlementId,
+            factionId,
+            createdTick,
+            Math.Max(createdTick, arrivalTick),
+            MigrationGroupStatus.Traveling,
+            reason);
+
+        _migrationGroups.Add(group.Id, group);
+        AppendEvent(WorldEventKind.MigrationStarted, group.Id, $"Migration group {group.Id} started from {sourceSettlementId}: {reason}.");
+
+        return group;
+    }
+
+    public WorldMigrationGroup MarkMigrationGroupArrived(EntityId groupId)
+    {
+        if (!_migrationGroups.TryGetValue(groupId, out var group))
+        {
+            throw new InvalidOperationException($"Migration group {groupId} does not exist.");
+        }
+
+        if (group.Status == MigrationGroupStatus.Arrived)
+        {
+            return group;
+        }
+
+        var arrived = group with { Status = MigrationGroupStatus.Arrived };
+        _migrationGroups[groupId] = arrived;
+        return arrived;
+    }
+
     public WorldCitizen? GetCitizen(EntityId id)
     {
         return _citizens.TryGetValue(id, out var citizen)
@@ -386,6 +489,13 @@ public sealed class WorldState
     {
         return _armies.TryGetValue(id, out var army)
             ? army
+            : null;
+    }
+
+    public WorldMigrationGroup? GetMigrationGroup(EntityId id)
+    {
+        return _migrationGroups.TryGetValue(id, out var group)
+            ? group
             : null;
     }
 
@@ -424,6 +534,27 @@ public sealed class WorldState
             : null;
     }
 
+    public SettlementProductionProfile? GetSettlementProductionProfile(EntityId settlementId)
+    {
+        return _productionProfiles.TryGetValue(settlementId, out var profile)
+            ? profile
+            : null;
+    }
+
+    public WorldFactionRecord? GetFactionRecord(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+
+        return _factionRecords.TryGetValue(factionId, out var record)
+            ? record
+            : null;
+    }
+
+    public bool IsFactionCollapsed(string factionId)
+    {
+        return GetFactionRecord(factionId)?.Status == WorldFactionStatus.Collapsed;
+    }
+
     public EntityId? GetOwner(EntityId assetId)
     {
         return _owners.TryGetValue(assetId, out var ownerId)
@@ -433,67 +564,17 @@ public sealed class WorldState
 
     public void AddResource(EntityId ownerId, string resourceKey, int quantity)
     {
-        ThrowIfNullOrWhiteSpace(resourceKey, nameof(resourceKey));
-
-        if (quantity <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(quantity), "Resource quantity must be positive.");
-        }
-
-        EnsureOwnerExists(ownerId);
-
-        var key = (ownerId, resourceKey);
-        _resources.TryGetValue(key, out var current);
-        _resources[key] = current + quantity;
-
-        AppendEvent(WorldEventKind.ResourceAdded, ownerId, $"{quantity} {resourceKey} added to {ownerId}.");
+        ResourceLedgerService.AddResource(this, ownerId, resourceKey, quantity);
     }
 
     public int GetOwnedResourceQuantity(EntityId ownerId, string resourceKey)
     {
-        ThrowIfNullOrWhiteSpace(resourceKey, nameof(resourceKey));
-
-        return _resources.TryGetValue((ownerId, resourceKey), out var quantity)
-            ? quantity
-            : 0;
+        return ResourceLedgerService.GetQuantity(this, ownerId, resourceKey);
     }
 
     public int ConsumeResource(EntityId ownerId, string resourceKey, int requestedQuantity, string reason)
     {
-        ThrowIfNullOrWhiteSpace(resourceKey, nameof(resourceKey));
-        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
-
-        if (requestedQuantity <= 0)
-        {
-            return 0;
-        }
-
-        EnsureOwnerExists(ownerId);
-
-        var key = (ownerId, resourceKey);
-        var available = GetOwnedResourceQuantity(ownerId, resourceKey);
-        var consumed = Math.Min(available, requestedQuantity);
-        if (consumed == 0)
-        {
-            return 0;
-        }
-
-        var remaining = available - consumed;
-        if (remaining == 0)
-        {
-            _resources.Remove(key);
-        }
-        else
-        {
-            _resources[key] = remaining;
-        }
-
-        AppendEvent(
-            WorldEventKind.ResourceConsumed,
-            ownerId,
-            $"{consumed} {resourceKey} consumed by {ownerId}: {reason}.");
-
-        return consumed;
+        return ResourceLedgerService.ConsumeResource(this, ownerId, resourceKey, requestedQuantity, reason);
     }
 
     public OwnershipTransferResult TransferResource(
@@ -503,61 +584,7 @@ public sealed class WorldState
         int quantity,
         string reason)
     {
-        ThrowIfNullOrWhiteSpace(resourceKey, nameof(resourceKey));
-        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
-
-        if (quantity <= 0)
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.InvalidQuantity,
-                "Resource transfer quantity must be positive.");
-        }
-
-        if (!OwnerExists(fromOwnerId))
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.UnknownOwner,
-                $"Source owner {fromOwnerId} does not exist.");
-        }
-
-        if (!OwnerExists(toOwnerId))
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.UnknownOwner,
-                $"Target owner {toOwnerId} does not exist.");
-        }
-
-        var fromKey = (fromOwnerId, resourceKey);
-        var toKey = (toOwnerId, resourceKey);
-        var available = GetOwnedResourceQuantity(fromOwnerId, resourceKey);
-
-        if (available < quantity)
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.InsufficientOwnedAssets,
-                $"Owner {fromOwnerId} has {available} {resourceKey} but transfer requested {quantity}.");
-        }
-
-        var remaining = available - quantity;
-        if (remaining == 0)
-        {
-            _resources.Remove(fromKey);
-        }
-        else
-        {
-            _resources[fromKey] = remaining;
-        }
-
-        _resources.TryGetValue(toKey, out var targetCurrent);
-        _resources[toKey] = targetCurrent + quantity;
-
-        AppendEvent(
-            WorldEventKind.OwnershipTransferred,
-            fromOwnerId,
-            $"{quantity} {resourceKey} transferred from {fromOwnerId} to {toOwnerId}: {reason}.");
-
-        return OwnershipTransferResult.Completed(
-            $"Transferred {quantity} {resourceKey} from {fromOwnerId} to {toOwnerId}.");
+        return OwnershipService.TransferResource(this, fromOwnerId, toOwnerId, resourceKey, quantity, reason);
     }
 
     public OwnershipTransferResult TransferAsset(
@@ -566,37 +593,7 @@ public sealed class WorldState
         EntityId toOwnerId,
         string reason)
     {
-        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
-
-        if (!_owners.TryGetValue(assetId, out var currentOwnerId))
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.OwnerMismatch,
-                $"Asset {assetId} does not have an owner.");
-        }
-
-        if (currentOwnerId != fromOwnerId)
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.OwnerMismatch,
-                $"Asset {assetId} is owned by {currentOwnerId}, not {fromOwnerId}.");
-        }
-
-        if (!OwnerExists(toOwnerId))
-        {
-            return new OwnershipTransferResult(
-                OwnershipTransferStatus.UnknownOwner,
-                $"Target owner {toOwnerId} does not exist.");
-        }
-
-        _owners[assetId] = toOwnerId;
-        AppendEvent(
-            WorldEventKind.OwnershipTransferred,
-            assetId,
-            $"Asset {assetId} transferred from {fromOwnerId} to {toOwnerId}: {reason}.");
-
-        return OwnershipTransferResult.Completed(
-            $"Transferred {assetId} from {fromOwnerId} to {toOwnerId}.");
+        return OwnershipService.TransferAsset(this, assetId, fromOwnerId, toOwnerId, reason);
     }
 
     public void RecordEvent(WorldEventKind kind, EntityId? subjectId, string summary)
@@ -613,11 +610,54 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {info.SettlementId} does not exist.");
         }
 
+        if (_knownSettlementInfos.TryGetValue(info.SettlementId, out var existing)
+            && ShouldKeepExistingKnowledge(existing, info))
+        {
+            return;
+        }
+
         _knownSettlementInfos[info.SettlementId] = info;
         AppendEvent(
             WorldEventKind.SettlementIntelUpdated,
             info.SettlementId,
             $"Known settlement info updated from {info.SourceKind}: {info.Summary}.");
+    }
+
+    public void RecordSettlementProductionProfile(SettlementProductionProfile profile)
+    {
+        if (profile == null)
+        {
+            throw new ArgumentNullException(nameof(profile));
+        }
+
+        if (!_settlements.ContainsKey(profile.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {profile.SettlementId} does not exist.");
+        }
+
+        _productionProfiles[profile.SettlementId] = profile;
+    }
+
+    internal WorldFactionRecord MarkFactionCollapsedForLifecycle(string factionId, int tick, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (_factionRecords.TryGetValue(factionId, out var existing)
+            && existing.Status == WorldFactionStatus.Collapsed)
+        {
+            return existing;
+        }
+
+        var record = new WorldFactionRecord(
+            factionId,
+            WorldFactionStatus.Collapsed,
+            tick,
+            reason);
+        _factionRecords[factionId] = record;
+        AppendEvent(WorldEventKind.FactionCollapsed, null, $"Faction {factionId} collapsed: {reason}.");
+
+        return record;
     }
 
     public WorldCitizen MarkCitizenRefugee(EntityId citizenId, string reason)
@@ -944,18 +984,7 @@ public sealed class WorldState
 
     public SettlementPopulation GetSettlementPopulation(EntityId settlementId)
     {
-        var citizens = _citizens.Values
-            .Where(citizen =>
-                citizen.SettlementId == settlementId
-                && citizen.Status != CitizenStatus.Dead
-                && GetOwner(citizen.Id) == settlementId)
-            .ToList();
-
-        return new SettlementPopulation(
-            citizens.Count,
-            citizens.Count(citizen => citizen.IsChild),
-            citizens.Count(citizen => citizen.IsAdult),
-            citizens.Count(citizen => citizen.IsElderly));
+        return SettlementQueryService.GetPopulation(this, settlementId);
     }
 
     public SettlementFoodStatus GetSettlementFoodStatus(
@@ -963,21 +992,7 @@ public sealed class WorldState
         string foodResourceKey,
         int foodPerCitizen)
     {
-        ThrowIfNullOrWhiteSpace(foodResourceKey, nameof(foodResourceKey));
-
-        var population = GetSettlementPopulation(settlementId);
-        var food = GetOwnedResourceQuantity(settlementId, foodResourceKey);
-        var dailyNeed = population.Total * Math.Max(0, foodPerCitizen);
-        var foodDays = dailyNeed > 0
-            ? food / dailyNeed
-            : 0;
-
-        return new SettlementFoodStatus(
-            population.Total,
-            dailyNeed,
-            food,
-            foodDays,
-            dailyNeed > 0 && food < dailyNeed);
+        return SettlementQueryService.GetFoodStatus(this, settlementId, foodResourceKey, foodPerCitizen);
     }
 
     public SettlementMigrationStatus GetSettlementMigrationStatus(
@@ -985,46 +1000,34 @@ public sealed class WorldState
         string foodResourceKey,
         int foodPerCitizen)
     {
-        ThrowIfNullOrWhiteSpace(foodResourceKey, nameof(foodResourceKey));
+        return SettlementQueryService.GetMigrationStatus(this, settlementId, foodResourceKey, foodPerCitizen);
+    }
 
-        var food = GetSettlementFoodStatus(settlementId, foodResourceKey, foodPerCitizen);
-        var refugees = _citizens.Values.Count(citizen =>
-            citizen.SettlementId == settlementId
-            && citizen.Status == CitizenStatus.Refugee);
-        var pressure = 0;
-        var reason = MigrationService.ReasonNone;
-
-        if (food.DailyNeed > 0 && food.FoodDays <= 0)
-        {
-            pressure += 70;
-            reason = MigrationService.ReasonStarvation;
-        }
-        else if (food.IsShortage)
-        {
-            pressure += 45;
-            reason = MigrationService.ReasonStarvation;
-        }
-
-        var population = GetSettlementPopulation(settlementId);
-        if (population.Adults <= 1 && population.Total > 0)
-        {
-            pressure += 15;
-        }
-
-        return new SettlementMigrationStatus(
-            Math.Min(100, pressure),
-            refugees,
-            reason,
-            pressure >= 50);
+    public SettlementProductionStatus GetSettlementProductionStatus(EntityId settlementId)
+    {
+        return SettlementQueryService.GetProductionStatus(this, settlementId);
     }
 
     public IEnumerable<string> Validate()
     {
+        foreach (var slugGroup in _settlements.Values
+            .GroupBy(settlement => settlement.Slug, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            yield return $"Duplicate settlement slug {slugGroup.Key}.";
+        }
+
         foreach (var citizen in _citizens.Values.OrderBy(citizen => citizen.Id.Value))
         {
             if (!_settlements.ContainsKey(citizen.SettlementId))
             {
                 yield return $"Citizen {citizen.Id} references missing settlement {citizen.SettlementId}.";
+            }
+
+            if (citizen.Status == CitizenStatus.Alive && !_owners.ContainsKey(citizen.Id))
+            {
+                yield return $"Alive citizen {citizen.Id} does not have an owner.";
             }
         }
 
@@ -1033,6 +1036,19 @@ public sealed class WorldState
             if (!_settlements.ContainsKey(army.SourceSettlementId))
             {
                 yield return $"Army {army.Id} references missing source settlement {army.SourceSettlementId}.";
+            }
+        }
+
+        foreach (var group in _migrationGroups.Values.OrderBy(group => group.Id.Value))
+        {
+            if (!_settlements.ContainsKey(group.SourceSettlementId))
+            {
+                yield return $"Migration group {group.Id} references missing source settlement {group.SourceSettlementId}.";
+            }
+
+            if (group.TargetSettlementId.HasValue && !_settlements.ContainsKey(group.TargetSettlementId.Value))
+            {
+                yield return $"Migration group {group.Id} references missing target settlement {group.TargetSettlementId.Value}.";
             }
         }
 
@@ -1054,6 +1070,64 @@ public sealed class WorldState
             if (!_armies.ContainsKey(link.ArmyId))
             {
                 yield return $"Raid pawn link {link.PawnThingId} references missing army {link.ArmyId}.";
+            }
+        }
+
+        foreach (var ownership in _owners.OrderBy(pair => pair.Key.Kind).ThenBy(pair => pair.Key.Value))
+        {
+            if (!AssetExists(ownership.Key))
+            {
+                yield return $"Ownership asset {ownership.Key} does not exist.";
+            }
+
+            if (!OwnerExists(ownership.Value))
+            {
+                yield return $"Ownership owner {ownership.Value} does not exist.";
+            }
+
+            if (ownership.Key.Kind == EntityKind.Army
+                && _armies.TryGetValue(ownership.Key, out var ownedArmy)
+                && ownership.Value != ownedArmy.SourceSettlementId)
+            {
+                yield return $"Army {ownedArmy.Id} is owned by {ownership.Value}, not source settlement {ownedArmy.SourceSettlementId}.";
+            }
+        }
+
+        foreach (var resource in _resources
+            .OrderBy(pair => pair.Key.OwnerId.Kind)
+            .ThenBy(pair => pair.Key.OwnerId.Value)
+            .ThenBy(pair => pair.Key.ResourceKey, StringComparer.Ordinal))
+        {
+            if (!OwnerExists(resource.Key.OwnerId))
+            {
+                yield return $"Resource {resource.Key.ResourceKey} references missing owner {resource.Key.OwnerId}.";
+            }
+
+            if (resource.Value < 0)
+            {
+                yield return $"Resource {resource.Key.ResourceKey} owned by {resource.Key.OwnerId} has negative quantity {resource.Value}.";
+            }
+        }
+
+        foreach (var outcome in _raidOutcomes.Values.OrderBy(outcome => outcome.ArmyId.Value))
+        {
+            if (!_armies.ContainsKey(outcome.ArmyId))
+            {
+                yield return $"Raid outcome {outcome.ArmyId} references missing army.";
+            }
+
+            var resolvedTotal = outcome.Active + outcome.Dead + outcome.Returned + outcome.Prisoner + outcome.Missing;
+            if (outcome.Sent != resolvedTotal)
+            {
+                yield return $"Raid outcome {outcome.ArmyId} totals do not balance: sent {outcome.Sent}, active/dead/returned/prisoner/missing {resolvedTotal}.";
+            }
+        }
+
+        foreach (var profile in _productionProfiles.Values.OrderBy(profile => profile.SettlementId.Value))
+        {
+            if (!_settlements.ContainsKey(profile.SettlementId))
+            {
+                yield return $"Production profile references missing settlement {profile.SettlementId}.";
             }
         }
     }
@@ -1085,6 +1159,51 @@ public sealed class WorldState
         }
     }
 
+    internal void EnsureOwnerExistsForLedger(EntityId ownerId)
+    {
+        EnsureOwnerExists(ownerId);
+    }
+
+    internal bool OwnerExistsForLedger(EntityId ownerId)
+    {
+        return OwnerExists(ownerId);
+    }
+
+    internal int GetResourceQuantityForLedger(EntityId ownerId, string resourceKey)
+    {
+        return _resources.TryGetValue((ownerId, resourceKey), out var quantity)
+            ? quantity
+            : 0;
+    }
+
+    internal void SetResourceQuantityForLedger(EntityId ownerId, string resourceKey, int quantity)
+    {
+        var key = (ownerId, resourceKey);
+        if (quantity <= 0)
+        {
+            _resources.Remove(key);
+        }
+        else
+        {
+            _resources[key] = quantity;
+        }
+    }
+
+    internal void SetOwnerForLedger(EntityId assetId, EntityId ownerId)
+    {
+        _owners[assetId] = ownerId;
+    }
+
+    internal void ReplaceCitizenForSimulation(WorldCitizen citizen)
+    {
+        if (!_citizens.ContainsKey(citizen.Id))
+        {
+            throw new InvalidOperationException($"Citizen {citizen.Id} does not exist.");
+        }
+
+        _citizens[citizen.Id] = citizen;
+    }
+
     private bool OwnerExists(EntityId ownerId)
     {
         return ownerId.Kind switch
@@ -1092,8 +1211,23 @@ public sealed class WorldState
             EntityKind.Citizen => _citizens.ContainsKey(ownerId),
             EntityKind.Settlement => _settlements.ContainsKey(ownerId),
             EntityKind.Army => _armies.ContainsKey(ownerId),
+            EntityKind.MigrationGroup => _migrationGroups.ContainsKey(ownerId),
             EntityKind.IntelReport => _intelReports.ContainsKey(ownerId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(ownerId),
+            _ => false
+        };
+    }
+
+    private bool AssetExists(EntityId assetId)
+    {
+        return assetId.Kind switch
+        {
+            EntityKind.Citizen => _citizens.ContainsKey(assetId),
+            EntityKind.Settlement => _settlements.ContainsKey(assetId),
+            EntityKind.Army => _armies.ContainsKey(assetId),
+            EntityKind.MigrationGroup => _migrationGroups.ContainsKey(assetId),
+            EntityKind.IntelReport => _intelReports.ContainsKey(assetId),
+            EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(assetId),
             _ => false
         };
     }
@@ -1104,6 +1238,15 @@ public sealed class WorldState
         {
             throw new ArgumentException("Value cannot be null or whitespace.", parameterName);
         }
+    }
+
+    private static bool ShouldKeepExistingKnowledge(
+        KnownSettlementInfo existing,
+        KnownSettlementInfo incoming)
+    {
+        return existing.ExactValuesVisible
+            && !incoming.ExactValuesVisible
+            && existing.Confidence >= incoming.Confidence;
     }
 
     private void AppendEvent(WorldEventKind kind, EntityId? subjectId, string summary)

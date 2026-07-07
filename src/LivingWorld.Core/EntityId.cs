@@ -6,6 +6,7 @@ public enum EntityKind
     Settlement,
     Animal,
     Army,
+    MigrationGroup,
     Event,
     IntelReport,
     RaidOpportunity,

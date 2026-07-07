@@ -16,6 +16,7 @@ Living World должен быть ledger-first системой.
 
 - [World Ownership](world_ownership.md)
 - [Upstream Mod Research Notes](research/upstream_mods.md)
+- [Living World Foundation Architecture](research/livingworld-foundation.md)
 
 ## Почему не Pawn-first
 
@@ -141,7 +142,9 @@ LivingWorld/
 ### World model
 
 - `WorldState`
-  - корневой объект состояния мира.
+  - корневой объект состояния мира;
+  - отвечает за хранение, атомарные мутации, snapshot и integrity validation;
+  - не должен накапливать новые доменные правила, если их можно вынести в service.
 
 - `WorldCitizen`
   - легкая запись человека.
@@ -164,6 +167,16 @@ LivingWorld/
 - `OwnershipRecord`
   - связь asset -> owner.
 
+- `SettlementProductionProfile`
+  - производственная модель поселения;
+  - хранит biome, hilliness, estimated growing days, rainfall, average temperature and technology;
+  - задает daily output per adult для еды, стали, медицины и компонентов.
+
+- `WorldFactionRecord`
+  - ledger-level состояние фракции;
+  - сейчас фиксирует `Active/Collapsed` статус без прямого удаления vanilla `Faction`;
+  - является частью save/load и public API query surface.
+
 - `WorldOwnerId`
   - стабильная ссылка на владельца: world, faction, settlement, household, army, caravan, individual, wilderness region.
 
@@ -176,11 +189,39 @@ LivingWorld/
 - `AnimalSimulator`;
 - `WarSimulator`;
 - `EconomySimulator`;
+- `SettlementProductionService`;
+- `SettlementQueryService`;
+- `ResourceLedgerService`;
+- `OwnershipService`;
+- `DemographyService`;
+- `FactionLifecycleService`;
 - `PawnMaterializationService`;
 - `PawnDematerializationService`;
 - `WorldHistoryService`;
 - `WorldIntegrityService`.
 - `OwnershipService`.
+
+## Current guardrails
+
+Текущая реализация уже закрепляет несколько архитектурных границ:
+
+- deterministic seed берется из `World.info.seedString` RimWorld и сохраняется в `WorldState`, а не задается константой мода;
+- bootstrap использует `WorldState.RunInitialWorldSeeding(...)`: стартовое население и стартовые ресурсы являются initial world seeding, а не runtime generation;
+- daily simulation догоняет пропущенные дни циклом с лимитом, чтобы загрузка/скачок tick'ов не пропускали историю и не вешали игру;
+- `WorldState.Validate()` проверяет не только ссылки, но и ownership/resource/raid outcome инварианты;
+- settlement query logic живет в `SettlementQueryService`; `WorldState` сохраняет совместимые методы только как thin delegates;
+- resource accounting живет в `ResourceLedgerService`, ownership transfers - в `OwnershipService`;
+- ресурсы получают typed metadata через `WorldResourceKey`; XML storage пока хранит `DefName` для обратной совместимости;
+- демографическое старение и естественная смертность живут в `DemographyService`;
+- миграция использует `WorldMigrationGroup`: гражданин выходит из settlement, принадлежит группе и прибывает только после `ArrivalTick`;
+- коллапс фракции фиксируется в `WorldFactionRecord` через `FactionLifecycleService`, не удаляя vanilla `Faction` напрямую;
+- population query считает только `Alive` citizens, которыми реально владеет settlement;
+- RimWorld world-object bootstrap идет через importer whitelist: по умолчанию импортируется только vanilla `Settlement`, а sites/camps/quest objects остаются rejected diagnostics.
+
+Следующее правило для разработки: новые фичи должны добавлять поведение в сервисы
+(`PopulationService`, `ResourceLedgerService`, `RaidLifecycleService`,
+`SettlementQueryService` и т.д.), а `WorldState` должен оставаться ledger kernel:
+хранение, атомарная запись, snapshot, validation.
 
 ## Текстовая UML-схема
 

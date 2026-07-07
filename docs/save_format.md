@@ -42,6 +42,8 @@ Snapshot хранит актуальное состояние:
 - settlements;
 - factions;
 - armies;
+- migration groups;
+- settlement production profiles;
 - economy;
 - ecology;
 - diplomacy.
@@ -73,8 +75,72 @@ EcologyChunks
 DiplomacyChunks
 EventChunks
 PawnLinkChunks
+MigrationGroupChunks
+ProductionProfileChunks
 CacheChunks
 ```
+
+## Current XML payload
+
+Текущая RimWorld-реализация сериализует `WorldState` в XML внутри
+`LivingWorldWorldComponent`.
+
+Текущие обязательные инварианты после загрузки:
+
+- `worldSeed` приходит из seed RimWorld world и round-trip'ится через XML;
+- `MigrationGroups` читается как optional container для обратной совместимости со старыми сейвами;
+- `FactionRecords` читается как optional container для обратной совместимости со старыми сейвами;
+- каждый `Alive` citizen должен иметь owner;
+- ownership asset и owner должны ссылаться на существующие entities;
+- settlement population считается только из `Alive` citizens, которыми владеет settlement;
+- resource quantity не может быть отрицательным;
+- stable settlement slug не должен дублироваться;
+- raid outcome должен балансироваться: `Sent == Active + Dead + Returned + Prisoner + Missing`.
+
+Ресурсы в текущем XML остаются совместимыми с прежним форматом через строковый
+`resourceKey`, но новый код должен использовать `WorldResourceKey` как typed
+обертку с `DefName`, category, perishability, market value and mass. При записи
+в v1 XML сохраняется `DefName`.
+
+Новый контейнер:
+
+```xml
+<ProductionProfiles>
+  <ProductionProfile
+    settlementKind="Settlement"
+    settlementId="1"
+    biome="TemperateForest"
+    hilliness="SmallHills"
+    techLevel="Industrial"
+    growingDays="55"
+    rainfall="850"
+    averageTemperature="21"
+    foodPerAdult="4"
+    steelPerAdult="2"
+    medicinePerAdult="1"
+    componentPerAdult="1" />
+</ProductionProfiles>
+```
+
+Чтение контейнера optional: старые сейвы без `ProductionProfiles` загружаются
+с пустым списком профилей, после чего профиль может быть восстановлен новым
+bootstrap/repair-проходом.
+
+Ledger-level faction lifecycle is stored separately from RimWorld `Faction`
+objects:
+
+```xml
+<FactionRecords>
+  <FactionRecord
+    factionId="Pirates"
+    status="Collapsed"
+    tick="60000"
+    reason="population collapse" />
+</FactionRecords>
+```
+
+`FactionRecords` is optional on load. Missing records mean no faction lifecycle
+state has been recorded yet; they do not imply that every faction is healthy.
 
 ## Header
 
@@ -138,4 +204,3 @@ Returned: 22
 ## Обоснование
 
 Без событий сохранение покажет только "что сейчас". Living World должен знать "почему так стало". Поэтому event sourcing является частью gameplay design, а не только технической реализацией.
-

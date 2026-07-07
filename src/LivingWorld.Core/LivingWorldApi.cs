@@ -11,6 +11,8 @@ public interface ILivingWorldApi
     EntityId? GetOwner(EntityId assetId);
 
     int GetOwnedResourceQuantity(EntityId ownerId, string resourceKey);
+
+    WorldFactionRecord? GetFactionRecord(string factionId);
 }
 
 public sealed class LivingWorldApi : ILivingWorldApi
@@ -45,5 +47,10 @@ public sealed class LivingWorldApi : ILivingWorldApi
     public int GetOwnedResourceQuantity(EntityId ownerId, string resourceKey)
     {
         return _state.GetOwnedResourceQuantity(ownerId, resourceKey);
+    }
+
+    public WorldFactionRecord? GetFactionRecord(string factionId)
+    {
+        return _state.GetFactionRecord(factionId);
     }
 }

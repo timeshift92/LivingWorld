@@ -11,6 +11,7 @@ public enum WorldEventKind
     ResourceAdded,
     ResourceConsumed,
     FoodShortage,
+    CitizenAged,
     CitizenBorn,
     RaidLaunched,
     IntelReported,
@@ -20,6 +21,7 @@ public enum WorldEventKind
     RaidPawnBound,
     CitizenDied,
     RefugeeCreated,
+    MigrationStarted,
     MigrationCompleted,
     RaidPawnReturned,
     RaidPawnCaptured,
@@ -27,7 +29,10 @@ public enum WorldEventKind
     RaidResolved,
     DrifterArrived,
     DrifterAssimilated,
-    SettlementFounded
+    SettlementFounded,
+    FactionCollapsed,
+    SettlementProductionUpdated,
+    SettlementTradeRecorded
 }
 
 public sealed record WorldEvent(

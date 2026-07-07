@@ -2,6 +2,8 @@ namespace LivingWorld.Core;
 
 public static class PlayerKnowledgeService
 {
+    private const int TicksPerDay = 60_000;
+
     public static KnownSettlementInfo RecordPublicSettlementInfo(
         WorldState state,
         EntityId settlementId,
@@ -30,6 +32,32 @@ public static class PlayerKnowledgeService
             summary);
     }
 
+    public static KnownSettlementInfo RecordDirectVisitSettlementInfo(
+        WorldState state,
+        EntityId settlementId,
+        string summary)
+    {
+        return RecordSettlementInfo(
+            state,
+            settlementId,
+            IntelSourceKind.DirectVisit,
+            KnowledgeConfidence.Confirmed,
+            exactValuesVisible: true,
+            summary);
+    }
+
+    public static SettlementKnowledgeFreshness GetFreshness(
+        KnownSettlementInfo info,
+        int currentTick,
+        int staleAfterTicks)
+    {
+        var ageTicks = Math.Max(0, currentTick - info.Tick);
+        return new SettlementKnowledgeFreshness(
+            ageTicks,
+            ageTicks / TicksPerDay,
+            staleAfterTicks > 0 && ageTicks > staleAfterTicks);
+    }
+
     private static KnownSettlementInfo RecordSettlementInfo(
         WorldState state,
         EntityId settlementId,
@@ -53,6 +81,7 @@ public static class PlayerKnowledgeService
         var population = state.GetSettlementPopulation(settlement.Id);
         var food = state.GetSettlementFoodStatus(settlement.Id, "PackagedSurvivalMeal", 1);
         var migration = state.GetSettlementMigrationStatus(settlement.Id, "PackagedSurvivalMeal", 1);
+        var production = state.GetSettlementProductionStatus(settlement.Id);
 
         var info = new KnownSettlementInfo(
             settlement.Id,
@@ -62,11 +91,12 @@ public static class PlayerKnowledgeService
             ToPopulationBand(population.Total),
             food.IsShortage ? SettlementFoodKnowledge.Shortage : SettlementFoodKnowledge.Stable,
             ToMigrationKnowledge(migration),
+            ToProductionKnowledge(production),
             exactValuesVisible,
             summary);
 
         state.RecordKnownSettlementInfo(info);
-        return info;
+        return state.GetKnownSettlementInfo(settlement.Id) ?? info;
     }
 
     private static SettlementPopulationBand ToPopulationBand(int population)
@@ -107,5 +137,29 @@ public static class PlayerKnowledgeService
         }
 
         return SettlementMigrationKnowledge.Stable;
+    }
+
+    private static SettlementProductionKnowledge ToProductionKnowledge(SettlementProductionStatus production)
+    {
+        if (production.AdultWorkers <= 0)
+        {
+            return SettlementProductionKnowledge.Unknown;
+        }
+
+        var output = production.FoodPerDay
+            + production.SteelPerDay
+            + production.MedicinePerDay
+            + production.ComponentsPerDay;
+        if (output <= 0)
+        {
+            return SettlementProductionKnowledge.Poor;
+        }
+
+        if (output < 8)
+        {
+            return SettlementProductionKnowledge.Adequate;
+        }
+
+        return SettlementProductionKnowledge.Strong;
     }
 }

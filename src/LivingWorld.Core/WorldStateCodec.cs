@@ -51,6 +51,25 @@ public static class WorldStateCodec
                             new XAttribute("sourceSettlementKind", army.SourceSettlementId.Kind),
                             new XAttribute("sourceSettlementId", army.SourceSettlementId.Value)))),
                 new XElement(
+                    "MigrationGroups",
+                    snapshot.MigrationGroups.Select(group =>
+                        new XElement(
+                            "MigrationGroup",
+                            IdAttributes(group.Id),
+                            new XAttribute("sourceSettlementKind", group.SourceSettlementId.Kind),
+                            new XAttribute("sourceSettlementId", group.SourceSettlementId.Value),
+                            group.TargetSettlementId.HasValue
+                                ? new XAttribute("targetSettlementKind", group.TargetSettlementId.Value.Kind)
+                                : null,
+                            group.TargetSettlementId.HasValue
+                                ? new XAttribute("targetSettlementId", group.TargetSettlementId.Value.Value)
+                                : null,
+                            new XAttribute("factionId", group.FactionId),
+                            new XAttribute("createdTick", group.CreatedTick),
+                            new XAttribute("arrivalTick", group.ArrivalTick),
+                            new XAttribute("status", group.Status),
+                            new XAttribute("reason", group.Reason)))),
+                new XElement(
                     "IntelReports",
                     snapshot.IntelReports.Select(report =>
                         new XElement(
@@ -74,6 +93,7 @@ public static class WorldStateCodec
                             new XAttribute("populationBand", info.PopulationBand),
                             new XAttribute("food", info.Food),
                             new XAttribute("migration", info.Migration),
+                            new XAttribute("production", info.Production),
                             new XAttribute("exactValuesVisible", info.ExactValuesVisible),
                             new XAttribute("summary", info.Summary)))),
                 new XElement(
@@ -116,6 +136,32 @@ public static class WorldStateCodec
                             new XAttribute("returned", outcome.Returned),
                             new XAttribute("prisoner", outcome.Prisoner),
                             new XAttribute("missing", outcome.Missing)))),
+                new XElement(
+                    "ProductionProfiles",
+                    snapshot.ProductionProfiles.Select(profile =>
+                        new XElement(
+                            "ProductionProfile",
+                            new XAttribute("settlementKind", profile.SettlementId.Kind),
+                            new XAttribute("settlementId", profile.SettlementId.Value),
+                            new XAttribute("biome", profile.Biome),
+                            new XAttribute("hilliness", profile.Hilliness),
+                            new XAttribute("techLevel", profile.TechLevel),
+                            new XAttribute("growingDays", profile.GrowingDays),
+                            new XAttribute("rainfall", profile.Rainfall),
+                            new XAttribute("averageTemperature", profile.AverageTemperature),
+                            new XAttribute("foodPerAdult", profile.FoodPerAdult),
+                            new XAttribute("steelPerAdult", profile.SteelPerAdult),
+                            new XAttribute("medicinePerAdult", profile.MedicinePerAdult),
+                            new XAttribute("componentPerAdult", profile.ComponentPerAdult)))),
+                new XElement(
+                    "FactionRecords",
+                    snapshot.FactionRecords.Select(record =>
+                        new XElement(
+                            "FactionRecord",
+                            new XAttribute("factionId", record.FactionId),
+                            new XAttribute("status", record.Status),
+                            new XAttribute("tick", record.Tick),
+                            new XAttribute("reason", record.Reason)))),
                 new XElement(
                     "Ownership",
                     snapshot.Ownership.Select(ownership =>
@@ -205,6 +251,18 @@ public static class WorldStateCodec
                     RequiredString(element, "factionId"),
                     ReadEntityId(element, "sourceSettlementKind", "sourceSettlementId")))
                 .ToList(),
+            OptionalContainer(root, "MigrationGroups")
+                .Elements("MigrationGroup")
+                .Select(element => new WorldMigrationGroup(
+                    ReadId(element),
+                    ReadEntityId(element, "sourceSettlementKind", "sourceSettlementId"),
+                    TryReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
+                    RequiredString(element, "factionId"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredInt(element, "arrivalTick"),
+                    RequiredEnum<MigrationGroupStatus>(element, "status"),
+                    RequiredString(element, "reason")))
+                .ToList(),
             OptionalContainer(root, "IntelReports")
                 .Elements("IntelReport")
                 .Select(element => new WorldIntelReport(
@@ -225,6 +283,7 @@ public static class WorldStateCodec
                     RequiredEnum<SettlementPopulationBand>(element, "populationBand"),
                     RequiredEnum<SettlementFoodKnowledge>(element, "food"),
                     RequiredEnum<SettlementMigrationKnowledge>(element, "migration"),
+                    OptionalEnum(element, "production", SettlementProductionKnowledge.Unknown),
                     RequiredBool(element, "exactValuesVisible"),
                     RequiredString(element, "summary")))
                 .ToList(),
@@ -259,6 +318,29 @@ public static class WorldStateCodec
                     RequiredInt(element, "returned"),
                     RequiredInt(element, "prisoner"),
                     OptionalInt(element, "missing", 0)))
+                .ToList(),
+            OptionalContainer(root, "ProductionProfiles")
+                .Elements("ProductionProfile")
+                .Select(element => new SettlementProductionProfile(
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredString(element, "biome"),
+                    RequiredString(element, "hilliness"),
+                    RequiredString(element, "techLevel"),
+                    RequiredInt(element, "growingDays"),
+                    RequiredInt(element, "rainfall"),
+                    RequiredInt(element, "averageTemperature"),
+                    RequiredInt(element, "foodPerAdult"),
+                    RequiredInt(element, "steelPerAdult"),
+                    RequiredInt(element, "medicinePerAdult"),
+                    RequiredInt(element, "componentPerAdult")))
+                .ToList(),
+            OptionalContainer(root, "FactionRecords")
+                .Elements("FactionRecord")
+                .Select(element => new WorldFactionRecord(
+                    RequiredString(element, "factionId"),
+                    RequiredEnum<WorldFactionStatus>(element, "status"),
+                    RequiredInt(element, "tick"),
+                    RequiredString(element, "reason")))
                 .ToList(),
             RequiredContainer(root, "Ownership")
                 .Elements("Owner")
@@ -372,5 +454,14 @@ public static class WorldStateCodec
         where T : struct
     {
         return (T)Enum.Parse(typeof(T), RequiredString(element, name));
+    }
+
+    private static T OptionalEnum<T>(XElement element, string name, T fallback)
+        where T : struct
+    {
+        var attribute = element.Attribute(name);
+        return attribute == null
+            ? fallback
+            : (T)Enum.Parse(typeof(T), attribute.Value);
     }
 }

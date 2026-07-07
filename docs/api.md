@@ -52,6 +52,27 @@ ILivingWorldApi
 
 Этот baseline намеренно малый: он позволяет адаптерам читать population/ownership без доступа к внутренним коллекциям `WorldState`. Write-команды пока остаются на уровне `WorldState`; перед публикацией для сторонних модов их надо обернуть в command API с reason codes и versioned events.
 
+## Knowledge API Direction
+
+Отдельно от raw ledger нужен permission-aware слой знаний игрока:
+
+```text
+GetKnownSettlementInfo(settlementId)
+RecordPublicSettlementInfo(settlementId, summary)
+RecordTraderSettlementInfo(settlementId, summary)
+RecordDirectVisitSettlementInfo(settlementId, summary)
+GetKnowledgeFreshness(info, currentTick, staleAfterTicks)
+```
+
+Правило: public API должен различать **истину мира** и **то, что известно
+игроку**. Другие моды, которые рисуют UI или создают rumor/trade/scout события,
+должны пользоваться `KnownSettlementInfo`, а не напрямую раскрывать population,
+food, migration или production из `WorldState`.
+
+Точные значения можно показывать только если `ExactValuesVisible = true`.
+Оценочные источники (`Public`, `Trade`, `Rumor`) дают bands. Подтвержденное
+знание (`DirectVisit`, future `Scout`) нельзя перезаписывать более слабым слухом.
+
 ## Query API
 
 Примеры queries:
@@ -79,6 +100,7 @@ Commands должны быть контролируемыми и валидир�
 - allocate visitors;
 - allocate raid group;
 - report external pawn creation.
+- record settlement trade.
 
 Каждая command должна:
 
@@ -170,3 +192,31 @@ Living World returns:
 ```
 
 Это сохраняет правильное направление зависимости: adapter consumes Living World API, not Living World consumes RimWar internals.
+
+## Trade Ledger Direction
+
+Trade adapters должны писать торговлю через ledger, а не только создавать rumor
+или raid intel.
+
+Текущий Core-срез:
+
+```text
+SettlementTradeLedgerService.RecordTrade(
+  factionId,
+  resourceKey,
+  quantity,
+  direction,
+  observedMarketValue,
+  sensitiveGoodsCount,
+  summary)
+```
+
+Поведение:
+
+- `SettlementReceives` добавляет owned resource поселению фракции;
+- `SettlementProvides` списывает owned resource поселения;
+- при отсутствии поселения ресурсы не создаются из воздуха;
+- trade intel пишется отдельно и может создать raid opportunity.
+
+Это будущая точка интеграции для торговцев, караванов, RimWar/Empire adapters и
+других модов, которые хотят делать экономику видимой и причинной.

@@ -11,6 +11,7 @@ namespace LivingWorld.RimWorld;
 public static class LivingWorldSettlementInspectPatch
 {
     private const int CacheRefreshIntervalTicks = 120;
+    private const int KnowledgeStaleAfterTicks = 1_800_000;
     private static string? cachedStableKey;
     private static int cachedAtTick = -CacheRefreshIntervalTicks;
     private static string cachedLine = string.Empty;
@@ -38,40 +39,108 @@ public static class LivingWorldSettlementInspectPatch
     private static string GetCachedInspectLine(WorldState state, Settlement worldObject, string stableKey)
     {
         var currentTick = Find.TickManager?.TicksGame ?? 0;
-        if (cachedStableKey == stableKey
+        var visiblePawns = CountVisibleSettlementPawns(worldObject);
+        var cacheKey = $"{stableKey}:visible:{visiblePawns}";
+        if (cachedStableKey == cacheKey
             && currentTick - cachedAtTick < CacheRefreshIntervalTicks)
         {
             return cachedLine;
         }
 
-        cachedStableKey = stableKey;
+        cachedStableKey = cacheKey;
         cachedAtTick = currentTick;
-        cachedLine = BuildInspectLine(state, worldObject, stableKey);
+        cachedLine = BuildInspectLine(state, worldObject, stableKey, visiblePawns);
         return cachedLine;
     }
 
-    private static string BuildInspectLine(WorldState state, Settlement worldObject, string stableKey)
+    private static string BuildInspectLine(
+        WorldState state,
+        Settlement worldObject,
+        string stableKey,
+        int visiblePawns)
     {
         var settlement = FindSettlementForWorldObject(state, worldObject, stableKey);
         if (settlement == null)
         {
-            return "LW_InspectPopulationMissingLine".Translate(
+            var missingLine = "LW_InspectPopulationMissingLine".Translate(
                 state.Settlements.Count.Named("settlements")).ToString();
+            return AppendVisiblePawnsLine(missingLine, visiblePawns);
         }
 
         var known = state.GetKnownSettlementInfo(settlement.Id);
+        if (worldObject.HasMap && known?.ExactValuesVisible != true)
+        {
+            known = PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+                state,
+                settlement.Id,
+                "settlement map is loaded");
+        }
+
         var knowledgeLine = known == null
             ? "LW_KnowledgeUnknown".Translate()
             : "LW_KnowledgeLine".Translate(
                 known.SourceKind.Named("source"),
                 known.Confidence.Named("confidence"),
                 known.Tick.Named("tick"),
+                PlayerKnowledgeService.GetFreshness(
+                    known,
+                    Find.TickManager?.TicksGame ?? 0,
+                    KnowledgeStaleAfterTicks).AgeDays.Named("ageDays"),
+                PlayerKnowledgeService.GetFreshness(
+                    known,
+                    Find.TickManager?.TicksGame ?? 0,
+                    KnowledgeStaleAfterTicks).IsStale.Named("stale"),
                 known.PopulationBand.Named("populationBand"),
                 known.Food.Named("food"),
-                known.Migration.Named("migration"));
+                known.Migration.Named("migration"),
+                known.Production.Named("production"));
 
-        return "LW_InspectPopulationLine".Translate(
+        var inspectLine = "LW_InspectPopulationLine".Translate(
             knowledgeLine.Named("knowledge")).ToString();
+        var productionLine = known?.ExactValuesVisible == true
+            ? FormatProductionLine(state.GetSettlementProductionStatus(settlement.Id))
+            : "LW_ProductionHiddenLine".Translate().ToString();
+        inspectLine = $"{inspectLine}\n{productionLine}";
+        return AppendVisiblePawnsLine(inspectLine, visiblePawns);
+    }
+
+    private static string AppendVisiblePawnsLine(string inspectLine, int visiblePawns)
+    {
+        if (visiblePawns < 0)
+        {
+            return inspectLine;
+        }
+
+        var visibleLine = "LW_MapVisiblePawnsLine".Translate(
+            visiblePawns.Named("visiblePawns")).ToString();
+        return $"{inspectLine}\n{visibleLine}";
+    }
+
+    private static int CountVisibleSettlementPawns(Settlement worldObject)
+    {
+        if (!worldObject.HasMap || worldObject.Map?.mapPawns == null)
+        {
+            return -1;
+        }
+
+        var faction = worldObject.Faction;
+        return worldObject.Map.mapPawns.AllPawnsSpawned.Count(pawn =>
+            pawn?.RaceProps?.Humanlike == true
+            && !pawn.Dead
+            && (faction == null || pawn.Faction == faction));
+    }
+
+    private static string FormatProductionLine(SettlementProductionStatus production)
+    {
+        return "LW_ProductionLine".Translate(
+            production.AdultWorkers.Named("workers"),
+            production.FoodPerDay.Named("food"),
+            production.SteelPerDay.Named("steel"),
+            production.MedicinePerDay.Named("medicine"),
+            production.ComponentsPerDay.Named("components"),
+            production.Biome.Named("biome"),
+            production.Hilliness.Named("hilliness"),
+            production.TechLevel.Named("tech")).ToString();
     }
 
     private static WorldSettlement? FindSettlementForWorldObject(

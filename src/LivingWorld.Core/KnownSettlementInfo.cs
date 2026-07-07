@@ -32,6 +32,14 @@ public enum SettlementMigrationKnowledge
     Refugees
 }
 
+public enum SettlementProductionKnowledge
+{
+    Unknown,
+    Poor,
+    Adequate,
+    Strong
+}
+
 public sealed record KnownSettlementInfo(
     EntityId SettlementId,
     IntelSourceKind SourceKind,
@@ -40,5 +48,11 @@ public sealed record KnownSettlementInfo(
     SettlementPopulationBand PopulationBand,
     SettlementFoodKnowledge Food,
     SettlementMigrationKnowledge Migration,
+    SettlementProductionKnowledge Production,
     bool ExactValuesVisible,
     string Summary);
+
+public readonly record struct SettlementKnowledgeFreshness(
+    int AgeTicks,
+    int AgeDays,
+    bool IsStale);

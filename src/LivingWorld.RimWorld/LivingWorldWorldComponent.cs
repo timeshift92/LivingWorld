@@ -9,12 +9,18 @@ namespace LivingWorld.RimWorld;
 
 public sealed class LivingWorldWorldComponent : WorldComponent
 {
-    private const int WorldSeed = 1604850;
     private const int TicksPerDay = 60_000;
+    private const int MaxCatchUpSimulationDays = 7;
     private const int BirthIntervalDays = 30;
+    private const int AgeIntervalDays = 60;
+    private const int NaturalDeathAge = 85;
+    private const int MaxNaturalDeathsPerDay = 5;
     private const string FoodResourceKey = "PackagedSurvivalMeal";
     private const string SteelResourceKey = "Steel";
+    private const string MedicineResourceKey = "MedicineIndustrial";
+    private const string ComponentResourceKey = "ComponentIndustrial";
 
+    private readonly World rimWorld;
     private bool bootstrapped;
     private string serializedState = string.Empty;
     private int lastSimulatedDay;
@@ -22,8 +28,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     public LivingWorldWorldComponent(World world)
         : base(world)
     {
+        rimWorld = world;
         Instance = this;
-        State = new WorldState(WorldSeed);
+        State = new WorldState(ResolveWorldSeed(rimWorld));
     }
 
     public static LivingWorldWorldComponent? Instance { get; private set; }
@@ -58,6 +65,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             State.Settlements.Count.Named("settlements"),
             State.Citizens.Count.Named("citizens"),
             State.Armies.Count.Named("armies"),
+            State.ProductionProfiles.Count.Named("productionProfiles"),
             State.IntelReports.Count.Named("intelReports"),
             State.RaidOpportunities.Count(opportunity => opportunity.Status == RaidOpportunityStatus.Active).Named("activeRaidOpportunities"),
             State.Events.Count.Named("events"));
@@ -83,6 +91,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     {
         base.FinalizeInit(fromLoad);
         BootstrapFromRimWorldSettlements();
+        RepairMissingProductionProfilesFromRimWorldSettlements();
     }
 
     public override void WorldComponentTick()
@@ -101,23 +110,56 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
+        var simulatedDays = 0;
+        while (lastSimulatedDay < currentDay && simulatedDays < MaxCatchUpSimulationDays)
+        {
+            lastSimulatedDay++;
+            SimulateWorldDay(lastSimulatedDay);
+            simulatedDays++;
+        }
+
+        if (lastSimulatedDay < currentDay && (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
+        {
+            Log.Warning($"[LivingWorld] Daily simulation catch-up capped at {MaxCatchUpSimulationDays} days. Remaining days will continue next ticks.");
+        }
+    }
+
+    private void SimulateWorldDay(int day)
+    {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        SettlementProductionService.SimulateDay(
+            State,
+            new SettlementProductionRequest(
+                day * TicksPerDay,
+                FoodResourceKey,
+                SteelResourceKey,
+                MedicineResourceKey,
+                ComponentResourceKey));
         SettlementDailySimulationService.SimulateDay(
             State,
             new SettlementDailySimulationRequest(
-                currentDay * TicksPerDay,
+                day * TicksPerDay,
                 FoodResourceKey,
                 settings.foodPerCitizen > 0 ? 1 : 0,
                 BirthIntervalDays));
+        DemographyService.SimulateDay(
+            State,
+            new DemographySimulationRequest(
+                day * TicksPerDay,
+                AgeIntervalDays,
+                NaturalDeathAge,
+                MaxNaturalDeathsPerDay));
         MigrationService.SimulateDay(
             State,
             new MigrationSimulationRequest(
-                currentDay * TicksPerDay,
+                day * TicksPerDay,
                 FoodResourceKey,
                 settings.foodPerCitizen > 0 ? 1 : 0,
                 50,
                 1));
-        lastSimulatedDay = currentDay;
+        FactionLifecycleService.SimulateCollapses(
+            State,
+            new FactionLifecycleRequest(day * TicksPerDay));
     }
 
     public override void ExposeData()
@@ -152,9 +194,18 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     public void CreateDebugLedger()
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
-        State = new WorldState(WorldSeed);
+        State = new WorldState(ResolveWorldSeed(rimWorld));
         var settlement = State.CreateSettlement("debug-settlement", "LW_DebugSettlementName".Translate().ToString(), "LivingWorldDebug");
         var citizenCount = Math.Max(6, settings.baselineHumanSettlementAdults);
+        State.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+            settlement.Id,
+            new SettlementProductionEnvironment(
+                "TemperateForest",
+                "SmallHills",
+                "Industrial",
+                55,
+                850,
+                21)));
 
         for (var i = 0; i < citizenCount; i++)
         {
@@ -170,6 +221,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         State.AddResource(settlement.Id, FoodResourceKey, citizenCount * Math.Max(1, settings.foodPerCitizen));
         State.AddResource(settlement.Id, SteelResourceKey, citizenCount * Math.Max(1, settings.steelPerCitizen));
+        PlayerKnowledgeService.RecordPublicSettlementInfo(
+            State,
+            settlement.Id,
+            "debug settlement public disclosure");
 
         bootstrapped = true;
         LastWorldSettlementSourceCount = 0;
@@ -212,7 +267,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         try
         {
-            State = new WorldState(WorldSeed);
+            State = new WorldState(ResolveWorldSeed(rimWorld));
             LastBootstrapError = string.Empty;
 
             var scan = new WorldObjectScanner().Scan();
@@ -249,10 +304,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     settings.minSettlementAdults,
                     Math.Min(settings.maxSettlementAdults, configuredAdults));
                 var worldSettlement = State.CreateSettlement(settlement.StableKey, settlement.Name, settlement.FactionId);
+                var productionProfile = RimWorldSettlementProductionProfileFactory.Create(
+                    settlement,
+                    worldSettlement.Id,
+                    faction);
 
-                State.RunWithoutEvents(() =>
+                State.RunInitialWorldSeeding(() =>
                 {
-                    // bootstrap citizen/resource import is bulk state seeding, not world history.
+                    // initial world seeding is bulk ledger setup, not runtime world history.
+                    State.RecordSettlementProductionProfile(productionProfile);
+
                     for (var i = 0; i < baselineAdults; i++)
                     {
                         var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
@@ -270,6 +331,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                         State.AddResource(worldSettlement.Id, SteelResourceKey, baselineAdults * settings.steelPerCitizen);
                     }
                 });
+
+                PlayerKnowledgeService.RecordPublicSettlementInfo(
+                    State,
+                    worldSettlement.Id,
+                    "settlement public disclosure");
             }
 
             bootstrapped = true;
@@ -287,6 +353,81 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             LastBootstrapStatus = "bootstrap-error";
             LastBootstrapError = $"{ex.GetType().Name}: {ex.Message}";
             Log.Error($"[LivingWorld] Ledger bootstrap failed safely: {LastBootstrapError}");
+        }
+    }
+
+    private void RepairMissingProductionProfilesFromRimWorldSettlements()
+    {
+        if (!bootstrapped
+            || State.Settlements.Count == 0
+            || State.ProductionProfiles.Count >= State.Settlements.Count)
+        {
+            return;
+        }
+
+        try
+        {
+            var scan = new WorldObjectScanner().Scan();
+            var repaired = 0;
+            foreach (var candidate in scan.Candidates)
+            {
+                var settlement = State.Settlements.FirstOrDefault(existing => existing.Slug == candidate.StableKey);
+                if (settlement == null || State.GetSettlementProductionProfile(settlement.Id) != null)
+                {
+                    continue;
+                }
+
+                var faction = Find.FactionManager.AllFactionsListForReading
+                    .FirstOrDefault(existing => existing.def?.defName == candidate.FactionId);
+                State.RecordSettlementProductionProfile(
+                    RimWorldSettlementProductionProfileFactory.Create(
+                        candidate,
+                        settlement.Id,
+                        faction));
+                repaired++;
+            }
+
+            if (repaired > 0)
+            {
+                LastBootstrapStatus = LastBootstrapStatus == "loaded"
+                    ? "loaded+production-repair"
+                    : LastBootstrapStatus;
+                if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
+                {
+                    Log.Message($"[LivingWorld] Repaired {repaired} missing production profiles.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Production profile repair skipped safely: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static int ResolveWorldSeed(World world)
+    {
+        var seedString = world.info.seedString;
+        return string.IsNullOrWhiteSpace(seedString)
+            ? StableSeedFromString("LivingWorld")
+            : StableSeedFromString(seedString);
+    }
+
+    private static int StableSeedFromString(string seedString)
+    {
+        unchecked
+        {
+            const int offsetBasis = (int)2166136261;
+            const int prime = 16777619;
+            var hash = offsetBasis;
+            foreach (var character in seedString)
+            {
+                hash ^= character;
+                hash *= prime;
+            }
+
+            return hash == int.MinValue
+                ? int.MaxValue
+                : Math.Abs(hash);
         }
     }
 }

@@ -27,6 +27,16 @@ Living World должен быть модульным и совместимым 
 - contribute settlement/economy/military stats;
 - report conflicts.
 
+World-object import is also adapter-based. The bootstrap scanner must not treat
+"has faction + has tile" as a settlement. Default behavior imports only vanilla
+`Settlement` through `VanillaSettlementImporter`; future support for Empire
+colonies, RimCities, quest camps or other modded settlement-like objects must be
+added as explicit `IWorldObjectImporter` implementations.
+
+Reason: temporary sites, quest objects, caravans and modded map markers can have
+factions and tiles, but they are not automatically population owners. Importing
+them as settlements would create fake citizens/resources and corrupt the ledger.
+
 ## Harmony strategy
 
 Harmony-патчи нужны, но они должны быть последней точкой входа, а не главным API.

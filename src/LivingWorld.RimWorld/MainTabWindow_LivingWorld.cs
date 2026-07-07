@@ -14,6 +14,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private const int MaxOutcomeRows = 12;
     private const int MaxEventRows = 20;
     private const int CacheRefreshIntervalTicks = 120;
+    private const int KnowledgeStaleAfterTicks = 1_800_000;
 
     private Vector2 scrollPosition;
     private string? lastActionResult;
@@ -23,6 +24,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedOutcomeCount = -1;
     private int cachedEventCount = -1;
     private int cachedCitizenCount = -1;
+    private int cachedProductionProfileCount = -1;
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
@@ -148,6 +150,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             && cachedOutcomeCount == state.RaidOutcomes.Count
             && cachedEventCount == state.Events.Count
             && cachedCitizenCount == state.Citizens.Count
+            && cachedProductionProfileCount == state.ProductionProfiles.Count
             && currentTick - cachedAtTick < CacheRefreshIntervalTicks)
         {
             return;
@@ -159,17 +162,22 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         cachedOutcomeCount = state.RaidOutcomes.Count;
         cachedEventCount = state.Events.Count;
         cachedCitizenCount = state.Citizens.Count;
+        cachedProductionProfileCount = state.ProductionProfiles.Count;
         cachedSettlementRows = state.Settlements
             .OrderBy(settlement => settlement.Id.Value)
             .Take(MaxSettlementRows)
             .Select(settlement =>
             {
                 var known = state.GetKnownSettlementInfo(settlement.Id);
-                var knowledgeLine = FormatKnowledgeLine(known);
+                var knowledgeLine = FormatKnowledgeLine(known, currentTick);
+                var productionLine = known?.ExactValuesVisible == true
+                    ? FormatProductionLine(state.GetSettlementProductionStatus(settlement.Id))
+                    : "LW_ProductionHiddenLine".Translate().ToString();
                 return "LW_SettlementLine".Translate(
                     settlement.Name.Named("name"),
                     settlement.FactionId.Named("faction"),
-                    knowledgeLine.Named("knowledge")).ToString();
+                    knowledgeLine.Named("knowledge"),
+                    productionLine.Named("production")).ToString();
             })
             .ToList();
         cachedArmyRows = state.Armies
@@ -230,19 +238,36 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .ToList();
     }
 
-    private static string FormatKnowledgeLine(KnownSettlementInfo? known)
+    private static string FormatKnowledgeLine(KnownSettlementInfo? known, int currentTick)
     {
         if (known == null)
         {
             return "LW_KnowledgeUnknown".Translate().ToString();
         }
 
+        var freshness = PlayerKnowledgeService.GetFreshness(known, currentTick, KnowledgeStaleAfterTicks);
         return "LW_KnowledgeLine".Translate(
             known.SourceKind.Named("source"),
             known.Confidence.Named("confidence"),
             known.Tick.Named("tick"),
+            freshness.AgeDays.Named("ageDays"),
+            freshness.IsStale.Named("stale"),
             known.PopulationBand.Named("populationBand"),
             known.Food.Named("food"),
-            known.Migration.Named("migration")).ToString();
+            known.Migration.Named("migration"),
+            known.Production.Named("production")).ToString();
+    }
+
+    private static string FormatProductionLine(SettlementProductionStatus production)
+    {
+        return "LW_ProductionLine".Translate(
+            production.AdultWorkers.Named("workers"),
+            production.FoodPerDay.Named("food"),
+            production.SteelPerDay.Named("steel"),
+            production.MedicinePerDay.Named("medicine"),
+            production.ComponentsPerDay.Named("components"),
+            production.Biome.Named("biome"),
+            production.Hilliness.Named("hilliness"),
+            production.TechLevel.Named("tech")).ToString();
     }
 }

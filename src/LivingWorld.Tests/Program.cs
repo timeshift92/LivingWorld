@@ -7,17 +7,29 @@ var tests = new List<(string Name, Action Test)>
     ("records append-only events when citizens are created", TestCitizenCreatedEvent),
     ("can suppress bulk bootstrap events", TestBulkEventSuppression),
     ("tracks settlement population from assigned citizens", TestSettlementPopulation),
+    ("settlement population counts only alive citizens owned by settlement", TestSettlementPopulationExcludesNonAliveOrForeignOwnedCitizens),
+    ("queries settlements through settlement query service", TestSettlementQueryService),
     ("reports validation errors for orphan citizens", TestValidationErrors),
+    ("reports validation errors for broken ownership and ledgers", TestValidationCatchesOwnershipAndLedgerInvariants),
     ("queries population through public api", TestPublicApiPopulationQuery),
     ("assigns settlement ownership when citizen is created", TestCitizenOwnership),
     ("tracks resource stack ownership", TestResourceOwnership),
+    ("tracks resources through resource ledger service", TestResourceLedgerService),
+    ("uses typed world resource keys", TestWorldResourceKey),
     ("transfers owned resources to army", TestResourceTransferToArmy),
     ("rejects transfer when owner lacks quantity", TestInsufficientResourceTransfer),
+    ("transfers assets through ownership service", TestOwnershipServiceTransfersAssets),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
+    ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
+    ("builds settlement production profile from terrain and technology", TestSettlementProductionProfileUsesTerrainAndTechnology),
+    ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
+    ("serializes settlement production profiles", TestSettlementProductionProfileSerialization),
     ("prevents starving settlements from launching raids", TestStarvingSettlementCannotLaunchRaid),
     ("creates refugees from starving settlements", TestMigrationPressureCreatesRefugee),
     ("moves refugees into stable settlements", TestMigrationCompletesToStableSettlement),
+    ("creates migration groups before completing migration", TestMigrationCreatesTravelingGroup),
+    ("serializes migration groups", TestMigrationGroupSerialization),
     ("queries ownership through public api", TestPublicApiOwnershipQuery),
     ("plans raid army from real citizens and resources", TestRaidPlannerAllocatesRealAssets),
     ("rejects raid when combatants are insufficient", TestRaidPlannerRejectsInsufficientCombatants),
@@ -26,8 +38,14 @@ var tests = new List<(string Name, Action Test)>
     ("caps vanilla raid combatants to available adults", TestRaidPopulationAllocatorCapsToAvailableAdults),
     ("creates raid opportunity from valuable trade intel", TestTradeIntelCreatesRaidOpportunity),
     ("consumes raid opportunity before vanilla raid allocation", TestRaidOpportunityConsumesOnce),
+    ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
+    ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
+    ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
     ("records public settlement knowledge as estimates", TestPublicSettlementKnowledgeUsesEstimates),
     ("updates settlement knowledge from traders with confidence", TestTraderSettlementKnowledgeUpdatesConfidence),
+    ("records production knowledge without exact values unless directly visited", TestProductionKnowledgeVisibility),
+    ("does not downgrade direct settlement knowledge with weaker intel", TestSettlementKnowledgeDoesNotDowngradeDirectVisit),
+    ("marks old settlement knowledge as stale", TestSettlementKnowledgeFreshness),
     ("binds generated raid pawns to reserved citizens", TestRaidPawnBindingLinksPawnsToCitizens),
     ("marks bound raid citizen dead when pawn dies", TestRaidPawnDeathMarksCitizenDead),
     ("marks bound raid citizen prisoner when captured", TestRaidPawnCaptureMarksCitizenPrisoner),
@@ -56,6 +74,10 @@ var tests = new List<(string Name, Action Test)>
     ("founds a raider band when the capable leader is a fighter", TestDrifterFoundingCreatesRaiderBand),
     ("does not found without a capable leader", TestDrifterFoundingNeedsCapableLeader),
     ("does not found without enough drifters", TestDrifterFoundingNeedsEnoughDrifters),
+    ("collapses factions with no living citizens", TestFactionLifecycleCollapsesEmptyFaction),
+    ("keeps factions alive while prisoners or migrants exist", TestFactionLifecycleCountsNonResidentSurvivors),
+    ("collapses each faction only once", TestFactionLifecycleIsIdempotent),
+    ("serializes collapsed faction records", TestFactionLifecycleSerializationRoundTrip),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -80,9 +102,13 @@ var tests = new List<(string Name, Action Test)>
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
+    ("uses RimWorld world seed for deterministic state", TestWorldComponentUsesRimWorldWorldSeed),
+    ("catches up missed daily simulations with a cap", TestWorldComponentCatchesUpMissedSimulationDays),
+    ("marks bootstrap as initial world seeding", TestWorldComponentUsesInitialWorldSeedingBoundary),
     ("suppresses noisy bootstrap citizen events", TestWorldComponentSuppressesBootstrapEventSpam),
     ("explains empty Living World ledger in main tab", TestRimWorldMainTabExplainsEmptyLedger),
     ("scans RimWorld world objects for bootstrap candidates", TestRimWorldWorldObjectScanner),
+    ("imports only whitelisted world object types", TestRimWorldWorldObjectScannerUsesImporterWhitelist),
     ("uses explicit world object scanner sorting", TestRimWorldWorldObjectScannerUsesExplicitSorting),
     ("keeps Living World bootstrap failures inside diagnostics", TestRimWorldBootstrapFailureDiagnostics),
     ("reports detailed world object bootstrap diagnostics", TestRimWorldDetailedBootstrapDiagnostics),
@@ -191,6 +217,72 @@ static void TestSettlementPopulation()
     AssertEqual(1, population.Elderly);
 }
 
+static void TestSettlementPopulationExcludesNonAliveOrForeignOwnedCitizens()
+{
+    var settlementId = EntityId.Create(EntityKind.Settlement, 1);
+    var armyId = EntityId.Create(EntityKind.Army, 1);
+    var citizens = new[]
+    {
+        new WorldCitizen(EntityId.Create(EntityKind.Citizen, 1), "Alive", 30, Sex.Female, "settler", settlementId, CitizenStatus.Alive),
+        new WorldCitizen(EntityId.Create(EntityKind.Citizen, 2), "Dead", 31, Sex.Male, "settler", settlementId, CitizenStatus.Dead),
+        new WorldCitizen(EntityId.Create(EntityKind.Citizen, 3), "Missing", 32, Sex.Female, "settler", settlementId, CitizenStatus.Missing),
+        new WorldCitizen(EntityId.Create(EntityKind.Citizen, 4), "Prisoner", 33, Sex.Male, "settler", settlementId, CitizenStatus.Prisoner),
+        new WorldCitizen(EntityId.Create(EntityKind.Citizen, 5), "Deployed", 34, Sex.Female, "soldier", settlementId, CitizenStatus.Alive)
+    };
+    var state = WorldState.FromSnapshot(new WorldStateSnapshot(
+        12345,
+        0,
+        new[] { new WorldSettlement(settlementId, "north-camp", "Northern Camp", "pirates") },
+        citizens,
+        new[] { new WorldArmy(armyId, "Raid", "pirates", settlementId) },
+        Array.Empty<WorldMigrationGroup>(),
+        Array.Empty<WorldIntelReport>(),
+        Array.Empty<KnownSettlementInfo>(),
+        Array.Empty<RaidOpportunity>(),
+        Array.Empty<RaidPawnLink>(),
+        Array.Empty<WorldRaidOutcome>(),
+        Array.Empty<SettlementProductionProfile>(),
+        Array.Empty<WorldFactionRecord>(),
+        new[]
+        {
+            new OwnershipRecord(citizens[0].Id, settlementId),
+            new OwnershipRecord(citizens[1].Id, settlementId),
+            new OwnershipRecord(citizens[2].Id, settlementId),
+            new OwnershipRecord(citizens[3].Id, settlementId),
+            new OwnershipRecord(citizens[4].Id, armyId),
+            new OwnershipRecord(armyId, settlementId)
+        },
+        Array.Empty<ResourceStack>(),
+        Array.Empty<WorldEvent>(),
+        Array.Empty<Drifter>()));
+
+    var population = state.GetSettlementPopulation(settlementId);
+
+    AssertEqual(1, population.Total);
+    AssertEqual(1, population.Adults);
+}
+
+static void TestSettlementQueryService()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "pirates");
+    state.CreateCitizen("Worker", 30, Sex.Female, "settler", settlement.Id);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 6);
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment("TemperateForest", "SmallHills", "Industrial", 55, 850, 21)));
+
+    var population = SettlementQueryService.GetPopulation(state, settlement.Id);
+    var food = SettlementQueryService.GetFoodStatus(state, settlement.Id, "PackagedSurvivalMeal", 1);
+    var migration = SettlementQueryService.GetMigrationStatus(state, settlement.Id, "PackagedSurvivalMeal", 1);
+    var production = SettlementQueryService.GetProductionStatus(state, settlement.Id);
+
+    AssertEqual(1, population.Total);
+    AssertEqual(6, food.Food);
+    AssertEqual(false, migration.ShouldCreateRefugees);
+    AssertEqual(1, production.AdultWorkers);
+}
+
 static void TestValidationErrors()
 {
     var state = new WorldState(12345);
@@ -207,8 +299,53 @@ static void TestValidationErrors()
 
     var errors = state.Validate().ToList();
 
-    AssertEqual(1, errors.Count);
-    AssertEqual("Citizen Citizen:1 references missing settlement Settlement:404.", errors[0]);
+    AssertEqual(2, errors.Count);
+    AssertContains("Citizen Citizen:1 references missing settlement Settlement:404.", string.Join(Environment.NewLine, errors));
+    AssertContains("Ownership owner Settlement:404 does not exist.", string.Join(Environment.NewLine, errors));
+}
+
+static void TestValidationCatchesOwnershipAndLedgerInvariants()
+{
+    var settlementId = EntityId.Create(EntityKind.Settlement, 1);
+    var duplicateSettlementId = EntityId.Create(EntityKind.Settlement, 2);
+    var armyId = EntityId.Create(EntityKind.Army, 1);
+    var citizenId = EntityId.Create(EntityKind.Citizen, 1);
+    var missingCitizenId = EntityId.Create(EntityKind.Citizen, 99);
+    var missingSettlementId = EntityId.Create(EntityKind.Settlement, 99);
+    var state = WorldState.FromSnapshot(new WorldStateSnapshot(
+        12345,
+        0,
+        new[]
+        {
+            new WorldSettlement(settlementId, "north-camp", "Northern Camp", "pirates"),
+            new WorldSettlement(duplicateSettlementId, "north-camp", "Duplicate Northern Camp", "pirates")
+        },
+        new[] { new WorldCitizen(citizenId, "Alive", 30, Sex.Female, "settler", settlementId, CitizenStatus.Alive) },
+        new[] { new WorldArmy(armyId, "Raid", "pirates", settlementId) },
+        Array.Empty<WorldMigrationGroup>(),
+        Array.Empty<WorldIntelReport>(),
+        Array.Empty<KnownSettlementInfo>(),
+        Array.Empty<RaidOpportunity>(),
+        Array.Empty<RaidPawnLink>(),
+        new[] { new WorldRaidOutcome(armyId, settlementId, "pirates", 0, 3, 0, 1, 1, 0, 0) },
+        Array.Empty<SettlementProductionProfile>(),
+        Array.Empty<WorldFactionRecord>(),
+        new[]
+        {
+            new OwnershipRecord(missingCitizenId, settlementId),
+            new OwnershipRecord(armyId, missingSettlementId)
+        },
+        new[] { new ResourceStack(settlementId, "Steel", -5) },
+        Array.Empty<WorldEvent>(),
+        Array.Empty<Drifter>()));
+    var combinedErrors = string.Join(Environment.NewLine, state.Validate());
+
+    AssertContains("Alive citizen Citizen:1 does not have an owner.", combinedErrors);
+    AssertContains("Ownership asset Citizen:99 does not exist.", combinedErrors);
+    AssertContains("Ownership owner Settlement:99 does not exist.", combinedErrors);
+    AssertContains("Resource Steel owned by Settlement:1 has negative quantity -5.", combinedErrors);
+    AssertContains("Duplicate settlement slug north-camp.", combinedErrors);
+    AssertContains("Raid outcome Army:1 totals do not balance", combinedErrors);
 }
 
 static void TestPublicApiPopulationQuery()
@@ -244,6 +381,41 @@ static void TestResourceOwnership()
     AssertEqual(350, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
 }
 
+static void TestResourceLedgerService()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "pirates");
+
+    ResourceLedgerService.AddResource(state, settlement.Id, "Steel", 100);
+    var consumed = ResourceLedgerService.ConsumeResource(state, settlement.Id, "Steel", 35, "construction");
+
+    AssertEqual(35, consumed);
+    AssertEqual(65, ResourceLedgerService.GetQuantity(state, settlement.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.ResourceAdded));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.ResourceConsumed));
+}
+
+static void TestWorldResourceKey()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "pirates");
+    var steel = new WorldResourceKey(
+        "Steel",
+        ResourceCategory.Material,
+        false,
+        1.9f,
+        0.5f);
+
+    ResourceLedgerService.AddResource(state, settlement.Id, steel, 50);
+    var consumed = ResourceLedgerService.ConsumeResource(state, settlement.Id, steel, 15, "construction");
+
+    AssertEqual("Steel", steel.DefName);
+    AssertEqual(ResourceCategory.Material, steel.Category);
+    AssertEqual(false, steel.IsPerishable);
+    AssertEqual(15, consumed);
+    AssertEqual(35, ResourceLedgerService.GetQuantity(state, settlement.Id, steel));
+}
+
 static void TestResourceTransferToArmy()
 {
     var state = new WorldState(12345);
@@ -271,6 +443,25 @@ static void TestInsufficientResourceTransfer()
     AssertEqual("Owner Settlement:1 has 500 Steel but transfer requested 501.", result.Reason);
     AssertEqual(500, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
     AssertEqual(0, state.GetOwnedResourceQuantity(army.Id, "Steel"));
+}
+
+static void TestOwnershipServiceTransfersAssets()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "pirates");
+    var army = state.CreateArmy("raid-1", "pirates", settlement.Id);
+    var citizen = state.CreateCitizen("Ada", 20, Sex.Female, "soldier", settlement.Id);
+
+    var result = OwnershipService.TransferAsset(
+        state,
+        citizen.Id,
+        settlement.Id,
+        army.Id,
+        "raid launch");
+
+    AssertEqual(OwnershipTransferStatus.Success, result.Status);
+    AssertEqual(army.Id, state.GetOwner(citizen.Id));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
 }
 
 static void TestSettlementDailySimulationConsumesFoodAndBirths()
@@ -324,6 +515,123 @@ static void TestSettlementDailySimulationRecordsFoodShortage()
     AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
 }
 
+static void TestDemographyServiceAgesAndKillsElders()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "Pirate");
+    var child = state.CreateCitizen("Young", 17, Sex.Female, "settler", settlement.Id);
+    var elder = state.CreateCitizen("Old", 84, Sex.Male, "settler", settlement.Id);
+
+    var result = DemographyService.SimulateDay(
+        state,
+        new DemographySimulationRequest(
+            3_600_000,
+            60,
+            85,
+            1));
+
+    AssertEqual(2, result.CitizensAged);
+    AssertEqual(1, result.NaturalDeaths);
+    AssertEqual(18, state.GetCitizen(child.Id)!.Age);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(child.Id)!.Status);
+    AssertEqual(CitizenStatus.Dead, state.GetCitizen(elder.Id)!.Status);
+    AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenAged));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenDied));
+}
+
+static void TestSettlementProductionProfileUsesTerrainAndTechnology()
+{
+    var settlementId = EntityId.Create(EntityKind.Settlement, 7);
+    var fertileIndustrial = SettlementProductionProfile.FromEnvironment(
+        settlementId,
+        new SettlementProductionEnvironment(
+            "TemperateForest",
+            "SmallHills",
+            "Industrial",
+            55,
+            850,
+            21));
+    var desertNeolithic = SettlementProductionProfile.FromEnvironment(
+        settlementId,
+        new SettlementProductionEnvironment(
+            "ExtremeDesert",
+            "Flat",
+            "Neolithic",
+            5,
+            80,
+            39));
+
+    AssertEqual(settlementId, fertileIndustrial.SettlementId);
+    AssertEqual(4, fertileIndustrial.FoodPerAdult);
+    AssertEqual(2, fertileIndustrial.SteelPerAdult);
+    AssertEqual(1, fertileIndustrial.MedicinePerAdult);
+    AssertEqual(1, fertileIndustrial.ComponentPerAdult);
+    AssertEqual(0, desertNeolithic.FoodPerAdult);
+    AssertEqual(0, desertNeolithic.ComponentPerAdult);
+}
+
+static void TestSettlementProductionAddsOwnedResources()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Worker {i + 1}", 24 + i, Sex.Male, "worker", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "TemperateForest",
+            "SmallHills",
+            "Industrial",
+            55,
+            850,
+            21)));
+
+    var result = SettlementProductionService.SimulateDay(
+        state,
+        new SettlementProductionRequest(
+            60_000,
+            "PackagedSurvivalMeal",
+            "Steel",
+            "MedicineIndustrial",
+            "ComponentIndustrial"));
+
+    AssertEqual(12, result.FoodProduced);
+    AssertEqual(6, result.SteelProduced);
+    AssertEqual(3, result.MedicineProduced);
+    AssertEqual(3, result.ComponentsProduced);
+    AssertEqual(12, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+    AssertEqual(6, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial"));
+    AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementProductionUpdated));
+}
+
+static void TestSettlementProductionProfileSerialization()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    var profile = SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "BorealForest",
+            "LargeHills",
+            "Spacer",
+            30,
+            600,
+            8));
+
+    state.RecordSettlementProductionProfile(profile);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredProfile = restored.GetSettlementProductionProfile(settlement.Id);
+
+    AssertEqual(profile, restoredProfile);
+}
+
 static void TestStarvingSettlementCannotLaunchRaid()
 {
     var state = new WorldState(12345);
@@ -361,12 +669,14 @@ static void TestMigrationPressureCreatesRefugee()
 
     AssertEqual(true, statusBefore.ShouldCreateRefugees);
     AssertEqual(1, result.RefugeesCreated);
+    AssertEqual(0, result.MigrationGroupsCreated);
     AssertEqual(0, result.MigrationsCompleted);
     AssertEqual(source.Id, refugee.SettlementId);
     AssertEqual(refugee.Id, state.GetOwner(refugee.Id));
     AssertEqual(3, state.GetSettlementPopulation(source.Id).Total);
     AssertEqual(1, statusAfter.Refugees);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RefugeeCreated));
+    AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.MigrationStarted));
 }
 
 static void TestMigrationCompletesToStableSettlement()
@@ -390,10 +700,54 @@ static void TestMigrationCompletesToStableSettlement()
         new MigrationSimulationRequest(300_000, "PackagedSurvivalMeal", 1, 50, 0));
 
     AssertEqual(0, result.RefugeesCreated);
+    AssertEqual(0, result.MigrationGroupsCreated);
     AssertEqual(1, result.MigrationsCompleted);
     AssertEqual(0, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Refugee));
     AssertEqual(2, state.GetSettlementPopulation(target.Id).Total);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.MigrationCompleted));
+}
+
+static void TestMigrationCreatesTravelingGroup()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("starving-camp", "Starving Camp", "Pirate");
+    var target = state.CreateSettlement("safe-camp", "Safe Camp", "Pirate");
+    state.CreateCitizen("Source Citizen", 20, Sex.Male, "settler", source.Id);
+    state.CreateCitizen("Safe Citizen", 30, Sex.Female, "settler", target.Id);
+    state.AddResource(target.Id, "PackagedSurvivalMeal", 20);
+
+    var result = MigrationService.SimulateDay(
+        state,
+        new MigrationSimulationRequest(240_000, "PackagedSurvivalMeal", 1, 50, 1, 120_000));
+    var group = state.MigrationGroups.Single();
+    var migrant = state.Citizens.Single(citizen => citizen.Status == CitizenStatus.Migrating);
+
+    AssertEqual(1, result.RefugeesCreated);
+    AssertEqual(1, result.MigrationGroupsCreated);
+    AssertEqual(0, result.MigrationsCompleted);
+    AssertEqual(MigrationGroupStatus.Traveling, group.Status);
+    AssertEqual(source.Id, group.SourceSettlementId);
+    AssertEqual(target.Id, group.TargetSettlementId);
+    AssertEqual(360_000, group.ArrivalTick);
+    AssertEqual(group.Id, state.GetOwner(migrant.Id));
+    AssertEqual(1, state.GetSettlementPopulation(target.Id).Total);
+}
+
+static void TestMigrationGroupSerialization()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("starving-camp", "Starving Camp", "Pirate");
+    var target = state.CreateSettlement("safe-camp", "Safe Camp", "Pirate");
+    state.CreateMigrationGroup(source.Id, target.Id, "Pirate", 240_000, 360_000, "starvation");
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var group = restored.MigrationGroups.Single();
+
+    AssertEqual(EntityKind.MigrationGroup, group.Id.Kind);
+    AssertEqual(source.Id, group.SourceSettlementId);
+    AssertEqual(target.Id, group.TargetSettlementId);
+    AssertEqual(MigrationGroupStatus.Traveling, group.Status);
+    AssertEqual(360_000, group.ArrivalTick);
 }
 
 static void TestPublicApiOwnershipQuery()
@@ -551,6 +905,79 @@ static void TestRaidOpportunityConsumesOnce()
     AssertEqual(false, second);
 }
 
+static void TestTradeLedgerSettlementReceivesSoldGoods()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("market-town", "Market Town", "Outlander");
+
+    var result = SettlementTradeLedgerService.RecordTrade(
+        state,
+        new SettlementTradeLedgerRequest(
+            "Outlander",
+            "Gold",
+            5,
+            SettlementTradeDirection.SettlementReceives,
+            1250,
+            5,
+            "player sold gold"));
+
+    AssertEqual(SettlementTradeLedgerStatus.Success, result.Status);
+    AssertEqual(settlement.Id, result.SettlementId);
+    AssertEqual(5, result.QuantityApplied);
+    AssertEqual(5, state.GetOwnedResourceQuantity(settlement.Id, "Gold"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
+    AssertEqual(1, state.IntelReports.Count);
+    AssertEqual(1, state.RaidOpportunities.Count);
+}
+
+static void TestTradeLedgerSettlementProvidesPurchasedGoods()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("market-town", "Market Town", "Outlander");
+    state.AddResource(settlement.Id, "MedicineIndustrial", 8);
+
+    var result = SettlementTradeLedgerService.RecordTrade(
+        state,
+        new SettlementTradeLedgerRequest(
+            "Outlander",
+            "MedicineIndustrial",
+            5,
+            SettlementTradeDirection.SettlementProvides,
+            250,
+            0,
+            "player bought medicine"));
+
+    AssertEqual(SettlementTradeLedgerStatus.Success, result.Status);
+    AssertEqual(5, result.QuantityApplied);
+    AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
+    AssertEqual(1, state.IntelReports.Count);
+    AssertEqual(0, state.RaidOpportunities.Count);
+}
+
+static void TestTradeLedgerNoSettlementFallsBackToIntel()
+{
+    var state = new WorldState(12345);
+
+    var result = SettlementTradeLedgerService.RecordTrade(
+        state,
+        new SettlementTradeLedgerRequest(
+            "UnknownFaction",
+            "Gold",
+            4,
+            SettlementTradeDirection.SettlementReceives,
+            1000,
+            4,
+            "trade with untracked faction"));
+
+    AssertEqual(SettlementTradeLedgerStatus.NoSettlement, result.Status);
+    AssertEqual(null, result.SettlementId);
+    AssertEqual(0, result.QuantityApplied);
+    AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
+    AssertEqual(1, state.IntelReports.Count);
+    AssertEqual(1, state.RaidOpportunities.Count);
+}
+
 static void TestPublicSettlementKnowledgeUsesEstimates()
 {
     var state = new WorldState(12345);
@@ -570,6 +997,7 @@ static void TestPublicSettlementKnowledgeUsesEstimates()
     AssertEqual(KnowledgeConfidence.Medium, known.Confidence);
     AssertEqual(SettlementPopulationBand.Medium, known.PopulationBand);
     AssertEqual(SettlementFoodKnowledge.Shortage, known.Food);
+    AssertEqual(SettlementProductionKnowledge.Unknown, known.Production);
     AssertEqual(false, known.ExactValuesVisible);
     AssertEqual(1, state.KnownSettlementInfos.Count);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementIntelUpdated));
@@ -597,10 +1025,95 @@ static void TestTraderSettlementKnowledgeUpdatesConfidence()
     AssertEqual(IntelSourceKind.Trade, known.SourceKind);
     AssertEqual(KnowledgeConfidence.High, known.Confidence);
     AssertEqual(SettlementFoodKnowledge.Stable, known.Food);
+    AssertEqual(SettlementProductionKnowledge.Unknown, known.Production);
     AssertEqual(120_000, known.Tick);
     AssertEqual("trader saw full granaries", known.Summary);
     AssertEqual(IntelSourceKind.Trade, savedKnown.SourceKind);
     AssertEqual(KnowledgeConfidence.High, savedKnown.Confidence);
+    AssertEqual(SettlementProductionKnowledge.Unknown, savedKnown.Production);
+}
+
+static void TestProductionKnowledgeVisibility()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen($"Worker {i + 1}", 24 + i, Sex.Male, "worker", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment("TemperateForest", "SmallHills", "Industrial", 55, 850, 21)));
+
+    var publicInfo = PlayerKnowledgeService.RecordPublicSettlementInfo(
+        state,
+        settlement.Id,
+        "public market notice");
+    var directInfo = PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+        state,
+        settlement.Id,
+        "player visited settlement map");
+    var roundTripped = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var savedKnown = roundTripped.GetKnownSettlementInfo(settlement.Id)!;
+
+    AssertEqual(SettlementProductionKnowledge.Strong, publicInfo.Production);
+    AssertEqual(false, publicInfo.ExactValuesVisible);
+    AssertEqual(SettlementProductionKnowledge.Strong, directInfo.Production);
+    AssertEqual(true, directInfo.ExactValuesVisible);
+    AssertEqual(KnowledgeConfidence.Confirmed, directInfo.Confidence);
+    AssertEqual(IntelSourceKind.DirectVisit, directInfo.SourceKind);
+    AssertEqual(SettlementProductionKnowledge.Strong, savedKnown.Production);
+    AssertEqual(true, savedKnown.ExactValuesVisible);
+}
+
+static void TestSettlementKnowledgeDoesNotDowngradeDirectVisit()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    state.CreateCitizen("Worker", 31, Sex.Female, "worker", settlement.Id);
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment("TemperateForest", "SmallHills", "Industrial", 55, 850, 21)));
+
+    var direct = PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+        state,
+        settlement.Id,
+        "direct visit");
+    state.AdvanceToTick(240_000);
+    var weaker = PlayerKnowledgeService.RecordTraderSettlementInfo(
+        state,
+        settlement.Id,
+        "later trader rumor");
+    var current = state.GetKnownSettlementInfo(settlement.Id)!;
+
+    AssertEqual(direct, weaker);
+    AssertEqual(IntelSourceKind.DirectVisit, current.SourceKind);
+    AssertEqual(KnowledgeConfidence.Confirmed, current.Confidence);
+    AssertEqual(true, current.ExactValuesVisible);
+    AssertEqual("direct visit", current.Summary);
+}
+
+static void TestSettlementKnowledgeFreshness()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "Pirate");
+    state.CreateCitizen("Citizen", 31, Sex.Female, "settler", settlement.Id);
+    state.AdvanceToTick(60_000);
+
+    var known = PlayerKnowledgeService.RecordTraderSettlementInfo(
+        state,
+        settlement.Id,
+        "trader report");
+    var fresh = PlayerKnowledgeService.GetFreshness(known, currentTick: 120_000, staleAfterTicks: 180_000);
+    var stale = PlayerKnowledgeService.GetFreshness(known, currentTick: 300_001, staleAfterTicks: 180_000);
+
+    AssertEqual(60_000, fresh.AgeTicks);
+    AssertEqual(1, fresh.AgeDays);
+    AssertEqual(false, fresh.IsStale);
+    AssertEqual(240_001, stale.AgeTicks);
+    AssertEqual(4, stale.AgeDays);
+    AssertEqual(true, stale.IsStale);
 }
 
 static void TestRaidPawnBindingLinksPawnsToCitizens()
@@ -1129,6 +1642,85 @@ static void TestDrifterFoundingNeedsEnoughDrifters()
     AssertEqual(2, state.Drifters.Count);
 }
 
+static void TestFactionLifecycleCollapsesEmptyFaction()
+{
+    var state = new WorldState(4242);
+    state.CreateSettlement("dead-camp", "Dead Camp", "Pirates");
+
+    var result = FactionLifecycleService.SimulateCollapses(
+        state,
+        new FactionLifecycleRequest(60_000, new[] { "Pirates" }));
+
+    AssertEqual(1, result.CollapsedFactions);
+    var record = state.GetFactionRecord("Pirates")!;
+    AssertEqual(WorldFactionStatus.Collapsed, record.Status);
+    AssertEqual(60_000, record.Tick);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.FactionCollapsed));
+}
+
+static void TestFactionLifecycleCountsNonResidentSurvivors()
+{
+    var settlementId = EntityId.Create(EntityKind.Settlement, 1);
+    var prisonerId = EntityId.Create(EntityKind.Citizen, 1);
+    var playerSettlementId = EntityId.Create(EntityKind.Settlement, 2);
+    var state = WorldState.FromSnapshot(new WorldStateSnapshot(
+        4242,
+        0,
+        new[]
+        {
+            new WorldSettlement(settlementId, "captured-camp", "Captured Camp", "Pirates"),
+            new WorldSettlement(playerSettlementId, "player-colony", "Player Colony", "Player")
+        },
+        new[] { new WorldCitizen(prisonerId, "Captured Raider", 33, Sex.Female, "raider", settlementId, CitizenStatus.Prisoner) },
+        Array.Empty<WorldArmy>(),
+        Array.Empty<WorldMigrationGroup>(),
+        Array.Empty<WorldIntelReport>(),
+        Array.Empty<KnownSettlementInfo>(),
+        Array.Empty<RaidOpportunity>(),
+        Array.Empty<RaidPawnLink>(),
+        Array.Empty<WorldRaidOutcome>(),
+        Array.Empty<SettlementProductionProfile>(),
+        Array.Empty<WorldFactionRecord>(),
+        new[] { new OwnershipRecord(prisonerId, playerSettlementId) },
+        Array.Empty<ResourceStack>(),
+        Array.Empty<WorldEvent>(),
+        Array.Empty<Drifter>()));
+
+    var result = FactionLifecycleService.SimulateCollapses(
+        state,
+        new FactionLifecycleRequest(60_000, new[] { "Pirates" }));
+
+    AssertEqual(0, result.CollapsedFactions);
+    AssertEqual(null, state.GetFactionRecord("Pirates"));
+}
+
+static void TestFactionLifecycleIsIdempotent()
+{
+    var state = new WorldState(4242);
+    state.CreateSettlement("empty-camp", "Empty Camp", "Pirates");
+
+    FactionLifecycleService.SimulateCollapses(state, new FactionLifecycleRequest(60_000));
+    FactionLifecycleService.SimulateCollapses(state, new FactionLifecycleRequest(120_000));
+
+    AssertEqual(1, state.FactionRecords.Count);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.FactionCollapsed));
+    AssertEqual(60_000, state.GetFactionRecord("Pirates")!.Tick);
+}
+
+static void TestFactionLifecycleSerializationRoundTrip()
+{
+    var state = new WorldState(4242);
+    state.CreateSettlement("empty-camp", "Empty Camp", "Pirates");
+    FactionLifecycleService.SimulateCollapses(state, new FactionLifecycleRequest(60_000));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    var record = restored.GetFactionRecord("Pirates")!;
+    AssertEqual(WorldFactionStatus.Collapsed, record.Status);
+    AssertEqual(60_000, record.Tick);
+    AssertEqual("population collapse", record.Reason);
+}
+
 static void TestDrifterSerializationRoundTrip()
 {
     var state = new WorldState(4242);
@@ -1401,8 +1993,11 @@ static void TestRimWorldWorldComponent()
     AssertContains("BootstrapFromRimWorldSettlements", source);
     AssertContains("WorldComponentTick", source);
     AssertContains("SettlementDailySimulationService.SimulateDay", source);
+    AssertContains("DemographyService.SimulateDay", source);
+    AssertContains("DemographySimulationRequest", source);
     AssertContains("MigrationService.SimulateDay", source);
     AssertContains("MigrationSimulationRequest", source);
+    AssertContains("PlayerKnowledgeService.RecordPublicSettlementInfo", source);
     AssertContains("lastSimulatedDay", source);
     AssertContains("GetSummary", source);
     AssertContains("IntelReports.Count", source);
@@ -1430,14 +2025,14 @@ static void TestRimWorldMainTab()
     AssertDoesNotContain("PlanTestRaid", source);
     AssertContains("LW_ArmiesHeader", source);
     AssertContains("deadCitizens", source);
-    AssertContains("foodDays", source);
-    AssertContains("foodStatus", source);
-    AssertContains("migrationPressure", source);
-    AssertContains("refugees", source);
-    AssertContains("GetSettlementMigrationStatus", source);
+    AssertDoesNotContain("foodDays.Named", source);
+    AssertDoesNotContain("migrationPressure.Named", source);
+    AssertDoesNotContain("GetSettlementMigrationStatus(settlement.Id", source);
     AssertContains("GetKnownSettlementInfo", source);
     AssertContains("KnownSettlementInfo", source);
     AssertContains("LW_KnowledgeUnknown", source);
+    AssertContains("ExactValuesVisible", source);
+    AssertContains("LW_ProductionHiddenLine", source);
     AssertContains("LW_RaidOutcomesHeader", source);
     AssertContains("LW_RaidOutcomeLine", source);
     AssertContains("LW_EventsHeader", source);
@@ -1475,16 +2070,12 @@ static void TestRimWorldMainTabLimitsRenderingWork()
     AssertContains("<LW_RaidOutcomesHeader>", russianXml);
     AssertContains("<LW_RaidOutcomeLine>", englishXml);
     AssertContains("<LW_RaidOutcomeLine>", russianXml);
-    AssertContains("foodDays", englishXml);
-    AssertContains("foodDays", russianXml);
-    AssertContains("LW_FoodStatusOk", source);
-    AssertContains("LW_FoodStatusShortage", source);
+    AssertDoesNotContain("Food days {foodDays}", englishXml);
+    AssertDoesNotContain("Дней еды {foodDays}", russianXml);
     AssertContains("<LW_FoodStatusOk>", englishXml);
     AssertContains("<LW_FoodStatusShortage>", russianXml);
-    AssertContains("migrationPressure", englishXml);
-    AssertContains("migrationPressure", russianXml);
-    AssertContains("refugees", englishXml);
-    AssertContains("refugees", russianXml);
+    AssertDoesNotContain("Migration pressure {migrationPressure}", englishXml);
+    AssertDoesNotContain("Давление миграции {migrationPressure}", russianXml);
     AssertContains("<LW_MigrationReasonStarvation>", englishXml);
     AssertContains("<LW_MigrationReasonStarvation>", russianXml);
     AssertContains("<LW_KnowledgeUnknown>", englishXml);
@@ -1512,25 +2103,37 @@ static void TestRimWorldSettlementInspectPatch()
     AssertContains("[HarmonyPatch(typeof(Settlement), \"GetInspectString\")]", source);
     AssertContains("LW_InspectPopulationLine", source);
     AssertContains("LW_InspectPopulationMissingLine", source);
-    AssertContains("GetSettlementFoodStatus", source);
-    AssertContains("GetSettlementMigrationStatus", source);
     AssertContains("GetKnownSettlementInfo", source);
     AssertContains("LW_KnowledgeLine", source);
-    AssertContains("LW_FoodStatusShortage", source);
-    AssertContains("LW_MigrationReasonStarvation", source);
-    AssertContains("GetSettlementPopulation", source);
+    AssertContains("CountVisibleSettlementPawns", source);
+    AssertContains("LW_MapVisiblePawnsLine", source);
+    AssertContains("LW_ProductionLine", source);
+    AssertContains("LW_ProductionHiddenLine", source);
+    AssertContains("RecordDirectVisitSettlementInfo", source);
+    AssertContains("ExactValuesVisible", source);
+    AssertContains("GetSettlementProductionStatus", source);
+    AssertContains("AllPawnsSpawned", source);
+    AssertContains("RaceProps?.Humanlike", source);
+    AssertDoesNotContain("GetSettlementFoodStatus", source);
+    AssertDoesNotContain("GetSettlementMigrationStatus", source);
+    AssertDoesNotContain("GetSettlementPopulation", source);
     AssertContains("FindSettlementForWorldObject", source);
     AssertContains("candidate.Name", source);
     AssertContains("$\":{worldObject.Tile}:\"", source);
     AssertContains("$\"{line}\\n{__result}\"", source);
-    AssertContains("PackagedSurvivalMeal", source);
-    AssertDoesNotContain("Steel", source);
+    AssertDoesNotContain("PackagedSurvivalMeal", source);
     AssertContains("<LW_InspectPopulationLine>", englishXml);
     AssertContains("<LW_InspectPopulationLine>", russianXml);
-    AssertContains("foodDays", englishXml);
-    AssertContains("foodStatus", russianXml);
-    AssertContains("migrationPressure", englishXml);
-    AssertContains("refugees", russianXml);
+    AssertContains("<LW_ProductionLine>", englishXml);
+    AssertContains("<LW_ProductionLine>", russianXml);
+    AssertContains("<LW_ProductionHiddenLine>", englishXml);
+    AssertContains("<LW_ProductionHiddenLine>", russianXml);
+    AssertContains("<LW_MapVisiblePawnsLine>", englishXml);
+    AssertContains("<LW_MapVisiblePawnsLine>", russianXml);
+    AssertDoesNotContain("foodDays", englishXml);
+    AssertDoesNotContain("foodStatus", russianXml);
+    AssertDoesNotContain("migrationPressure", englishXml);
+    AssertDoesNotContain("refugees", russianXml);
     AssertContains("confidence", englishXml);
     AssertContains("source", russianXml);
     AssertContains("<LW_InspectPopulationMissingLine>", englishXml);
@@ -1656,8 +2259,9 @@ static void TestRimWorldTradeIntelPatch()
 
     AssertContains("[HarmonyPatch(typeof(Dialog_Trade), \"Close\")]", source);
     AssertContains("TradeSession.trader", source);
-    AssertContains("RaidIntelService.RecordTradeIntel", source);
-    AssertContains("TradeIntelRequest", source);
+    AssertContains("SettlementTradeLedgerService.RecordTrade", source);
+    AssertContains("SettlementTradeLedgerRequest", source);
+    AssertContains("SettlementTradeDirection", source);
     AssertContains("cachedTradeables", source);
 }
 
@@ -1768,6 +2372,65 @@ static void TestWorldComponentUsesWorldGenSettings()
     AssertContains("foodPerCitizen", source);
     AssertContains("steelPerCitizen", source);
     AssertContains("bootstrapLedgerDuringWorldGeneration", source);
+    AssertContains("RimWorldSettlementProductionProfileFactory.Create", source);
+    AssertContains("RecordSettlementProductionProfile", source);
+    AssertContains("SettlementProductionService.SimulateDay", source);
+    AssertContains("RepairMissingProductionProfilesFromRimWorldSettlements", source);
+}
+
+static void TestWorldComponentUsesRimWorldWorldSeed()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+
+    var source = File.ReadAllText(componentPath);
+
+    AssertDoesNotContain("const int WorldSeed", source);
+    AssertContains("ResolveWorldSeed", source);
+    AssertContains("world.info.seedString", source);
+    AssertContains("StableSeedFromString", source);
+    AssertContains("new WorldState(ResolveWorldSeed", source);
+}
+
+static void TestWorldComponentCatchesUpMissedSimulationDays()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+
+    var source = File.ReadAllText(componentPath);
+
+    AssertContains("MaxCatchUpSimulationDays", source);
+    AssertContains("while (lastSimulatedDay < currentDay", source);
+    AssertContains("simulatedDays < MaxCatchUpSimulationDays", source);
+    AssertContains("SimulateWorldDay(lastSimulatedDay", source);
+}
+
+static void TestWorldComponentUsesInitialWorldSeedingBoundary()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+    var statePath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.Core",
+        "WorldState.cs");
+
+    var componentSource = File.ReadAllText(componentPath);
+    var stateSource = File.ReadAllText(statePath);
+
+    AssertContains("RunInitialWorldSeeding", stateSource);
+    AssertContains("IsInitialWorldSeedingActive", stateSource);
+    AssertContains("RunInitialWorldSeeding", componentSource);
+    AssertDoesNotContain("bootstrap citizen/resource import", componentSource);
 }
 
 static void TestWorldComponentSuppressesBootstrapEventSpam()
@@ -1780,8 +2443,8 @@ static void TestWorldComponentSuppressesBootstrapEventSpam()
 
     var source = File.ReadAllText(componentPath);
 
-    AssertContains("RunWithoutEvents", source);
-    AssertContains("bootstrap citizen/resource import", source);
+    AssertContains("RunInitialWorldSeeding", source);
+    AssertContains("initial world seeding", source);
 }
 
 static void TestRimWorldMainTabExplainsEmptyLedger()
@@ -1827,6 +2490,26 @@ static void TestRimWorldWorldObjectScanner()
     AssertContains("StableKey", source);
     AssertContains("obj is Settlement", source);
     AssertContains("SafeRead(() => obj.Faction", source);
+}
+
+static void TestRimWorldWorldObjectScannerUsesImporterWhitelist()
+{
+    var scannerPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "WorldObjectScanner.cs");
+
+    var source = File.ReadAllText(scannerPath);
+
+    AssertContains("IWorldObjectImporter", source);
+    AssertContains("VanillaSettlementImporter", source);
+    AssertContains("CanImport", source);
+    AssertContains("ImportCandidate", source);
+    AssertContains("foreach (var importer in importers)", source);
+    AssertContains("return importer.ImportCandidate(obj, ref scanErrorCount);", source);
+    AssertContains("obj is Settlement", source);
+    AssertDoesNotContain("return new WorldObjectSettlementCandidate(", source);
 }
 
 static void TestRimWorldWorldObjectScannerUsesExplicitSorting()
@@ -1955,6 +2638,12 @@ static void TestRimWorldKeyedTranslations()
     AssertContains("Вернулись {returnedCitizens}", russianXml);
     AssertContains("Captured {prisonerCitizens}", englishXml);
     AssertContains("Пленены {prisonerCitizens}", russianXml);
+    AssertContains("<LW_ProductionLine>", englishXml);
+    AssertContains("<LW_ProductionLine>", russianXml);
+    AssertContains("<LW_ProductionHiddenLine>", englishXml);
+    AssertContains("<LW_ProductionHiddenLine>", russianXml);
+    AssertContains("давность {ageDays}", russianXml);
+    AssertContains("production {production}", englishXml);
     AssertContains("<LW_RaidHookStatus>", englishXml);
     AssertContains("<LW_RaidHookStatus>", russianXml);
     AssertContains("<LW_DiagnosticLine>", englishXml);
@@ -1995,12 +2684,15 @@ static void TestRimWorldUiUsesTranslations()
         Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldGenSettingsWindow.cs"),
         Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"),
         Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"),
+        Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettlementInspectPatch.cs"),
     };
 
     var combinedSource = string.Join(Environment.NewLine, rimWorldSources.Select(File.ReadAllText));
 
     AssertContains("\"LW_MainTitle\".Translate()", combinedSource);
     AssertContains("\"LW_RaidHookStatus\".Translate()", combinedSource);
+    AssertContains("\"LW_ProductionLine\".Translate(", combinedSource);
+    AssertContains("\"LW_ProductionHiddenLine\".Translate()", combinedSource);
     AssertContains("\"LW_DiagnosticLine\".Translate(", combinedSource);
     AssertContains("\"LW_Settings_BootstrapLedger\".Translate()", combinedSource);
     AssertContains("\"LW_WorldGenTitle\".Translate()", combinedSource);

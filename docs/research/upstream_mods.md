@@ -4,6 +4,13 @@ Date: 2026-07-07
 
 Purpose: use existing mods as research material for ideas, patch maps, compatibility risks, and feature inventory. These repositories are not dependencies of Living World.
 
+Detailed reverse engineering reports:
+
+- [Rim War analysis](rimwar-analysis.md)
+- [Economics & Demography analysis](economics-analysis.md)
+- [Empire Refactored analysis](empire-analysis.md)
+- [Living World Foundation Architecture](livingworld-foundation.md)
+
 Reference clones:
 
 - Rim War Threaded: `tools/reference-src/RimWar---Threaded`, commit `ec8ce84`, upstream `https://github.com/TorannD/RimWar---Threaded`
@@ -240,4 +247,3 @@ Animal Control Compatibility
 ```
 
 Long-term target: other modders should be able to say, "If you need a real living world, depend on Living World Core."
-
