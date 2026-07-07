@@ -113,6 +113,32 @@ Deliverables:
 
 Обоснование: животные должны подчиняться тому же принципу no fake spawning.
 
+## Этап 5.5: BioTech, селекция и инкубаторы
+
+Цель:
+
+- добавить селекцию животных и культур;
+- добавить инкубационные проекты как долгие ledger-процессы;
+- подготовить позднюю интеграцию с Biotech без pawn-first хранения.
+
+Deliverables:
+
+- `WorldAnimalCohort`;
+- `CropStrain`;
+- `BreedingLine`;
+- `BioFacility`;
+- `BioProject`;
+- `SelectionService`;
+- `IncubationService`;
+- BioTech/DLC feature gates;
+- intel bands для редких линий, семян, эмбрионов и лабораторий.
+
+Обоснование: инкубаторы, скрещивание и селекция должны быть следствием
+экономики, экологии, технологий, специалистов и ресурсов. Они не должны
+создавать бесплатных пешек или животных из воздуха.
+
+Подробный дизайн: [BioTech, Breeding And Selection](design/biotech-breeding-and-selection.md).
+
 ## Этап 6: Diplomacy, wars and world history
 
 Цель:
