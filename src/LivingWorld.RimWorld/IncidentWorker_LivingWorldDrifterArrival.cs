@@ -48,15 +48,18 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
                 .ThenBy(drifter => drifter.Id.Value)
                 .FirstOrDefault();
 
+            var tick = Find.TickManager?.TicksGame ?? 0;
+            var sex = pooled?.Sex ?? (tick % 2 == 0 ? Sex.Female : Sex.Male);
+
             var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(
                 PawnKindDefOf.SpaceRefugee,
                 faction: Faction.OfPlayer,
                 context: PawnGenerationContext.NonPlayer,
-                fixedGender: pooled != null
-                    ? (pooled.Sex == Sex.Female ? Gender.Female : Gender.Male)
-                    : (Gender?)null));
+                fixedGender: sex == Sex.Female ? Gender.Female : Gender.Male));
 
-            var tick = Find.TickManager?.TicksGame ?? 0;
+            // Spawn first: only mutate the ledger once the pawn is actually placed on the
+            // map, so a spawn failure never consumes a drifter with no pawn to show for it.
+            GenSpawn.Spawn(pawn, CellFinder.RandomEdgeCell(map), map);
 
             EntityId ledgerId;
             if (pooled != null)
@@ -65,7 +68,6 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
             }
             else
             {
-                var sex = tick % 2 == 0 ? Sex.Male : Sex.Female;
                 ledgerId = state
                     .MaterializeNewArrival(pawn.thingIDNumber, tick, pawn.LabelShortCap, pawn.ageTracker.AgeBiologicalYears, sex)
                     .Id;
@@ -80,7 +82,6 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
 
             identityComp.SetLedgerId(ledgerId);
 
-            GenSpawn.Spawn(pawn, CellFinder.RandomEdgeCell(map), map);
             SendStandardLetter(
                 "LW_DrifterArrivalLetterLabel".Translate(),
                 "LW_DrifterArrivalLetterText".Translate(pawn.LabelShortCap.Named("PAWN")),
