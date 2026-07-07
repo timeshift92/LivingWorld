@@ -103,6 +103,7 @@ var tests = new List<(string Name, Action Test)>
     ("declares Harmony dependency and reference", TestRimWorldHarmonyDependency),
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
+    ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
     ("uses RimWorld world seed for deterministic state", TestWorldComponentUsesRimWorldWorldSeed),
     ("catches up missed daily simulations with a cap", TestWorldComponentCatchesUpMissedSimulationDays),
@@ -2383,6 +2384,24 @@ static void TestRimWorldWorldGenSettingsWindow()
     AssertContains("LW_Settings_HumanAdults", windowSource);
     AssertContains("LW_Settings_FoodPerCitizen", windowSource);
     AssertContains("LW_Settings_SteelPerCitizen", windowSource);
+}
+
+static void TestRimWorldDrifterFlowSettings()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("public bool drifterFlowEnabled", source);
+    AssertContains("public int targetWorldPopulationPerSettlement", source);
+    AssertContains("public int drifterHardCeiling", source);
+    AssertContains("public int maxDrifterArrivalsPerDay", source);
+    AssertContains("public int maxDrifterAssimilationsPerDay", source);
+    AssertContains("public int drifterMinFounders", source);
+    AssertContains("public int drifterLeaderAptitudeThreshold", source);
+    AssertContains("Scribe_Values.Look(ref drifterFlowEnabled", source);
+    AssertContains("Scribe_Values.Look(ref drifterHardCeiling", source);
+    AssertContains("Scribe_Values.Look(ref drifterLeaderAptitudeThreshold", source);
 }
 
 static void TestWorldComponentUsesWorldGenSettings()

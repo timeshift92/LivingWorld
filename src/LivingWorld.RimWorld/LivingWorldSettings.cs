@@ -14,6 +14,13 @@ public sealed class LivingWorldSettings : ModSettings
     public int foodPerCitizen = 8;
     public int steelPerCitizen = 15;
     public bool debugLogging = true;
+    public bool drifterFlowEnabled = true;
+    public int targetWorldPopulationPerSettlement = 24;
+    public int drifterHardCeiling = 2000;
+    public int maxDrifterArrivalsPerDay = 2;
+    public int maxDrifterAssimilationsPerDay = 2;
+    public int drifterMinFounders = 4;
+    public int drifterLeaderAptitudeThreshold = 70;
 
     public LivingWorldSettings()
     {
@@ -30,5 +37,12 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref foodPerCitizen, "foodPerCitizen", 8);
         Scribe_Values.Look(ref steelPerCitizen, "steelPerCitizen", 15);
         Scribe_Values.Look(ref debugLogging, "debugLogging", true);
+        Scribe_Values.Look(ref drifterFlowEnabled, "drifterFlowEnabled", true);
+        Scribe_Values.Look(ref targetWorldPopulationPerSettlement, "targetWorldPopulationPerSettlement", 24);
+        Scribe_Values.Look(ref drifterHardCeiling, "drifterHardCeiling", 2000);
+        Scribe_Values.Look(ref maxDrifterArrivalsPerDay, "maxDrifterArrivalsPerDay", 2);
+        Scribe_Values.Look(ref maxDrifterAssimilationsPerDay, "maxDrifterAssimilationsPerDay", 2);
+        Scribe_Values.Look(ref drifterMinFounders, "drifterMinFounders", 4);
+        Scribe_Values.Look(ref drifterLeaderAptitudeThreshold, "drifterLeaderAptitudeThreshold", 70);
     }
 }
