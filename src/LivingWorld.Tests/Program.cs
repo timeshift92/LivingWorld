@@ -99,6 +99,7 @@ var tests = new List<(string Name, Action Test)>
     ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
+    ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
@@ -2262,6 +2263,34 @@ static void TestWorldWarWarbandCooldownThrottlesLaunches()
     // Despite a standing second enemy village, the 10-day cooldown lets only one warband launch
     // in a 6-day window — the warmonger paces itself instead of attacking every day.
     AssertEqual(1, totalLaunched);
+}
+
+static void TestWorldWarExpansionistFoundsColony()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("home", "Home", "Settlers");
+    for (var i = 0; i < 30; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "settler", home.Id);
+    }
+
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Expansionist);
+
+    var settlementsBefore = state.Settlements.Count;
+    var totalCitizens = state.Citizens.Count;
+
+    var result = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, result.ColoniesFounded);
+    AssertEqual(settlementsBefore + 1, state.Settlements.Count);
+    // Population is conserved: the settlers relocated, none were created from nothing.
+    AssertEqual(totalCitizens, state.Citizens.Count);
+
+    var colony = state.Settlements.First(settlement => settlement.Id != home.Id);
+    AssertEqual(6, state.GetSettlementPopulation(colony.Id).Adults);
+    AssertEqual("Settlers", state.GetSettlement(colony.Id)!.FactionId);
 }
 
 static void TestRimWorldWorldWarIntegration()

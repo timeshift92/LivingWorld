@@ -426,6 +426,41 @@ public sealed class WorldState
         return captured;
     }
 
+    // A faction expands by relocating some of a settlement's living adults into a brand-new
+    // settlement of the same faction — the people move, none are created (population is conserved).
+    public WorldSettlement ExpandSettlement(EntityId sourceSettlementId, string slug, string name, int settlerCount)
+    {
+        ThrowIfNullOrWhiteSpace(slug, nameof(slug));
+        ThrowIfNullOrWhiteSpace(name, nameof(name));
+
+        if (!_settlements.TryGetValue(sourceSettlementId, out var source))
+        {
+            throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
+        }
+
+        var settlers = _citizens.Values
+            .Where(citizen => citizen.SettlementId == sourceSettlementId
+                && citizen.Status == CitizenStatus.Alive
+                && citizen.IsAdult
+                && GetOwner(citizen.Id) == sourceSettlementId)
+            .OrderBy(citizen => citizen.Id.Value)
+            .Take(Math.Max(0, settlerCount))
+            .ToList();
+
+        var colony = CreateSettlement(slug, name, source.FactionId);
+        foreach (var settler in settlers)
+        {
+            _citizens[settler.Id] = settler with { SettlementId = colony.Id };
+            _owners[settler.Id] = colony.Id;
+        }
+
+        AppendEvent(
+            WorldEventKind.SettlementFounded,
+            colony.Id,
+            $"Settlement {colony.Id} founded by {source.FactionId} with {settlers.Count} settlers from {sourceSettlementId}.");
+        return colony;
+    }
+
     public void AssignFactionBehavior(string factionId, FactionBehavior behavior)
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));

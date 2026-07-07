@@ -3,13 +3,19 @@ using System.Linq;
 
 namespace LivingWorld.Core;
 
-public sealed record WorldWarRequest(int Tick, int TravelDays, int RaidCombatants, int WarbandCooldownDays = 0);
+public sealed record WorldWarRequest(
+    int Tick,
+    int TravelDays,
+    int RaidCombatants,
+    int WarbandCooldownDays = 0,
+    int SettlerCount = 4);
 
 public sealed record WorldWarResult(
     int PlansConsidered,
     int WarbandsLaunched,
     int BattlesResolved,
-    int SettlementsCaptured);
+    int SettlementsCaptured,
+    int ColoniesFounded);
 
 /// <summary>
 /// Runs one day of the ledger world war by orchestrating the phase services in order: advance
@@ -25,6 +31,7 @@ public sealed record WorldWarResult(
 public static class WorldWarService
 {
     public const int AggressionSeverity = 20;
+    public const int MinSettlersRemaining = 8;
 
     public static WorldWarResult SimulateDay(WorldState state, WorldWarRequest request)
     {
@@ -63,43 +70,78 @@ public static class WorldWarService
             }
         }
 
-        // 3. Let factions plan and launch new warbands (one in flight per faction).
+        // 3. Execute each faction's plan: warmongers launch warbands, expansionists found colonies.
         var launched = 0;
+        var founded = 0;
         var plans = FactionActionPlanner.PlanDay(state, request.Tick);
         foreach (var plan in plans)
         {
-            if (plan.Action != WarAction.Warband || !plan.TargetSettlementId.HasValue)
+            if (plan.Action == WarAction.Warband && plan.TargetSettlementId.HasValue)
             {
-                continue;
+                if (TryLaunchWarband(state, plan, request))
+                {
+                    launched++;
+                }
             }
-
-            if (FactionHasArmyInFlight(state, plan.FactionId)
-                || FactionOnWarbandCooldown(state, plan.FactionId, request.Tick, request.WarbandCooldownDays))
+            else if (plan.Action == WarAction.Settler)
             {
-                continue;
+                if (TryFoundColony(state, plan.FactionId, request.SettlerCount))
+                {
+                    founded++;
+                }
             }
-
-            var reservation = RaidPopulationAllocator.ReserveForRaid(
-                state,
-                new RaidPopulationAllocationRequest(
-                    plan.FactionId,
-                    $"{plan.FactionId} warband",
-                    Math.Max(1, request.RaidCombatants),
-                    FoodPerCitizen: 0));
-
-            if (reservation.Army == null)
-            {
-                continue;
-            }
-
-            state.DispatchArmy(
-                reservation.Army.Id,
-                plan.TargetSettlementId.Value,
-                request.Tick + (Math.Max(0, request.TravelDays) * 60_000));
-            launched++;
         }
 
-        return new WorldWarResult(plans.Count, launched, battles, captured);
+        return new WorldWarResult(plans.Count, launched, battles, captured, founded);
+    }
+
+    private static bool TryLaunchWarband(WorldState state, FactionActionPlan plan, WorldWarRequest request)
+    {
+        if (FactionHasArmyInFlight(state, plan.FactionId)
+            || FactionOnWarbandCooldown(state, plan.FactionId, request.Tick, request.WarbandCooldownDays))
+        {
+            return false;
+        }
+
+        var reservation = RaidPopulationAllocator.ReserveForRaid(
+            state,
+            new RaidPopulationAllocationRequest(
+                plan.FactionId,
+                $"{plan.FactionId} warband",
+                Math.Max(1, request.RaidCombatants),
+                FoodPerCitizen: 0));
+
+        if (reservation.Army == null)
+        {
+            return false;
+        }
+
+        state.DispatchArmy(
+            reservation.Army.Id,
+            plan.TargetSettlementId!.Value,
+            request.Tick + (Math.Max(0, request.TravelDays) * 60_000));
+        return true;
+    }
+
+    // An expansionist founds a colony from its most populous settlement, but only if that
+    // settlement can spare the settlers and still stay viable at home.
+    private static bool TryFoundColony(WorldState state, string factionId, int settlerCount)
+    {
+        var settlers = Math.Max(1, settlerCount);
+        var source = state.Settlements
+            .Where(settlement => string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+            .OrderByDescending(settlement => state.GetSettlementPopulation(settlement.Id).Adults)
+            .ThenBy(settlement => settlement.Id.Value)
+            .FirstOrDefault();
+
+        if (source == null || state.GetSettlementPopulation(source.Id).Adults < settlers + MinSettlersRemaining)
+        {
+            return false;
+        }
+
+        var ordinal = state.Settlements.Count + 1;
+        state.ExpandSettlement(source.Id, $"{factionId}-colony-{ordinal}", $"{factionId} colony {ordinal}", settlers);
+        return true;
     }
 
     private static bool FactionHasArmyInFlight(WorldState state, string factionId)
