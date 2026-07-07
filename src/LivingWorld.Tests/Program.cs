@@ -84,6 +84,8 @@ var tests = new List<(string Name, Action Test)>
     ("diminishes settlement combat power past the threshold", TestSettlementPowerDiminishesPastThreshold),
     ("maps faction behavior archetypes to profiles", TestFactionBehaviorProfiles),
     ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
+    ("army arrives at its target when the eta passes", TestArmyMovementArrivesOnEta),
+    ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -1848,6 +1850,46 @@ static void TestFactionBehaviorNonParticipants()
     {
         AssertEqual(true, FactionBehaviorService.GetProfile(behavior).ParticipatesInWorldWar);
     }
+}
+
+static void TestArmyMovementArrivesOnEta()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    var army = state.CreateArmy("Raiders", "Pirates", source.Id);
+
+    state.DispatchArmy(army.Id, target.Id, arrivalTick: 5 * 60_000);
+
+    // Before the ETA the army is still travelling.
+    var early = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(2 * 60_000));
+    AssertEqual(0, early.Arrived);
+    AssertEqual(ArmyMovementStatus.Traveling, state.GetArmyMovement(army.Id)!.Status);
+
+    // At/after the ETA it arrives, exactly once.
+    var onTime = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(5 * 60_000));
+    AssertEqual(1, onTime.Arrived);
+    AssertEqual(ArmyMovementStatus.Arrived, state.GetArmyMovement(army.Id)!.Status);
+
+    // Idempotent: an already-arrived army is not re-processed.
+    var again = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(6 * 60_000));
+    AssertEqual(0, again.Arrived);
+}
+
+static void TestArmyMovementSerializationRoundTrip()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    var army = state.CreateArmy("Raiders", "Pirates", source.Id);
+    state.DispatchArmy(army.Id, target.Id, arrivalTick: 5 * 60_000);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    var movement = restored.GetArmyMovement(army.Id)!;
+    AssertEqual(target.Id, movement.TargetSettlementId);
+    AssertEqual(5 * 60_000, movement.ArrivalTick);
+    AssertEqual(ArmyMovementStatus.Traveling, movement.Status);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

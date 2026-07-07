@@ -206,7 +206,21 @@ public static class WorldStateCodec
                             new XAttribute("sex", drifter.Sex),
                             new XAttribute("arrivalTick", drifter.ArrivalTick),
                             new XAttribute("combatAptitude", drifter.CombatAptitude),
-                            new XAttribute("organizationAptitude", drifter.OrganizationAptitude))))));
+                            new XAttribute("organizationAptitude", drifter.OrganizationAptitude)))),
+                new XElement(
+                    "ArmyMovements",
+                    state.ArmyMovements
+                        .OrderBy(movement => movement.ArmyId.Value)
+                        .Select(movement =>
+                            new XElement(
+                                "Movement",
+                                new XAttribute("armyKind", movement.ArmyId.Kind),
+                                new XAttribute("armyId", movement.ArmyId.Value),
+                                new XAttribute("targetKind", movement.TargetSettlementId.Kind),
+                                new XAttribute("targetId", movement.TargetSettlementId.Value),
+                                new XAttribute("departTick", movement.DepartTick),
+                                new XAttribute("arrivalTick", movement.ArrivalTick),
+                                new XAttribute("status", movement.Status))))));
 
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -376,7 +390,19 @@ public static class WorldStateCodec
                     OptionalInt(element, "organizationAptitude", 0)))
                 .ToList());
 
-        return WorldState.FromSnapshot(snapshot);
+        var state = WorldState.FromSnapshot(snapshot);
+
+        foreach (var element in OptionalContainer(root, "ArmyMovements").Elements("Movement"))
+        {
+            state.RestoreArmyMovementForLedger(new WorldArmyMovement(
+                ReadEntityId(element, "armyKind", "armyId"),
+                ReadEntityId(element, "targetKind", "targetId"),
+                RequiredInt(element, "departTick"),
+                RequiredInt(element, "arrivalTick"),
+                RequiredEnum<ArmyMovementStatus>(element, "status")));
+        }
+
+        return state;
     }
 
     private static object[] IdAttributes(EntityId id)

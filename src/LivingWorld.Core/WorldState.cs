@@ -12,6 +12,7 @@ public sealed class WorldState
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
+    private readonly Dictionary<EntityId, WorldArmyMovement> _armyMovements = new();
     private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
@@ -35,6 +36,8 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldSettlement> Settlements => _settlements.Values;
 
     public IReadOnlyCollection<WorldArmy> Armies => _armies.Values;
+
+    public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
     public IReadOnlyCollection<WorldMigrationGroup> MigrationGroups => _migrationGroups.Values;
 
@@ -323,6 +326,53 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.OwnershipAssigned, army.Id, $"Army {army.Id} assigned to {sourceSettlementId}.");
 
         return army;
+    }
+
+    public WorldArmyMovement DispatchArmy(EntityId armyId, EntityId targetSettlementId, int arrivalTick)
+    {
+        if (!_armies.ContainsKey(armyId))
+        {
+            throw new InvalidOperationException($"Army {armyId} does not exist.");
+        }
+
+        if (!_settlements.ContainsKey(targetSettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {targetSettlementId} does not exist.");
+        }
+
+        var movement = new WorldArmyMovement(
+            armyId,
+            targetSettlementId,
+            CurrentTick,
+            Math.Max(CurrentTick, arrivalTick),
+            ArmyMovementStatus.Traveling);
+
+        _armyMovements[armyId] = movement;
+        return movement;
+    }
+
+    public WorldArmyMovement? GetArmyMovement(EntityId armyId)
+    {
+        return _armyMovements.TryGetValue(armyId, out var movement)
+            ? movement
+            : null;
+    }
+
+    public WorldArmyMovement SetArmyMovementStatus(EntityId armyId, ArmyMovementStatus status)
+    {
+        if (!_armyMovements.TryGetValue(armyId, out var movement))
+        {
+            throw new InvalidOperationException($"Army {armyId} has no movement.");
+        }
+
+        var updated = movement with { Status = status };
+        _armyMovements[armyId] = updated;
+        return updated;
+    }
+
+    internal void RestoreArmyMovementForLedger(WorldArmyMovement movement)
+    {
+        _armyMovements[movement.ArmyId] = movement;
     }
 
     public Drifter CreateDrifter(string name, int age, Sex sex, int combatAptitude = 0, int organizationAptitude = 0)
