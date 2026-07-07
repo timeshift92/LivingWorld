@@ -320,6 +320,24 @@ coarse model.
 Order: O1 + O2 gate scale and should precede large-world testing; E1→E3 give the economy
 meaning; E4/EMP1 are the Claude-lane visibility/compat pieces that consume the above.
 
+## Settlement Development ("do bases grow?")
+
+A review of "how do AI bases develop" found the world grows in population (births,
+assimilation, arrivals) and factions expand (Settler founds new settlements), but existing
+settlements never *developed* — the `SettlementCapability` model existed but was static, never
+grown by a tick service, and births ignored housing.
+
+- **SD1 (Claude — normally Core/Codex, taken by Claude because Codex is overloaded): DONE.**
+  `SettlementDevelopmentService.SimulateDay`: a fed (non-starving) settlement that outgrows its
+  housing grows housing/food-storage capacity a step/day toward `population + headroom`, up to a
+  cap; records a `SettlementDeveloped` event. Deterministic, pure Core (capacity is
+  infrastructure, not people — conservation-safe). Wired into the daily tick behind
+  `settlementDevelopmentEnabled` (+ `settlementDevelopmentStep`, `settlementHousingHeadroom`).
+  Tests `TestSettlementDevelopmentGrowsHousing` + `TestRimWorldSettlementDevelopmentWiring`.
+- **SD2 (Codex, backlog): Deeper development.** Settlement tiers/levels (village→town→city,
+  population-flow §8), a `Develop`/`Build` `WarAction` so factions deliberately invest in a base,
+  specialist-pool growth, and tying births to housing capacity. Ties to EMP2/E2. Status: BACKLOG.
+
 ## Review Contract
 
 For every completed task, the other agent reviews from these angles before merge:

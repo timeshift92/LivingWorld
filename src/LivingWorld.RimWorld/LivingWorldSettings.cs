@@ -26,6 +26,9 @@ public sealed class LivingWorldSettings : ModSettings
     public int worldWarRaidCombatants = 8;
     public int worldWarWarbandCooldownDays = 8;
     public int worldWarLetterCooldownDays = 10;
+    public bool settlementDevelopmentEnabled = true;
+    public int settlementDevelopmentStep = 2;
+    public int settlementHousingHeadroom = 4;
 
     public LivingWorldSettings()
     {
@@ -54,5 +57,8 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref worldWarRaidCombatants, "worldWarRaidCombatants", 8);
         Scribe_Values.Look(ref worldWarWarbandCooldownDays, "worldWarWarbandCooldownDays", 8);
         Scribe_Values.Look(ref worldWarLetterCooldownDays, "worldWarLetterCooldownDays", 10);
+        Scribe_Values.Look(ref settlementDevelopmentEnabled, "settlementDevelopmentEnabled", true);
+        Scribe_Values.Look(ref settlementDevelopmentStep, "settlementDevelopmentStep", 2);
+        Scribe_Values.Look(ref settlementHousingHeadroom, "settlementHousingHeadroom", 4);
     }
 }

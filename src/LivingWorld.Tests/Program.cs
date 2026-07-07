@@ -84,6 +84,8 @@ var tests = new List<(string Name, Action Test)>
     ("collapses each faction only once", TestFactionLifecycleIsIdempotent),
     ("serializes collapsed faction records", TestFactionLifecycleSerializationRoundTrip),
     ("computes settlement combat power from living adults", TestSettlementPowerFromLivingAdults),
+    ("prospering settlements develop housing over time", TestSettlementDevelopmentGrowsHousing),
+    ("wires settlement development into the daily tick", TestRimWorldSettlementDevelopmentWiring),
     ("diminishes settlement combat power past the threshold", TestSettlementPowerDiminishesPastThreshold),
     ("maps faction behavior archetypes to profiles", TestFactionBehaviorProfiles),
     ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
@@ -1908,6 +1910,56 @@ static void TestFactionLifecycleIsIdempotent()
     AssertEqual(1, state.FactionRecords.Count);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.FactionCollapsed));
     AssertEqual(60_000, state.GetFactionRecord("Pirates")!.Tick);
+}
+
+static void TestSettlementDevelopmentGrowsHousing()
+{
+    var state = new WorldState(4242);
+    var town = state.CreateSettlement("town", "Town", "Settlers");
+    for (var i = 0; i < 10; i++)
+    {
+        state.CreateCitizen("C" + i, 30, Sex.Male, "settler", town.Id);
+    }
+
+    state.AddResource(town.Id, "PackagedSurvivalMeal", 50); // fed (>= 10 population)
+
+    // A starving settlement never develops.
+    var camp = state.CreateSettlement("camp", "Camp", "Settlers");
+    for (var i = 0; i < 5; i++)
+    {
+        state.CreateCitizen("D" + i, 30, Sex.Male, "settler", camp.Id);
+    }
+
+    var r1 = SettlementDevelopmentService.SimulateDay(
+        state, new SettlementDevelopmentRequest(60_000, "PackagedSurvivalMeal", HousingHeadroom: 4, DevelopmentStep: 5, MaxHousing: 80));
+    AssertEqual(1, r1.SettlementsDeveloped);
+    AssertEqual(5, state.GetSettlementCapability(town.Id)!.HousingCapacity); // 0 -> +5
+    AssertEqual(null, state.GetSettlementCapability(camp.Id)); // starving camp untouched
+
+    // Keeps building toward population + headroom = 14, then stops.
+    SettlementDevelopmentService.SimulateDay(
+        state, new SettlementDevelopmentRequest(120_000, "PackagedSurvivalMeal", 4, 5, 80));
+    SettlementDevelopmentService.SimulateDay(
+        state, new SettlementDevelopmentRequest(180_000, "PackagedSurvivalMeal", 4, 5, 80));
+    AssertEqual(14, state.GetSettlementCapability(town.Id)!.HousingCapacity); // 5 -> 10 -> 14 (capped)
+
+    var r4 = SettlementDevelopmentService.SimulateDay(
+        state, new SettlementDevelopmentRequest(240_000, "PackagedSurvivalMeal", 4, 5, 80));
+    AssertEqual(0, r4.SettlementsDeveloped); // already developed enough
+    AssertEqual(3, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDeveloped));
+}
+
+static void TestRimWorldSettlementDevelopmentWiring()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("SettlementDevelopmentService.SimulateDay", component);
+    AssertContains("settings.settlementDevelopmentEnabled", component);
+
+    var settings = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("public bool settlementDevelopmentEnabled", settings);
+    AssertContains("Scribe_Values.Look(ref settlementDevelopmentEnabled", settings);
+    AssertContains("public int settlementDevelopmentStep", settings);
+    AssertContains("public int settlementHousingHeadroom", settings);
 }
 
 static void TestSettlementPowerFromLivingAdults()

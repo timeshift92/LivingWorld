@@ -228,6 +228,18 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 50,
                 1));
 
+        if (settings.settlementDevelopmentEnabled && !State.IsInitialWorldSeedingActive)
+        {
+            SettlementDevelopmentService.SimulateDay(
+                State,
+                new SettlementDevelopmentRequest(
+                    day * TicksPerDay,
+                    FoodResourceKey,
+                    settings.settlementHousingHeadroom,
+                    settings.settlementDevelopmentStep,
+                    settings.maxSettlementAdults));
+        }
+
         if (settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive)
         {
             var dayTick = day * TicksPerDay;
