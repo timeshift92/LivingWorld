@@ -129,7 +129,7 @@ Acceptance:
 - save/load roundtrip preserves new action state;
 - tests cover no-target, low-power, one-settlement, allied-target, and exhausted-population cases.
 
-Owner: Codex.
+Owner: Codex. Status: DONE (`009bfc4`) — Caravan/Scout/Diplomat execute against the ledger. Reviewed by Claude 2026-07-08: **APPROVED** — conservation OK (Caravan transfers/clamps, Scout/Diplomat create nothing), sensible targeting (trade non-hostile, diplomacy skips irreconcilable), no citizen double-drive, no player targeting (post-K4); tests present (caravan goods, scouting, diplomat, save/load). Detail in [`world-war-open-gaps.md`](../../design/world-war-open-gaps.md).
 
 ### Claude Task K1: Show World War Consequences In Game
 
@@ -255,13 +255,13 @@ the guard. Build 0/0. Codex C4 (Core defense-in-depth) still recommended.
 Scope: the ledger knows its player faction id; `FactionActionPlanner.FindEnemyTarget` and
 `FactionLifecycleService` never target or collapse the player faction, even if a player
 settlement reaches the ledger by another path. Acceptance: tests prove the world war
-never targets/collapses the player faction. Owner: Codex.
+never targets/collapses the player faction. Owner: Codex. Status: NOT DONE (grep-confirmed 2026-07-08 — no player exclusion in `FindEnemyTarget`/`FactionLifecycleService`). Low severity now: Claude K4 scanner fix keeps player settlements out of the ledger, closing the only known entry path; C4 remains as defense-in-depth.
 
 ### Codex Task C5: Prune resolved army movements (G2)
 
 Scope: `WorldState._armyMovements` currently keeps every Disbanded/Arrived/Recalled
 movement forever (save bloat + growth). Prune resolved movements past a retention window,
-back-compat load. Folds into C3. Owner: Codex.
+back-compat load. Folds into C3. Owner: Codex. Status: NOT DONE (grep-confirmed 2026-07-08 — `_armyMovements` still has no prune/Remove; grows unbounded).
 
 ## Review Contract
 

@@ -71,11 +71,45 @@ G1 is the textbook "acceptance written, guard/test never added." Adopt: **every
 acceptance bullet gets a test that would fail without the change** — the split doc's
 Review Contract should reject a task whose acceptance has no enforcing test.
 
-## Ownership / order
+## Status (as of 2026-07-08 review)
 
-1. **Claude — G1 scanner exclusion + test** (in progress). Closes the silent-player hole
-   at the source.
-2. **Codex — G1 Core defense-in-depth** (player-faction id + `FindEnemyTarget` /
-   `FactionLifecycleService` exclusion + test).
-3. **Codex — G2 movement pruning** (folds into C3).
-4. **Codex — G3** covered by C3 cached aggregates.
+- **G1 — PARTIALLY DONE.** Primary fix landed: `VanillaSettlementImporter` drops
+  `Faction.OfPlayer` settlements (commit on `main`, `TestRimWorldWorldObjectScanner`
+  asserts the guard), so player settlements no longer enter the ledger and the world war
+  can't reach them. **Core defense-in-depth (C4) NOT DONE** — `FindEnemyTarget` and
+  `FactionLifecycleService` still have no player-faction exclusion (grep-confirmed). Now
+  low severity because the scanner closes the only known entry path; keep C4 as belt-and-
+  suspenders for other importer/mod paths.
+- **G2 (movement pruning) — NOT DONE.** `WorldState._armyMovements` still keeps every
+  resolved movement forever (grep-confirmed no `Remove`/prune). Save bloat over long games.
+- **G3 (war-loop scale) — NOT DONE.** `PlanDay`/`FactionPower` still scan citizens per
+  faction each day; awaits C3 cached aggregates.
+
+## Reviewer verdict — Codex non-warband execution (C1): APPROVED
+
+Reviewed `WorldWarService` Caravan/Scout/Diplomat (Codex `009bfc4`) against the review
+contract:
+
+- **Conservation OK.** Caravan uses `TransferResource` (moves owned goods source→target,
+  quantity clamped to `GetOwnedResourceQuantity`, net-zero — nothing created); Scout only
+  records an intel report; Diplomat only adjusts goodwill. No population/resource is
+  fabricated.
+- **No double-drive.** None of the three reserve citizens, so they can't use army/raid-
+  reserved population.
+- **Sensible targeting.** Trade targets a non-`Hostile` other faction (no gifting enemies);
+  diplomacy skips irreconcilable factions (no wasted overtures on pirates); scouting hits
+  any other faction. After G1, none can target the player (player settlements are out of
+  the ledger).
+- **Tests present.** `TestWorldWarCaravanTransfersRealGoods`,
+  `TestWorldWarScoutingRecordsIntel`, `TestWorldWarDiplomatChangesGoodwill`,
+  `TestWorldWarNonWarbandEffectsPersistThroughSaveLoad` (conservation + save/load).
+
+No blocking findings. Minor watch: caravans can flow to a neutral faction the sender is
+not allied with — intended trade, not a bug.
+
+## Owner / order (remaining)
+
+1. **Codex — C4** (G1 Core defense-in-depth): player-faction id in ledger + exclusion in
+   `FindEnemyTarget` and `FactionLifecycleService` + test. Low severity (scanner covers it).
+2. **Codex — C5** (G2 movement pruning), folds into C3.
+3. **Codex — G3** covered by C3 cached aggregates.
