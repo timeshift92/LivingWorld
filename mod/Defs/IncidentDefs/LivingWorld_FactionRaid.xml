@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+  <IncidentDef>
+    <defName>LivingWorld_FactionRaid</defName>
+    <label>Living World faction raid</label>
+    <category>ThreatBig</category>
+    <targetTags>
+      <li>Map_PlayerHome</li>
+    </targetTags>
+    <workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldFactionRaid</workerClass>
+  </IncidentDef>
+</Defs>

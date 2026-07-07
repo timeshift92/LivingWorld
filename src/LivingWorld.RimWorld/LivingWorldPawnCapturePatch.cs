@@ -22,9 +22,17 @@ public static class LivingWorldPawnCapturePatch
             return;
         }
 
-        RaidPawnBindingService.MarkPawnPrisoner(
+        // CompLivingWorldIdentity is preferred; thingIDNumber remains an identity fallback.
+        if (!LivingWorldPawnIdentityService.TryGetLedgerId(pawn, out var ledgerId))
+        {
+            return;
+        }
+
+        LivingWorldPawnSyncService.Apply(
             component.State,
-            pawn.thingIDNumber,
-            "pawn captured by player");
+            new PawnFateSyncRequest(
+                ledgerId,
+                PawnFateKind.Prisoner,
+                "pawn captured by player"));
     }
 }

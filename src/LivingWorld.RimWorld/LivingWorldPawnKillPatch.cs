@@ -15,9 +15,17 @@ public static class LivingWorldPawnKillPatch
             return;
         }
 
-        RaidPawnBindingService.MarkPawnDead(
+        // CompLivingWorldIdentity is preferred; thingIDNumber remains an identity fallback.
+        if (!LivingWorldPawnIdentityService.TryGetLedgerId(__instance, out var ledgerId))
+        {
+            return;
+        }
+
+        LivingWorldPawnSyncService.Apply(
             component.State,
-            __instance.thingIDNumber,
-            "pawn killed on map");
+            new PawnFateSyncRequest(
+                ledgerId,
+                PawnFateKind.Dead,
+                "pawn killed on map"));
     }
 }

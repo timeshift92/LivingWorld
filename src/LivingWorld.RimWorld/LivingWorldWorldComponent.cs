@@ -76,7 +76,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 return false;
             }
 
-            return State.Drifters.Count > 0 || cachedWorldPopulation < cachedTargetPopulation;
+            return State.Drifters.Count > 0;
         }
     }
 

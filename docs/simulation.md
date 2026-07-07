@@ -221,6 +221,19 @@ Prisoner / Missing` (сумма = `Sent`) и событием `RaidResolved`. И
 
 ### Перехват ванильного рейда (реализация)
 
+**Primary path:** custom raid incident owns primary Living World raid path.
+`LivingWorld_FactionRaid` выбирает hostile humanlike фракцию с доступным
+ledger-населением, резервирует реальных граждан через
+`RaidPopulationAllocator`, отдаёт активный бой vanilla raid flow и затем
+закрывает незадействованных резервистов через `RaidReconciliationService`.
+
+**Fallback path:** legacy vanilla raid patches are fallback. Harmony-перехват
+`IncidentWorker_RaidEnemy.TryResolveRaidFaction` нужен только для совместимости
+с ванильным storyteller и чужими инцидентами, которые всё ещё вызывают обычный
+enemy raid. Если `LivingWorld_FactionRaid` уже зарезервировал армию на этих
+`IncidentParms`, fallback-патч видит reservation и ничего повторно не
+резервирует.
+
 Решение «взять ли ванильный рейд на реальное население» принимает чистая
 Core-функция `VanillaRaidInterceptor.TryIntercept(state, request)`. Ключевое
 правило: **Living World никогда не отменяет рейд.** Возможны только два исхода:
@@ -483,8 +496,11 @@ settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
 - **Category:** `AllyArrival` (не враг, не торговец, союзный одиночка).
 - **Worker:** `IncidentWorker_LivingWorldDrifterArrival`.
 - **Gate (CanFireNowSub):** `LivingWorldWorldComponent.WantsDrifterArrival` — истина если:
-  - есть дрифтер в пуле захватанных, **ИЛИ**
-  - текущее население мира ниже целевого (кэш `cachedWorldPopulation < cachedTargetPopulation`, где цель = `Σ поселений × targetWorldPopulationPerSettlement`). Гейт читает кэш из дневного тика — без LINQ по гражданам на каждый вызов.
+  - есть дрифтер в пуле захватанных (`State.Drifters.Count > 0`).
+  Дефицит населения мира сам по себе больше не открывает инцидент: дневной
+  `DrifterArrivalService` сначала должен создать ledger-дрифтера, и только
+  потом storyteller может материализовать его как pawn. Это убирает
+  повторяющиеся «бесплатные» прибытия без записи в пуле.
 - **Fail-open:** нет компонента/карты или исключение → `TryExecuteWorker` возвращает `false` (инцидент не срабатывает, ванильное поведение), без частичных мутаций мира.
 
 **Выполнение (TryExecuteWorker):**
@@ -503,10 +519,22 @@ settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
 
 **Свойства:**
 
-- Прицеплена к пешке сразу при спавне через инцидент.
+- Зарегистрирована на vanilla `ThingDef Human` через `mod/Patches/LivingWorld_PawnIdentity.xml`, поэтому новые human pawns получают объявленный `ThingComp`; материализация всё равно defensively создаёт comp, если модовая/нестандартная пешка пришла без него.
+- Заполняется ledger id сразу при спавне через инцидент.
 - Переживает сохранение мира (сохраняется как часть `Pawn`'s list of comps).
 - Используется в дальнейшем для синхронизации (dematerialization, raids, etc.).
 - Это **первый** минимальный срез архитектуры идентичности (будет расширен: raid-линки, frequency comp, migration links).
+
+`LivingWorldPawnIdentityService` является resolver-слоем для активных
+pawn-событий. Патчи смерти, плена и выхода с карты сначала читают
+`CompLivingWorldIdentity`; `Pawn.thingIDNumber` остаётся только fallback для
+старых связей и не является долгосрочным source of truth.
+
+`LivingWorldPawnSyncService` — единая Core-точка применения судьбы materialized
+pawn. RimWorld-патчи передают в неё `(EntityId, PawnFateKind, reason)`, а сервис
+находит активный `RaidPawnLink`, вызывает нужный переход `WorldState`
+(`Dead/Prisoner/Returned/Missing`) и сразу пробует закрыть `WorldRaidOutcome`.
+Это оставляет RimWorld-слой тонким: он только ловит факт и резолвит identity.
 
 ### Явные хвосты вне scope
 

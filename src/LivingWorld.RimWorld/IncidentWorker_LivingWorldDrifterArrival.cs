@@ -50,6 +50,10 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
 
             var tick = Find.TickManager?.TicksGame ?? 0;
             var sex = pooled?.Sex ?? (tick % 2 == 0 ? Sex.Female : Sex.Male);
+            if (!TryFindArrivalCell(map, out var spawnCell))
+            {
+                return false;
+            }
 
             var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(
                 PawnKindDefOf.SpaceRefugee,
@@ -59,7 +63,7 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
 
             // Spawn first: only mutate the ledger once the pawn is actually placed on the
             // map, so a spawn failure never consumes a drifter with no pawn to show for it.
-            GenSpawn.Spawn(pawn, CellFinder.RandomEdgeCell(map), map);
+            GenSpawn.Spawn(pawn, spawnCell, map);
 
             EntityId ledgerId;
             if (pooled != null)
@@ -95,5 +99,14 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
             Log.Warning($"[LivingWorld] Drifter arrival failed, deferring to vanilla: {error}");
             return false;
         }
+    }
+
+    private static bool TryFindArrivalCell(Map map, out IntVec3 cell)
+    {
+        return CellFinder.TryFindRandomEdgeCellWith(
+            candidate => candidate.Standable(map) && !candidate.Fogged(map),
+            map,
+            CellFinder.EdgeRoadChance_Neutral,
+            out cell);
     }
 }

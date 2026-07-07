@@ -15,13 +15,11 @@ public sealed class CompProperties_LivingWorldIdentity : CompProperties
 /// Carries the ledger identity (<see cref="EntityId"/>) on a materialized pawn so the
 /// world ledger — not the fragile thingIDNumber — is the intended durable link.
 /// <para>
-/// This slice attaches the comp at materialization via <c>Pawn.AllComps.Add</c> and
-/// serializes the id in <see cref="PostExposeData"/>. Note: durable save/load round-trip
-/// additionally requires registering <see cref="CompProperties_LivingWorldIdentity"/> on
-/// the pawn ThingDef's &lt;comps&gt; (a def patch) — RimWorld only recreates comps that the
-/// ThingDef declares. Until that registration lands, a runtime-attached comp will not be
-/// rebuilt on load. Harmless for now (nothing reads <see cref="LedgerId"/> back yet); the
-/// durable identity map is a separate slice — see docs/design/storyteller-normalization.md.
+/// LivingWorld_PawnIdentity.xml registers <see cref="CompProperties_LivingWorldIdentity"/>
+/// on the Human ThingDef, so the ThingDef declares this comp and newly materialized
+/// human pawns get a ThingDef-declared comp
+/// that RimWorld can expose with the pawn. Materialization still creates the comp
+/// defensively if another race/modded pawn lacks the declaration.
 /// </para>
 /// </summary>
 public sealed class CompLivingWorldIdentity : ThingComp

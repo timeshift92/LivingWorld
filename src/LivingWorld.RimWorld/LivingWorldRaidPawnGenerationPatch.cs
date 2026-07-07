@@ -32,6 +32,23 @@ public static class LivingWorldRaidPawnGenerationPatch
             component.State,
             reservation.ArmyId,
             pawns.Select(pawn => pawn.thingIDNumber));
+        foreach (var pawn in pawns)
+        {
+            var link = component.State.GetRaidPawnLink(pawn.thingIDNumber);
+            if (link == null)
+            {
+                continue;
+            }
+
+            var identityComp = pawn.GetComp<CompLivingWorldIdentity>();
+            if (identityComp == null)
+            {
+                identityComp = new CompLivingWorldIdentity { parent = pawn };
+                pawn.AllComps.Add(identityComp);
+            }
+
+            identityComp.SetLedgerId(link.CitizenId);
+        }
 
         // Any reservist that did not get a generated pawn stands down and returns to its settlement,
         // so reserving more combatants than vanilla spawns never strands citizens in the army.

@@ -15,7 +15,10 @@
   <LW_RaidHookStatus>Enemy vanilla raids use Living World: an intel or trade opportunity is required first, then adult citizens are reserved from faction settlements and raid strength is capped by available people.</LW_RaidHookStatus>
   <LW_SettlementsHeader>Settlements</LW_SettlementsHeader>
   <LW_ArmiesHeader>Armies</LW_ArmiesHeader>
-  <LW_RaidOutcomesHeader>Raid outcomes</LW_RaidOutcomesHeader>
+  <LW_RaidOutcomesHeader>Recent raids</LW_RaidOutcomesHeader>
+  <LW_FactionCollapsesHeader>Faction collapses</LW_FactionCollapsesHeader>
+  <LW_DriftersHeader>Drifters</LW_DriftersHeader>
+  <LW_KnownIntelFreshnessHeader>Known settlement intel freshness</LW_KnownIntelFreshnessHeader>
   <LW_EventsHeader>Events</LW_EventsHeader>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>
@@ -29,6 +32,9 @@
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Alive {citizens} | Dead {deadCitizens} | Returned {returnedCitizens} | Captured {prisonerCitizens} | Meals {meals} | Steel {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner} | Missing {missing}</LW_RaidOutcomeLine>
+  <LW_FactionCollapseLine>{faction} collapsed at tick {tick}: {reason}</LW_FactionCollapseLine>
+  <LW_DrifterLine>{name} | age {age} | sex {sex} | combat {combat} | organization {organization}</LW_DrifterLine>
+  <LW_KnownIntelFreshnessLine>{name} | source {source} | confidence {confidence} | age {ageDays} days | stale {stale} | {summary}</LW_KnownIntelFreshnessLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>Visible pawns on loaded map: {visiblePawns}</LW_MapVisiblePawnsLine>
@@ -49,4 +55,6 @@
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
   <LW_DrifterArrivalLetterLabel>Drifter arrival</LW_DrifterArrivalLetterLabel>
   <LW_DrifterArrivalLetterText>{0}, a drifter from beyond the world, has arrived and wishes to join your colony.</LW_DrifterArrivalLetterText>
+  <LW_FactionRaidLetterLabel>Living World raid</LW_FactionRaidLetterLabel>
+  <LW_FactionRaidLetterText>A hostile faction is attacking with real Living World citizens from its ledger population.</LW_FactionRaidLetterText>
 </LanguageData>

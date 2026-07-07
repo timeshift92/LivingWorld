@@ -15,7 +15,10 @@
   <LW_RaidHookStatus>Вражеские ванильные рейды используют Living World: сначала нужен повод из разведки или торговли, затем взрослые жители резервируются из поселений фракции, а сила рейда ограничивается доступными людьми.</LW_RaidHookStatus>
   <LW_SettlementsHeader>Поселения</LW_SettlementsHeader>
   <LW_ArmiesHeader>Армии</LW_ArmiesHeader>
-  <LW_RaidOutcomesHeader>Итоги рейдов</LW_RaidOutcomesHeader>
+  <LW_RaidOutcomesHeader>Последние рейды</LW_RaidOutcomesHeader>
+  <LW_FactionCollapsesHeader>Коллапсы фракций</LW_FactionCollapsesHeader>
+  <LW_DriftersHeader>Дрифтеры</LW_DriftersHeader>
+  <LW_KnownIntelFreshnessHeader>Свежесть сведений о поселениях</LW_KnownIntelFreshnessHeader>
   <LW_EventsHeader>События</LW_EventsHeader>
   <LW_ListLimited>Показано {shown} из {total}. Полный ledger хранится в памяти и сохранении.</LW_ListLimited>
   <LW_FoodStatusOk>стабильно</LW_FoodStatusOk>
@@ -29,6 +32,9 @@
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner} | Пропало {missing}</LW_RaidOutcomeLine>
+  <LW_FactionCollapseLine>{faction} коллапсировала на тике {tick}: {reason}</LW_FactionCollapseLine>
+  <LW_DrifterLine>{name} | возраст {age} | пол {sex} | бой {combat} | организация {organization}</LW_DrifterLine>
+  <LW_KnownIntelFreshnessLine>{name} | источник {source} | уверенность {confidence} | давность {ageDays} дн. | устарело {stale} | {summary}</LW_KnownIntelFreshnessLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>На загруженной карте видно пешек: {visiblePawns}</LW_MapVisiblePawnsLine>
@@ -49,4 +55,6 @@
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
   <LW_DrifterArrivalLetterLabel>Приход дрифтера</LW_DrifterArrivalLetterLabel>
   <LW_DrifterArrivalLetterText>{0} — дрифтер из-за края мира — прибыл и хочет вступить в вашу колонию.</LW_DrifterArrivalLetterText>
+  <LW_FactionRaidLetterLabel>Рейд Living World</LW_FactionRaidLetterLabel>
+  <LW_FactionRaidLetterText>Враждебная фракция атакует реальными жителями из ledger-населения Living World.</LW_FactionRaidLetterText>
 </LanguageData>

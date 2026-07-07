@@ -12,6 +12,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private const int MaxSettlementRows = 40;
     private const int MaxArmyRows = 20;
     private const int MaxOutcomeRows = 12;
+    private const int MaxFactionCollapseRows = 8;
+    private const int MaxDrifterRows = 12;
+    private const int MaxKnowledgeRows = 12;
     private const int MaxEventRows = 20;
     private const int CacheRefreshIntervalTicks = 120;
     private const int KnowledgeStaleAfterTicks = 1_800_000;
@@ -22,12 +25,18 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedSettlementCount = -1;
     private int cachedArmyCount = -1;
     private int cachedOutcomeCount = -1;
+    private int cachedFactionRecordCount = -1;
+    private int cachedDrifterCount = -1;
+    private int cachedKnownInfoCount = -1;
     private int cachedEventCount = -1;
     private int cachedCitizenCount = -1;
     private int cachedProductionProfileCount = -1;
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
+    private List<string> cachedFactionCollapseRows = new();
+    private List<string> cachedDrifterRows = new();
+    private List<string> cachedKnownIntelRows = new();
     private List<string> cachedEventRows = new();
 
     public override Vector2 InitialSize => new Vector2(760f, 560f);
@@ -85,8 +94,11 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         var scrollRect = listing.GetRect(inRect.height - 90f);
         var viewHeight = 140f
             + (cachedSettlementRows.Count * 88f)
+            + (cachedKnownIntelRows.Count * 30f)
             + (cachedArmyRows.Count * 52f)
             + (cachedOutcomeRows.Count * 30f)
+            + (cachedFactionCollapseRows.Count * 30f)
+            + (cachedDrifterRows.Count * 30f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -111,6 +123,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             y += 88f;
         }
 
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_KnownIntelFreshnessHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedKnownIntelRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            y += 30f;
+        }
+
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_ArmiesHeader".Translate());
         y += 30f;
 
@@ -124,6 +145,24 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         y += 30f;
 
         foreach (var row in cachedOutcomeRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            y += 30f;
+        }
+
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_FactionCollapsesHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedFactionCollapseRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            y += 30f;
+        }
+
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_DriftersHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedDrifterRows)
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
             y += 30f;
@@ -148,6 +187,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         if (cachedSettlementCount == state.Settlements.Count
             && cachedArmyCount == state.Armies.Count
             && cachedOutcomeCount == state.RaidOutcomes.Count
+            && cachedFactionRecordCount == state.FactionRecords.Count
+            && cachedDrifterCount == state.Drifters.Count
+            && cachedKnownInfoCount == state.KnownSettlementInfos.Count
             && cachedEventCount == state.Events.Count
             && cachedCitizenCount == state.Citizens.Count
             && cachedProductionProfileCount == state.ProductionProfiles.Count
@@ -160,6 +202,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         cachedSettlementCount = state.Settlements.Count;
         cachedArmyCount = state.Armies.Count;
         cachedOutcomeCount = state.RaidOutcomes.Count;
+        cachedFactionRecordCount = state.FactionRecords.Count;
+        cachedDrifterCount = state.Drifters.Count;
+        cachedKnownInfoCount = state.KnownSettlementInfos.Count;
         cachedEventCount = state.Events.Count;
         cachedCitizenCount = state.Citizens.Count;
         cachedProductionProfileCount = state.ProductionProfiles.Count;
@@ -178,6 +223,23 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     settlement.FactionId.Named("faction"),
                     knowledgeLine.Named("knowledge"),
                     productionLine.Named("production")).ToString();
+            })
+            .ToList();
+        cachedKnownIntelRows = state.KnownSettlementInfos
+            .OrderByDescending(info => info.Tick)
+            .ThenBy(info => info.SettlementId.Value)
+            .Take(MaxKnowledgeRows)
+            .Select(info =>
+            {
+                var settlement = state.GetSettlement(info.SettlementId);
+                var freshness = PlayerKnowledgeService.GetFreshness(info, currentTick, KnowledgeStaleAfterTicks);
+                return "LW_KnownIntelFreshnessLine".Translate(
+                    (settlement?.Name ?? info.SettlementId.ToString()).Named("name"),
+                    info.SourceKind.Named("source"),
+                    info.Confidence.Named("confidence"),
+                    freshness.AgeDays.Named("ageDays"),
+                    freshness.IsStale.Named("stale"),
+                    info.Summary.Named("summary")).ToString();
             })
             .ToList();
         cachedArmyRows = state.Armies
@@ -226,6 +288,29 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     outcome.Prisoner.Named("prisoner"),
                     outcome.Missing.Named("missing")).ToString();
             })
+            .ToList();
+        cachedFactionCollapseRows = state.FactionRecords
+            .Where(record => record.Status == WorldFactionStatus.Collapsed)
+            .OrderByDescending(record => record.Tick)
+            .ThenBy(record => record.FactionId, System.StringComparer.Ordinal)
+            .Take(MaxFactionCollapseRows)
+            .Select(record =>
+                "LW_FactionCollapseLine".Translate(
+                    record.FactionId.Named("faction"),
+                    record.Tick.Named("tick"),
+                    record.Reason.Named("reason")).ToString())
+            .ToList();
+        cachedDrifterRows = state.Drifters
+            .OrderBy(drifter => drifter.ArrivalTick)
+            .ThenBy(drifter => drifter.Id.Value)
+            .Take(MaxDrifterRows)
+            .Select(drifter =>
+                "LW_DrifterLine".Translate(
+                    drifter.Name.Named("name"),
+                    drifter.Age.Named("age"),
+                    drifter.Sex.Named("sex"),
+                    drifter.CombatAptitude.Named("combat"),
+                    drifter.OrganizationAptitude.Named("organization")).ToString())
             .ToList();
         cachedEventRows = state.Events
             .Skip(System.Math.Max(0, state.Events.Count - MaxEventRows))

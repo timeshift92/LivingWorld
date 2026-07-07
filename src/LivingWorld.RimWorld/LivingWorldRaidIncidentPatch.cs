@@ -21,6 +21,8 @@ public static class LivingWorldRaidIncidentPatch
 
         if (LivingWorldRaidBindingRuntime.TryGetReservation(parms, out _))
         {
+            // LivingWorld_FactionRaid owns the primary Living World raid path. This patch is
+            // only a legacy vanilla raid fallback and must not reserve a second army.
             return;
         }
 

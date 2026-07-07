@@ -32,25 +32,37 @@ public static class LivingWorldPawnExitTracker
             return;
         }
 
+        // CompLivingWorldIdentity is preferred; thingIDNumber remains an identity fallback.
+        if (!LivingWorldPawnIdentityService.TryGetLedgerId(pawn, out var ledgerId))
+        {
+            return;
+        }
+
         switch (RaidPawnExitPolicy.Resolve(pawn.Dead, pawn.IsPrisoner, pawn.Downed))
         {
             case RaidPawnExitAction.Capture:
-                RaidPawnBindingService.MarkPawnPrisoner(
+                LivingWorldPawnSyncService.Apply(
                     component.State,
-                    pawn.thingIDNumber,
-                    "pawn is prisoner");
+                    new PawnFateSyncRequest(
+                        ledgerId,
+                        PawnFateKind.Prisoner,
+                        "pawn is prisoner"));
                 break;
             case RaidPawnExitAction.Return:
-                RaidPawnBindingService.MarkPawnReturned(
+                LivingWorldPawnSyncService.Apply(
                     component.State,
-                    pawn.thingIDNumber,
-                    reason);
+                    new PawnFateSyncRequest(
+                        ledgerId,
+                        PawnFateKind.Returned,
+                        reason));
                 break;
             case RaidPawnExitAction.Miss:
-                RaidPawnBindingService.MarkPawnMissing(
+                LivingWorldPawnSyncService.Apply(
                     component.State,
-                    pawn.thingIDNumber,
-                    "downed raider left the map with unknown fate");
+                    new PawnFateSyncRequest(
+                        ledgerId,
+                        PawnFateKind.Missing,
+                        "downed raider left the map with unknown fate"));
                 break;
             case RaidPawnExitAction.Ignore:
                 // Dead — handled by the kill patch.

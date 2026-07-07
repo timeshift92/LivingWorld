@@ -98,9 +98,16 @@ var tests = new List<(string Name, Action Test)>
     ("patches pawn death into Living World casualties", TestRimWorldPawnKillPatch),
     ("patches pawn capture into Living World prisoners", TestRimWorldPawnCapturePatch),
     ("patches pawn exit into Living World raid returns", TestRimWorldPawnExitPatch),
+    ("defines identity based pawn sync service", TestRimWorldPawnIdentityService),
+    ("pawn death sync checks identity comp before thing id", TestRimWorldPawnKillPatchUsesIdentity),
+    ("pawn capture sync checks identity comp before thing id", TestRimWorldPawnCapturePatchUsesIdentity),
+    ("pawn exit sync checks identity comp before thing id", TestRimWorldPawnExitPatchUsesIdentity),
+    ("defines core pawn fate sync service", TestCorePawnFateSyncService),
+    ("rimworld inbound patches use pawn sync service", TestRimWorldInboundPatchesUsePawnSyncService),
     ("records trade intel from RimWorld trade dialog", TestRimWorldTradeIntelPatch),
     ("defines Living World main button def", TestRimWorldMainButtonDef),
     ("defines a pawn identity comp round-tripping the ledger id", TestRimWorldIdentityComp),
+    ("registers pawn identity comp on human ThingDef", TestRimWorldIdentityCompThingDefPatch),
     ("declares Harmony dependency and reference", TestRimWorldHarmonyDependency),
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
@@ -123,6 +130,14 @@ var tests = new List<(string Name, Action Test)>
     ("uses translations in RimWorld UI", TestRimWorldUiUsesTranslations),
     ("defines the drifter arrival incident def", TestRimWorldDrifterArrivalIncidentDef),
     ("defines the drifter arrival incident worker", TestRimWorldDrifterArrivalWorker),
+    ("drifter arrival requires a pooled drifter before firing", TestDrifterArrivalGateRequiresPooledDrifter),
+    ("drifter arrival validates edge spawn cells", TestRimWorldDrifterArrivalWorkerValidatesSpawnCell),
+    ("defines Russian incident def localization", TestRimWorldIncidentDefRussianLocalization),
+    ("defines the faction raid incident def", TestRimWorldFactionRaidIncidentDef),
+    ("defines the faction raid incident worker", TestRimWorldFactionRaidWorker),
+    ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
+    ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
+    ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
 var failures = new List<string>();
@@ -2073,6 +2088,15 @@ static void TestRimWorldMainTab()
     AssertContains("LW_ProductionHiddenLine", source);
     AssertContains("LW_RaidOutcomesHeader", source);
     AssertContains("LW_RaidOutcomeLine", source);
+    AssertContains("LW_FactionCollapsesHeader", source);
+    AssertContains("LW_FactionCollapseLine", source);
+    AssertContains("LW_DriftersHeader", source);
+    AssertContains("LW_DrifterLine", source);
+    AssertContains("LW_KnownIntelFreshnessHeader", source);
+    AssertContains("LW_KnownIntelFreshnessLine", source);
+    AssertContains("FactionRecords", source);
+    AssertContains("Drifters", source);
+    AssertContains("KnownSettlementInfos", source);
     AssertContains("LW_EventsHeader", source);
 }
 
@@ -2094,13 +2118,22 @@ static void TestRimWorldMainTabLimitsRenderingWork()
     AssertContains("MaxArmyRows", source);
     AssertContains("MaxEventRows", source);
     AssertContains("MaxOutcomeRows", source);
+    AssertContains("MaxFactionCollapseRows", source);
+    AssertContains("MaxDrifterRows", source);
+    AssertContains("MaxKnowledgeRows", source);
     AssertContains("cachedSettlementRows", source);
     AssertContains("cachedOutcomeRows", source);
+    AssertContains("cachedFactionCollapseRows", source);
+    AssertContains("cachedDrifterRows", source);
+    AssertContains("cachedKnownIntelRows", source);
     AssertContains("RefreshCachedRows", source);
     AssertContains(".Take(MaxSettlementRows)", source);
     AssertContains(".Take(MaxArmyRows)", source);
     AssertContains(".Take(MaxEventRows)", source);
     AssertContains(".Take(MaxOutcomeRows)", source);
+    AssertContains(".Take(MaxFactionCollapseRows)", source);
+    AssertContains(".Take(MaxDrifterRows)", source);
+    AssertContains(".Take(MaxKnowledgeRows)", source);
     AssertDoesNotContain("state.Settlements.Count * 72f", source);
     AssertContains("<LW_ListLimited>", englishXml);
     AssertContains("<LW_ListLimited>", russianXml);
@@ -2108,6 +2141,20 @@ static void TestRimWorldMainTabLimitsRenderingWork()
     AssertContains("<LW_RaidOutcomesHeader>", russianXml);
     AssertContains("<LW_RaidOutcomeLine>", englishXml);
     AssertContains("<LW_RaidOutcomeLine>", russianXml);
+    AssertContains("Recent raids", englishXml);
+    AssertContains("Последние рейды", russianXml);
+    AssertContains("<LW_FactionCollapsesHeader>", englishXml);
+    AssertContains("<LW_FactionCollapsesHeader>", russianXml);
+    AssertContains("<LW_FactionCollapseLine>", englishXml);
+    AssertContains("<LW_FactionCollapseLine>", russianXml);
+    AssertContains("<LW_DriftersHeader>", englishXml);
+    AssertContains("<LW_DriftersHeader>", russianXml);
+    AssertContains("<LW_DrifterLine>", englishXml);
+    AssertContains("<LW_DrifterLine>", russianXml);
+    AssertContains("<LW_KnownIntelFreshnessHeader>", englishXml);
+    AssertContains("<LW_KnownIntelFreshnessHeader>", russianXml);
+    AssertContains("<LW_KnownIntelFreshnessLine>", englishXml);
+    AssertContains("<LW_KnownIntelFreshnessLine>", russianXml);
     AssertDoesNotContain("Food days {foodDays}", englishXml);
     AssertDoesNotContain("Дней еды {foodDays}", russianXml);
     AssertContains("<LW_FoodStatusOk>", englishXml);
@@ -2238,8 +2285,9 @@ static void TestRimWorldPawnKillPatch()
 
     AssertContains("[HarmonyPatch(typeof(Pawn), \"Kill\")]", source);
     AssertRimWorldMethodExists("Verse.Pawn", "Kill");
-    AssertContains("thingIDNumber", source);
-    AssertContains("RaidPawnBindingService.MarkPawnDead", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("LivingWorldPawnSyncService.Apply", source);
+    AssertContains("PawnFateKind.Dead", source);
 }
 
 static void TestRimWorldPawnCapturePatch()
@@ -2257,7 +2305,9 @@ static void TestRimWorldPawnCapturePatch()
     AssertContains("[HarmonyPatch(typeof(Pawn_GuestTracker), \"CapturedBy\")]", source);
     AssertRimWorldMethodExists("RimWorld.Pawn_GuestTracker", "CapturedBy");
     AssertContains("IsPrisoner", source);
-    AssertContains("RaidPawnBindingService.MarkPawnPrisoner", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("LivingWorldPawnSyncService.Apply", source);
+    AssertContains("PawnFateKind.Prisoner", source);
 }
 
 static void TestRimWorldPawnExitPatch()
@@ -2278,9 +2328,122 @@ static void TestRimWorldPawnExitPatch()
     AssertRimWorldMethodExists("Verse.Pawn", "DeSpawn");
     AssertContains("Dead", source);
     AssertContains("IsPrisoner", source);
-    AssertContains("MarkPawnPrisoner", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("LivingWorldPawnSyncService.Apply", source);
+    AssertContains("PawnFateKind.Prisoner", source);
+    AssertContains("PawnFateKind.Returned", source);
+    AssertContains("PawnFateKind.Missing", source);
+}
+
+static void TestRimWorldPawnIdentityService()
+{
+    var path = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnIdentityService.cs");
+
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("class LivingWorldPawnIdentityService", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("GetComp<CompLivingWorldIdentity>", source);
+    AssertContains("RaidPawnLinks", source);
     AssertContains("thingIDNumber", source);
-    AssertContains("RaidPawnBindingService.MarkPawnReturned", source);
+}
+
+static void TestRimWorldPawnKillPatchUsesIdentity()
+{
+    var patchPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnKillPatch.cs");
+
+    var source = File.ReadAllText(patchPath);
+
+    AssertContains("LivingWorldPawnIdentityService", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("CompLivingWorldIdentity", source);
+}
+
+static void TestRimWorldPawnCapturePatchUsesIdentity()
+{
+    var patchPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnCapturePatch.cs");
+
+    var source = File.ReadAllText(patchPath);
+
+    AssertContains("LivingWorldPawnIdentityService", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("CompLivingWorldIdentity", source);
+}
+
+static void TestRimWorldPawnExitPatchUsesIdentity()
+{
+    var patchPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnExitPatch.cs");
+
+    var source = File.ReadAllText(patchPath);
+
+    AssertContains("LivingWorldPawnIdentityService", source);
+    AssertContains("TryGetLedgerId", source);
+    AssertContains("CompLivingWorldIdentity", source);
+}
+
+static void TestCorePawnFateSyncService()
+{
+    var path = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.Core",
+        "LivingWorldPawnSyncService.cs");
+
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("enum PawnFateKind", source);
+    AssertContains("record PawnFateSyncRequest", source);
+    AssertContains("class LivingWorldPawnSyncService", source);
+    AssertContains("Apply", source);
+    AssertContains("RaidOutcomeService.TryRecordResolvedRaidOutcome", source);
+    AssertContains("RaidPawnLinkStatus.Active", source);
+    AssertContains("CitizenId == request.LedgerId", source);
+}
+
+static void TestRimWorldInboundPatchesUsePawnSyncService()
+{
+    var killPatch = File.ReadAllText(Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnKillPatch.cs"));
+    var capturePatch = File.ReadAllText(Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnCapturePatch.cs"));
+    var exitPatch = File.ReadAllText(Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPawnExitPatch.cs"));
+
+    AssertContains("LivingWorldPawnSyncService.Apply", killPatch);
+    AssertContains("PawnFateKind.Dead", killPatch);
+    AssertContains("LivingWorldPawnSyncService.Apply", capturePatch);
+    AssertContains("PawnFateKind.Prisoner", capturePatch);
+    AssertContains("LivingWorldPawnSyncService.Apply", exitPatch);
+    AssertContains("PawnFateKind.Returned", exitPatch);
+    AssertContains("PawnFateKind.Missing", exitPatch);
+    AssertContains("PawnFateKind.Prisoner", exitPatch);
 }
 
 static void TestRimWorldTradeIntelPatch()
@@ -2409,7 +2572,11 @@ static void TestRimWorldDrifterFlowSettings()
     AssertContains("public int drifterMinFounders", source);
     AssertContains("public int drifterLeaderAptitudeThreshold", source);
     AssertContains("Scribe_Values.Look(ref drifterFlowEnabled", source);
+    AssertContains("Scribe_Values.Look(ref targetWorldPopulationPerSettlement", source);
     AssertContains("Scribe_Values.Look(ref drifterHardCeiling", source);
+    AssertContains("Scribe_Values.Look(ref maxDrifterArrivalsPerDay", source);
+    AssertContains("Scribe_Values.Look(ref maxDrifterAssimilationsPerDay", source);
+    AssertContains("Scribe_Values.Look(ref drifterMinFounders", source);
     AssertContains("Scribe_Values.Look(ref drifterLeaderAptitudeThreshold", source);
 }
 
@@ -2759,7 +2926,24 @@ static void TestRimWorldIdentityComp()
     AssertContains("public EntityId LedgerId", source);
     AssertContains("public override void PostExposeData()", source);
     AssertContains("Scribe_Values.Look", source);
+    AssertContains("ThingDef declares", source);
+    AssertDoesNotContain("will not be", source);
     AssertRimWorldMethodExists("Verse.ThingComp", "PostExposeData");
+}
+
+static void TestRimWorldIdentityCompThingDefPatch()
+{
+    var path = Path.Combine(
+        FindRepoRoot(),
+        "mod",
+        "Patches",
+        "LivingWorld_PawnIdentity.xml");
+    AssertFileExists(path);
+    var xml = File.ReadAllText(path);
+
+    AssertContains("<Operation Class=\"PatchOperationAdd\">", xml);
+    AssertContains("<xpath>/Defs/ThingDef[defName=\"Human\"]/comps</xpath>", xml);
+    AssertContains("LivingWorld.RimWorld.CompProperties_LivingWorldIdentity", xml);
 }
 
 static void TestRimWorldUiUsesTranslations()
@@ -2821,6 +3005,125 @@ static void TestRimWorldDrifterArrivalWorker()
     AssertContains("Instance", source);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker", "TryExecuteWorker");
     AssertRimWorldMethodExists("RimWorld.IncidentWorker", "CanFireNowSub");
+}
+
+static void TestDrifterArrivalGateRequiresPooledDrifter()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("State.Drifters.Count > 0", source);
+    AssertDoesNotContain("cachedWorldPopulation < cachedTargetPopulation", source);
+}
+
+static void TestRimWorldDrifterArrivalWorkerValidatesSpawnCell()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldDrifterArrival.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("TryFindRandomEdgeCellWith", source);
+    AssertContains("Standable", source);
+    AssertContains("return false;", source);
+}
+
+static void TestRimWorldIncidentDefRussianLocalization()
+{
+    var path = Path.Combine(
+        FindRepoRoot(),
+        "mod",
+        "Languages",
+        "Russian",
+        "DefInjected",
+        "IncidentDef",
+        "LivingWorld_Incidents.xml");
+    AssertFileExists(path);
+    var xml = File.ReadAllText(path);
+
+    AssertContains("<LivingWorld_DrifterArrival.label>", xml);
+    AssertContains("<LivingWorld_DrifterArrival.letterLabel>", xml);
+    AssertContains("<LivingWorld_DrifterArrival.letterText>", xml);
+}
+
+static void TestRimWorldFactionRaidIncidentDef()
+{
+    var path = Path.Combine(FindRepoRoot(), "mod", "Defs", "IncidentDefs", "LivingWorld_FactionRaid.xml");
+    AssertFileExists(path);
+    var xml = File.ReadAllText(path);
+
+    AssertContains("<defName>LivingWorld_FactionRaid</defName>", xml);
+    AssertContains("<category>ThreatBig</category>", xml);
+    AssertContains("<workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldFactionRaid</workerClass>", xml);
+    AssertContains("<li>Map_PlayerHome</li>", xml);
+}
+
+static void TestRimWorldFactionRaidWorker()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldFactionRaid.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidEnemy", source);
+    AssertContains("RaidPopulationAllocator.ReserveForRaid", source);
+    AssertContains("LivingWorldRaidBindingRuntime.TryAddReservation", source);
+    AssertContains("base.TryExecuteWorker(parms)", source);
+    AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", source);
+    AssertContains("EstimateRequestedCombatants", source);
+    AssertContains("humanlikeFaction", source);
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_RaidEnemy", "TryExecuteWorker");
+}
+
+static void TestRimWorldRaidPawnGenerationAttachesIdentity()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldRaidPawnGenerationPatch.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("CompLivingWorldIdentity", source);
+    AssertContains("SetLedgerId", source);
+    AssertContains("GetRaidPawnLink", source);
+}
+
+static void TestRimWorldFactionRaidLocalization()
+{
+    var englishPath = Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml");
+    var russianPath = Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml");
+    var incidentRussianPath = Path.Combine(
+        FindRepoRoot(),
+        "mod",
+        "Languages",
+        "Russian",
+        "DefInjected",
+        "IncidentDef",
+        "LivingWorld_Incidents.xml");
+    var englishXml = File.ReadAllText(englishPath);
+    var russianXml = File.ReadAllText(russianPath);
+    var incidentRussianXml = File.ReadAllText(incidentRussianPath);
+
+    AssertContains("<LW_FactionRaidLetterLabel>", englishXml);
+    AssertContains("<LW_FactionRaidLetterLabel>", russianXml);
+    AssertContains("<LW_FactionRaidLetterText>", englishXml);
+    AssertContains("<LW_FactionRaidLetterText>", russianXml);
+    AssertContains("<LivingWorld_FactionRaid.label>", incidentRussianXml);
+}
+
+static void TestRaidPrimaryPathAndFallbackContract()
+{
+    var docsPath = Path.Combine(FindRepoRoot(), "docs", "simulation.md");
+    var patchPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldRaidIncidentPatch.cs");
+
+    var docs = File.ReadAllText(docsPath);
+    var raidPatchSource = File.ReadAllText(patchPath);
+
+    AssertContains("custom raid incident owns primary Living World raid path", docs);
+    AssertContains("legacy vanilla raid patches are fallback", docs);
+    AssertContains("LivingWorld_FactionRaid", raidPatchSource);
+    AssertContains("fallback", raidPatchSource);
 }
 
 static string FindRepoRoot()
