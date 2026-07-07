@@ -47,6 +47,11 @@
   <LW_WorldWarLetterLabel>Мировая война</LW_WorldWarLetterLabel>
   <LW_WorldWarLetterText>Фракции мира воюют. С прошлого сообщения сменили владельца поселений: {captures}.</LW_WorldWarLetterText>
   <LW_EmpireActiveNote>Empire управляет вашей империей; Living World ведёт фракции NPC-мира.</LW_EmpireActiveNote>
+  <LW_WorldEconomyHeader>Мировая экономика</LW_WorldEconomyHeader>
+  <LW_FactionEconomyLine>{faction}: {wealth}</LW_FactionEconomyLine>
+  <LW_WealthBandPoor>бедная</LW_WealthBandPoor>
+  <LW_WealthBandModest>умеренная</LW_WealthBandModest>
+  <LW_WealthBandWealthy>богатая</LW_WealthBandWealthy>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>На загруженной карте видно пешек: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Население Living World: нет данных для этого поселения (в ledger-е поселений: {settlements})</LW_InspectPopulationMissingLine>

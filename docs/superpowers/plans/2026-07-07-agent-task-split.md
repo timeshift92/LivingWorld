@@ -284,7 +284,14 @@ coarse model.
   direct resource transfer caravan. Status: NOT STARTED.
 - **E4 (Claude): Materialize trade from ledger + economy UI.** Draw arriving vanilla trader
   stock from the nearest ledger settlement's owned resources; show wealth/price bands in the
-  main tab; EN/RU. Today: traders don't pull from the ledger economy. Status: NOT STARTED.
+  main tab; EN/RU.
+  - **E4a (economy UI): DONE.** Main-tab "World economy" section shows per-faction material
+    wealth as bands (poor/modest/wealthy, exact only under debug), capped and cached in
+    `RefreshCachedRows` (no per-frame full-scan); EN/RU. Test `TestRimWorldWorldEconomyMainTab`.
+    Uses a resource-stock proxy until E1 wealth lands. Build 0/0.
+  - **E4b (trader materialization): DEFERRED.** Harmony hook on `IncidentWorker_TraderCaravan
+    Arrival` to draw trader stock from ledger owned resources; pairs better after Codex E1–E3
+    (money/prices) give trade real value. Status: NOT STARTED.
 
 ### Empire compatibility (no adapter today)
 

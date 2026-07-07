@@ -114,6 +114,7 @@ var tests = new List<(string Name, Action Test)>
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
+    ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2678,6 +2679,24 @@ static void TestRimWorldEmpireInterop()
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     AssertContains("<LW_EmpireActiveNote>", en);
     AssertContains("<LW_EmpireActiveNote>", ru);
+}
+
+static void TestRimWorldWorldEconomyMainTab()
+{
+    var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    // A World Economy section with capped, cached per-faction material rows shown as bands
+    // (coarse, not omniscient exact totals unless debug is on).
+    AssertContains("LW_WorldEconomyHeader", mainTab);
+    AssertContains("cachedFactionEconomyRows", mainTab);
+    AssertContains("LW_FactionEconomyLine", mainTab);
+    AssertContains("WealthBand", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_WorldEconomyHeader>", en);
+    AssertContains("<LW_WorldEconomyHeader>", ru);
+    AssertContains("<LW_FactionEconomyLine>", en);
+    AssertContains("<LW_FactionEconomyLine>", ru);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

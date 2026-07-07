@@ -47,6 +47,11 @@
   <LW_WorldWarLetterLabel>World war</LW_WorldWarLetterLabel>
   <LW_WorldWarLetterText>The world's factions are at war. {captures} settlement(s) have changed hands since the last report.</LW_WorldWarLetterText>
   <LW_EmpireActiveNote>Empire manages your own empire; Living World tracks the NPC world's factions.</LW_EmpireActiveNote>
+  <LW_WorldEconomyHeader>World economy</LW_WorldEconomyHeader>
+  <LW_FactionEconomyLine>{faction}: {wealth}</LW_FactionEconomyLine>
+  <LW_WealthBandPoor>poor</LW_WealthBandPoor>
+  <LW_WealthBandModest>modest</LW_WealthBandModest>
+  <LW_WealthBandWealthy>wealthy</LW_WealthBandWealthy>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>Visible pawns on loaded map: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Living World population: no data for this settlement (ledger settlements: {settlements})</LW_InspectPopulationMissingLine>

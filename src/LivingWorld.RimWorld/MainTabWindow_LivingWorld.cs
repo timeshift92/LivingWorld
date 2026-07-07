@@ -36,6 +36,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private List<string> cachedActiveWarbandRows = new();
     private List<string> cachedFactionStrengthRows = new();
     private List<string> cachedWarHistoryRows = new();
+    private List<string> cachedFactionEconomyRows = new();
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
@@ -108,6 +109,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedActiveWarbandRows.Count * 26f)
             + (cachedFactionStrengthRows.Count * 26f)
             + (cachedWarHistoryRows.Count * 24f)
+            + 30f
+            + (cachedFactionEconomyRows.Count * 26f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -207,6 +210,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 22f), row);
             y += 24f;
+        }
+
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_WorldEconomyHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedFactionEconomyRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            y += 26f;
         }
 
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_EventsHeader".Translate());
@@ -413,6 +425,45 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     worldEvent.Kind.Named("kind"),
                     worldEvent.Summary.Named("summary")).ToString())
             .ToList();
+
+        cachedFactionEconomyRows = state.Settlements
+            .Select(settlement => settlement.FactionId)
+            .Distinct(System.StringComparer.Ordinal)
+            .OrderBy(factionId => factionId, System.StringComparer.Ordinal)
+            .Take(MaxWarRows)
+            .Select(factionId =>
+            {
+                var stock = state.Settlements
+                    .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
+                    .Sum(settlement => FactionMaterialStock(state, settlement.Id));
+                var wealth = debugExact ? stock.ToString() : WealthBand(stock);
+                return "LW_FactionEconomyLine".Translate(
+                    factionId.Named("faction"),
+                    wealth.Named("wealth")).ToString();
+            })
+            .ToList();
+    }
+
+    // A settlement's material stockpile across the tracked resources — a proxy until Codex's
+    // ledger wealth (E1) lands; shown as a band so the player is not omniscient.
+    private static int FactionMaterialStock(WorldState state, EntityId settlementId)
+    {
+        return state.GetOwnedResourceQuantity(settlementId, "PackagedSurvivalMeal")
+            + state.GetOwnedResourceQuantity(settlementId, "Steel")
+            + state.GetOwnedResourceQuantity(settlementId, "MedicineIndustrial")
+            + state.GetOwnedResourceQuantity(settlementId, "ComponentIndustrial");
+    }
+
+    private static string WealthBand(int stock)
+    {
+        if (stock < 100)
+        {
+            return "LW_WealthBandPoor".Translate();
+        }
+
+        return stock < 500
+            ? "LW_WealthBandModest".Translate()
+            : "LW_WealthBandWealthy".Translate();
     }
 
     // Player-facing strength is a coarse band, not an omniscient exact value (debug logging
