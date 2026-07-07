@@ -14,12 +14,7 @@ public static class LivingWorldRaidIncidentPatch
 
     public static void Postfix(IncidentParms parms, ref bool __result)
     {
-        if (!__result)
-        {
-            return;
-        }
-
-        if (parms == null || parms.faction == null)
+        if (!__result || parms?.faction == null)
         {
             return;
         }
@@ -30,7 +25,7 @@ public static class LivingWorldRaidIncidentPatch
         }
 
         var component = LivingWorldWorldComponent.Instance;
-        if (component == null || component.State.Settlements.Count == 0)
+        if (component == null)
         {
             return;
         }
@@ -41,30 +36,23 @@ public static class LivingWorldRaidIncidentPatch
             return;
         }
 
-        if (!RaidOpportunityService.TryConsumeBestOpportunity(component.State, factionId!, out var opportunity))
-        {
-            __result = false;
-            return;
-        }
-
-        var requestedCombatants = EstimateRequestedCombatants(parms.points);
-        requestedCombatants = Math.Min(requestedCombatants, opportunity!.CombatantDemand);
-        var result = RaidPopulationAllocator.ReserveForRaid(
+        var interception = VanillaRaidInterceptor.TryIntercept(
             component.State,
-            new RaidPopulationAllocationRequest(
+            new VanillaRaidInterceptionRequest(
                 factionId!,
-                $"Vanilla raid {Find.TickManager?.TicksGame ?? 0}",
-                requestedCombatants));
+                EstimateRequestedCombatants(parms.points),
+                $"Vanilla raid {Find.TickManager?.TicksGame ?? 0}"));
 
-        if (result.Status != RaidPopulationAllocationStatus.Success || result.ReservedCombatants <= 0)
+        // Living World never cancels the raid. If it cannot supply combatants it steps aside and
+        // lets vanilla generate the raid unchanged (__result stays true).
+        if (interception.Action != VanillaRaidInterceptionAction.Intercepted || interception.Army == null)
         {
-            __result = false;
             return;
         }
 
-        LivingWorldRaidBindingRuntime.TryAddReservation(parms, result.Army!.Id);
+        LivingWorldRaidBindingRuntime.TryAddReservation(parms, interception.Army.Id);
 
-        var cappedPoints = Math.Max(MinimumRaidPoints, result.ReservedCombatants * PointsPerCombatant);
+        var cappedPoints = Math.Max(MinimumRaidPoints, interception.ReservedCombatants * PointsPerCombatant);
         if (cappedPoints < parms.points)
         {
             parms.points = cappedPoints;

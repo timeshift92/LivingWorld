@@ -32,5 +32,9 @@ public static class LivingWorldRaidPawnGenerationPatch
             component.State,
             reservation.ArmyId,
             pawns.Select(pawn => pawn.thingIDNumber));
+
+        // Any reservist that did not get a generated pawn stands down and returns to its settlement,
+        // so reserving more combatants than vanilla spawns never strands citizens in the army.
+        RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.ArmyId);
     }
 }

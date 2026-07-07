@@ -35,6 +35,13 @@ var tests = new List<(string Name, Action Test)>
     ("records a resolved raid outcome after all bound pawns are resolved", TestRaidOutcomeRecordedWhenRaidResolves),
     ("does not count a downed raider despawn as a safe return", TestDownedRaiderExitIsNotCountedAsReturn),
     ("marks a lost downed raider as missing and resolves the raid", TestRaidPawnMissingMarksCitizenMissingAndResolvesRaid),
+    ("returns undeployed reserved combatants to their settlement", TestUndeployedReservedCombatantsReturnHome),
+    ("leaves deployed and resolved raiders alone when releasing reserves", TestReleaseUndeployedReservesLeavesDeployedAndResolvedAlone),
+    ("returns orphaned reserves from an aborted raid", TestAbortedRaidReleaseReturnsOrphanedReserves),
+    ("runs a vanilla raid from real population without an intel opportunity", TestVanillaRaidInterceptedWithoutOpportunity),
+    ("leaves a vanilla raid untouched when the faction has no living world population", TestVanillaRaidPassesThroughWithoutPopulation),
+    ("consumes a standing opportunity when intercepting a vanilla raid", TestVanillaRaidConsumesOpportunityWhenPresent),
+    ("frees orphaned reserves before intercepting a new vanilla raid", TestVanillaRaidInterceptionFreesPriorOrphans),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
     ("defines RimWorld 1.6 load folders", TestRimWorldLoadFolders),
@@ -775,6 +782,168 @@ static void TestRaidPawnMissingMarksCitizenMissingAndResolvesRaid()
     AssertEqual(RaidPawnCasualtyStatus.AlreadyResolved, RaidPawnBindingService.MarkPawnMissing(state, 102, "again").Status);
 }
 
+static void TestUndeployedReservedCombatantsReturnHome()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Raider {i + 1}", 24 + i, Sex.Male, "soldier", settlement.Id);
+    }
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 6);
+
+    var allocation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "vanilla raid", 3));
+
+    // Vanilla generated only one pawn: one citizen deploys, two stay reserved-but-idle.
+    RaidPawnBindingService.BindRaidPawns(state, allocation.Army!.Id, new[] { 101 });
+
+    var released = RaidReconciliationService.ReleaseUndeployedReserves(state, allocation.Army.Id);
+
+    AssertEqual(2, released);
+    // The two who never deployed are home again and counted by their settlement.
+    AssertEqual(2, state.GetSettlementPopulation(settlement.Id).Total);
+    // The one that deployed keeps its active link and stays with the army.
+    AssertEqual(1, state.RaidPawnLinks.Count(link =>
+        link.ArmyId == allocation.Army.Id && link.Status == RaidPawnLinkStatus.Active));
+    AssertEqual(1, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == allocation.Army.Id));
+    // Idempotent: nothing left to release.
+    AssertEqual(0, RaidReconciliationService.ReleaseUndeployedReserves(state, allocation.Army.Id));
+}
+
+static void TestReleaseUndeployedReservesLeavesDeployedAndResolvedAlone()
+{
+    var state = new WorldState(777);
+    var settlement = state.CreateSettlement("camp", "Camp", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"R{i + 1}", 25, Sex.Male, "soldier", settlement.Id);
+    }
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 6);
+
+    var allocation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "raid", 3));
+    // Two deploy, one stays reserved-but-idle.
+    RaidPawnBindingService.BindRaidPawns(state, allocation.Army!.Id, new[] { 101, 102 });
+    RaidPawnBindingService.MarkPawnDead(state, 101, "killed on player map");
+
+    var released = RaidReconciliationService.ReleaseUndeployedReserves(state, allocation.Army.Id);
+
+    // Only the never-deployed reservist returns; the dead and active raiders are untouched.
+    AssertEqual(1, released);
+    var deadLink = state.GetRaidPawnLink(101)!;
+    AssertEqual(RaidPawnLinkStatus.Dead, deadLink.Status);
+    AssertEqual(CitizenStatus.Dead, state.GetCitizen(deadLink.CitizenId)!.Status);
+    AssertEqual(allocation.Army.Id, state.GetOwner(deadLink.CitizenId));
+    AssertEqual(RaidPawnLinkStatus.Active, state.GetRaidPawnLink(102)!.Status);
+}
+
+static void TestAbortedRaidReleaseReturnsOrphanedReserves()
+{
+    var state = new WorldState(999);
+    var settlement = state.CreateSettlement("camp", "Camp", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"R{i + 1}", 25, Sex.Male, "soldier", settlement.Id);
+    }
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 6);
+
+    // Raid reserved combatants but was aborted before any pawn was generated/bound.
+    RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "aborted raid", 3));
+    AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
+
+    var released = RaidReconciliationService.ReleaseAllUndeployedReserves(state);
+
+    AssertEqual(3, released);
+    AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
+}
+
+static WorldState BuildFactionWithCombatants(int seed, string faction, int adults)
+{
+    var state = new WorldState(seed);
+    var settlement = state.CreateSettlement("camp", "Camp", faction);
+    for (var i = 0; i < adults; i++)
+    {
+        state.CreateCitizen($"Fighter {i + 1}", 25 + i, Sex.Male, "soldier", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", adults * 2);
+    return state;
+}
+
+static void TestVanillaRaidInterceptedWithoutOpportunity()
+{
+    var state = BuildFactionWithCombatants(1, "Pirate", 4);
+
+    // No trade intel / raid opportunity exists — the raid must still happen from real population.
+    var result = VanillaRaidInterceptor.TryIntercept(
+        state,
+        new VanillaRaidInterceptionRequest("Pirate", 3, "vanilla raid"));
+
+    AssertEqual(VanillaRaidInterceptionAction.Intercepted, result.Action);
+    AssertEqual(false, result.ConsumedOpportunity);
+    AssertEqual(3, result.ReservedCombatants);
+    AssertEqual(3, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == result.Army!.Id));
+}
+
+static void TestVanillaRaidPassesThroughWithoutPopulation()
+{
+    // Empty ledger: do not cancel the vanilla raid, just leave it alone.
+    var empty = new WorldState(1);
+    var noData = VanillaRaidInterceptor.TryIntercept(
+        empty,
+        new VanillaRaidInterceptionRequest("Pirate", 3, "vanilla raid"));
+    AssertEqual(VanillaRaidInterceptionAction.PassThrough, noData.Action);
+    AssertEqual(null, noData.Army);
+
+    // Faction is tracked elsewhere but has no settlement of its own: still pass-through, not cancel.
+    var otherFaction = BuildFactionWithCombatants(2, "Tribe", 3);
+    var mismatch = VanillaRaidInterceptor.TryIntercept(
+        otherFaction,
+        new VanillaRaidInterceptionRequest("Pirate", 3, "vanilla raid"));
+    AssertEqual(VanillaRaidInterceptionAction.PassThrough, mismatch.Action);
+    AssertEqual(0, otherFaction.Armies.Count);
+}
+
+static void TestVanillaRaidConsumesOpportunityWhenPresent()
+{
+    var state = BuildFactionWithCombatants(3, "Pirate", 4);
+    RaidIntelService.RecordTradeIntel(
+        state,
+        new TradeIntelRequest("Pirate", 6000, 2, "gold and psychite trade"));
+
+    var result = VanillaRaidInterceptor.TryIntercept(
+        state,
+        new VanillaRaidInterceptionRequest("Pirate", 2, "vanilla raid"));
+
+    AssertEqual(VanillaRaidInterceptionAction.Intercepted, result.Action);
+    AssertEqual(true, result.ConsumedOpportunity);
+    AssertEqual(0, state.RaidOpportunities.Count(opportunity => opportunity.Status == RaidOpportunityStatus.Active));
+}
+
+static void TestVanillaRaidInterceptionFreesPriorOrphans()
+{
+    var state = BuildFactionWithCombatants(4, "Pirate", 4);
+
+    // A previous raid reserved two combatants but was aborted before any pawn spawned.
+    var orphanArmy = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "aborted raid", 2)).Army!;
+
+    var result = VanillaRaidInterceptor.TryIntercept(
+        state,
+        new VanillaRaidInterceptionRequest("Pirate", 2, "new vanilla raid"));
+
+    AssertEqual(VanillaRaidInterceptionAction.Intercepted, result.Action);
+    // The stranded reservists were handed back before the new raid drew its own.
+    AssertEqual(0, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == orphanArmy.Id));
+    AssertEqual(2, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == result.Army!.Id));
+}
+
 static void TestWorldStateSerializationRoundTrip()
 {
     var state = new WorldState(98765);
@@ -1097,10 +1266,10 @@ static void TestRimWorldRaidIncidentPatch()
     AssertContains("public static void Postfix(IncidentParms parms, ref bool __result)", source);
     AssertDoesNotContain("public static bool Prefix", source);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_RaidEnemy", "TryResolveRaidFaction");
-    AssertContains("RaidPopulationAllocator.ReserveForRaid", source);
-    AssertContains("RaidOpportunityService.TryConsumeBestOpportunity", source);
+    AssertContains("VanillaRaidInterceptor.TryIntercept", source);
     AssertContains("ref bool __result", source);
-    AssertContains("__result = false", source);
+    // Living World must never cancel a vanilla raid: it only intercepts or steps aside.
+    AssertDoesNotContain("__result = false", source);
     AssertContains("parms.faction", source);
     AssertContains("parms.points", source);
     AssertContains("PointsPerCombatant", source);
@@ -1122,6 +1291,7 @@ static void TestRimWorldRaidPawnGenerationPatch()
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_Raid", "TryGenerateRaidInfo");
     AssertContains("List<Pawn>", source);
     AssertContains("RaidPawnBindingService.BindRaidPawns", source);
+    AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", source);
     AssertContains("TryGetReservation", source);
 }
 
