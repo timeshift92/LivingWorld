@@ -10,10 +10,13 @@ ledger и план, как Living World **замещает** Rim War своей 
 [roadmap.md](../roadmap.md) (Этап 6 «total world simulation»),
 [storyteller-normalization.md](storyteller-normalization.md) (свой инцидент/сторителлер).
 
-## 1. Что такое Rim War (реверс по Defs + DLL, v1.6)
+## 1. Что такое Rim War (по исходникам `TorannD/RimWar---Threaded` + Defs v1.6)
 
-Rim War (`Torann.RimWar`, зависит HugsLib+Harmony, только DLL) — это **мировая
-военная симуляция фракций** поверх ванильной статики. Восстановленная модель:
+Rim War (`Torann.RimWar`, зависит HugsLib+Harmony) — это **мировая военная
+симуляция фракций** поверх ванильной статики. Модель (подтверждена исходниками —
+`WorldComponent_PowerTracker` = мозг, `RimWarData`, `WorldUtility`,
+`RimWarSettlementComp`; это **«Threaded»-форк**, гоняющий симуляцию вне main-потока
+ради перфа — наш аналог не потоки, а дневной тик + кэш-агрегаты, §C):
 
 ### 1.1 Сущности (`RimWar.Planet.*`)
 - **`RimWarSettlementComp`** — вешается на каждое поселение мира и хранит его
@@ -44,18 +47,25 @@ Rim War (`Torann.RimWar`, зависит HugsLib+Harmony, только DLL) — 
 Плюс множители: `growthBonus`, `combatBonus`, `movementBonus`, флаги
 `createsSettlements`, `hatesPlayer`, `movesAtNight`.
 
-### 1.3 Петля (мировой тик)
-1. Поселения **копят очки** (рост по времени × `bonusGrowth`).
-2. По частоте (`woEventFrequency`/`averageEventFrequency`) поселение **тратит
-   очки на действие** сообразно поведению: запустить **варбанд** (атака вражеского
-   поселения/игрока), **scout**, **торговый караван**, **дипломатия**
-   (`callRelationsCost`), **reinforce** соседа, **экспансия** (новое поселение),
-   **request units**.
-3. Варбанды **движутся** к цели и **разрешают бой по очкам** (`combatBonus`);
-   победа/поражение меняют очки поселений, могут уничтожить/захватить поселение.
-4. **Отношения** фракций дрейфуют (`RW_DiplomacyAction`, `RW_RandomizeRelations`).
+### 1.3 Петля (`WorldComponent_PowerTracker.WorldComponentTick` → `UpdateFactions`)
+1. Поселения **копят `RimWarPoints`** (в `UpdateFactions`: heal/grow ≈
+   `Rand.Range(.005,.01) × RimWarPoints` за апдейт × `bonusGrowth`; частота
+   `rwdUpdateFrequency` ≈ 2500 тиков).
+2. Поселение **тратит очки на действие `RimWarAction`** — набор ровно из шести:
+   `Diplomat`, `Caravan` (торговый караван), `ScoutingParty`, `Warband` (варбанд
+   идёт по карте), `LaunchedWarband` (дроп-поды), `Settler` (экспансия — новое
+   поселение). Выбор **вероятностный, взвешенный по behavior** (`ActionTypesCount`
+   режет набор: нет settler если `!createsSettlements`, нет launched если
+   `!CanLaunch`, −1 для Warmonger). **Дальность цели — по behavior**
+   (`GetEngagementRange`: Warmonger 4, Aggressive 3, Expansionist/Random 2,
+   Cautious/Merchant 1).
+3. Варбанды **движутся** (`WarObject`/`WarObject_PathFollower`) к цели и
+   **разрешают бой по очкам** (`combatBonus`); победа/поражение меняют очки,
+   могут уничтожить/захватить поселение.
+4. **Отношения** фракций дрейфуют (`Diplomat`, `RW_DiplomacyAction`,
+   `RW_RandomizeRelations`).
 5. Всё пишется в **History**; рейды на игрока материализуются как варбанды/поды
-   (`TransportPodsArrivalAction_JoinBattle/ReinforceSettlement`).
+   (`IncidentWorker_WarObjectRaid`, `TransportPodsArrivalAction_JoinBattle/ReinforceSettlement`).
 
 **Вывод:** Rim War — это ровно та «живая мировая симуляция», к которой идёт Living
 World (roadmap Этап 6), но: (а) хранит мощь как абстрактные «очки», а не реальное
@@ -127,10 +137,13 @@ population-flow). Каждая фаза самодостаточна и тест
 воздуха. Пишет World History.
 
 ### Фаза R5 — Планировщик действий фракции (Core)
-`FactionActionPlanner.SimulateDay`: по behavior'у и мощи тратит «бюджет» на:
-запуск армии (атака, R3/R4), экспансию (founding по поведению — переиспользует
-drifter-founding), reinforce, торговый караван (экономика Codex), дипломатию (R6).
-Гомеостаз + потолки (никакого бесконечного спавна).
+`FactionActionPlanner.SimulateDay`: воспроизводит выбор `RimWarAction` — по
+behavior'у (вероятностные веса) и накопленной мощи тратит «бюджет» на один из
+шести аналогов: `Warband`/`LaunchedWarband` (атака — R3/R4), `Settler` (экспансия
+— переиспользует drifter-founding), `Caravan` (торговля — экономика Codex),
+`ScoutingParty` (разведка/интел — уже есть `RaidIntelService`), `Diplomat` (R6).
+Дальность цели по behavior (аналог `GetEngagementRange`). Гомеостаз + потолки
+(никакого бесконечного спавна).
 
 ### Фаза R6 — Дипломатия/отношения (Core)
 `DiplomacyService` (Этап 6): ledger-отношения фракций (враг/нейтрал/союзник),
