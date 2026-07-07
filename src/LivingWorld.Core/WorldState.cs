@@ -374,6 +374,20 @@ public sealed class WorldState
         return drifter;
     }
 
+    public Drifter MaterializeNewArrival(int pawnThingId, int tick, string name, int age, Sex sex)
+    {
+        AdvanceToTick(tick);
+
+        var drifter = CreateDrifter(name, age, sex);
+        _drifters.Remove(drifter.Id);
+        AppendEvent(
+            WorldEventKind.DrifterMaterialized,
+            drifter.Id,
+            $"Drifter {drifter.Id} materialized as pawn {pawnThingId} (unpooled arrival).");
+
+        return drifter;
+    }
+
     public WorldCitizen AssimilateDrifter(EntityId drifterId, EntityId settlementId)
     {
         if (!_settlements.ContainsKey(settlementId))
