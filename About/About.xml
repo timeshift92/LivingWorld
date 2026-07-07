@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>Living World</name>
+  <author>timeshift92</author>
+  <packageId>timeshift92.livingworld</packageId>
+  <supportedVersions>
+    <li>1.6</li>
+  </supportedVersions>
+  <description>
+Living World is a persistent world simulation core for RimWorld.
+
+Core principle: nothing appears from nowhere.
+
+Every person, animal, settlement, caravan, army and trader should exist as part of a persistent world state. Events should consume existing world entities instead of magically generating them.
+  </description>
+</ModMetaData>
