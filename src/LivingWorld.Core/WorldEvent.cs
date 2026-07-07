@@ -23,6 +23,7 @@ public enum WorldEventKind
     MigrationCompleted,
     RaidPawnReturned,
     RaidPawnCaptured,
+    RaidPawnMissing,
     RaidResolved
 }
 

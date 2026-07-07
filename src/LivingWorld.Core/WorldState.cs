@@ -775,13 +775,42 @@ public sealed class WorldState
         return prisonerLink;
     }
 
+    public RaidPawnLink MarkRaidPawnMissing(int pawnThingId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (!_raidPawnLinks.TryGetValue(pawnThingId, out var link))
+        {
+            throw new InvalidOperationException($"Pawn {pawnThingId} is not linked.");
+        }
+
+        if (link.Status != RaidPawnLinkStatus.Active)
+        {
+            return link;
+        }
+
+        if (_citizens.TryGetValue(link.CitizenId, out var citizen)
+            && citizen.Status != CitizenStatus.Dead
+            && citizen.Status != CitizenStatus.Missing)
+        {
+            _citizens[link.CitizenId] = citizen with { Status = CitizenStatus.Missing };
+        }
+
+        var missingLink = link.MarkMissing();
+        _raidPawnLinks[pawnThingId] = missingLink;
+        AppendEvent(WorldEventKind.RaidPawnMissing, link.CitizenId, $"Pawn {pawnThingId} lost: {reason}.");
+
+        return missingLink;
+    }
+
     public WorldRaidOutcome RecordRaidOutcome(
         EntityId armyId,
         int sent,
         int active,
         int dead,
         int returned,
-        int prisoner)
+        int prisoner,
+        int missing)
     {
         if (_raidOutcomes.TryGetValue(armyId, out var existing))
         {
@@ -799,13 +828,14 @@ public sealed class WorldState
             active,
             dead,
             returned,
-            prisoner);
+            prisoner,
+            missing);
 
         _raidOutcomes.Add(armyId, outcome);
         AppendEvent(
             WorldEventKind.RaidResolved,
             armyId,
-            $"Raid {armyId} resolved: sent {sent}, dead {dead}, returned {returned}, prisoner {prisoner}.");
+            $"Raid {armyId} resolved: sent {sent}, dead {dead}, returned {returned}, prisoner {prisoner}, missing {missing}.");
 
         return outcome;
     }

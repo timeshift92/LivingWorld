@@ -46,8 +46,14 @@ public static class LivingWorldPawnExitTracker
                     pawn.thingIDNumber,
                     reason);
                 break;
+            case RaidPawnExitAction.Miss:
+                RaidPawnBindingService.MarkPawnMissing(
+                    component.State,
+                    pawn.thingIDNumber,
+                    "downed raider left the map with unknown fate");
+                break;
             case RaidPawnExitAction.Ignore:
-                // Dead (handled by the kill patch) or downed and not yet resolved.
+                // Dead — handled by the kill patch.
                 break;
         }
     }

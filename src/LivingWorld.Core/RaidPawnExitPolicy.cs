@@ -9,7 +9,10 @@ public enum RaidPawnExitAction
     Return,
 
     /// <summary>The pawn was taken prisoner.</summary>
-    Capture
+    Capture,
+
+    /// <summary>The pawn left the map without a known fate (e.g. downed and despawned): it is lost.</summary>
+    Miss
 }
 
 /// <summary>
@@ -33,9 +36,9 @@ public static class RaidPawnExitPolicy
 
         if (isDowned)
         {
-            // A downed pawn has not made it home. Leave it active until it dies,
-            // is captured, or recovers and leaves under its own power.
-            return RaidPawnExitAction.Ignore;
+            // A downed pawn that is leaving the map has not made it home and was
+            // neither killed nor captured: its fate is unknown, so it is lost.
+            return RaidPawnExitAction.Miss;
         }
 
         return RaidPawnExitAction.Return;

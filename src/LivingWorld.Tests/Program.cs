@@ -34,6 +34,7 @@ var tests = new List<(string Name, Action Test)>
     ("returns surviving raid citizen to source settlement when pawn exits", TestRaidPawnReturnMovesCitizenHome),
     ("records a resolved raid outcome after all bound pawns are resolved", TestRaidOutcomeRecordedWhenRaidResolves),
     ("does not count a downed raider despawn as a safe return", TestDownedRaiderExitIsNotCountedAsReturn),
+    ("marks a lost downed raider as missing and resolves the raid", TestRaidPawnMissingMarksCitizenMissingAndResolvesRaid),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
     ("defines RimWorld 1.6 load folders", TestRimWorldLoadFolders),
@@ -721,9 +722,9 @@ static void TestRaidOutcomeRecordedWhenRaidResolves()
 
 static void TestDownedRaiderExitIsNotCountedAsReturn()
 {
-    // A raider that despawns while still downed has not made it home: it must stay
-    // unresolved (Ignore), not be recorded as a safe return that revives the citizen.
-    AssertEqual(RaidPawnExitAction.Ignore, RaidPawnExitPolicy.Resolve(isDead: false, isPrisoner: false, isDowned: true));
+    // A raider that despawns while still downed has not made it home: it is lost
+    // (Miss), not recorded as a safe return that revives the citizen.
+    AssertEqual(RaidPawnExitAction.Miss, RaidPawnExitPolicy.Resolve(isDead: false, isPrisoner: false, isDowned: true));
 
     // A pawn walking off the map edge under its own power is a genuine return.
     AssertEqual(RaidPawnExitAction.Return, RaidPawnExitPolicy.Resolve(isDead: false, isPrisoner: false, isDowned: false));
@@ -733,6 +734,45 @@ static void TestDownedRaiderExitIsNotCountedAsReturn()
 
     // Death is resolved by the kill patch, so the exit hook must ignore dead pawns.
     AssertEqual(RaidPawnExitAction.Ignore, RaidPawnExitPolicy.Resolve(isDead: true, isPrisoner: false, isDowned: false));
+}
+
+static void TestRaidPawnMissingMarksCitizenMissingAndResolvesRaid()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "Pirate");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen($"Raider {i + 1}", 24 + i, Sex.Male, "soldier", settlement.Id);
+    }
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 4);
+
+    var allocation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "vanilla raid", 2));
+    RaidPawnBindingService.BindRaidPawns(state, allocation.Army!.Id, new[] { 101, 102 });
+
+    RaidPawnBindingService.MarkPawnDead(state, 101, "killed on player map");
+    var result = RaidPawnBindingService.MarkPawnMissing(state, 102, "downed raider lost when map despawned");
+    var link = state.GetRaidPawnLink(102)!;
+
+    // A lost raider is neither dead, home, nor a prisoner: the citizen is Missing,
+    // no longer counts toward its settlement, and does not revive.
+    AssertEqual(RaidPawnCasualtyStatus.Success, result.Status);
+    AssertEqual(RaidPawnLinkStatus.Missing, link.Status);
+    AssertEqual(CitizenStatus.Missing, state.GetCitizen(link.CitizenId)!.Status);
+    AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RaidPawnMissing));
+
+    // Marking the last pawn resolves the raid: no active links remain.
+    var outcome = state.RaidOutcomes.Single();
+    AssertEqual(2, outcome.Sent);
+    AssertEqual(0, outcome.Active);
+    AssertEqual(1, outcome.Dead);
+    AssertEqual(1, outcome.Missing);
+    AssertEqual(true, outcome.IsResolved);
+
+    // Re-marking a resolved pawn is a no-op.
+    AssertEqual(RaidPawnCasualtyStatus.AlreadyResolved, RaidPawnBindingService.MarkPawnMissing(state, 102, "again").Status);
 }
 
 static void TestWorldStateSerializationRoundTrip()

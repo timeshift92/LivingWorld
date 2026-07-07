@@ -9,7 +9,8 @@ public sealed record WorldRaidOutcome(
     int Active,
     int Dead,
     int Returned,
-    int Prisoner)
+    int Prisoner,
+    int Missing)
 {
     public bool IsResolved => Sent > 0 && Active == 0;
 }

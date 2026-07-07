@@ -114,7 +114,8 @@ public static class WorldStateCodec
                             new XAttribute("active", outcome.Active),
                             new XAttribute("dead", outcome.Dead),
                             new XAttribute("returned", outcome.Returned),
-                            new XAttribute("prisoner", outcome.Prisoner)))),
+                            new XAttribute("prisoner", outcome.Prisoner),
+                            new XAttribute("missing", outcome.Missing)))),
                 new XElement(
                     "Ownership",
                     snapshot.Ownership.Select(ownership =>
@@ -244,7 +245,8 @@ public static class WorldStateCodec
                     RequiredInt(element, "active"),
                     RequiredInt(element, "dead"),
                     RequiredInt(element, "returned"),
-                    RequiredInt(element, "prisoner")))
+                    RequiredInt(element, "prisoner"),
+                    OptionalInt(element, "missing", 0)))
                 .ToList(),
             RequiredContainer(root, "Ownership")
                 .Elements("Owner")
@@ -323,6 +325,14 @@ public static class WorldStateCodec
     private static int RequiredInt(XElement element, string name)
     {
         return int.Parse(RequiredString(element, name), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static int OptionalInt(XElement element, string name, int fallback)
+    {
+        var attribute = element.Attribute(name);
+        return attribute == null
+            ? fallback
+            : int.Parse(attribute.Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static bool RequiredBool(XElement element, string name)

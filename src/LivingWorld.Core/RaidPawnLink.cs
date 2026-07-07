@@ -5,7 +5,8 @@ public enum RaidPawnLinkStatus
     Active,
     Dead,
     Returned,
-    Prisoner
+    Prisoner,
+    Missing
 }
 
 public sealed record RaidPawnLink(
@@ -27,5 +28,10 @@ public sealed record RaidPawnLink(
     public RaidPawnLink MarkPrisoner()
     {
         return this with { Status = RaidPawnLinkStatus.Prisoner };
+    }
+
+    public RaidPawnLink MarkMissing()
+    {
+        return this with { Status = RaidPawnLinkStatus.Missing };
     }
 }

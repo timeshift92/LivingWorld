@@ -157,6 +157,46 @@ public static class RaidPawnBindingService
             link.CitizenId);
     }
 
+    public static RaidPawnCasualtyResult MarkPawnMissing(
+        WorldState state,
+        int pawnThingId,
+        string reason)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new ArgumentException("Missing reason cannot be empty.", nameof(reason));
+        }
+
+        var link = state.GetRaidPawnLink(pawnThingId);
+        if (link == null)
+        {
+            return new RaidPawnCasualtyResult(
+                RaidPawnCasualtyStatus.UnknownPawn,
+                $"Pawn {pawnThingId} is not linked to a Living World citizen.",
+                null);
+        }
+
+        if (link.Status != RaidPawnLinkStatus.Active)
+        {
+            return new RaidPawnCasualtyResult(
+                RaidPawnCasualtyStatus.AlreadyResolved,
+                $"Pawn {pawnThingId} was already resolved.",
+                link.CitizenId);
+        }
+
+        var updated = state.MarkRaidPawnMissing(pawnThingId, reason);
+        RaidOutcomeService.TryRecordResolvedRaidOutcome(state, updated.ArmyId);
+        return new RaidPawnCasualtyResult(
+            RaidPawnCasualtyStatus.Success,
+            $"Pawn {pawnThingId} marked missing.",
+            link.CitizenId);
+    }
+
     public static RaidPawnReturnResult MarkPawnReturned(
         WorldState state,
         int pawnThingId,

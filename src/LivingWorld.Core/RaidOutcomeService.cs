@@ -40,6 +40,7 @@ public static class RaidOutcomeService
             active,
             links.Count(link => link.Status == RaidPawnLinkStatus.Dead),
             links.Count(link => link.Status == RaidPawnLinkStatus.Returned),
-            links.Count(link => link.Status == RaidPawnLinkStatus.Prisoner));
+            links.Count(link => link.Status == RaidPawnLinkStatus.Prisoner),
+            links.Count(link => link.Status == RaidPawnLinkStatus.Missing));
     }
 }
