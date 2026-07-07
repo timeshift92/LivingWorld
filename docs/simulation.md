@@ -439,6 +439,89 @@ The service is idempotent. Once `WorldFactionRecord.Status == Collapsed`, later
 daily passes do not emit duplicate collapse events. This keeps history readable
 and prevents repeated effects.
 
+## Drifter lifecycle
+
+Дрифтеры — это категория пешек, которые прибывают в мир как одиночки через инцидент, стабилизируют население поселений и получают роль через присоединение к поселению. Это минимальный срез системы прихода граждан, которая позже расширится на беженцев, фракционных подкреплений и другие источники.
+
+### Daily drifter flow
+
+Daily tick в `LivingWorldWorldComponent.SimulateWorldDay` запускает последовательность:
+
+```text
+Spawn/record captured drifters (RevenueService)
+  -> DrifterArrivalService.SimulateArrivals  (планирует прибытие в текущий день)
+  -> DrifterFoundingService.SimulateFounding (переводит прибывших в статус основателей)
+  -> DrifterAssimilationService.SimulateAssimilation (ассимилирует основателей в поселения)
+  -> (в конце дня)
+  -> FactionLifecycleService.SimulateCollapses (проверка вымирания фракций)
+```
+
+Все три сервиса дрифтеров (Arrival, Founding, Assimilation) работают **только** если:
+
+```text
+settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
+```
+
+Вымирание фракций проверяется в конце дневного тика без гейтов.
+
+**Обоснование последовательности:**
+
+- **Arrival** создаёт новые `WorldDrifter`-записи (либо из пула захватанных, либо как новые прибытия).
+- **Founding** берёт дрифтеров с `Status == Arrived` и переводит их в `Status == Founding`, если поселение спокойно.
+- **Assimilation** берёт дрифтеров с `Status == Founding` и выбирает целевое поселение, затем вызывает `DrifterAssimilationService.CompleteAssimilation`, который создаёт `WorldCitizen`, присвязывает дрифтера и ставит гейт обратно.
+
+Таким образом, за один день дрифтер может пройти только один переход; полный цикл Arrived→Founding→Assimilated обычно занимает 3-5 дней в зависимости от миграционного давления и емкости поселений.
+
+### LivingWorld_DrifterArrival incident
+
+Инцидент `LivingWorld_DrifterArrival` — это точка входа для спавна дрифтер-пешек, который был запрошен дневным флоу `DrifterArrivalService`.
+
+**Параметры:**
+
+- **Category:** `AllyArrival` (не враг, не торговец, союзный одиночка).
+- **Worker:** `IncidentWorker_LivingWorldDrifterArrival`.
+- **Gate (CanFireNowSub):** `LivingWorldWorldComponent.WantsDrifterArrival` — истина если:
+  - есть дрифтер в пуле захватанных, **ИЛИ**
+  - текущее население мира ниже целевого (target population из `WorldState.PopulationDensityTarget`).
+- **Fail-open:** если worker падает, инцидент отмечается как успешный, чтобы storyteller не зависел.
+
+**Выполнение (TryExecuteWorker):**
+
+1. Выберите случайное поселение (или используйте предзаданное, если это вызов из плана).
+2. **Спавньте пешку** через vanilla Pawn generator с дефолтными параметрами.
+3. **Создайте запись ledger:**
+   - Если есть дрифтер в пуле: `DrifterMaterializationService.MaterializeDrifter(pawn)` — переведите пул-дрифтера в статус Arrived.
+   - Если нет: `DrifterMaterializationService.MaterializeNewArrival(pawn)` — создайте новый `WorldDrifter` с `Status == Arrived`. Это всегда записывает пешку как новый прибытие (история).
+4. **Привяжите пешку к ledger:** прикрепите `CompLivingWorldIdentity` с `EntityId` дрифтера.
+5. Успешно вернитесь.
+
+### CompLivingWorldIdentity
+
+`CompLivingWorldIdentity` — это стабильная привязка пешки к ledger-записи. Компонент хранит `EntityId` (тип `long`) и гарантирует, что при `Save` / `Load` / `Garbage Collect` связь пешка↔ledger не разрывается.
+
+**Свойства:**
+
+- Прицеплена к пешке сразу при спавне через инцидент.
+- Переживает сохранение мира (сохраняется как часть `Pawn`'s list of comps).
+- Используется в дальнейшем для синхронизации (dematerialization, raids, etc.).
+- Это **первый** минимальный срез архитектуры идентичности (будет расширен: raid-линки, frequency comp, migration links).
+
+### Явные хвосты вне scope
+
+Следующие возможности **нарочно оставлены вне реализации**:
+
+1. **Frequency comp (уровень 2)** — отслеживание `StorytellerComp` на пешке, чтобы избежать скопления дрифтер-инцидентов в одно время. Сейчас шторителлер может планировать много инцидентов подряд.
+
+2. **Полная миграция идентичности** — raid-линки (`RaidPawnLink`), которые уже существуют для рейдеров, не используются для дрифтеров. Дрифтер получает только `CompLivingWorldIdentity`; полная цепочка синхронизации (dematerialization, outcomes, prisoner conversion) добавится отдельно.
+
+3. **Собственный raid-инцидент** — дрифтеры могут стать раидерами из поселения, в которое они ассимилировались, но не создают отдельный инцидент. Это вулканизируется через расширение `RaidPlanner` на дрифтер-пулы.
+
+4. **Освобождение вакуума при коллапсе (G2)** — когда поселение коллапсирует, его дрифтеры-ассимилированцы не освобождаются автоматически обратно в глобальный пул. Это требует явной политики переобладания и выходит на G2 milestone.
+
+5. **Дополнительные каналы прихода** — беженцы из голодающих поселений, подкрепления из фракционных источников, рожденцы из партнерских поселений. Сейчас только дрифтеры (из пула и новые прибытия) и ассимиляция.
+
+**Ссылка на архитектуру:** см. `docs/design/storyteller-normalization.md` для полной карты частотного компенсирования и идентификационного хребта.
+
 ## Real consequence chain
 
 Пример цепочки:
