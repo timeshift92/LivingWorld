@@ -24,6 +24,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private bool bootstrapped;
     private string serializedState = string.Empty;
     private int lastSimulatedDay;
+    private int cachedWorldPopulation;
+    private int cachedTargetPopulation;
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -58,6 +60,25 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     public string LastBootstrapSource { get; private set; } = "not-started";
 
     public string LastBootstrapStatus { get; private set; } = "not-started";
+
+    public bool WantsDrifterArrival
+    {
+        get
+        {
+            if (!bootstrapped)
+            {
+                return false;
+            }
+
+            var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+            if (!settings.drifterFlowEnabled)
+            {
+                return false;
+            }
+
+            return State.Drifters.Count > 0 || cachedWorldPopulation < cachedTargetPopulation;
+        }
+    }
 
     public string GetSummary()
     {
@@ -157,6 +178,30 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 settings.foodPerCitizen > 0 ? 1 : 0,
                 50,
                 1));
+
+        if (settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive)
+        {
+            var dayTick = day * TicksPerDay;
+            var target = Math.Max(0, State.Settlements.Count * Math.Max(0, settings.targetWorldPopulationPerSettlement));
+            var ceiling = Math.Max(target, Math.Max(0, settings.drifterHardCeiling));
+
+            DrifterArrivalService.SimulateArrivals(
+                State,
+                new DrifterArrivalRequest(dayTick, target, ceiling, settings.maxDrifterArrivalsPerDay));
+            DrifterFoundingService.SimulateFounding(
+                State,
+                new DrifterFoundingRequest(dayTick, settings.drifterMinFounders, settings.drifterLeaderAptitudeThreshold));
+            DrifterAssimilationService.SimulateAssimilation(
+                State,
+                new DrifterAssimilationRequest(dayTick, settings.maxDrifterAssimilationsPerDay));
+            FactionLifecycleService.SimulateCollapses(
+                State,
+                new FactionLifecycleRequest(dayTick));
+
+            cachedTargetPopulation = target;
+            cachedWorldPopulation = State.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive) + State.Drifters.Count;
+        }
+
         FactionLifecycleService.SimulateCollapses(
             State,
             new FactionLifecycleRequest(day * TicksPerDay));

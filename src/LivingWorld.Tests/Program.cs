@@ -2026,6 +2026,11 @@ static void TestRimWorldWorldComponent()
     AssertContains("DemographySimulationRequest", source);
     AssertContains("MigrationService.SimulateDay", source);
     AssertContains("MigrationSimulationRequest", source);
+    AssertContains("DrifterArrivalService.SimulateArrivals", source);
+    AssertContains("DrifterFoundingService.SimulateFounding", source);
+    AssertContains("DrifterAssimilationService.SimulateAssimilation", source);
+    AssertContains("FactionLifecycleService.SimulateCollapses", source);
+    AssertContains("public bool WantsDrifterArrival", source);
     AssertContains("PlayerKnowledgeService.RecordPublicSettlementInfo", source);
     AssertContains("lastSimulatedDay", source);
     AssertContains("GetSummary", source);
