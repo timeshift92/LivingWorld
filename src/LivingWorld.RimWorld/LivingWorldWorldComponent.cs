@@ -26,6 +26,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int lastSimulatedDay;
     private int cachedWorldPopulation;
     private int cachedTargetPopulation;
+    private bool? rimWarActive;
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -199,9 +200,65 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             cachedWorldPopulation = State.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive) + State.Drifters.Count;
         }
 
+        // World war runs after population flow and before collapse checks, so faction
+        // extinction accounts for the day's battle casualties. It is mutually exclusive with
+        // Rim War: if that mod is driving factions, Living World stands down to avoid double
+        // driving the same world.
+        if (settings.worldWarEnabled && !RimWarIsActive && !State.IsInitialWorldSeedingActive)
+        {
+            EnsureFactionBehaviors();
+            WorldWarService.SimulateDay(
+                State,
+                new WorldWarRequest(
+                    day * TicksPerDay,
+                    settings.worldWarTravelDays,
+                    settings.worldWarRaidCombatants));
+        }
+
         FactionLifecycleService.SimulateCollapses(
             State,
             new FactionLifecycleRequest(day * TicksPerDay));
+    }
+
+    // Rim War (Torann.RimWar) drives world factions the same way; when it is active Living
+    // World's own world-war loop stays off so the two never fight over the same world.
+    private bool RimWarIsActive => rimWarActive ??= ModsConfig.IsActive("Torann.RimWar");
+
+    // Gives every ledger faction a behavior once, derived from its RimWorld faction: permanent
+    // enemies (pirates) become irreconcilable warmongers, the player is passive, other humanlike
+    // factions fight, and non-humanlike factions (mechanoids, insectoids) are excluded.
+    private void EnsureFactionBehaviors()
+    {
+        foreach (var factionId in State.Settlements
+            .Select(settlement => settlement.FactionId)
+            .Distinct(StringComparer.Ordinal))
+        {
+            if (State.GetFactionBehavior(factionId) != FactionBehavior.Undefined)
+            {
+                continue;
+            }
+
+            var faction = Find.FactionManager?.AllFactionsListForReading
+                .FirstOrDefault(candidate => candidate.def?.defName == factionId);
+
+            if (faction?.def == null || !faction.def.humanlikeFaction)
+            {
+                State.AssignFactionBehavior(factionId, FactionBehavior.Excluded);
+            }
+            else if (faction.IsPlayer)
+            {
+                State.AssignFactionBehavior(factionId, FactionBehavior.Player);
+            }
+            else if (faction.def.permanentEnemy)
+            {
+                State.AssignFactionBehavior(factionId, FactionBehavior.Warmonger);
+                State.MarkFactionIrreconcilable(factionId);
+            }
+            else
+            {
+                State.AssignFactionBehavior(factionId, FactionBehavior.Aggressive);
+            }
+        }
     }
 
     public override void ExposeData()

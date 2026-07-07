@@ -95,6 +95,7 @@ var tests = new List<(string Name, Action Test)>
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
     ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
+    ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2109,6 +2110,22 @@ static void TestWorldWarLaunchesAndResolvesWarband()
     // The attack soured relations, and population is conserved (only battle losses turned Dead).
     AssertEqual(-WorldWarService.AggressionSeverity, DiplomacyService.GetGoodwill(state, "Raiders", "Settlers"));
     AssertEqual(totalCitizens, state.Citizens.Count);
+}
+
+static void TestRimWorldWorldWarIntegration()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("WorldWarService.SimulateDay", component);
+    AssertContains("EnsureFactionBehaviors", component);
+    // Mutual exclusion with Rim War.
+    AssertContains("Torann.RimWar", component);
+    AssertContains("settings.worldWarEnabled", component);
+
+    var settings = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("public bool worldWarEnabled", settings);
+    AssertContains("Scribe_Values.Look(ref worldWarEnabled", settings);
+    AssertContains("public int worldWarTravelDays", settings);
+    AssertContains("public int worldWarRaidCombatants", settings);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

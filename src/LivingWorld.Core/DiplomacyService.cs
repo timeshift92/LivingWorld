@@ -62,7 +62,9 @@ public static class DiplomacyService
             throw new ArgumentNullException(nameof(state));
         }
 
-        var next = Math.Clamp(state.GetFactionGoodwill(factionA, factionB) + delta, MinGoodwill, MaxGoodwill);
+        var next = Math.Max(
+            MinGoodwill,
+            Math.Min(MaxGoodwill, state.GetFactionGoodwill(factionA, factionB) + delta));
 
         // Irreconcilable factions can never climb out of hostility, whatever the gesture.
         if (state.IsFactionIrreconcilable(factionA) || state.IsFactionIrreconcilable(factionB))

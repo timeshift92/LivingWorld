@@ -21,6 +21,9 @@ public sealed class LivingWorldSettings : ModSettings
     public int maxDrifterAssimilationsPerDay = 2;
     public int drifterMinFounders = 4;
     public int drifterLeaderAptitudeThreshold = 70;
+    public bool worldWarEnabled = true;
+    public int worldWarTravelDays = 3;
+    public int worldWarRaidCombatants = 8;
 
     public LivingWorldSettings()
     {
@@ -44,5 +47,8 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref maxDrifterAssimilationsPerDay, "maxDrifterAssimilationsPerDay", 2);
         Scribe_Values.Look(ref drifterMinFounders, "drifterMinFounders", 4);
         Scribe_Values.Look(ref drifterLeaderAptitudeThreshold, "drifterLeaderAptitudeThreshold", 70);
+        Scribe_Values.Look(ref worldWarEnabled, "worldWarEnabled", true);
+        Scribe_Values.Look(ref worldWarTravelDays, "worldWarTravelDays", 3);
+        Scribe_Values.Look(ref worldWarRaidCombatants, "worldWarRaidCombatants", 8);
     }
 }
