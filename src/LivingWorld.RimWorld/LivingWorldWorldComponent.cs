@@ -27,6 +27,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int cachedWorldPopulation;
     private int cachedTargetPopulation;
     private bool? rimWarActive;
+    private int lastWorldWarLetterTick = int.MinValue;
+    private int notifiedCaptureCount;
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -147,6 +149,43 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             Log.Warning($"[LivingWorld] Daily simulation catch-up capped at {MaxCatchUpSimulationDays} days. Remaining days will continue next ticks.");
         }
+
+        // One rate-limited letter AFTER the whole catch-up loop — never one per simulated day.
+        MaybeSendWorldWarLetter(currentTick);
+    }
+
+    // Surfaces the world war to the player as an occasional, rate-limited letter that summarizes
+    // settlements that changed hands. Silent only when the loop itself is off (disabled or ceded
+    // to Rim War) or during initial seeding; captures accumulate across the cooldown so nothing is
+    // lost, and the whole daily catch-up produces at most one letter (no flood).
+    private void MaybeSendWorldWarLetter(int currentTick)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.worldWarEnabled || IsRimWarActive || State.IsInitialWorldSeedingActive)
+        {
+            return;
+        }
+
+        var captureCount = State.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured);
+        var newCaptures = captureCount - notifiedCaptureCount;
+        if (newCaptures <= 0)
+        {
+            return;
+        }
+
+        var cooldownTicks = Math.Max(0, settings.worldWarLetterCooldownDays) * TicksPerDay;
+        if (currentTick - lastWorldWarLetterTick < cooldownTicks)
+        {
+            // Within cooldown: hold off, let captures accumulate for the next letter.
+            return;
+        }
+
+        Find.LetterStack?.ReceiveLetter(
+            "LW_WorldWarLetterLabel".Translate(),
+            "LW_WorldWarLetterText".Translate(newCaptures.Named("captures")),
+            LetterDefOf.NeutralEvent);
+        lastWorldWarLetterTick = currentTick;
+        notifiedCaptureCount = captureCount;
     }
 
     private void SimulateWorldDay(int day)
@@ -277,6 +316,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref bootstrapped, "livingWorld_bootstrapped", false);
         Scribe_Values.Look(ref serializedState, "livingWorld_serializedState", string.Empty);
         Scribe_Values.Look(ref lastSimulatedDay, "livingWorld_lastSimulatedDay", 0);
+        Scribe_Values.Look(ref lastWorldWarLetterTick, "livingWorld_lastWorldWarLetterTick", int.MinValue);
+        Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

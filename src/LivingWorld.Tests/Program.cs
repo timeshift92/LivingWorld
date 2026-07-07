@@ -102,6 +102,7 @@ var tests = new List<(string Name, Action Test)>
     ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
+    ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2334,6 +2335,31 @@ static void TestRimWorldWorldWarMainTab()
     AssertContains("<LW_WorldWarHeader>", ru);
     AssertContains("<LW_WorldWarDisabledByRimWar>", en);
     AssertContains("<LW_WorldWarDisabledByRimWar>", ru);
+}
+
+static void TestRimWorldWorldWarNotifications()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // A single rate-limited letter after the daily catch-up loop (not one per simulated day).
+    AssertContains("MaybeSendWorldWarLetter", component);
+    AssertContains("ReceiveLetter", component);
+    AssertContains("worldWarLetterCooldownDays", component);
+    // Persisted so a save/load never re-announces old captures.
+    AssertContains("notifiedCaptureCount", component);
+    AssertContains("Scribe_Values.Look(ref notifiedCaptureCount", component);
+    // Respects the Rim War exclusion flag: no letters when the loop is off.
+    AssertContains("IsRimWarActive", component);
+
+    var settings = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("public int worldWarLetterCooldownDays", settings);
+    AssertContains("Scribe_Values.Look(ref worldWarLetterCooldownDays", settings);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_WorldWarLetterLabel>", en);
+    AssertContains("<LW_WorldWarLetterLabel>", ru);
+    AssertContains("<LW_WorldWarLetterText>", en);
+    AssertContains("<LW_WorldWarLetterText>", ru);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

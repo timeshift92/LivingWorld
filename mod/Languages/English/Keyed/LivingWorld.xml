@@ -44,6 +44,8 @@
   <LW_FactionStrengthBandModerate>moderate</LW_FactionStrengthBandModerate>
   <LW_FactionStrengthBandStrong>strong</LW_FactionStrengthBandStrong>
   <LW_WarHistoryLine>{tick}: {kind} - {summary}</LW_WarHistoryLine>
+  <LW_WorldWarLetterLabel>World war</LW_WorldWarLetterLabel>
+  <LW_WorldWarLetterText>The world's factions are at war. {captures} settlement(s) have changed hands since the last report.</LW_WorldWarLetterText>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>Visible pawns on loaded map: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Living World population: no data for this settlement (ledger settlements: {settlements})</LW_InspectPopulationMissingLine>
