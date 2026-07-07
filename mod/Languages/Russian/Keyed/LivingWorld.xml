@@ -36,6 +36,14 @@
   <LW_DrifterLine>{name} | возраст {age} | пол {sex} | бой {combat} | организация {organization}</LW_DrifterLine>
   <LW_KnownIntelFreshnessLine>{name} | источник {source} | уверенность {confidence} | давность {ageDays} дн. | устарело {stale} | {summary}</LW_KnownIntelFreshnessLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
+  <LW_WorldWarHeader>Мировая война</LW_WorldWarHeader>
+  <LW_WorldWarDisabledByRimWar>Фракциями мира управляет Rim War; мировая война Living World приостановлена.</LW_WorldWarDisabledByRimWar>
+  <LW_WarbandMovementLine>Варбанд {faction} идёт на {target} (прибытие на тике {eta})</LW_WarbandMovementLine>
+  <LW_FactionStrengthLine>{faction}: {strength}</LW_FactionStrengthLine>
+  <LW_FactionStrengthBandWeak>слабая</LW_FactionStrengthBandWeak>
+  <LW_FactionStrengthBandModerate>средняя</LW_FactionStrengthBandModerate>
+  <LW_FactionStrengthBandStrong>сильная</LW_FactionStrengthBandStrong>
+  <LW_WarHistoryLine>{tick}: {kind} - {summary}</LW_WarHistoryLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>На загруженной карте видно пешек: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Население Living World: нет данных для этого поселения (в ledger-е поселений: {settlements})</LW_InspectPopulationMissingLine>

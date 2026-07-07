@@ -101,6 +101,7 @@ var tests = new List<(string Name, Action Test)>
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
     ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
+    ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2307,6 +2308,32 @@ static void TestRimWorldWorldWarIntegration()
     AssertContains("Scribe_Values.Look(ref worldWarEnabled", settings);
     AssertContains("public int worldWarTravelDays", settings);
     AssertContains("public int worldWarRaidCombatants", settings);
+}
+
+static void TestRimWorldWorldWarMainTab()
+{
+    var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    // A dedicated world-war section with capped, cached rows (no per-frame full-population scan).
+    AssertContains("LW_WorldWarHeader", mainTab);
+    AssertContains("MaxWarRows", mainTab);
+    AssertContains("cachedWarHistoryRows", mainTab);
+    AssertContains("cachedActiveWarbandRows", mainTab);
+    AssertContains("cachedFactionStrengthRows", mainTab);
+    // Warns the player when Rim War is driving the world instead of Living World.
+    AssertContains("IsRimWarActive", mainTab);
+    AssertContains("LW_WorldWarDisabledByRimWar", mainTab);
+    // Strength is shown as a band unless debug exact values are enabled.
+    AssertContains("LW_FactionStrengthBand", mainTab);
+
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("public bool IsRimWarActive", component);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_WorldWarHeader>", en);
+    AssertContains("<LW_WorldWarHeader>", ru);
+    AssertContains("<LW_WorldWarDisabledByRimWar>", en);
+    AssertContains("<LW_WorldWarDisabledByRimWar>", ru);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

@@ -16,6 +16,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private const int MaxDrifterRows = 12;
     private const int MaxKnowledgeRows = 12;
     private const int MaxEventRows = 20;
+    private const int MaxWarRows = 12;
     private const int CacheRefreshIntervalTicks = 120;
     private const int KnowledgeStaleAfterTicks = 1_800_000;
 
@@ -31,6 +32,10 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedEventCount = -1;
     private int cachedCitizenCount = -1;
     private int cachedProductionProfileCount = -1;
+    private int cachedArmyMovementCount = -1;
+    private List<string> cachedActiveWarbandRows = new();
+    private List<string> cachedFactionStrengthRows = new();
+    private List<string> cachedWarHistoryRows = new();
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
@@ -99,6 +104,10 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedOutcomeRows.Count * 30f)
             + (cachedFactionCollapseRows.Count * 30f)
             + (cachedDrifterRows.Count * 30f)
+            + 90f
+            + (cachedActiveWarbandRows.Count * 26f)
+            + (cachedFactionStrengthRows.Count * 26f)
+            + (cachedWarHistoryRows.Count * 24f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -168,6 +177,32 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             y += 30f;
         }
 
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_WorldWarHeader".Translate());
+        y += 30f;
+        if (component.IsRimWarActive)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), "LW_WorldWarDisabledByRimWar".Translate());
+            y += 26f;
+        }
+
+        foreach (var row in cachedActiveWarbandRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            y += 26f;
+        }
+
+        foreach (var row in cachedFactionStrengthRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
+            y += 26f;
+        }
+
+        foreach (var row in cachedWarHistoryRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 22f), row);
+            y += 24f;
+        }
+
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_EventsHeader".Translate());
         y += 30f;
 
@@ -193,6 +228,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             && cachedEventCount == state.Events.Count
             && cachedCitizenCount == state.Citizens.Count
             && cachedProductionProfileCount == state.ProductionProfiles.Count
+            && cachedArmyMovementCount == state.ArmyMovements.Count
             && currentTick - cachedAtTick < CacheRefreshIntervalTicks)
         {
             return;
@@ -321,6 +357,70 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     worldEvent.Kind.Named("kind"),
                     worldEvent.Summary.Named("summary")).ToString())
             .ToList();
+
+        cachedArmyMovementCount = state.ArmyMovements.Count;
+        cachedActiveWarbandRows = state.ArmyMovements
+            .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
+            .OrderBy(movement => movement.ArrivalTick)
+            .ThenBy(movement => movement.ArmyId.Value)
+            .Take(MaxWarRows)
+            .Select(movement =>
+            {
+                var army = state.GetArmy(movement.ArmyId);
+                var target = state.GetSettlement(movement.TargetSettlementId);
+                return "LW_WarbandMovementLine".Translate(
+                    (army?.FactionId ?? "?").Named("faction"),
+                    (target?.Name ?? "?").Named("target"),
+                    movement.ArrivalTick.Named("eta")).ToString();
+            })
+            .ToList();
+
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        cachedFactionStrengthRows = state.Settlements
+            .Select(settlement => settlement.FactionId)
+            .Distinct(System.StringComparer.Ordinal)
+            .OrderBy(factionId => factionId, System.StringComparer.Ordinal)
+            .Take(MaxWarRows)
+            .Select(factionId =>
+            {
+                var power = state.Settlements
+                    .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
+                    .Sum(settlement => SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower);
+                var strength = debugExact ? power.ToString() : StrengthBand(power);
+                return "LW_FactionStrengthLine".Translate(
+                    factionId.Named("faction"),
+                    strength.Named("strength")).ToString();
+            })
+            .ToList();
+
+        cachedWarHistoryRows = state.Events
+            .Where(worldEvent =>
+                worldEvent.Kind == WorldEventKind.SettlementCaptured
+                || worldEvent.Kind == WorldEventKind.WarbandLaunched
+                || worldEvent.Kind == WorldEventKind.FactionCollapsed)
+            .OrderByDescending(worldEvent => worldEvent.Tick)
+            .ThenByDescending(worldEvent => worldEvent.Id.Value)
+            .Take(MaxWarRows)
+            .Select(worldEvent =>
+                "LW_WarHistoryLine".Translate(
+                    worldEvent.Tick.Named("tick"),
+                    worldEvent.Kind.Named("kind"),
+                    worldEvent.Summary.Named("summary")).ToString())
+            .ToList();
+    }
+
+    // Player-facing strength is a coarse band, not an omniscient exact value (debug logging
+    // reveals the raw number instead).
+    private static string StrengthBand(int power)
+    {
+        if (power < 500)
+        {
+            return "LW_FactionStrengthBandWeak".Translate();
+        }
+
+        return power < 2000
+            ? "LW_FactionStrengthBandModerate".Translate()
+            : "LW_FactionStrengthBandStrong".Translate();
     }
 
     private static string FormatKnowledgeLine(KnownSettlementInfo? known, int currentTick)

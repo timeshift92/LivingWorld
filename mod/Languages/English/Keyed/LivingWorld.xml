@@ -36,6 +36,14 @@
   <LW_DrifterLine>{name} | age {age} | sex {sex} | combat {combat} | organization {organization}</LW_DrifterLine>
   <LW_KnownIntelFreshnessLine>{name} | source {source} | confidence {confidence} | age {ageDays} days | stale {stale} | {summary}</LW_KnownIntelFreshnessLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
+  <LW_WorldWarHeader>World war</LW_WorldWarHeader>
+  <LW_WorldWarDisabledByRimWar>Rim War is driving world factions; Living World's world war is paused.</LW_WorldWarDisabledByRimWar>
+  <LW_WarbandMovementLine>{faction} warband marching on {target} (arrives tick {eta})</LW_WarbandMovementLine>
+  <LW_FactionStrengthLine>{faction}: {strength}</LW_FactionStrengthLine>
+  <LW_FactionStrengthBandWeak>weak</LW_FactionStrengthBandWeak>
+  <LW_FactionStrengthBandModerate>moderate</LW_FactionStrengthBandModerate>
+  <LW_FactionStrengthBandStrong>strong</LW_FactionStrengthBandStrong>
+  <LW_WarHistoryLine>{tick}: {kind} - {summary}</LW_WarHistoryLine>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>Visible pawns on loaded map: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Living World population: no data for this settlement (ledger settlements: {settlements})</LW_InspectPopulationMissingLine>

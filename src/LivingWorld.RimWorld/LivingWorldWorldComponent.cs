@@ -81,6 +81,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
     }
 
+    // True when Rim War is driving world factions, so the Living World world-war loop stays off.
+    public bool IsRimWarActive => RimWarIsActive;
+
     public string GetSummary()
     {
         return "LW_SummaryLine".Translate(
