@@ -1,0 +1,178 @@
+namespace LivingWorld.Core;
+
+public enum RaidPopulationAllocationStatus
+{
+    Success,
+    InvalidRequest,
+    UnknownFaction,
+    NoAvailableCombatants
+}
+
+public sealed record RaidPopulationAllocationRequest(
+    string FactionId,
+    string Name,
+    int RequestedCombatants,
+    string FoodResourceKey = "PackagedSurvivalMeal",
+    int FoodPerCitizen = 1);
+
+public sealed record RaidPopulationAllocationResult(
+    RaidPopulationAllocationStatus Status,
+    string Reason,
+    WorldArmy? Army,
+    WorldSettlement? SourceSettlement,
+    int RequestedCombatants,
+    int ReservedCombatants,
+    int AvailableCombatants)
+{
+    public static RaidPopulationAllocationResult Failed(
+        RaidPopulationAllocationStatus status,
+        string reason,
+        int requestedCombatants,
+        int availableCombatants)
+    {
+        return new RaidPopulationAllocationResult(
+            status,
+            reason,
+            null,
+            null,
+            requestedCombatants,
+            0,
+            availableCombatants);
+    }
+
+    public static RaidPopulationAllocationResult Completed(
+        WorldArmy army,
+        WorldSettlement sourceSettlement,
+        int requestedCombatants,
+        int reservedCombatants,
+        int availableCombatants)
+    {
+        return new RaidPopulationAllocationResult(
+            RaidPopulationAllocationStatus.Success,
+            $"Reserved {reservedCombatants} of {requestedCombatants} requested combatants from {sourceSettlement.Id}.",
+            army,
+            sourceSettlement,
+            requestedCombatants,
+            reservedCombatants,
+            availableCombatants);
+    }
+}
+
+public static class RaidPopulationAllocator
+{
+    public static RaidPopulationAllocationResult ReserveForRaid(
+        WorldState state,
+        RaidPopulationAllocationRequest request)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.FactionId))
+        {
+            return RaidPopulationAllocationResult.Failed(
+                RaidPopulationAllocationStatus.InvalidRequest,
+                "Raid faction cannot be empty.",
+                request.RequestedCombatants,
+                0);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return RaidPopulationAllocationResult.Failed(
+                RaidPopulationAllocationStatus.InvalidRequest,
+                "Raid name cannot be empty.",
+                request.RequestedCombatants,
+                0);
+        }
+
+        if (request.RequestedCombatants <= 0)
+        {
+            return RaidPopulationAllocationResult.Failed(
+                RaidPopulationAllocationStatus.InvalidRequest,
+                "Raid must request at least one combatant.",
+                request.RequestedCombatants,
+                0);
+        }
+
+        var settlements = state.Settlements
+            .Where(settlement => string.Equals(settlement.FactionId, request.FactionId, StringComparison.Ordinal))
+            .OrderByDescending(settlement => GetRaidReadyAdults(state, settlement.Id, request))
+            .ThenBy(settlement => settlement.Id.Value)
+            .ToList();
+
+        if (settlements.Count == 0)
+        {
+            return RaidPopulationAllocationResult.Failed(
+                RaidPopulationAllocationStatus.UnknownFaction,
+                $"No Living World settlement exists for faction {request.FactionId}.",
+                request.RequestedCombatants,
+                0);
+        }
+
+        var availableCombatants = settlements.Sum(settlement => GetRaidReadyAdults(state, settlement.Id, request));
+        if (availableCombatants <= 0)
+        {
+            return RaidPopulationAllocationResult.Failed(
+                RaidPopulationAllocationStatus.NoAvailableCombatants,
+                $"Faction {request.FactionId} has no available adult combatants.",
+                request.RequestedCombatants,
+                0);
+        }
+
+        var sourceSettlement = settlements[0];
+        var combatants = GetAvailableCombatants(state, sourceSettlement.Id)
+            .Take(Math.Min(request.RequestedCombatants, GetRaidReadyAdults(state, sourceSettlement.Id, request)))
+            .ToList();
+
+        var army = state.CreateArmy(request.Name, sourceSettlement.FactionId, sourceSettlement.Id);
+        foreach (var combatant in combatants)
+        {
+            state.TransferAsset(combatant.Id, sourceSettlement.Id, army.Id, "vanilla raid launched");
+        }
+
+        state.RecordEvent(
+            WorldEventKind.RaidLaunched,
+            army.Id,
+            $"Raid {army.Id} launched from {sourceSettlement.Id} with {combatants.Count} combatants.");
+
+        return RaidPopulationAllocationResult.Completed(
+            army,
+            sourceSettlement,
+            request.RequestedCombatants,
+            combatants.Count,
+            availableCombatants);
+    }
+
+    private static IEnumerable<WorldCitizen> GetAvailableCombatants(WorldState state, EntityId settlementId)
+    {
+        return state.Citizens
+            .Where(citizen =>
+                citizen.SettlementId == settlementId
+                && citizen.Status == CitizenStatus.Alive
+                && citizen.IsAdult
+                && state.GetOwner(citizen.Id) == settlementId)
+            .OrderBy(citizen => citizen.Id.Value);
+    }
+
+    private static int GetRaidReadyAdults(
+        WorldState state,
+        EntityId settlementId,
+        RaidPopulationAllocationRequest request)
+    {
+        var adults = state.GetSettlementPopulation(settlementId).Adults;
+        if (adults == 0)
+        {
+            return 0;
+        }
+
+        var food = state.GetSettlementFoodStatus(settlementId, request.FoodResourceKey, request.FoodPerCitizen);
+        if (food.DailyNeed > 0 && food.FoodDays <= 0)
+        {
+            return 0;
+        }
+
+        return adults;
+    }
+}

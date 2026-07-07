@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <LW_MainTitle>Living World</LW_MainTitle>
+  <LW_WaitingForWorld>Living World is waiting for a RimWorld world to load.</LW_WaitingForWorld>
+  <LW_SummaryLine>Settlements: {settlements}, Citizens: {citizens}, Armies: {armies}, Intel: {intelReports}, Raid opportunities: {activeRaidOpportunities}, Events: {events}</LW_SummaryLine>
+  <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Source: {source} | Status: {status} | World objects: {totalWorldObjects} | Vanilla settlements: {vanillaSettlements} | Faction objects: {factionWorldObjects} | Importable: {importableWorldObjects} | Scan errors: {scanErrors} | Rejected: {rejectedTypes}</LW_DiagnosticLine>
+  <LW_EmptyLedgerHint>The Living World ledger is empty. Retry bootstrap if the world has settlements, or create a visible test ledger to verify the mod pipeline.</LW_EmptyLedgerHint>
+  <LW_BootstrapErrorHint>Living World caught a bootstrap error instead of crashing the window: {error}</LW_BootstrapErrorHint>
+  <LW_RetryBootstrapButton>Retry world bootstrap</LW_RetryBootstrapButton>
+  <LW_CreateDebugLedgerButton>Create visible test ledger</LW_CreateDebugLedgerButton>
+  <LW_BootstrapRetried>Bootstrap retried. Check the diagnostic line and settlement list.</LW_BootstrapRetried>
+  <LW_DebugLedgerCreated>Visible test ledger created.</LW_DebugLedgerCreated>
+  <LW_DebugSettlementName>Living World Test Settlement</LW_DebugSettlementName>
+  <LW_DebugCitizenName>Test citizen {index}</LW_DebugCitizenName>
+  <LW_RaidHookStatus>Enemy vanilla raids use Living World: an intel or trade opportunity is required first, then adult citizens are reserved from faction settlements and raid strength is capped by available people.</LW_RaidHookStatus>
+  <LW_SettlementsHeader>Settlements</LW_SettlementsHeader>
+  <LW_ArmiesHeader>Armies</LW_ArmiesHeader>
+  <LW_RaidOutcomesHeader>Raid outcomes</LW_RaidOutcomesHeader>
+  <LW_EventsHeader>Events</LW_EventsHeader>
+  <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
+  <LW_FoodStatusOk>stable</LW_FoodStatusOk>
+  <LW_FoodStatusShortage>food shortage</LW_FoodStatusShortage>
+  <LW_MigrationReasonNone>none</LW_MigrationReasonNone>
+  <LW_MigrationReasonStarvation>starvation</LW_MigrationReasonStarvation>
+  <LW_KnowledgeUnknown>Known info: unknown</LW_KnowledgeUnknown>
+  <LW_KnowledgeLine>Known info: source {source} | confidence {confidence} | tick {tick} | population {populationBand} | food {food} | migration {migration}</LW_KnowledgeLine>
+  <LW_SettlementLine>{name} [{faction}]\n{knowledge}</LW_SettlementLine>
+  <LW_ArmyLine>{name} [{faction}] | Alive {citizens} | Dead {deadCitizens} | Returned {returnedCitizens} | Captured {prisonerCitizens} | Meals {meals} | Steel {steel}</LW_ArmyLine>
+  <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner}</LW_RaidOutcomeLine>
+  <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
+  <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
+  <LW_InspectPopulationMissingLine>Living World population: no data for this settlement (ledger settlements: {settlements})</LW_InspectPopulationMissingLine>
+  <LW_Settings_BootstrapLedger>Bootstrap ledger during world generation</LW_Settings_BootstrapLedger>
+  <LW_Settings_BootstrapLedgerTip>When enabled, Living World builds its initial settlement population and resource ledger as the RimWorld world is created.</LW_Settings_BootstrapLedgerTip>
+  <LW_Settings_DebugLogging>Debug logging</LW_Settings_DebugLogging>
+  <LW_Settings_DebugLoggingTip>Write Living World bootstrap summaries to the RimWorld log.</LW_Settings_DebugLoggingTip>
+  <LW_Settings_HumanAdults>Baseline human settlement adults</LW_Settings_HumanAdults>
+  <LW_Settings_NonHumanAdults>Baseline non-human settlement adults</LW_Settings_NonHumanAdults>
+  <LW_Settings_MinAdults>Minimum settlement adults</LW_Settings_MinAdults>
+  <LW_Settings_MaxAdults>Maximum settlement adults</LW_Settings_MaxAdults>
+  <LW_Settings_FoodPerCitizen>Food per citizen</LW_Settings_FoodPerCitizen>
+  <LW_Settings_SteelPerCitizen>Steel per citizen</LW_Settings_SteelPerCitizen>
+  <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
+</LanguageData>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <LW_MainTitle>Живой мир</LW_MainTitle>
+  <LW_WaitingForWorld>Живой мир ждёт загрузки мира RimWorld.</LW_WaitingForWorld>
+  <LW_SummaryLine>Поселения: {settlements}, Жители: {citizens}, Армии: {armies}, Разведданные: {intelReports}, Поводы для рейда: {activeRaidOpportunities}, События: {events}</LW_SummaryLine>
+  <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Источник: {source} | Статус: {status} | Объектов мира: {totalWorldObjects} | Vanilla-поселений: {vanillaSettlements} | Объектов с фракцией: {factionWorldObjects} | Импортируемых: {importableWorldObjects} | Ошибок сканирования: {scanErrors} | Отброшено: {rejectedTypes}</LW_DiagnosticLine>
+  <LW_EmptyLedgerHint>Ledger Living World пуст. Повтори bootstrap, если в мире есть поселения, или создай видимый тестовый ledger для проверки цепочки мода.</LW_EmptyLedgerHint>
+  <LW_BootstrapErrorHint>Living World поймал ошибку bootstrap и не дал окну упасть: {error}</LW_BootstrapErrorHint>
+  <LW_RetryBootstrapButton>Повторить bootstrap мира</LW_RetryBootstrapButton>
+  <LW_CreateDebugLedgerButton>Создать видимый тестовый ledger</LW_CreateDebugLedgerButton>
+  <LW_BootstrapRetried>Bootstrap повторён. Проверь диагностическую строку и список поселений.</LW_BootstrapRetried>
+  <LW_DebugLedgerCreated>Видимый тестовый ledger создан.</LW_DebugLedgerCreated>
+  <LW_DebugSettlementName>Тестовое поселение Living World</LW_DebugSettlementName>
+  <LW_DebugCitizenName>Тестовый житель {index}</LW_DebugCitizenName>
+  <LW_RaidHookStatus>Вражеские ванильные рейды используют Living World: сначала нужен повод из разведки или торговли, затем взрослые жители резервируются из поселений фракции, а сила рейда ограничивается доступными людьми.</LW_RaidHookStatus>
+  <LW_SettlementsHeader>Поселения</LW_SettlementsHeader>
+  <LW_ArmiesHeader>Армии</LW_ArmiesHeader>
+  <LW_RaidOutcomesHeader>Итоги рейдов</LW_RaidOutcomesHeader>
+  <LW_EventsHeader>События</LW_EventsHeader>
+  <LW_ListLimited>Показано {shown} из {total}. Полный ledger хранится в памяти и сохранении.</LW_ListLimited>
+  <LW_FoodStatusOk>стабильно</LW_FoodStatusOk>
+  <LW_FoodStatusShortage>нехватка еды</LW_FoodStatusShortage>
+  <LW_MigrationReasonNone>нет</LW_MigrationReasonNone>
+  <LW_MigrationReasonStarvation>голод</LW_MigrationReasonStarvation>
+  <LW_KnowledgeUnknown>Известные сведения: неизвестно</LW_KnowledgeUnknown>
+  <LW_KnowledgeLine>Известные сведения: источник {source} | уверенность {confidence} | тик {tick} | население {populationBand} | еда {food} | миграция {migration}</LW_KnowledgeLine>
+  <LW_SettlementLine>{name} [{faction}]\n{knowledge}</LW_SettlementLine>
+  <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
+  <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner}</LW_RaidOutcomeLine>
+  <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>
+  <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
+  <LW_InspectPopulationMissingLine>Население Living World: нет данных для этого поселения (в ledger-е поселений: {settlements})</LW_InspectPopulationMissingLine>
+  <LW_Settings_BootstrapLedger>Создавать ledger при генерации мира</LW_Settings_BootstrapLedger>
+  <LW_Settings_BootstrapLedgerTip>Если включено, Living World создаёт стартовое население поселений и ресурсный ledger при создании мира RimWorld.</LW_Settings_BootstrapLedgerTip>
+  <LW_Settings_DebugLogging>Отладочный лог</LW_Settings_DebugLogging>
+  <LW_Settings_DebugLoggingTip>Записывать сводку bootstrap Living World в лог RimWorld.</LW_Settings_DebugLoggingTip>
+  <LW_Settings_HumanAdults>Базовое число взрослых в человеческом поселении</LW_Settings_HumanAdults>
+  <LW_Settings_NonHumanAdults>Базовое число взрослых в нечеловеческом поселении</LW_Settings_NonHumanAdults>
+  <LW_Settings_MinAdults>Минимум взрослых в поселении</LW_Settings_MinAdults>
+  <LW_Settings_MaxAdults>Максимум взрослых в поселении</LW_Settings_MaxAdults>
+  <LW_Settings_FoodPerCitizen>Еда на жителя</LW_Settings_FoodPerCitizen>
+  <LW_Settings_SteelPerCitizen>Сталь на жителя</LW_Settings_SteelPerCitizen>
+  <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
+</LanguageData>

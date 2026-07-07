@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <MainButtonDef>
+    <defName>LivingWorld_Main</defName>
+    <label>Living World</label>
+    <description>Inspect the global Living World ledger.</description>
+    <tabWindowClass>LivingWorld.RimWorld.MainTabWindow_LivingWorld</tabWindowClass>
+    <order>72</order>
+  </MainButtonDef>
+</Defs>

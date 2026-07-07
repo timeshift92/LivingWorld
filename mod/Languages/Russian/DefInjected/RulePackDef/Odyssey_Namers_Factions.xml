@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <!-- Keep Odyssey faction namer grammar syntactically valid under Russian + Auto Translation. -->
+  <NamerFactionTradersGuild.rulePack.rulesStrings.0>r_name-&gt;[tradeAdj] [tradeNoun]</NamerFactionTradersGuild.rulePack.rulesStrings.0>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.1>tradeAdj-&gt;торговая</NamerFactionTradersGuild.rulePack.rulesStrings.1>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.2>tradeAdj-&gt;орбитальная</NamerFactionTradersGuild.rulePack.rulesStrings.2>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.3>tradeAdj-&gt;космическая</NamerFactionTradersGuild.rulePack.rulesStrings.3>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.4>tradeAdj-&gt;звездная</NamerFactionTradersGuild.rulePack.rulesStrings.4>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.5>tradeAdj-&gt;внеземная</NamerFactionTradersGuild.rulePack.rulesStrings.5>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.6>tradeAdj-&gt;межзвездная</NamerFactionTradersGuild.rulePack.rulesStrings.6>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.7>tradeAdj-&gt;небесная</NamerFactionTradersGuild.rulePack.rulesStrings.7>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.8>tradeAdj-&gt;сквозьпустотная</NamerFactionTradersGuild.rulePack.rulesStrings.8>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.9>tradeAdj-&gt;экзо</NamerFactionTradersGuild.rulePack.rulesStrings.9>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.10>tradeNoun-&gt;гильдия</NamerFactionTradersGuild.rulePack.rulesStrings.10>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.11>tradeNoun-&gt;консорциум</NamerFactionTradersGuild.rulePack.rulesStrings.11>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.12>tradeNoun-&gt;синдикат</NamerFactionTradersGuild.rulePack.rulesStrings.12>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.13>tradeNoun-&gt;ассоциация</NamerFactionTradersGuild.rulePack.rulesStrings.13>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.14>tradeNoun-&gt;картель</NamerFactionTradersGuild.rulePack.rulesStrings.14>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.15>tradeNoun-&gt;коалиция</NamerFactionTradersGuild.rulePack.rulesStrings.15>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.16>tradeNoun-&gt;федерация</NamerFactionTradersGuild.rulePack.rulesStrings.16>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.17>tradeNoun-&gt;конгломерат</NamerFactionTradersGuild.rulePack.rulesStrings.17>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.18>tradeNoun-&gt;корпорация</NamerFactionTradersGuild.rulePack.rulesStrings.18>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.19>tradeNoun-&gt;компания</NamerFactionTradersGuild.rulePack.rulesStrings.19>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.20>tradeNoun-&gt;сеть</NamerFactionTradersGuild.rulePack.rulesStrings.20>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.21>tradeNoun-&gt;биржа</NamerFactionTradersGuild.rulePack.rulesStrings.21>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.22>tradeNoun-&gt;базар</NamerFactionTradersGuild.rulePack.rulesStrings.22>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.23>tradeNoun-&gt;рынок</NamerFactionTradersGuild.rulePack.rulesStrings.23>
+  <NamerFactionTradersGuild.rulePack.rulesStrings.24>tradeNoun-&gt;узел</NamerFactionTradersGuild.rulePack.rulesStrings.24>
+</LanguageData>

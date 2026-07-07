@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LivingWorld.Core/LivingWorld.Core.csproj" />
+    <Project Path="src/LivingWorld.Tests/LivingWorld.Tests.csproj" />
+  </Folder>
+</Solution>

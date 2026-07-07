@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>LivingWorld.RimWorld</AssemblyName>
+    <RootNamespace>LivingWorld.RimWorld</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RimWorldManagedPath>C:\Games\RimWorld\RimWorldWin64_Data\Managed</RimWorldManagedPath>
+    <HarmonyPath>C:\Games\RimWorld\Mods\Harmony\Current\Assemblies</HarmonyPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LivingWorld.Core\LivingWorld.Core.csproj" />
+    <Reference Include="0Harmony">
+      <HintPath>$(HarmonyPath)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RimWorldManagedPath)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RimWorldManagedPath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(RimWorldManagedPath)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(RimWorldManagedPath)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
