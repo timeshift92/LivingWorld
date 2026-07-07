@@ -375,6 +375,43 @@ public sealed class WorldState
         _armyMovements[movement.ArmyId] = movement;
     }
 
+    public WorldCitizen MarkCitizenDead(EntityId citizenId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (!_citizens.TryGetValue(citizenId, out var citizen))
+        {
+            throw new InvalidOperationException($"Citizen {citizenId} does not exist.");
+        }
+
+        if (citizen.Status == CitizenStatus.Dead)
+        {
+            return citizen;
+        }
+
+        var dead = citizen with { Status = CitizenStatus.Dead };
+        _citizens[citizenId] = dead;
+        AppendEvent(WorldEventKind.CitizenDied, citizenId, $"Citizen {citizenId} died: {reason}.");
+        return dead;
+    }
+
+    public WorldSettlement CaptureSettlement(EntityId settlementId, string newFactionId)
+    {
+        ThrowIfNullOrWhiteSpace(newFactionId, nameof(newFactionId));
+
+        if (!_settlements.TryGetValue(settlementId, out var settlement))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        // Surviving residents keep their SettlementId and ownership, so they simply belong to
+        // the capturing faction now. No dedicated world-history event kind yet (avoids enum
+        // churn while the core-loop is in flight); a SettlementCaptured event lands at integration.
+        var captured = settlement with { FactionId = newFactionId };
+        _settlements[settlementId] = captured;
+        return captured;
+    }
+
     public Drifter CreateDrifter(string name, int age, Sex sex, int combatAptitude = 0, int organizationAptitude = 0)
     {
         ThrowIfNullOrWhiteSpace(name, nameof(name));

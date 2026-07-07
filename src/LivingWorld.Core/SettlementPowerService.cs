@@ -35,12 +35,19 @@ public static class SettlementPowerService
         }
 
         var combatants = state.GetSettlementPopulation(settlementId).Adults;
+        return new SettlementPower(combatants, CombatPowerOf(combatants));
+    }
 
-        var atFullRate = Math.Min(combatants, DiminishingThreshold);
+    /// <summary>
+    /// The combat power a given number of combatants is worth, on the same diminishing curve
+    /// used for settlements — shared so a travelling army and a defending settlement are scored
+    /// consistently in battle.
+    /// </summary>
+    public static int CombatPowerOf(int combatants)
+    {
+        var atFullRate = Math.Min(Math.Max(0, combatants), DiminishingThreshold);
         var beyondThreshold = Math.Max(0, combatants - DiminishingThreshold);
-        var combatPower = (atFullRate * PointsPerCombatant)
+        return (atFullRate * PointsPerCombatant)
             + (beyondThreshold * DiminishedPointsPerCombatant);
-
-        return new SettlementPower(combatants, combatPower);
     }
 }

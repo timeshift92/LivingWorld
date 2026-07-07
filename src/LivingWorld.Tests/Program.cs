@@ -86,6 +86,8 @@ var tests = new List<(string Name, Action Test)>
     ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
     ("army arrives at its target when the eta passes", TestArmyMovementArrivesOnEta),
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
+    ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
+    ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -1890,6 +1892,82 @@ static void TestArmyMovementSerializationRoundTrip()
     AssertEqual(target.Id, movement.TargetSettlementId);
     AssertEqual(5 * 60_000, movement.ArrivalTick);
     AssertEqual(ArmyMovementStatus.Traveling, movement.Status);
+}
+
+static void TestBattleAttackerCapturesWeakSettlement()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    for (var i = 0; i < 12; i++)
+    {
+        state.CreateCitizen("P" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("O" + i, 30, Sex.Male, "settler", target.Id);
+    }
+
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Pirates", "Raiders", 8, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+    AssertEqual(8, reservation.ReservedCombatants);
+
+    var totalCitizens = state.Citizens.Count;
+
+    state.DispatchArmy(army.Id, target.Id, 0);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    var outcome = WorldBattleService.Resolve(state, army.Id);
+
+    AssertEqual(BattleWinner.Attacker, outcome.Winner);
+    AssertEqual(true, outcome.Captured);
+    // Captured: the settlement now belongs to the attacking faction (survivors come with it).
+    AssertEqual("Pirates", state.GetSettlement(target.Id)!.FactionId);
+    // 8 attackers * 20% = 1 loss; 3 defenders * 60% = 1 loss.
+    AssertEqual(1, outcome.AttackerLosses);
+    AssertEqual(1, outcome.DefenderLosses);
+    // Population is conserved: no citizen appears or vanishes; exactly the losses turn Dead.
+    AssertEqual(totalCitizens, state.Citizens.Count);
+    AssertEqual(2, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
+}
+
+static void TestBattleDefenderHoldsAndArmyStandsDown()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("P" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var target = state.CreateSettlement("fortress", "Fortress", "Outlanders");
+    for (var i = 0; i < 20; i++)
+    {
+        state.CreateCitizen("O" + i, 30, Sex.Male, "settler", target.Id);
+    }
+
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Pirates", "Raiders", 2, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+
+    var totalCitizens = state.Citizens.Count;
+
+    state.DispatchArmy(army.Id, target.Id, 0);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    var outcome = WorldBattleService.Resolve(state, army.Id);
+
+    AssertEqual(BattleWinner.Defender, outcome.Winner);
+    AssertEqual(false, outcome.Captured);
+    AssertEqual("Outlanders", state.GetSettlement(target.Id)!.FactionId);
+    AssertEqual(ArmyMovementStatus.Disbanded, state.GetArmyMovement(army.Id)!.Status);
+    // Population is conserved: only the combined losses turn Dead.
+    AssertEqual(totalCitizens, state.Citizens.Count);
+    AssertEqual(
+        outcome.AttackerLosses + outcome.DefenderLosses,
+        state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()
