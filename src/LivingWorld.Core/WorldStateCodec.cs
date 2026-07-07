@@ -154,6 +154,39 @@ public static class WorldStateCodec
                             new XAttribute("medicinePerAdult", profile.MedicinePerAdult),
                             new XAttribute("componentPerAdult", profile.ComponentPerAdult)))),
                 new XElement(
+                    "SettlementCapabilities",
+                    snapshot.SettlementCapabilities.Select(capability =>
+                            new XElement(
+                                "SettlementCapability",
+                                new XAttribute("settlementKind", capability.SettlementId.Kind),
+                                new XAttribute("settlementId", capability.SettlementId.Value),
+                                new XAttribute("housingCapacity", capability.HousingCapacity),
+                                new XAttribute("foodStorageCapacity", capability.FoodStorageCapacity),
+                                new XAttribute("medicineStorageCapacity", capability.MedicineStorageCapacity),
+                                new XAttribute("powerCapacity", capability.PowerCapacity),
+                                new XAttribute("laboratoryCapacity", capability.LaboratoryCapacity),
+                                new XAttribute("animalCapacity", capability.AnimalCapacity),
+                                new XAttribute("cropCapacity", capability.CropCapacity),
+                                new XAttribute("researchCapacity", capability.ResearchCapacity),
+                                new XAttribute("mechanicalCapacity", capability.MechanicalCapacity),
+                                new XAttribute("pollutionHandling", capability.PollutionHandling)))),
+                new XElement(
+                    "SpecialistPools",
+                    snapshot.SpecialistPools.Select(specialists =>
+                            new XElement(
+                                "SpecialistPool",
+                                new XAttribute("settlementKind", specialists.SettlementId.Kind),
+                                new XAttribute("settlementId", specialists.SettlementId.Value),
+                                new XAttribute("farmers", specialists.Farmers),
+                                new XAttribute("handlers", specialists.Handlers),
+                                new XAttribute("doctors", specialists.Doctors),
+                                new XAttribute("researchers", specialists.Researchers),
+                                new XAttribute("engineers", specialists.Engineers),
+                                new XAttribute("geneticists", specialists.Geneticists),
+                                new XAttribute("mechanitors", specialists.Mechanitors),
+                                new XAttribute("soldiers", specialists.Soldiers),
+                                new XAttribute("diplomats", specialists.Diplomats)))),
+                new XElement(
                     "FactionRecords",
                     snapshot.FactionRecords.Select(record =>
                         new XElement(
@@ -419,6 +452,37 @@ public static class WorldStateCodec
                 .ToList());
 
         var state = WorldState.FromSnapshot(snapshot);
+
+        foreach (var element in OptionalContainer(root, "SettlementCapabilities").Elements("SettlementCapability"))
+        {
+            state.RecordSettlementCapability(new SettlementCapability(
+                ReadEntityId(element, "settlementKind", "settlementId"),
+                RequiredInt(element, "housingCapacity"),
+                RequiredInt(element, "foodStorageCapacity"),
+                RequiredInt(element, "medicineStorageCapacity"),
+                RequiredInt(element, "powerCapacity"),
+                RequiredInt(element, "laboratoryCapacity"),
+                RequiredInt(element, "animalCapacity"),
+                RequiredInt(element, "cropCapacity"),
+                RequiredInt(element, "researchCapacity"),
+                RequiredInt(element, "mechanicalCapacity"),
+                RequiredInt(element, "pollutionHandling")));
+        }
+
+        foreach (var element in OptionalContainer(root, "SpecialistPools").Elements("SpecialistPool"))
+        {
+            state.RecordSpecialistPool(new SpecialistPool(
+                ReadEntityId(element, "settlementKind", "settlementId"),
+                RequiredInt(element, "farmers"),
+                RequiredInt(element, "handlers"),
+                RequiredInt(element, "doctors"),
+                RequiredInt(element, "researchers"),
+                RequiredInt(element, "engineers"),
+                RequiredInt(element, "geneticists"),
+                RequiredInt(element, "mechanitors"),
+                RequiredInt(element, "soldiers"),
+                RequiredInt(element, "diplomats")));
+        }
 
         foreach (var element in OptionalContainer(root, "ArmyMovements").Elements("Movement"))
         {

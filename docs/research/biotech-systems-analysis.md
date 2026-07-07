@@ -63,6 +63,10 @@ This means the architecture already has a place to attach bio systems:
 - `Ownership` can own embryos, samples, herds, seed banks, labs and machines;
 - `Resources` can pay project costs;
 - `ProductionProfiles` can describe base environmental output;
+- `SettlementCapabilities` can describe housing, storage, power, lab, animal,
+  crop, research, mechanical and pollution-handling capacity;
+- `SpecialistPools` can describe farmer, handler, doctor, researcher, engineer,
+  geneticist, mechanitor, soldier and diplomat labor limits;
 - `KnownSettlementInfo` can expose only bands and confidence;
 - `Events` can record births, failed projects, theft, disease, pollution and
   tech leaks;
@@ -72,8 +76,8 @@ Current limits:
 
 - production is still mostly per-adult output multiplied by environment;
 - daily birth is simple interval logic;
-- there is no infrastructure capacity;
-- there are no specialist pools;
+- infrastructure and specialists now have a first compact core slice, but are
+  not yet bootstrapped from RimWorld world data or shown through intel bands;
 - animals and crops are not yet ledger-owned cohorts;
 - no settlement project queue exists;
 - no pollution, disease, sanitation or lab-risk model exists.
@@ -437,8 +441,8 @@ A compact profile of what a settlement can support:
 - mechanical production capacity;
 - pollution handling.
 
-This should appear before full BioTech. It solves the question "can this place
-actually run a vat or lab?"
+First core slice exists. Remaining work is to seed these values from RimWorld
+world data, expose them as intel bands, and make later projects consume them.
 
 ### SpecialistPool
 
@@ -454,7 +458,8 @@ A settlement aggregate, not individual pawns:
 - soldiers;
 - diplomats.
 
-Specialists are required so production is not only "adults times output".
+First core slice exists. Remaining work is to derive and update the pools from
+demography, education, migration, deaths, raids and active-map sync.
 
 ### WorldAnimalCohort
 
@@ -669,8 +674,8 @@ Add compact infrastructure and specialist profiles.
 Acceptance:
 
 - settlement can answer whether it has housing, food storage, power, labs,
-  animal capacity and specialist capacity;
-- values save/load;
+  animal capacity and specialist capacity; **implemented in Core**;
+- values save/load; **implemented in Core**;
 - UI shows bands through intel, not exact hidden values.
 
 ### P1: Animal And Crop Cohorts

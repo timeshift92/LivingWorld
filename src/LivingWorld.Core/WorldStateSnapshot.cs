@@ -17,4 +17,11 @@ public sealed record WorldStateSnapshot(
     IReadOnlyList<OwnershipRecord> Ownership,
     IReadOnlyList<ResourceStack> Resources,
     IReadOnlyList<WorldEvent> Events,
-    IReadOnlyList<Drifter> Drifters);
+    IReadOnlyList<Drifter> Drifters)
+{
+    public IReadOnlyList<SettlementCapability> SettlementCapabilities { get; init; } =
+        Array.Empty<SettlementCapability>();
+
+    public IReadOnlyList<SpecialistPool> SpecialistPools { get; init; } =
+        Array.Empty<SpecialistPool>();
+}

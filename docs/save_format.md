@@ -44,6 +44,8 @@ Snapshot хранит актуальное состояние:
 - armies;
 - migration groups;
 - settlement production profiles;
+- settlement capabilities;
+- specialist pools;
 - economy;
 - ecology;
 - diplomacy.
@@ -77,6 +79,8 @@ EventChunks
 PawnLinkChunks
 MigrationGroupChunks
 ProductionProfileChunks
+SettlementCapabilityChunks
+SpecialistPoolChunks
 CacheChunks
 ```
 
@@ -90,6 +94,8 @@ CacheChunks
 - `worldSeed` приходит из seed RimWorld world и round-trip'ится через XML;
 - `MigrationGroups` читается как optional container для обратной совместимости со старыми сейвами;
 - `FactionRecords` читается как optional container для обратной совместимости со старыми сейвами;
+- `SettlementCapabilities` читается как optional container для обратной совместимости со старыми сейвами;
+- `SpecialistPools` читается как optional container для обратной совместимости со старыми сейвами;
 - каждый `Alive` citizen должен иметь owner;
 - ownership asset и owner должны ссылаться на существующие entities;
 - settlement population считается только из `Alive` citizens, которыми владеет settlement;
@@ -125,6 +131,45 @@ CacheChunks
 Чтение контейнера optional: старые сейвы без `ProductionProfiles` загружаются
 с пустым списком профилей, после чего профиль может быть восстановлен новым
 bootstrap/repair-проходом.
+
+Settlement infrastructure and specialists are stored as compact aggregates:
+
+```xml
+<SettlementCapabilities>
+  <SettlementCapability
+    settlementKind="Settlement"
+    settlementId="1"
+    housingCapacity="80"
+    foodStorageCapacity="1200"
+    medicineStorageCapacity="90"
+    powerCapacity="2000"
+    laboratoryCapacity="4"
+    animalCapacity="60"
+    cropCapacity="40"
+    researchCapacity="3"
+    mechanicalCapacity="2"
+    pollutionHandling="1" />
+</SettlementCapabilities>
+
+<SpecialistPools>
+  <SpecialistPool
+    settlementKind="Settlement"
+    settlementId="1"
+    farmers="10"
+    handlers="6"
+    doctors="3"
+    researchers="4"
+    engineers="5"
+    geneticists="1"
+    mechanitors="1"
+    soldiers="12"
+    diplomats="2" />
+</SpecialistPools>
+```
+
+Both containers are optional on load. Missing values mean the settlement has no
+recorded advanced capacity yet; they do not create hidden buildings, pawns or
+workers. Negative input values are normalized to zero by the ledger.
 
 Ledger-level faction lifecycle is stored separately from RimWorld `Faction`
 objects:

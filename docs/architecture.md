@@ -172,6 +172,16 @@ LivingWorld/
   - хранит biome, hilliness, estimated growing days, rainfall, average temperature and technology;
   - задает daily output per adult для еды, стали, медицины и компонентов.
 
+- `SettlementCapability`
+  - compact infrastructure aggregate for a settlement;
+  - stores housing, food/medicine storage, power, lab, animal, crop, research, mechanical and pollution-handling capacity;
+  - gates future projects such as selection, incubation, labs, mechtech and settlement development.
+
+- `SpecialistPool`
+  - compact labor aggregate for a settlement;
+  - stores farmers, handlers, doctors, researchers, engineers, geneticists, mechanitors, soldiers and diplomats;
+  - prevents advanced systems from being driven by generic adult population alone.
+
 - `WorldFactionRecord`
   - ledger-level состояние фракции;
   - сейчас фиксирует `Active/Collapsed` статус без прямого удаления vanilla `Faction`;
@@ -190,6 +200,7 @@ LivingWorld/
 - `WarSimulator`;
 - `EconomySimulator`;
 - `SettlementProductionService`;
+- `SettlementCapabilityService`;
 - `SettlementQueryService`;
 - `ResourceLedgerService`;
 - `OwnershipService`;
@@ -212,6 +223,7 @@ LivingWorld/
 - settlement query logic живет в `SettlementQueryService`; `WorldState` сохраняет совместимые методы только как thin delegates;
 - resource accounting живет в `ResourceLedgerService`, ownership transfers - в `OwnershipService`;
 - ресурсы получают typed metadata через `WorldResourceKey`; XML storage пока хранит `DefName` для обратной совместимости;
+- infrastructure and specialist data are compact settlement aggregates (`SettlementCapability`, `SpecialistPool`) and not hidden buildings or pawns;
 - демографическое старение и естественная смертность живут в `DemographyService`;
 - миграция использует `WorldMigrationGroup`: гражданин выходит из settlement, принадлежит группе и прибывает только после `ArrivalTick`;
 - коллапс фракции фиксируется в `WorldFactionRecord` через `FactionLifecycleService`, не удаляя vanilla `Faction` напрямую;

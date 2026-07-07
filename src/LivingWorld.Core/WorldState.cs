@@ -17,6 +17,8 @@ public sealed class WorldState
     private readonly Dictionary<(string, string), int> _factionRelations = new();
     private readonly HashSet<string> _irreconcilableFactions = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
+    private readonly Dictionary<EntityId, SettlementCapability> _settlementCapabilities = new();
+    private readonly Dictionary<EntityId, SpecialistPool> _specialistPools = new();
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
@@ -63,6 +65,10 @@ public sealed class WorldState
     public IReadOnlyCollection<Drifter> Drifters => _drifters.Values;
 
     public IReadOnlyCollection<SettlementProductionProfile> ProductionProfiles => _productionProfiles.Values;
+
+    public IReadOnlyCollection<SettlementCapability> SettlementCapabilities => _settlementCapabilities.Values;
+
+    public IReadOnlyCollection<SpecialistPool> SpecialistPools => _specialistPools.Values;
 
     public IReadOnlyCollection<WorldFactionRecord> FactionRecords => _factionRecords.Values;
 
@@ -144,7 +150,17 @@ public sealed class WorldState
                 .Select(pair => new ResourceStack(pair.Key.OwnerId, pair.Key.ResourceKey, pair.Value))
                 .ToList(),
             _events.OrderBy(worldEvent => worldEvent.Id.Value).ToList(),
-            _drifters.Values.OrderBy(drifter => drifter.Id.Value).ToList());
+            _drifters.Values.OrderBy(drifter => drifter.Id.Value).ToList())
+        {
+            SettlementCapabilities = _settlementCapabilities.Values
+                .OrderBy(capability => capability.SettlementId.Kind)
+                .ThenBy(capability => capability.SettlementId.Value)
+                .ToList(),
+            SpecialistPools = _specialistPools.Values
+                .OrderBy(specialists => specialists.SettlementId.Kind)
+                .ThenBy(specialists => specialists.SettlementId.Value)
+                .ToList()
+        };
     }
 
     public static WorldState FromSnapshot(WorldStateSnapshot snapshot)
@@ -213,6 +229,16 @@ public sealed class WorldState
         foreach (var profile in snapshot.ProductionProfiles)
         {
             state._productionProfiles.Add(profile.SettlementId, profile);
+        }
+
+        foreach (var capability in snapshot.SettlementCapabilities)
+        {
+            state._settlementCapabilities[capability.SettlementId] = Normalize(capability);
+        }
+
+        foreach (var specialists in snapshot.SpecialistPools)
+        {
+            state._specialistPools[specialists.SettlementId] = Normalize(specialists);
         }
 
         foreach (var factionRecord in snapshot.FactionRecords)
@@ -788,6 +814,20 @@ public sealed class WorldState
             : null;
     }
 
+    public SettlementCapability? GetSettlementCapability(EntityId settlementId)
+    {
+        return _settlementCapabilities.TryGetValue(settlementId, out var capability)
+            ? capability
+            : null;
+    }
+
+    public SpecialistPool? GetSpecialistPool(EntityId settlementId)
+    {
+        return _specialistPools.TryGetValue(settlementId, out var specialists)
+            ? specialists
+            : null;
+    }
+
     public WorldFactionRecord? GetFactionRecord(string factionId)
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
@@ -883,6 +923,36 @@ public sealed class WorldState
         }
 
         _productionProfiles[profile.SettlementId] = profile;
+    }
+
+    public void RecordSettlementCapability(SettlementCapability capability)
+    {
+        if (capability == null)
+        {
+            throw new ArgumentNullException(nameof(capability));
+        }
+
+        if (!_settlements.ContainsKey(capability.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {capability.SettlementId} does not exist.");
+        }
+
+        _settlementCapabilities[capability.SettlementId] = Normalize(capability);
+    }
+
+    public void RecordSpecialistPool(SpecialistPool specialists)
+    {
+        if (specialists == null)
+        {
+            throw new ArgumentNullException(nameof(specialists));
+        }
+
+        if (!_settlements.ContainsKey(specialists.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {specialists.SettlementId} does not exist.");
+        }
+
+        _specialistPools[specialists.SettlementId] = Normalize(specialists);
     }
 
     internal WorldFactionRecord MarkFactionCollapsedForLifecycle(string factionId, int tick, string reason)
@@ -1255,6 +1325,11 @@ public sealed class WorldState
         return SettlementQueryService.GetProductionStatus(this, settlementId);
     }
 
+    public SettlementCapabilityStatus GetSettlementCapabilityStatus(EntityId settlementId)
+    {
+        return SettlementCapabilityService.GetStatus(this, settlementId);
+    }
+
     public IEnumerable<string> Validate()
     {
         foreach (var slugGroup in _settlements.Values
@@ -1304,6 +1379,22 @@ public sealed class WorldState
             if (!_intelReports.ContainsKey(opportunity.IntelReportId))
             {
                 yield return $"Raid opportunity {opportunity.Id} references missing intel report {opportunity.IntelReportId}.";
+            }
+        }
+
+        foreach (var capability in _settlementCapabilities.Values.OrderBy(capability => capability.SettlementId.Value))
+        {
+            if (!_settlements.ContainsKey(capability.SettlementId))
+            {
+                yield return $"Settlement capability references missing settlement {capability.SettlementId}.";
+            }
+        }
+
+        foreach (var specialists in _specialistPools.Values.OrderBy(specialists => specialists.SettlementId.Value))
+        {
+            if (!_settlements.ContainsKey(specialists.SettlementId))
+            {
+                yield return $"Specialist pool references missing settlement {specialists.SettlementId}.";
             }
         }
 
@@ -1494,6 +1585,39 @@ public sealed class WorldState
         return existing.ExactValuesVisible
             && !incoming.ExactValuesVisible
             && existing.Confidence >= incoming.Confidence;
+    }
+
+    private static SettlementCapability Normalize(SettlementCapability capability)
+    {
+        return capability with
+        {
+            HousingCapacity = Math.Max(0, capability.HousingCapacity),
+            FoodStorageCapacity = Math.Max(0, capability.FoodStorageCapacity),
+            MedicineStorageCapacity = Math.Max(0, capability.MedicineStorageCapacity),
+            PowerCapacity = Math.Max(0, capability.PowerCapacity),
+            LaboratoryCapacity = Math.Max(0, capability.LaboratoryCapacity),
+            AnimalCapacity = Math.Max(0, capability.AnimalCapacity),
+            CropCapacity = Math.Max(0, capability.CropCapacity),
+            ResearchCapacity = Math.Max(0, capability.ResearchCapacity),
+            MechanicalCapacity = Math.Max(0, capability.MechanicalCapacity),
+            PollutionHandling = Math.Max(0, capability.PollutionHandling)
+        };
+    }
+
+    private static SpecialistPool Normalize(SpecialistPool specialists)
+    {
+        return specialists with
+        {
+            Farmers = Math.Max(0, specialists.Farmers),
+            Handlers = Math.Max(0, specialists.Handlers),
+            Doctors = Math.Max(0, specialists.Doctors),
+            Researchers = Math.Max(0, specialists.Researchers),
+            Engineers = Math.Max(0, specialists.Engineers),
+            Geneticists = Math.Max(0, specialists.Geneticists),
+            Mechanitors = Math.Max(0, specialists.Mechanitors),
+            Soldiers = Math.Max(0, specialists.Soldiers),
+            Diplomats = Math.Max(0, specialists.Diplomats)
+        };
     }
 
     private void AppendEvent(WorldEventKind kind, EntityId? subjectId, string summary)

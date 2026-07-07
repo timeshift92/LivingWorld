@@ -25,6 +25,9 @@ var tests = new List<(string Name, Action Test)>
     ("builds settlement production profile from terrain and technology", TestSettlementProductionProfileUsesTerrainAndTechnology),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
     ("serializes settlement production profiles", TestSettlementProductionProfileSerialization),
+    ("records settlement capabilities and specialist pools", TestSettlementCapabilityAndSpecialistLedger),
+    ("answers settlement readiness from capabilities and specialists", TestSettlementCapabilityReadiness),
+    ("serializes settlement capabilities and specialist pools", TestSettlementCapabilitySerialization),
     ("prevents starving settlements from launching raids", TestStarvingSettlementCannotLaunchRaid),
     ("creates refugees from starving settlements", TestMigrationPressureCreatesRefugee),
     ("moves refugees into stable settlements", TestMigrationCompletesToStableSettlement),
@@ -682,6 +685,126 @@ static void TestSettlementProductionProfileSerialization()
     var restoredProfile = restored.GetSettlementProductionProfile(settlement.Id);
 
     AssertEqual(profile, restoredProfile);
+}
+
+static void TestSettlementCapabilityAndSpecialistLedger()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("lab-town", "Lab Town", "Outlander");
+    var capability = new SettlementCapability(
+        settlement.Id,
+        HousingCapacity: 80,
+        FoodStorageCapacity: 1200,
+        MedicineStorageCapacity: 90,
+        PowerCapacity: 2000,
+        LaboratoryCapacity: 4,
+        AnimalCapacity: 60,
+        CropCapacity: 40,
+        ResearchCapacity: 3,
+        MechanicalCapacity: 2,
+        PollutionHandling: 1);
+    var specialists = new SpecialistPool(
+        settlement.Id,
+        Farmers: 10,
+        Handlers: 6,
+        Doctors: 3,
+        Researchers: 4,
+        Engineers: 5,
+        Geneticists: 1,
+        Mechanitors: 1,
+        Soldiers: 12,
+        Diplomats: 2);
+
+    state.RecordSettlementCapability(capability);
+    state.RecordSpecialistPool(specialists);
+
+    AssertEqual(capability, state.GetSettlementCapability(settlement.Id));
+    AssertEqual(specialists, state.GetSpecialistPool(settlement.Id));
+}
+
+static void TestSettlementCapabilityReadiness()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("frontier-lab", "Frontier Lab", "Outlander");
+    for (var i = 0; i < 12; i++)
+    {
+        state.CreateCitizen($"Worker {i + 1}", 20 + i, Sex.Female, "worker", settlement.Id);
+    }
+
+    state.RecordSettlementCapability(new SettlementCapability(
+        settlement.Id,
+        HousingCapacity: 10,
+        FoodStorageCapacity: 600,
+        MedicineStorageCapacity: 50,
+        PowerCapacity: 900,
+        LaboratoryCapacity: 1,
+        AnimalCapacity: 20,
+        CropCapacity: 30,
+        ResearchCapacity: 2,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+    state.RecordSpecialistPool(new SpecialistPool(
+        settlement.Id,
+        Farmers: 4,
+        Handlers: 1,
+        Doctors: 1,
+        Researchers: 2,
+        Engineers: 0,
+        Geneticists: 0,
+        Mechanitors: 0,
+        Soldiers: 3,
+        Diplomats: 1));
+
+    var status = state.GetSettlementCapabilityStatus(settlement.Id);
+
+    AssertEqual(12, status.Population);
+    AssertEqual(-2, status.FreeHousing);
+    AssertEqual(false, status.HasHousingForPopulation);
+    AssertEqual(true, status.CanSupportCropProgram);
+    AssertEqual(true, status.CanSupportAnimalProgram);
+    AssertEqual(true, status.CanRunBasicLab);
+    AssertEqual(false, status.CanRunMechanicalProduction);
+}
+
+static void TestSettlementCapabilitySerialization()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("bio-town", "Bio Town", "Outlander");
+    var capability = new SettlementCapability(
+        settlement.Id,
+        HousingCapacity: 70,
+        FoodStorageCapacity: 900,
+        MedicineStorageCapacity: 80,
+        PowerCapacity: 1500,
+        LaboratoryCapacity: 3,
+        AnimalCapacity: 50,
+        CropCapacity: 45,
+        ResearchCapacity: 4,
+        MechanicalCapacity: 2,
+        PollutionHandling: 2);
+    var specialists = new SpecialistPool(
+        settlement.Id,
+        Farmers: 7,
+        Handlers: 5,
+        Doctors: 2,
+        Researchers: 4,
+        Engineers: 3,
+        Geneticists: 2,
+        Mechanitors: 1,
+        Soldiers: 8,
+        Diplomats: 1);
+
+    state.RecordSettlementCapability(capability);
+    state.RecordSpecialistPool(specialists);
+
+    var snapshotRestored = WorldState.FromSnapshot(state.CreateSnapshot());
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(capability, snapshotRestored.GetSettlementCapability(settlement.Id));
+    AssertEqual(specialists, snapshotRestored.GetSpecialistPool(settlement.Id));
+    AssertEqual(capability, restored.GetSettlementCapability(settlement.Id));
+    AssertEqual(specialists, restored.GetSpecialistPool(settlement.Id));
+    AssertEqual(true, restored.GetSettlementCapabilityStatus(settlement.Id).CanRunBasicLab);
 }
 
 static void TestStarvingSettlementCannotLaunchRaid()
