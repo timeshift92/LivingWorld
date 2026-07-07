@@ -450,8 +450,8 @@ Daily tick в `LivingWorldWorldComponent.SimulateWorldDay` запускает п
 ```text
 Spawn/record captured drifters (RevenueService)
   -> DrifterArrivalService.SimulateArrivals  (планирует прибытие в текущий день)
-  -> DrifterFoundingService.SimulateFounding (переводит прибывших в статус основателей)
-  -> DrifterAssimilationService.SimulateAssimilation (ассимилирует основателей в поселения)
+  -> DrifterFoundingService.SimulateFounding (годная группа с лидером основывает новое поселение/банду)
+  -> DrifterAssimilationService.SimulateAssimilation (остальные вливаются в наименее населённые поселения)
   -> (в конце дня)
   -> FactionLifecycleService.SimulateCollapses (проверка вымирания фракций)
 ```
@@ -466,11 +466,13 @@ settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
 
 **Обоснование последовательности:**
 
-- **Arrival** создаёт новые `WorldDrifter`-записи (либо из пула захватанных, либо как новые прибытия).
-- **Founding** берёт дрифтеров с `Status == Arrived` и переводит их в `Status == Founding`, если поселение спокойно.
-- **Assimilation** берёт дрифтеров с `Status == Founding` и выбирает целевое поселение, затем вызывает `DrifterAssimilationService.CompleteAssimilation`, который создаёт `WorldCitizen`, присвязывает дрифтера и ставит гейт обратно.
+- **Arrival** — гомеостатический приток: добавляет в пул новые `Drifter`-записи, только чтобы закрыть дефицит до целевой популяции и не выше жёсткого потолка; метрированно (1–2 в день).
+- **Founding** идёт **раньше** ассимиляции: если в пуле набралась группа (≥ `drifterMinFounders`) и лучший по `LeadershipAptitude` лидер проходит порог, группа основывает новое поселение или банду; дрифтеры-основатели удаляются из пула и становятся гражданами (`FoundSettlement`).
+- **Assimilation** — оставшиеся дрифтеры (старейшие по `ArrivalTick`) вливаются в наименее населённые поселения как граждане (`AssimilateDrifter`), тоже метрированно.
 
-Таким образом, за один день дрифтер может пройти только один переход; полный цикл Arrived→Founding→Assimilated обычно занимает 3-5 дней в зависимости от миграционного давления и емкости поселений.
+У `Drifter` нет поля статуса: «переход» — это удаление из пула с созданием `WorldCitizen`. Метрированные темпы оставляют небольшой постоянный пул-буфер между днями — из него берёт инцидент прибытия.
+
+Вымирание фракций (`FactionLifecycleService.SimulateCollapses`) вызывалось в дневном тике **уже до этого среза**; данный срез добавил именно drifter-конвейер (Arrival/Founding/Assimilation), а не привязку вымирания.
 
 ### LivingWorld_DrifterArrival incident
 
@@ -482,22 +484,22 @@ settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
 - **Worker:** `IncidentWorker_LivingWorldDrifterArrival`.
 - **Gate (CanFireNowSub):** `LivingWorldWorldComponent.WantsDrifterArrival` — истина если:
   - есть дрифтер в пуле захватанных, **ИЛИ**
-  - текущее население мира ниже целевого (target population из `WorldState.PopulationDensityTarget`).
-- **Fail-open:** если worker падает, инцидент отмечается как успешный, чтобы storyteller не зависел.
+  - текущее население мира ниже целевого (кэш `cachedWorldPopulation < cachedTargetPopulation`, где цель = `Σ поселений × targetWorldPopulationPerSettlement`). Гейт читает кэш из дневного тика — без LINQ по гражданам на каждый вызов.
+- **Fail-open:** нет компонента/карты или исключение → `TryExecuteWorker` возвращает `false` (инцидент не срабатывает, ванильное поведение), без частичных мутаций мира.
 
 **Выполнение (TryExecuteWorker):**
 
-1. Выберите случайное поселение (или используйте предзаданное, если это вызов из плана).
-2. **Спавньте пешку** через vanilla Pawn generator с дефолтными параметрами.
-3. **Создайте запись ledger:**
-   - Если есть дрифтер в пуле: `DrifterMaterializationService.MaterializeDrifter(pawn)` — переведите пул-дрифтера в статус Arrived.
-   - Если нет: `DrifterMaterializationService.MaterializeNewArrival(pawn)` — создайте новый `WorldDrifter` с `Status == Arrived`. Это всегда записывает пешку как новый прибытие (история).
-4. **Привяжите пешку к ledger:** прикрепите `CompLivingWorldIdentity` с `EntityId` дрифтера.
-5. Успешно вернитесь.
+1. Карта — цель инцидента или `Find.AnyPlayerHomeMap`.
+2. Выбрать пол **один раз** (из пула — `pooled.Sex`, иначе `tick % 2`) и передать его и в `fixedGender` генератора, и в ledger — чтобы пол пешки и запись совпадали.
+3. **Сначала заспавнить пешку** (`GenSpawn.Spawn`) — ledger трогаем только после успешного спавна, иначе сбой спавна «потерял» бы дрифтера.
+4. **Материализовать ledger (одноразово):**
+   - Есть дрифтер в пуле: `WorldState.MaterializeDrifter(id, pawn.thingIDNumber, tick)` — удаляет дрифтера из пула и пишет событие `DrifterMaterialized`.
+   - Пул пуст: `WorldState.MaterializeNewArrival(...)` — «всегда записывать»: создаёт запись-происхождение и тут же материализует (чистое изменение пула — ноль).
+5. Повесить `CompLivingWorldIdentity` на пешку и `SetLedgerId(EntityId)`; отправить письмо (`SendStandardLetter`); вернуть `true`.
 
 ### CompLivingWorldIdentity
 
-`CompLivingWorldIdentity` — это стабильная привязка пешки к ledger-записи. Компонент хранит `EntityId` (тип `long`) и гарантирует, что при `Save` / `Load` / `Garbage Collect` связь пешка↔ledger не разрывается.
+`CompLivingWorldIdentity` — это стабильная привязка пешки к ledger-записи. Компонент хранит `EntityId` (пара `EntityKind` + `long`) и гарантирует, что при `Save` / `Load` / `Garbage Collect` связь пешка↔ledger не разрывается.
 
 **Свойства:**
 
@@ -514,7 +516,7 @@ settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
 
 2. **Полная миграция идентичности** — raid-линки (`RaidPawnLink`), которые уже существуют для рейдеров, не используются для дрифтеров. Дрифтер получает только `CompLivingWorldIdentity`; полная цепочка синхронизации (dematerialization, outcomes, prisoner conversion) добавится отдельно.
 
-3. **Собственный raid-инцидент** — дрифтеры могут стать раидерами из поселения, в которое они ассимилировались, но не создают отдельный инцидент. Это вулканизируется через расширение `RaidPlanner` на дрифтер-пулы.
+3. **Собственный raid-инцидент** — дрифтеры могут стать раидерами из поселения, в которое они ассимилировались, но не создают отдельный инцидент. Это делается отдельно, через свой raid-инцидент (см. `storyteller-normalization.md`).
 
 4. **Освобождение вакуума при коллапсе (G2)** — когда поселение коллапсирует, его дрифтеры-ассимилированцы не освобождаются автоматически обратно в глобальный пул. Это требует явной политики переобладания и выходит на G2 milestone.
 
