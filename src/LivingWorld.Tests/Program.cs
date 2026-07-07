@@ -122,6 +122,7 @@ var tests = new List<(string Name, Action Test)>
     ("keeps Odyssey Russian faction namer grammar valid", TestRimWorldRussianOdysseyRulePackOverride),
     ("uses translations in RimWorld UI", TestRimWorldUiUsesTranslations),
     ("defines the drifter arrival incident def", TestRimWorldDrifterArrivalIncidentDef),
+    ("defines the drifter arrival incident worker", TestRimWorldDrifterArrivalWorker),
 };
 
 var failures = new List<string>();
@@ -2801,6 +2802,25 @@ static void TestRimWorldDrifterArrivalIncidentDef()
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     AssertContains("<LW_DrifterArrivalLetterLabel>", en);
     AssertContains("<LW_DrifterArrivalLetterLabel>", ru);
+}
+
+static void TestRimWorldDrifterArrivalWorker()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldDrifterArrival.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker", source);
+    AssertContains("protected override bool CanFireNowSub(IncidentParms parms)", source);
+    AssertContains("protected override bool TryExecuteWorker(IncidentParms parms)", source);
+    AssertContains("WantsDrifterArrival", source);
+    AssertContains("MaterializeDrifter", source);
+    AssertContains("MaterializeNewArrival", source);
+    AssertContains("CompLivingWorldIdentity", source);
+    // fail-open: never throws out, no world mutation on a failed execute
+    AssertContains("Instance", source);
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker", "CanFireNowSub");
 }
 
 static string FindRepoRoot()
