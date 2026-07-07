@@ -234,6 +234,33 @@ Owner: Claude.
 
 Status: DONE (landed on `main`, commit `bfe844d`). Rate-limited world-war letters: one summary letter AFTER the daily catch-up loop (never one per simulated day, so no flood), only when the loop is active (silent when world war is disabled, ceded to Rim War, or during initial seeding). Captures accumulate across `worldWarLetterCooldownDays` so nothing is lost; `lastWorldWarLetterTick`/`notifiedCaptureCount` persist so save/load never re-announces. EN/RU. Structural test `TestRimWorldWorldWarNotifications`. Deferred sub-scope: optional world-object materialization behind a flag (still ledger-first UI).
 
+## Post-R7 Gap Review
+
+A step-back review found invariants that were documented but never enforced. Full detail
+and fix plan: [`docs/design/world-war-open-gaps.md`](../../design/world-war-open-gaps.md).
+
+### Claude Task K4: Protect the player faction from the world war (G1, primary)
+
+Scope: `VanillaSettlementImporter` must not import `Faction.OfPlayer` settlements into the
+ledger, so NPC world war can never silently target/capture the player's base or collapse
+the player faction. Add a test that the scanner drops player settlements.
+
+Acceptance: no player-faction settlement enters the ledger from the scanner; existing
+scanner tests still pass. Owner: Claude. Status: IN PROGRESS.
+
+### Codex Task C4: Player-faction exclusion in Core (G1, defense in depth)
+
+Scope: the ledger knows its player faction id; `FactionActionPlanner.FindEnemyTarget` and
+`FactionLifecycleService` never target or collapse the player faction, even if a player
+settlement reaches the ledger by another path. Acceptance: tests prove the world war
+never targets/collapses the player faction. Owner: Codex.
+
+### Codex Task C5: Prune resolved army movements (G2)
+
+Scope: `WorldState._armyMovements` currently keeps every Disbanded/Arrived/Recalled
+movement forever (save bloat + growth). Prune resolved movements past a retention window,
+back-compat load. Folds into C3. Owner: Codex.
+
 ## Review Contract
 
 For every completed task, the other agent reviews from these angles before merge:
