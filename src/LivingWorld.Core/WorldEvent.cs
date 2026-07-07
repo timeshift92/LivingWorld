@@ -26,7 +26,8 @@ public enum WorldEventKind
     RaidPawnMissing,
     RaidResolved,
     DrifterArrived,
-    DrifterAssimilated
+    DrifterAssimilated,
+    SettlementFounded
 }
 
 public sealed record WorldEvent(

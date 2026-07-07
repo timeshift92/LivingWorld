@@ -41,7 +41,9 @@ public static class DrifterArrivalService
             state.CreateDrifter(
                 $"Drifter {sequence}",
                 DeterministicAge(state.WorldSeed, request.Tick, sequence),
-                DeterministicSex(request.Tick, sequence));
+                DeterministicSex(request.Tick, sequence),
+                DeterministicAptitude(state.WorldSeed, request.Tick, sequence, salt: 7),
+                DeterministicAptitude(state.WorldSeed, request.Tick, sequence, salt: 13));
         }
 
         return new DrifterArrivalResult(arrivals, state.Drifters.Count);
@@ -63,5 +65,11 @@ public static class DrifterArrivalService
     private static Sex DeterministicSex(int tick, int sequence)
     {
         return ((tick / 60_000) + sequence) % 2 == 0 ? Sex.Female : Sex.Male;
+    }
+
+    private static int DeterministicAptitude(int worldSeed, int tick, int sequence, int salt)
+    {
+        // Deterministic 0..100 leadership proxy; most arrivals are ordinary, a few capable.
+        return (int)((((long)worldSeed + tick + (sequence * salt)) % 101 + 101) % 101);
     }
 }

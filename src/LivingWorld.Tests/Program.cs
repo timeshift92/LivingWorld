@@ -52,6 +52,10 @@ var tests = new List<(string Name, Action Test)>
     ("leaves drifters in the pool when there is no settlement to join", TestDrifterAssimilationWithoutSettlement),
     ("respects the per-step assimilation cap", TestDrifterAssimilationRespectsCap),
     ("keeps world population conserved across arrival then assimilation", TestDrifterArrivalThenAssimilationConservesPopulation),
+    ("founds a settlement when a capable organizer leads enough drifters", TestDrifterFoundingCreatesSettlement),
+    ("founds a raider band when the capable leader is a fighter", TestDrifterFoundingCreatesRaiderBand),
+    ("does not found without a capable leader", TestDrifterFoundingNeedsCapableLeader),
+    ("does not found without enough drifters", TestDrifterFoundingNeedsEnoughDrifters),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -1055,6 +1059,76 @@ static void TestDrifterArrivalThenAssimilationConservesPopulation()
     AssertEqual(0, refill.Arrived);
 }
 
+static void TestDrifterFoundingCreatesSettlement()
+{
+    var state = new WorldState(4242);
+    state.CreateDrifter("Organizer", 34, Sex.Female, combatAptitude: 15, organizationAptitude: 80);
+    state.CreateDrifter("Hand 1", 26, Sex.Male, 10, 12);
+    state.CreateDrifter("Hand 2", 29, Sex.Male, 8, 14);
+
+    var result = DrifterFoundingService.SimulateFounding(
+        state,
+        new DrifterFoundingRequest(60_000, MinFounders: 3, LeaderAptitudeThreshold: 60));
+
+    AssertEqual(true, result.Founded);
+    AssertEqual(false, result.IsRaiderBand);
+    AssertEqual(3, result.FounderCount);
+    AssertEqual(0, state.Drifters.Count);
+    // A brand-new settlement with its own faction now exists, holding the founders.
+    var settlement = state.GetSettlement(result.SettlementId!.Value)!;
+    AssertEqual(result.FactionId, settlement.FactionId);
+    AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(1, state.Events.Count(e => e.Kind == WorldEventKind.SettlementFounded));
+    // The capable organizer leads the new community.
+    AssertEqual(true, state.Citizens.Any(c => c.SettlementId == settlement.Id && c.Profession == "leader"));
+}
+
+static void TestDrifterFoundingCreatesRaiderBand()
+{
+    var state = new WorldState(4242);
+    state.CreateDrifter("Warlord", 31, Sex.Male, combatAptitude: 90, organizationAptitude: 20);
+    state.CreateDrifter("Thug 1", 24, Sex.Male, 40, 10);
+    state.CreateDrifter("Thug 2", 27, Sex.Male, 35, 12);
+
+    var result = DrifterFoundingService.SimulateFounding(
+        state,
+        new DrifterFoundingRequest(60_000, MinFounders: 3, LeaderAptitudeThreshold: 60));
+
+    AssertEqual(true, result.Founded);
+    AssertEqual(true, result.IsRaiderBand);
+    AssertEqual(3, state.GetSettlementPopulation(result.SettlementId!.Value).Total);
+}
+
+static void TestDrifterFoundingNeedsCapableLeader()
+{
+    var state = new WorldState(4242);
+    state.CreateDrifter("Nobody 1", 30, Sex.Male, 20, 25);
+    state.CreateDrifter("Nobody 2", 28, Sex.Female, 18, 22);
+    state.CreateDrifter("Nobody 3", 33, Sex.Male, 15, 30);
+
+    var result = DrifterFoundingService.SimulateFounding(
+        state,
+        new DrifterFoundingRequest(60_000, MinFounders: 3, LeaderAptitudeThreshold: 60));
+
+    AssertEqual(false, result.Founded);
+    AssertEqual(3, state.Drifters.Count);
+    AssertEqual(0, state.Settlements.Count);
+}
+
+static void TestDrifterFoundingNeedsEnoughDrifters()
+{
+    var state = new WorldState(4242);
+    state.CreateDrifter("Organizer", 34, Sex.Female, 15, 80);
+    state.CreateDrifter("Hand", 26, Sex.Male, 10, 12);
+
+    var result = DrifterFoundingService.SimulateFounding(
+        state,
+        new DrifterFoundingRequest(60_000, MinFounders: 3, LeaderAptitudeThreshold: 60));
+
+    AssertEqual(false, result.Founded);
+    AssertEqual(2, state.Drifters.Count);
+}
+
 static void TestDrifterSerializationRoundTrip()
 {
     var state = new WorldState(4242);
@@ -1072,6 +1146,8 @@ static void TestDrifterSerializationRoundTrip()
     AssertEqual(original.Age, roundTripped.Age);
     AssertEqual(original.Sex, roundTripped.Sex);
     AssertEqual(original.ArrivalTick, roundTripped.ArrivalTick);
+    AssertEqual(original.CombatAptitude, roundTripped.CombatAptitude);
+    AssertEqual(original.OrganizationAptitude, roundTripped.OrganizationAptitude);
 }
 
 static WorldState BuildFactionWithCombatants(int seed, string faction, int adults)

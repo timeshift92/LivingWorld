@@ -276,7 +276,7 @@ public sealed class WorldState
         return army;
     }
 
-    public Drifter CreateDrifter(string name, int age, Sex sex)
+    public Drifter CreateDrifter(string name, int age, Sex sex, int combatAptitude = 0, int organizationAptitude = 0)
     {
         ThrowIfNullOrWhiteSpace(name, nameof(name));
 
@@ -290,7 +290,9 @@ public sealed class WorldState
             name,
             age,
             sex,
-            CurrentTick);
+            CurrentTick,
+            Math.Max(0, combatAptitude),
+            Math.Max(0, organizationAptitude));
 
         _drifters.Add(drifter.Id, drifter);
         AppendEvent(WorldEventKind.DrifterArrived, drifter.Id, $"Drifter {drifter.Id} arrived from beyond the world.");
@@ -307,24 +309,63 @@ public sealed class WorldState
 
     public WorldCitizen AssimilateDrifter(EntityId drifterId, EntityId settlementId)
     {
-        if (!_drifters.TryGetValue(drifterId, out var drifter))
-        {
-            throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
-        }
-
         if (!_settlements.ContainsKey(settlementId))
         {
             throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
         }
 
-        _drifters.Remove(drifterId);
-        var citizen = CreateCitizen(drifter.Name, drifter.Age, drifter.Sex, "settler", settlementId);
+        var citizen = ConvertDrifterToCitizen(drifterId, settlementId, "settler");
         AppendEvent(
             WorldEventKind.DrifterAssimilated,
             citizen.Id,
             $"Drifter {drifterId} assimilated into {settlementId} as {citizen.Id}.");
 
         return citizen;
+    }
+
+    public WorldSettlement FoundSettlement(
+        string slug,
+        string name,
+        string factionId,
+        EntityId leaderDrifterId,
+        IEnumerable<EntityId> memberDrifterIds)
+    {
+        if (memberDrifterIds == null)
+        {
+            throw new ArgumentNullException(nameof(memberDrifterIds));
+        }
+
+        if (!_drifters.ContainsKey(leaderDrifterId))
+        {
+            throw new InvalidOperationException($"Drifter {leaderDrifterId} does not exist.");
+        }
+
+        var members = memberDrifterIds.Where(id => id != leaderDrifterId).Distinct().ToList();
+        var settlement = CreateSettlement(slug, name, factionId);
+
+        var leader = ConvertDrifterToCitizen(leaderDrifterId, settlement.Id, "leader");
+        foreach (var memberId in members)
+        {
+            ConvertDrifterToCitizen(memberId, settlement.Id, "settler");
+        }
+
+        AppendEvent(
+            WorldEventKind.SettlementFounded,
+            settlement.Id,
+            $"Settlement {settlement.Id} ({factionId}) founded by {members.Count + 1} drifters led by {leader.Id}.");
+
+        return settlement;
+    }
+
+    private WorldCitizen ConvertDrifterToCitizen(EntityId drifterId, EntityId settlementId, string profession)
+    {
+        if (!_drifters.TryGetValue(drifterId, out var drifter))
+        {
+            throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
+        }
+
+        _drifters.Remove(drifterId);
+        return CreateCitizen(drifter.Name, drifter.Age, drifter.Sex, profession, settlementId);
     }
 
     public WorldCitizen? GetCitizen(EntityId id)

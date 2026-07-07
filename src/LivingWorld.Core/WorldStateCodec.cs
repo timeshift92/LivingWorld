@@ -158,7 +158,9 @@ public static class WorldStateCodec
                             new XAttribute("name", drifter.Name),
                             new XAttribute("age", drifter.Age),
                             new XAttribute("sex", drifter.Sex),
-                            new XAttribute("arrivalTick", drifter.ArrivalTick))))));
+                            new XAttribute("arrivalTick", drifter.ArrivalTick),
+                            new XAttribute("combatAptitude", drifter.CombatAptitude),
+                            new XAttribute("organizationAptitude", drifter.OrganizationAptitude))))));
 
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -287,7 +289,9 @@ public static class WorldStateCodec
                     RequiredString(element, "name"),
                     RequiredInt(element, "age"),
                     RequiredEnum<Sex>(element, "sex"),
-                    RequiredInt(element, "arrivalTick")))
+                    RequiredInt(element, "arrivalTick"),
+                    OptionalInt(element, "combatAptitude", 0),
+                    OptionalInt(element, "organizationAptitude", 0)))
                 .ToList());
 
         return WorldState.FromSnapshot(snapshot);
