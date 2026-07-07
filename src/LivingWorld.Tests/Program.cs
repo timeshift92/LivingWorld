@@ -100,6 +100,7 @@ var tests = new List<(string Name, Action Test)>
     ("patches pawn exit into Living World raid returns", TestRimWorldPawnExitPatch),
     ("records trade intel from RimWorld trade dialog", TestRimWorldTradeIntelPatch),
     ("defines Living World main button def", TestRimWorldMainButtonDef),
+    ("defines a pawn identity comp round-tripping the ledger id", TestRimWorldIdentityComp),
     ("declares Harmony dependency and reference", TestRimWorldHarmonyDependency),
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
@@ -2743,6 +2744,20 @@ static void TestRimWorldRussianOdysseyRulePackOverride()
     AssertContains("tradeAdj-&gt;", xml);
     AssertContains("tradeNoun-&gt;", xml);
     AssertDoesNotContain("[tradeAdj_fem] [tradeNoun_fem]", xml);
+}
+
+static void TestRimWorldIdentityComp()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "CompLivingWorldIdentity.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("class CompLivingWorldIdentity : ThingComp", source);
+    AssertContains("class CompProperties_LivingWorldIdentity : CompProperties", source);
+    AssertContains("public EntityId LedgerId", source);
+    AssertContains("public override void PostExposeData()", source);
+    AssertContains("Scribe_Values.Look", source);
+    AssertRimWorldMethodExists("Verse.ThingComp", "PostExposeData");
 }
 
 static void TestRimWorldUiUsesTranslations()
