@@ -263,6 +263,54 @@ Scope: `WorldState._armyMovements` currently keeps every Disbanded/Arrived/Recal
 movement forever (save bloat + growth). Prune resolved movements past a retention window,
 back-compat load. Folds into C3. Owner: Codex. Status: NOT DONE (grep-confirmed 2026-07-08 — `_armyMovements` still has no prune/Remove; grows unbounded).
 
+## Economy / Empire / Optimization Backlog (2026-07-08 gap analysis)
+
+A gap analysis of the separate reference mods found large areas we adopted only thinly.
+Sources: **Economics-and-Demography** (economy), **Empire** (settlement/faction depth +
+compatibility), **optimization mods** (RocketMan/RuntimeGC/Missile Girl) plus E&D's own
+perf. What we have vs missed is summarized per task. Do not copy E&D's faction-aggregate
+economy — Living World keeps settlement/citizen ownership; adopt the *depth*, not the
+coarse model.
+
+### Economy (mostly not adopted; we have biome+tech output + resource ledger + simple transfer)
+
+- **E1 (Codex): Ledger money/wealth.** Silver as an owned resource + a cached faction/
+  settlement wealth aggregate + earn/consume. Today: no money at all. Status: NOT STARTED.
+- **E2 (Codex): Production depth (extends C2).** Terrain factors (hilliness/rainfall/temp/
+  animal density) + production archetypes (Miner/Farmer/Medical/Warrior/…) + labor force,
+  economy-of-scale, complexity penalty. Today: flat output = f(biome, tech). Status: NOT STARTED.
+- **E3 (Codex): Faction-to-faction virtual trade + prices.** Exports/barter/silver transfer
+  between factions, dynamic prices/inflation from stock/assets/tech demand. Today: only a
+  direct resource transfer caravan. Status: NOT STARTED.
+- **E4 (Claude): Materialize trade from ledger + economy UI.** Draw arriving vanilla trader
+  stock from the nearest ledger settlement's owned resources; show wealth/price bands in the
+  main tab; EN/RU. Today: traders don't pull from the ledger economy. Status: NOT STARTED.
+
+### Empire compatibility (no adapter today)
+
+- **EMP1 (Claude): Detect Empire + interop.** Detect `Empire` (packageId) like the Rim War
+  flag and avoid double-driving the player-empire's world settlements (K4 player-exclusion
+  already keeps player settlements out of the ledger); surface the state to the player.
+  Status: NOT STARTED.
+- **EMP2 (Codex, backlog): Settlement depth.** prosperity/loyalty/unrest/buildings/worker
+  allocation on ledger settlements (inspiration from Empire, not a port). Secondary per the
+  plan. Status: BACKLOG.
+
+### Optimizations (scale blockers, gap-analysis §C — the biggest miss)
+
+- **O1 (Codex): Cached derived aggregates.** Cache settlement power / faction strength /
+  population totals, invalidate on change, so the daily war/economy loops stop recomputing
+  LINQ over citizens per faction. Also fixes war-loop scale (G3). Status: NOT STARTED.
+- **O2 (Codex): Compact serialization / cohorts.** Replace the per-entity XML codec (40
+  per-element writers, one per citizen) with a compact/cohort format for the global layer,
+  back-compat load. This is the 20k–100k save/load blocker. Status: NOT STARTED.
+- **O3 (Codex, later): Time-dilation / adaptive tick.** Tick cohorts/regions at variable
+  frequency by relevance (quiet regions rarely, active wars often), per RocketMan/Missile
+  Girl. Today: every settlement/faction ticks daily uniformly. Status: BACKLOG.
+
+Order: O1 + O2 gate scale and should precede large-world testing; E1→E3 give the economy
+meaning; E4/EMP1 are the Claude-lane visibility/compat pieces that consume the above.
+
 ## Review Contract
 
 For every completed task, the other agent reviews from these angles before merge:
