@@ -91,6 +91,9 @@ var tests = new List<(string Name, Action Test)>
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
+    ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
+    ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
+    ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -2023,6 +2026,47 @@ static void TestFactionActionPlannerFiltersPassive()
     AssertEqual(1, plans.Count);
     AssertEqual("Raiders", plans[0].FactionId);
     AssertEqual(WarAction.Warband, plans[0].Action);
+}
+
+static void TestDiplomacyIrreconcilableStaysHostile()
+{
+    var state = new WorldState(4242);
+    state.MarkFactionIrreconcilable("Pirates");
+
+    // No gesture can lift an irreconcilable faction out of hostility.
+    DiplomacyService.AdjustGoodwill(state, "Pirates", "Outlanders", 80);
+
+    AssertEqual(-100, DiplomacyService.GetGoodwill(state, "Pirates", "Outlanders"));
+    AssertEqual(RelationStance.Hostile, DiplomacyService.GetStance(state, "Outlanders", "Pirates"));
+}
+
+static void TestDiplomacyGoodwillDrifts()
+{
+    var state = new WorldState(4242);
+    DiplomacyService.AdjustGoodwill(state, "Alpha", "Beta", -30);
+
+    DiplomacyService.SimulateDay(state, 60_000);
+    AssertEqual(-28, DiplomacyService.GetGoodwill(state, "Alpha", "Beta"));
+
+    for (var day = 2; day <= 15; day++)
+    {
+        DiplomacyService.SimulateDay(state, day * 60_000);
+    }
+
+    // -30 drifting +2/day reaches neutral and stops there (queried the other way to prove symmetry).
+    AssertEqual(0, DiplomacyService.GetGoodwill(state, "Beta", "Alpha"));
+}
+
+static void TestDiplomacyPersists()
+{
+    var state = new WorldState(4242);
+    state.MarkFactionIrreconcilable("Pirates");
+    DiplomacyService.RecordAggression(state, "Raiders", "Settlers", 40);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(-40, DiplomacyService.GetGoodwill(restored, "Raiders", "Settlers"));
+    AssertEqual(true, restored.IsFactionIrreconcilable("Pirates"));
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

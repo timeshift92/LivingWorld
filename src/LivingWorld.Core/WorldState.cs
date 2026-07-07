@@ -14,6 +14,8 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
     private readonly Dictionary<EntityId, WorldArmyMovement> _armyMovements = new();
     private readonly Dictionary<string, FactionBehavior> _factionBehaviors = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string, string), int> _factionRelations = new();
+    private readonly HashSet<string> _irreconcilableFactions = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
@@ -41,6 +43,10 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
     public IReadOnlyDictionary<string, FactionBehavior> FactionBehaviors => _factionBehaviors;
+
+    public IReadOnlyDictionary<(string, string), int> FactionRelations => _factionRelations;
+
+    public IReadOnlyCollection<string> IrreconcilableFactions => _irreconcilableFactions;
 
     public IReadOnlyCollection<WorldMigrationGroup> MigrationGroups => _migrationGroups.Values;
 
@@ -432,6 +438,49 @@ public sealed class WorldState
     internal void RestoreFactionBehaviorForLedger(string factionId, FactionBehavior behavior)
     {
         _factionBehaviors[factionId] = behavior;
+    }
+
+    public int GetFactionGoodwill(string factionA, string factionB)
+    {
+        ThrowIfNullOrWhiteSpace(factionA, nameof(factionA));
+        ThrowIfNullOrWhiteSpace(factionB, nameof(factionB));
+
+        return _factionRelations.TryGetValue(RelationKey(factionA, factionB), out var goodwill)
+            ? goodwill
+            : 0;
+    }
+
+    internal void SetFactionGoodwillForLedger(string factionA, string factionB, int goodwill)
+    {
+        ThrowIfNullOrWhiteSpace(factionA, nameof(factionA));
+        ThrowIfNullOrWhiteSpace(factionB, nameof(factionB));
+
+        _factionRelations[RelationKey(factionA, factionB)] = goodwill;
+    }
+
+    public void MarkFactionIrreconcilable(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        _irreconcilableFactions.Add(factionId);
+    }
+
+    public bool IsFactionIrreconcilable(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        return _irreconcilableFactions.Contains(factionId);
+    }
+
+    internal void RestoreIrreconcilableFactionForLedger(string factionId)
+    {
+        _irreconcilableFactions.Add(factionId);
+    }
+
+    // Faction relations are symmetric; a stable ordered key keeps A↔B and B↔A the same entry.
+    private static (string, string) RelationKey(string factionA, string factionB)
+    {
+        return string.CompareOrdinal(factionA, factionB) <= 0
+            ? (factionA, factionB)
+            : (factionB, factionA);
     }
 
     public Drifter CreateDrifter(string name, int age, Sex sex, int combatAptitude = 0, int organizationAptitude = 0)

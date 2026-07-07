@@ -229,7 +229,26 @@ public static class WorldStateCodec
                             new XElement(
                                 "FactionBehavior",
                                 new XAttribute("factionId", pair.Key),
-                                new XAttribute("behavior", pair.Value))))));
+                                new XAttribute("behavior", pair.Value)))),
+                new XElement(
+                    "FactionRelations",
+                    state.FactionRelations
+                        .OrderBy(pair => pair.Key.Item1, StringComparer.Ordinal)
+                        .ThenBy(pair => pair.Key.Item2, StringComparer.Ordinal)
+                        .Select(pair =>
+                            new XElement(
+                                "Relation",
+                                new XAttribute("factionA", pair.Key.Item1),
+                                new XAttribute("factionB", pair.Key.Item2),
+                                new XAttribute("goodwill", pair.Value)))),
+                new XElement(
+                    "IrreconcilableFactions",
+                    state.IrreconcilableFactions
+                        .OrderBy(factionId => factionId, StringComparer.Ordinal)
+                        .Select(factionId =>
+                            new XElement(
+                                "Faction",
+                                new XAttribute("factionId", factionId))))));
 
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -416,6 +435,19 @@ public static class WorldStateCodec
             state.RestoreFactionBehaviorForLedger(
                 RequiredString(element, "factionId"),
                 RequiredEnum<FactionBehavior>(element, "behavior"));
+        }
+
+        foreach (var element in OptionalContainer(root, "FactionRelations").Elements("Relation"))
+        {
+            state.SetFactionGoodwillForLedger(
+                RequiredString(element, "factionA"),
+                RequiredString(element, "factionB"),
+                RequiredInt(element, "goodwill"));
+        }
+
+        foreach (var element in OptionalContainer(root, "IrreconcilableFactions").Elements("Faction"))
+        {
+            state.RestoreIrreconcilableFactionForLedger(RequiredString(element, "factionId"));
         }
 
         return state;
