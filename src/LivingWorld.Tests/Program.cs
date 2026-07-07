@@ -65,6 +65,7 @@ var tests = new List<(string Name, Action Test)>
     ("never pushes world population past the hard ceiling", TestDrifterArrivalRespectsHardCeiling),
     ("adds no drifters when the arrival tap is disabled", TestDrifterArrivalDisabled),
     ("records arrivals as unaffiliated drifters with events", TestDrifterArrivalRecordsUnaffiliated),
+    ("materializes a pooled drifter and drains the pool", TestMaterializeDrifterDrainsPool),
     ("assimilates drifters into settlements as citizens", TestDrifterAssimilationJoinsSettlement),
     ("spreads assimilation toward the least populated settlement", TestDrifterAssimilationSpreadsAcrossSettlements),
     ("leaves drifters in the pool when there is no settlement to join", TestDrifterAssimilationWithoutSettlement),
@@ -1471,6 +1472,20 @@ static void TestDrifterArrivalRecordsUnaffiliated()
     AssertEqual(true, !string.IsNullOrWhiteSpace(drifter.Name));
     // A drifter belongs to no settlement and no owner yet.
     AssertEqual(null, state.GetOwner(drifter.Id));
+}
+
+static void TestMaterializeDrifterDrainsPool()
+{
+    var state = new WorldState(4242);
+    var drifter = state.CreateDrifter("Wanderer", 30, Sex.Male);
+    var before = state.Drifters.Count;
+
+    var materialized = state.MaterializeDrifter(drifter.Id, pawnThingId: 777, tick: 60_000);
+
+    AssertEqual(drifter.Id, materialized.Id);
+    AssertEqual(before - 1, state.Drifters.Count);
+    AssertEqual(null, state.GetDrifter(drifter.Id));
+    AssertEqual(1, state.Events.Count(e => e.Kind == WorldEventKind.DrifterMaterialized));
 }
 
 static void TestDrifterAssimilationJoinsSettlement()

@@ -356,6 +356,24 @@ public sealed class WorldState
             : null;
     }
 
+    public Drifter MaterializeDrifter(EntityId drifterId, int pawnThingId, int tick)
+    {
+        AdvanceToTick(tick);
+
+        if (!_drifters.TryGetValue(drifterId, out var drifter))
+        {
+            throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
+        }
+
+        _drifters.Remove(drifterId);
+        AppendEvent(
+            WorldEventKind.DrifterMaterialized,
+            drifterId,
+            $"Drifter {drifterId} materialized as pawn {pawnThingId}.");
+
+        return drifter;
+    }
+
     public WorldCitizen AssimilateDrifter(EntityId drifterId, EntityId settlementId)
     {
         if (!_settlements.ContainsKey(settlementId))
