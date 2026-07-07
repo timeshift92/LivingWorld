@@ -151,6 +151,8 @@ Acceptance:
 
 Owner: Claude.
 
+Status: DONE (landed on `main`, commit `3d82a16`). Main-tab "World War" section: Rim War-active warning, active warbands on the march, per-faction strength as coarse bands (exact only under debug), recent war history. All rows capped and cached in `RefreshCachedRows` (count-gated, no per-frame full-population scan). EN/RU. Structural test `TestRimWorldWorldWarMainTab`.
+
 ### Codex Task C2: Production Model Depth
 
 Goal: production must depend on landscape, terrain, technology, labor, and stock inputs, not only population.
@@ -190,6 +192,8 @@ Acceptance:
 
 Owner: Claude.
 
+Status: BLOCKED on a live RimWorld run (cannot launch the game in the current agent environment). Static parts verified: `dotnet build LivingWorld.sln` 0/0; world-war enable/disable + Rim War exclusion are surfaced in-game (K1 warning + K3 letters). Remaining acceptance (no startup red errors, install-script DLL freshness, in-game RU UI) needs a human playtest.
+
 ### Codex Task C3: Save/Performance Hardening
 
 Goal: avoid save bloat and UI/tick stalls before population scales.
@@ -227,6 +231,8 @@ Acceptance:
 - no world-object materialization when Rim War safety flag disables LivingWorld world-war.
 
 Owner: Claude.
+
+Status: DONE (landed on `main`, commit `bfe844d`). Rate-limited world-war letters: one summary letter AFTER the daily catch-up loop (never one per simulated day, so no flood), only when the loop is active (silent when world war is disabled, ceded to Rim War, or during initial seeding). Captures accumulate across `worldWarLetterCooldownDays` so nothing is lost; `lastWorldWarLetterTick`/`notifiedCaptureCount` persist so save/load never re-announces. EN/RU. Structural test `TestRimWorldWorldWarNotifications`. Deferred sub-scope: optional world-object materialization behind a flag (still ledger-first UI).
 
 ## Review Contract
 
