@@ -139,6 +139,8 @@ Deliverables:
 
 Подробный дизайн: [BioTech, Breeding And Selection](design/biotech-breeding-and-selection.md).
 
+Поперечный анализ зависимостей: [BioTech Systems Analysis](research/biotech-systems-analysis.md).
+
 ## Этап 6: Diplomacy, wars and world history
 
 Цель:

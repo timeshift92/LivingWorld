@@ -7,6 +7,7 @@ RimWorld и мод-экосистемы, чего наш дизайн ещё н�
 
 Связано: [population-flow.md](population-flow.md),
 [biotech-breeding-and-selection.md](biotech-breeding-and-selection.md),
+[biotech-systems-analysis.md](../research/biotech-systems-analysis.md),
 [simulation.md](../simulation.md), [compatibility.md](../compatibility.md),
 [performance.md](../performance.md).
 
@@ -123,6 +124,7 @@ world pawns, которые RuntimeGC потом режет.
   фабрикой пешек. Это должны быть ledger-проекты, завязанные на когорты
   животных/культур, технологии, специалистов, питание, электричество, медицину,
   компоненты, риски и intel. Подробный baseline: [BioTech, Breeding And Selection](biotech-breeding-and-selection.md).
+  Поперечный анализ зависимостей и рисков: [BioTech Systems Analysis](../research/biotech-systems-analysis.md).
 - **Дипломатия/goodwill не в модели** — пока пиггибэкаем ваниль; мировые войны
   (Stage 6) потребуют своей модели отношений.
 - **Скрытые/безбазовые людские фракции** (Ancients — люди, но без баз): гейт

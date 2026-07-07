@@ -6,6 +6,8 @@ Status: design baseline. This document defines how incubators, crossbreeding,
 selection and genetic technology fit into Living World without breaking the
 ledger-first architecture.
 
+Detailed system analysis: [BioTech Systems Analysis](../research/biotech-systems-analysis.md).
+
 ## 1. Core Principle
 
 BioTech systems must not create free pawns, animals or food.
@@ -515,4 +517,3 @@ The near-term priority remains core ownership, economy, ecology and world-war
 visibility. BioTech should start only after animal/crop ecology has a compact
 cohort model, otherwise it will become another virtual number with no gameplay
 cause.
-
