@@ -43,5 +43,8 @@
   <LW_Settings_MaxAdults>Maximum settlement adults</LW_Settings_MaxAdults>
   <LW_Settings_FoodPerCitizen>Food per citizen</LW_Settings_FoodPerCitizen>
   <LW_Settings_SteelPerCitizen>Steel per citizen</LW_Settings_SteelPerCitizen>
+  <LW_SettingDrifterFlow>Enable drifter population flow</LW_SettingDrifterFlow>
+  <LW_SettingDrifterArrivals>Max drifter arrivals per day: {value}</LW_SettingDrifterArrivals>
+  <LW_SettingDrifterCeiling>World population ceiling: {value}</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
 </LanguageData>

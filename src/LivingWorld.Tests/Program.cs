@@ -104,6 +104,7 @@ var tests = new List<(string Name, Action Test)>
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
+    ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
     ("uses RimWorld world seed for deterministic state", TestWorldComponentUsesRimWorldWorldSeed),
     ("catches up missed daily simulations with a cap", TestWorldComponentCatchesUpMissedSimulationDays),
@@ -2407,6 +2408,24 @@ static void TestRimWorldDrifterFlowSettings()
     AssertContains("Scribe_Values.Look(ref drifterFlowEnabled", source);
     AssertContains("Scribe_Values.Look(ref drifterHardCeiling", source);
     AssertContains("Scribe_Values.Look(ref drifterLeaderAptitudeThreshold", source);
+}
+
+static void TestRimWorldDrifterFlowDrawer()
+{
+    var drawer = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("drifterFlowEnabled", drawer);
+    AssertContains("maxDrifterArrivalsPerDay", drawer);
+    AssertContains("drifterHardCeiling", drawer);
+    AssertContains("LW_SettingDrifterFlow", drawer);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_SettingDrifterFlow>", en);
+    AssertContains("<LW_SettingDrifterFlow>", ru);
+    AssertContains("<LW_SettingDrifterArrivals>", en);
+    AssertContains("<LW_SettingDrifterArrivals>", ru);
+    AssertContains("<LW_SettingDrifterCeiling>", en);
+    AssertContains("<LW_SettingDrifterCeiling>", ru);
 }
 
 static void TestWorldComponentUsesWorldGenSettings()

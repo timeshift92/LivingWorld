@@ -31,6 +31,14 @@ public static class LivingWorldSettingsDrawer
         DrawIntSlider(listing, "LW_Settings_FoodPerCitizen".Translate(), ref settings.foodPerCitizen, 0, 50);
         DrawIntSlider(listing, "LW_Settings_SteelPerCitizen".Translate(), ref settings.steelPerCitizen, 0, 100);
 
+        listing.GapLine();
+
+        listing.CheckboxLabeled(
+            "LW_SettingDrifterFlow".Translate(),
+            ref settings.drifterFlowEnabled);
+        DrawIntSlider(listing, "LW_SettingDrifterArrivals".Translate(), ref settings.maxDrifterArrivalsPerDay, 0, 10);
+        DrawIntSlider(listing, "LW_SettingDrifterCeiling".Translate(), ref settings.drifterHardCeiling, 100, 10000);
+
         if (settings.maxSettlementAdults < settings.minSettlementAdults)
         {
             settings.maxSettlementAdults = settings.minSettlementAdults;

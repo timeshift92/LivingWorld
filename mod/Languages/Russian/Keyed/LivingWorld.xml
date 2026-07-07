@@ -43,5 +43,8 @@
   <LW_Settings_MaxAdults>Максимум взрослых в поселении</LW_Settings_MaxAdults>
   <LW_Settings_FoodPerCitizen>Еда на жителя</LW_Settings_FoodPerCitizen>
   <LW_Settings_SteelPerCitizen>Сталь на жителя</LW_Settings_SteelPerCitizen>
+  <LW_SettingDrifterFlow>Включить поток населения (дрифтеры)</LW_SettingDrifterFlow>
+  <LW_SettingDrifterArrivals>Макс. приходов дрифтеров в день: {value}</LW_SettingDrifterArrivals>
+  <LW_SettingDrifterCeiling>Потолок населения мира: {value}</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
 </LanguageData>
