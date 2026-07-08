@@ -160,6 +160,7 @@ var tests = new List<(string Name, Action Test)>
     ("sends a raid consequence letter after a raid resolves", TestRimWorldRaidConsequenceLetter),
     ("routes the custom faction raid through a prepared expedition", TestRimWorldRaidRoutesThroughPreparation),
     ("warns the player from player-targeted raid intel", TestRimWorldRaidWarningFromIntel),
+    ("releases stale raid preparations and materialization leases daily", TestRimWorldReleasesStaleReservations),
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
@@ -3984,6 +3985,15 @@ static void TestRimWorldWorldWarNotifications()
     AssertContains("<LW_WorldWarLetterLabel>", ru);
     AssertContains("<LW_WorldWarLetterText>", en);
     AssertContains("<LW_WorldWarLetterText>", ru);
+}
+
+static void TestRimWorldReleasesStaleReservations()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // The daily tick returns reserved citizens/supplies from stale raid preparations and expired
+    // materialization leases so nothing leaks (Task 3 lifecycle wiring + the flagged prep cleanup).
+    AssertContains("RaidPreparationService.ReleaseExpiredPreparations(State", component);
+    AssertContains("MaterializationLeaseService.ReleaseExpiredLeases(State", component);
 }
 
 static void TestRimWorldRaidRoutesThroughPreparation()

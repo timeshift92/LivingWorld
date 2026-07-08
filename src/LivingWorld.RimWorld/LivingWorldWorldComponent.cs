@@ -406,6 +406,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             State,
             new FactionLifecycleRequest(day * TicksPerDay));
 
+        // Release stale raid preparations and materialization leases whose window elapsed, so
+        // reserved citizens/supplies return to their settlements instead of leaking. Cheap: both only
+        // touch active records past their expiry.
+        RaidPreparationService.ReleaseExpiredPreparations(State, day * TicksPerDay);
+        MaterializationLeaseService.ReleaseExpiredLeases(State, day * TicksPerDay);
+
         // Refresh the economy wealth snapshots from end-of-day stock so the economy UI (main tab
         // bands, the population/economy table) reads real silver + material value instead of a
         // fallback. Deterministic and conservation-safe (writes only snapshots).
