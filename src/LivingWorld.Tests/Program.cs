@@ -4568,10 +4568,19 @@ static void TestRimWorldWorldArmyMarker()
     // Off when the war is disabled or Rim War is driving factions.
     AssertContains("settings.worldWarEnabled && !RimWarIsActive", component);
 
-    // All action icons ship with the mod.
-    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Trader.png"));
-    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Scout.png"));
-    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Diplomat.png"));
+    // All action icons ship with the mod as full 256px source textures. RimWorld can
+    // downscale them for map/UI use without us maintaining duplicate texture paths.
+    foreach (var icon in new[]
+    {
+        "LivingWorld_Warband.png",
+        "LivingWorld_Trader.png",
+        "LivingWorld_Scout.png",
+        "LivingWorld_Diplomat.png",
+        "LivingWorld_Settler.png"
+    })
+    {
+        AssertPngDimensions(Path.Combine(root, "mod", "Textures", "World", icon), 256, 256);
+    }
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -5251,6 +5260,36 @@ static void AssertFileExists(string path)
     {
         throw new InvalidOperationException($"Expected file '{path}' to exist.");
     }
+}
+
+static void AssertPngDimensions(string path, int expectedWidth, int expectedHeight)
+{
+    AssertFileExists(path);
+    var bytes = File.ReadAllBytes(path);
+    if (bytes.Length < 24
+        || bytes[0] != 0x89
+        || bytes[1] != 0x50
+        || bytes[2] != 0x4E
+        || bytes[3] != 0x47)
+    {
+        throw new InvalidOperationException($"Expected file '{path}' to be a PNG image.");
+    }
+
+    var width = ReadBigEndianInt32(bytes, 16);
+    var height = ReadBigEndianInt32(bytes, 20);
+    if (width != expectedWidth || height != expectedHeight)
+    {
+        throw new InvalidOperationException(
+            $"Expected PNG '{path}' to be {expectedWidth}x{expectedHeight}, got {width}x{height}.");
+    }
+}
+
+static int ReadBigEndianInt32(byte[] bytes, int offset)
+{
+    return (bytes[offset] << 24)
+        | (bytes[offset + 1] << 16)
+        | (bytes[offset + 2] << 8)
+        | bytes[offset + 3];
 }
 
 static void AssertContains(string expected, string actual)
