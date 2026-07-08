@@ -166,6 +166,8 @@ var tests = new List<(string Name, Action Test)>
     ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
     ("a decided war resolves and rewards the player's ally victory", TestWarResolvesAndRewardsPlayerVictory),
     ("faction wealth scales the strength of its raids", TestFactionWealthScalesRaidStrength),
+    ("faction wealth adds silver to its traders", TestFactionWealthAddsTraderSilver),
+    ("trader wealth bridge patches the real trader generator", TestRimWorldTraderWealthBridge),
     ("daily tick drives war resolution and victory rewards", TestRimWorldWarResolutionAndVictoryWiring),
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
@@ -4623,6 +4625,33 @@ static void TestFactionWealthScalesRaidStrength()
     AssertEqual(true, poor >= FactionRaidStrengthService.MinWealthMultiplier - 0.001f);
     // No wealth data for a faction -> neutral 1.0 (never penalised for a missing snapshot).
     AssertEqual(1f, FactionRaidStrengthService.WealthRaidMultiplier(state, "Unknown"));
+}
+
+// Economy -> live trade bridge: a faction wealthier than the world average sends traders carrying
+// extra silver; a poor or average one adds nothing (no penalty).
+static void TestFactionWealthAddsTraderSilver()
+{
+    var state = new WorldState(4242);
+    state.RecordFactionWealth(new FactionWealthSnapshot("Rich", 15000, 5000, 20000));
+    state.RecordFactionWealth(new FactionWealthSnapshot("Poor", 500, 1500, 2000));
+
+    var rich = TraderWealthService.BonusSilver(state, "Rich");
+    AssertEqual(true, rich > 0);
+    AssertEqual(true, rich <= TraderWealthService.MaxBonusSilver);
+    AssertEqual(0, TraderWealthService.BonusSilver(state, "Poor"));      // below average -> no bonus
+    AssertEqual(0, TraderWealthService.BonusSilver(state, "Unknown"));   // no data -> no bonus
+}
+
+// RW side of the trade bridge: a Postfix on the real trader-generation method adds the bonus silver.
+static void TestRimWorldTraderWealthBridge()
+{
+    var root = FindRepoRoot();
+    var patch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldTraderWealthPatch.cs"));
+    AssertContains("[HarmonyPatch(typeof(PawnGroupKindWorker_Trader), \"GenerateTrader\")]", patch);
+    AssertRimWorldMethodExists("RimWorld.PawnGroupKindWorker_Trader", "GenerateTrader");
+    AssertContains("TraderWealthService.BonusSilver", patch);
+    AssertContains("ThingDefOf.Silver", patch);
+    AssertContains("inventory.innerContainer.TryAdd", patch);
 }
 
 static void TestTrucePreventsNewWarbandsUntilExpired()
