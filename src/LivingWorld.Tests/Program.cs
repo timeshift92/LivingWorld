@@ -5030,7 +5030,10 @@ static void TestRimWorldWorldMapSpeedTestOverride()
     AssertContains("CurTimeSpeed < TimeSpeed.Fast", patch);
     AssertContains("worldMapSpeedTestEnabled", patch);
     AssertContains("worldMapSpeedMultiplier", patch);
-    AssertContains("Mathf.Max(__result, settings.worldMapSpeedMultiplier)", patch);
+    // A real multiplier (base * N), capped — not Max(base, N), which no-ops at Superfast/Ultrafast
+    // where vanilla's tick rate already exceeds N.
+    AssertContains("__result * settings.worldMapSpeedMultiplier", patch);
+    AssertContains("MaxBoostedTickRate", patch);
 
     AssertContains("public bool worldMapSpeedTestEnabled = false", settings);
     AssertContains("public int worldMapSpeedMultiplier = 5", settings);
