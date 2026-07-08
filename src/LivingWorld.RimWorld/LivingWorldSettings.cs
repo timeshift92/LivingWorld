@@ -29,6 +29,8 @@ public sealed class LivingWorldSettings : ModSettings
     public bool settlementDevelopmentEnabled = true;
     public int settlementDevelopmentStep = 2;
     public int settlementHousingHeadroom = 4;
+    public bool worldMapSpeedTestEnabled = false;
+    public int worldMapSpeedMultiplier = 5;
 
     public LivingWorldSettings()
     {
@@ -60,5 +62,12 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref settlementDevelopmentEnabled, "settlementDevelopmentEnabled", true);
         Scribe_Values.Look(ref settlementDevelopmentStep, "settlementDevelopmentStep", 2);
         Scribe_Values.Look(ref settlementHousingHeadroom, "settlementHousingHeadroom", 4);
+        Scribe_Values.Look(ref worldMapSpeedTestEnabled, "worldMapSpeedTestEnabled", false);
+        Scribe_Values.Look(ref worldMapSpeedMultiplier, "worldMapSpeedMultiplier", 5);
+
+        if (worldMapSpeedMultiplier != 3 && worldMapSpeedMultiplier != 5 && worldMapSpeedMultiplier != 10)
+        {
+            worldMapSpeedMultiplier = 5;
+        }
     }
 }

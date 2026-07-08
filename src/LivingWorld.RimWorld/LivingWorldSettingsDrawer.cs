@@ -5,7 +5,7 @@ namespace LivingWorld.RimWorld;
 
 public static class LivingWorldSettingsDrawer
 {
-    public const float PreferredHeight = 390f;
+    public const float PreferredHeight = 460f;
 
     // The world-generation screen only needs the one decision a player makes before the world
     // exists - whether Living World is active. Planet size and population are the vanilla planet
@@ -49,6 +49,14 @@ public static class LivingWorldSettingsDrawer
 
         listing.GapLine();
 
+        listing.CheckboxLabeled(
+            "LW_Settings_WorldMapSpeedTest".Translate(),
+            ref settings.worldMapSpeedTestEnabled,
+            "LW_Settings_WorldMapSpeedTestTip".Translate());
+        DrawWorldMapSpeedChoice(listing, settings);
+
+        listing.GapLine();
+
         DrawIntSlider(listing, "LW_Settings_HumanAdults".Translate(), ref settings.baselineHumanSettlementAdults, 0, 120);
         DrawIntSlider(listing, "LW_Settings_NonHumanAdults".Translate(), ref settings.baselineNonHumanSettlementAdults, 0, 120);
         DrawIntSlider(listing, "LW_Settings_MinAdults".Translate(), ref settings.minSettlementAdults, 0, 120);
@@ -76,5 +84,23 @@ public static class LivingWorldSettingsDrawer
     {
         listing.Label($"{label}: {value}");
         value = (int)listing.Slider(value, min, max);
+    }
+
+    private static void DrawWorldMapSpeedChoice(Listing_Standard listing, LivingWorldSettings settings)
+    {
+        if (listing.RadioButton("LW_Settings_WorldMapSpeedMultiplier".Translate(3.Named("multiplier")).ToString(), settings.worldMapSpeedMultiplier == 3))
+        {
+            settings.worldMapSpeedMultiplier = 3;
+        }
+
+        if (listing.RadioButton("LW_Settings_WorldMapSpeedMultiplier".Translate(5.Named("multiplier")).ToString(), settings.worldMapSpeedMultiplier == 5))
+        {
+            settings.worldMapSpeedMultiplier = 5;
+        }
+
+        if (listing.RadioButton("LW_Settings_WorldMapSpeedMultiplier".Translate(10.Named("multiplier")).ToString(), settings.worldMapSpeedMultiplier == 10))
+        {
+            settings.worldMapSpeedMultiplier = 10;
+        }
     }
 }

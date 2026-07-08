@@ -63,6 +63,9 @@
   <LW_Settings_BootstrapLedgerTip>When enabled, Living World builds its initial settlement population and resource ledger as the RimWorld world is created.</LW_Settings_BootstrapLedgerTip>
   <LW_Settings_DebugLogging>Debug logging</LW_Settings_DebugLogging>
   <LW_Settings_DebugLoggingTip>Write Living World bootstrap summaries to the RimWorld log.</LW_Settings_DebugLoggingTip>
+  <LW_Settings_WorldMapSpeedTest>World-map speed test mode</LW_Settings_WorldMapSpeedTest>
+  <LW_Settings_WorldMapSpeedTestTip>When enabled, Living World can raise the real tick rate to the selected multiplier only while the global world map is selected. Paused, normal speed and colony maps are left unchanged.</LW_Settings_WorldMapSpeedTestTip>
+  <LW_Settings_WorldMapSpeedMultiplier>{multiplier}x world-map speed</LW_Settings_WorldMapSpeedMultiplier>
   <LW_Settings_HumanAdults>Baseline human settlement adults</LW_Settings_HumanAdults>
   <LW_Settings_NonHumanAdults>Baseline non-human settlement adults</LW_Settings_NonHumanAdults>
   <LW_Settings_MinAdults>Minimum settlement adults</LW_Settings_MinAdults>

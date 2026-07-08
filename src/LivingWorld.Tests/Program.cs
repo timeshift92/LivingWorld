@@ -142,6 +142,7 @@ var tests = new List<(string Name, Action Test)>
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
     ("sends a raid consequence letter after a raid resolves", TestRimWorldRaidConsequenceLetter),
+    ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
@@ -3544,6 +3545,47 @@ static void TestRimWorldRaidConsequenceLetter()
     AssertContains("<LW_RaidConsequenceLetterText>", ru);
     AssertContains("<LW_RaidConsequenceLetterLabel>", en);
     AssertContains("<LW_RaidConsequenceLetterLabel>", ru);
+}
+
+static void TestRimWorldWorldMapSpeedTestOverride()
+{
+    var root = FindRepoRoot();
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldMapSpeedPatch.cs");
+    var settingsPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs");
+    var drawerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs");
+
+    AssertFileExists(patchPath);
+
+    var patch = File.ReadAllText(patchPath);
+    var settings = File.ReadAllText(settingsPath);
+    var drawer = File.ReadAllText(drawerPath);
+
+    AssertContains("[HarmonyPatch(typeof(TickManager), \"get_TickRateMultiplier\")]", patch);
+    AssertContains("WorldRendererUtility.WorldRendered", patch);
+    AssertContains("CurTimeSpeed < TimeSpeed.Fast", patch);
+    AssertContains("worldMapSpeedTestEnabled", patch);
+    AssertContains("worldMapSpeedMultiplier", patch);
+    AssertContains("Mathf.Max(__result, settings.worldMapSpeedMultiplier)", patch);
+
+    AssertContains("public bool worldMapSpeedTestEnabled = false", settings);
+    AssertContains("public int worldMapSpeedMultiplier = 5", settings);
+    AssertContains("Scribe_Values.Look(ref worldMapSpeedTestEnabled", settings);
+    AssertContains("Scribe_Values.Look(ref worldMapSpeedMultiplier", settings);
+
+    AssertContains("LW_Settings_WorldMapSpeedTest", drawer);
+    AssertContains("DrawWorldMapSpeedChoice", drawer);
+    AssertContains("settings.worldMapSpeedMultiplier = 3", drawer);
+    AssertContains("settings.worldMapSpeedMultiplier = 5", drawer);
+    AssertContains("settings.worldMapSpeedMultiplier = 10", drawer);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_Settings_WorldMapSpeedTest>", en);
+    AssertContains("<LW_Settings_WorldMapSpeedTest>", ru);
+    AssertContains("<LW_Settings_WorldMapSpeedTestTip>", en);
+    AssertContains("<LW_Settings_WorldMapSpeedTestTip>", ru);
+    AssertContains("<LW_Settings_WorldMapSpeedMultiplier>", en);
+    AssertContains("<LW_Settings_WorldMapSpeedMultiplier>", ru);
 }
 
 static void TestRimWorldEmpireInterop()
