@@ -63,7 +63,11 @@ public enum WorldEventKind
     ConflictUpdated,
     ConflictClaimRecorded,
     ConflictTruceStarted,
-    WarRefugeesRecorded
+    WarRefugeesRecorded,
+    AnimalCohortCreated,
+    AnimalCohortGrew,
+    AnimalCohortDeclined,
+    AnimalCohortMigrated
 }
 
 public sealed record WorldEvent(

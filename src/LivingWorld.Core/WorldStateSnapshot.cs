@@ -64,4 +64,7 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<SettlementProject> SettlementProjects { get; init; } =
         Array.Empty<SettlementProject>();
+
+    public IReadOnlyList<WorldAnimalCohort> AnimalCohorts { get; init; } =
+        Array.Empty<WorldAnimalCohort>();
 }

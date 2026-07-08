@@ -10,6 +10,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldRuin> _ruins = new();
     private readonly Dictionary<EntityId, WorldConflict> _conflicts = new();
     private readonly Dictionary<(EntityId ConflictId, EntityId SettlementId), ConflictClaim> _conflictClaims = new();
+    private readonly Dictionary<EntityId, WorldAnimalCohort> _animalCohorts = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -69,6 +70,8 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldConflict> Conflicts => _conflicts.Values;
 
     public IReadOnlyCollection<ConflictClaim> ConflictClaims => _conflictClaims.Values;
+
+    public IReadOnlyCollection<WorldAnimalCohort> AnimalCohorts => _animalCohorts.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -243,6 +246,9 @@ public sealed class WorldState
                 .ToList(),
             SettlementProjects = _settlementProjects.Values
                 .OrderBy(project => project.Id.Value)
+                .ToList(),
+            AnimalCohorts = _animalCohorts.Values
+                .OrderBy(cohort => cohort.Id.Value)
                 .ToList()
         };
     }
@@ -374,6 +380,12 @@ public sealed class WorldState
         {
             state._settlementProjects.Add(project.Id, Normalize(project));
             state.ReserveExistingId(project.Id);
+        }
+
+        foreach (var cohort in snapshot.AnimalCohorts)
+        {
+            state._animalCohorts.Add(cohort.Id, Normalize(cohort));
+            state.ReserveExistingId(cohort.Id);
         }
 
         foreach (var capability in snapshot.SettlementCapabilities)
@@ -1507,6 +1519,75 @@ public sealed class WorldState
         AppendEvent(kind, subjectId, summary);
     }
 
+    public WorldAnimalCohort CreateAnimalCohort(
+        EntityId ownerId,
+        string animalKind,
+        AnimalCohortType type,
+        int count,
+        int healthPercent,
+        int fertilityPercent,
+        int carryingCapacity,
+        int tick)
+    {
+        EnsureOwnerExists(ownerId);
+        ThrowIfNullOrWhiteSpace(animalKind, nameof(animalKind));
+
+        var cohort = Normalize(new WorldAnimalCohort(
+            NextId(EntityKind.Animal),
+            ownerId,
+            animalKind,
+            type,
+            count,
+            healthPercent,
+            fertilityPercent,
+            carryingCapacity,
+            tick));
+        _animalCohorts[cohort.Id] = cohort;
+        _owners[cohort.Id] = ownerId;
+        AppendEvent(
+            WorldEventKind.AnimalCohortCreated,
+            cohort.Id,
+            $"Animal cohort {cohort.Id} created: {cohort.Count} {cohort.AnimalKind}.");
+
+        return cohort;
+    }
+
+    public WorldAnimalCohort? GetAnimalCohort(EntityId cohortId)
+    {
+        return _animalCohorts.TryGetValue(cohortId, out var cohort)
+            ? cohort
+            : null;
+    }
+
+    public IReadOnlyList<WorldAnimalCohort> GetAnimalCohorts(EntityId ownerId)
+    {
+        return _animalCohorts.Values
+            .Where(cohort => cohort.OwnerId == ownerId)
+            .OrderBy(cohort => cohort.AnimalKind, StringComparer.Ordinal)
+            .ThenBy(cohort => cohort.Id.Value)
+            .ToList();
+    }
+
+    internal WorldAnimalCohort RecordAnimalCohortForSimulation(WorldAnimalCohort cohort)
+    {
+        if (cohort == null)
+        {
+            throw new ArgumentNullException(nameof(cohort));
+        }
+
+        if (!_animalCohorts.ContainsKey(cohort.Id))
+        {
+            throw new InvalidOperationException($"Animal cohort {cohort.Id} does not exist.");
+        }
+
+        EnsureOwnerExists(cohort.OwnerId);
+        var normalized = Normalize(cohort);
+        _animalCohorts[normalized.Id] = normalized;
+        _owners[normalized.Id] = normalized.OwnerId;
+
+        return normalized;
+    }
+
     public void RecordKnownSettlementInfo(KnownSettlementInfo info)
     {
         if (!_settlements.ContainsKey(info.SettlementId))
@@ -2481,6 +2562,28 @@ public sealed class WorldState
             }
         }
 
+        foreach (var cohort in _animalCohorts.Values.OrderBy(cohort => cohort.Id.Value))
+        {
+            if (!OwnerExists(cohort.OwnerId))
+            {
+                yield return $"Animal cohort {cohort.Id} references missing owner {cohort.OwnerId}.";
+            }
+
+            if (_owners.TryGetValue(cohort.Id, out var ownerId) && ownerId != cohort.OwnerId)
+            {
+                yield return $"Animal cohort {cohort.Id} owner mismatch: cohort {cohort.OwnerId}, ledger {ownerId}.";
+            }
+            else if (!_owners.ContainsKey(cohort.Id))
+            {
+                yield return $"Animal cohort {cohort.Id} has no ownership record.";
+            }
+
+            if (cohort.Count < 0)
+            {
+                yield return $"Animal cohort {cohort.Id} has negative count {cohort.Count}.";
+            }
+        }
+
         foreach (var resource in _resources
             .OrderBy(pair => pair.Key.OwnerId.Kind)
             .ThenBy(pair => pair.Key.OwnerId.Value)
@@ -2610,6 +2713,10 @@ public sealed class WorldState
         {
             MarkDerivedAggregatesDirty();
         }
+        else if (assetId.Kind == EntityKind.Animal && _animalCohorts.TryGetValue(assetId, out var cohort))
+        {
+            _animalCohorts[assetId] = cohort with { OwnerId = ownerId };
+        }
     }
 
     internal void ReplaceCitizenForSimulation(WorldCitizen citizen)
@@ -2657,6 +2764,7 @@ public sealed class WorldState
             EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(assetId),
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(assetId),
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(assetId),
+            EntityKind.Animal => _animalCohorts.ContainsKey(assetId),
             EntityKind.SettlementFacility => _settlementFacilities.ContainsKey(assetId),
             EntityKind.SettlementProject => _settlementProjects.ContainsKey(assetId),
             EntityKind.Ruin => _ruins.ContainsKey(assetId),
@@ -2719,6 +2827,19 @@ public sealed class WorldState
             CompletionTick = Math.Max(started, project.CompletionTick),
             SteelCost = Math.Max(0, project.SteelCost),
             ComponentCost = Math.Max(0, project.ComponentCost)
+        };
+    }
+
+    private static WorldAnimalCohort Normalize(WorldAnimalCohort cohort)
+    {
+        return cohort with
+        {
+            AnimalKind = string.IsNullOrWhiteSpace(cohort.AnimalKind) ? "UnknownAnimal" : cohort.AnimalKind.Trim(),
+            Count = Math.Max(0, cohort.Count),
+            HealthPercent = Math.Max(0, Math.Min(100, cohort.HealthPercent)),
+            FertilityPercent = Math.Max(0, Math.Min(100, cohort.FertilityPercent)),
+            CarryingCapacity = Math.Max(0, cohort.CarryingCapacity),
+            LastUpdatedTick = Math.Max(0, cohort.LastUpdatedTick)
         };
     }
 

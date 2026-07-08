@@ -19,6 +19,10 @@ var tests = new List<(string Name, Action Test)>
     ("transfers owned resources to army", TestResourceTransferToArmy),
     ("rejects transfer when owner lacks quantity", TestInsufficientResourceTransfer),
     ("transfers assets through ownership service", TestOwnershipServiceTransfersAssets),
+    ("tracks animal cohorts as owned lightweight records", TestAnimalCohortOwnership),
+    ("simulates animal ecology growth and pressure", TestAnimalEcologyGrowthAndPressure),
+    ("migrates animal cohorts without duplicating population", TestAnimalCohortMigrationConservesPopulation),
+    ("serializes animal cohorts", TestAnimalCohortSerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
@@ -601,6 +605,125 @@ static void TestOwnershipServiceTransfersAssets()
     AssertEqual(OwnershipTransferStatus.Success, result.Status);
     AssertEqual(army.Id, state.GetOwner(citizen.Id));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+}
+
+static void TestAnimalCohortOwnership()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+
+    var herd = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 12,
+        healthPercent: 90,
+        fertilityPercent: 80,
+        carryingCapacity: 30,
+        tick: 10_000);
+
+    AssertEqual(EntityKind.Animal, herd.Id.Kind);
+    AssertEqual(settlement.Id, herd.OwnerId);
+    AssertEqual(settlement.Id, state.GetOwner(herd.Id));
+    AssertEqual(12, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(1, state.AnimalCohorts.Count);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortCreated));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalEcologyGrowthAndPressure()
+{
+    var state = new WorldState(12345);
+    var ranch = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    var herd = state.CreateAnimalCohort(
+        ranch.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 10,
+        healthPercent: 100,
+        fertilityPercent: 100,
+        carryingCapacity: 40,
+        tick: 0);
+    state.AddResource(ranch.Id, "Hay", 20);
+
+    var growing = AnimalEcologyService.SimulateDay(
+        state,
+        new AnimalEcologyRequest(60_000, "Hay", 1));
+
+    AssertEqual(2, growing.Births);
+    AssertEqual(0, growing.Deaths);
+    AssertEqual(12, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(10, state.GetOwnedResourceQuantity(ranch.Id, "Hay"));
+
+    var starving = AnimalEcologyService.SimulateDay(
+        state,
+        new AnimalEcologyRequest(120_000, "Hay", 1));
+
+    AssertEqual(0, starving.Births);
+    AssertEqual(1, starving.Deaths);
+    AssertEqual(11, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(0, state.GetOwnedResourceQuantity(ranch.Id, "Hay"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortGrew));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined));
+}
+
+static void TestAnimalCohortMigrationConservesPopulation()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("source", "Source", "Outlander");
+    var target = state.CreateSettlement("target", "Target", "Outlander");
+    var herd = state.CreateAnimalCohort(
+        source.Id,
+        "Deer",
+        AnimalCohortType.Wild,
+        count: 20,
+        healthPercent: 80,
+        fertilityPercent: 70,
+        carryingCapacity: 10,
+        tick: 0);
+    state.CreateAnimalCohort(
+        target.Id,
+        "Deer",
+        AnimalCohortType.Wild,
+        count: 4,
+        healthPercent: 80,
+        fertilityPercent: 70,
+        carryingCapacity: 20,
+        tick: 0);
+
+    var result = AnimalEcologyService.MigratePressure(
+        state,
+        new AnimalMigrationRequest(60_000, source.Id, target.Id, "Deer", MaxCount: 5));
+
+    AssertEqual(5, result.Migrated);
+    AssertEqual(15, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(9, state.GetAnimalCohorts(target.Id).Single(cohort => cohort.AnimalKind == "Deer").Count);
+    AssertEqual(24, state.GetAnimalCohorts(source.Id).Sum(cohort => cohort.Count)
+        + state.GetAnimalCohorts(target.Id).Sum(cohort => cohort.Count));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortMigrated));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalCohortSerialization()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    var herd = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 8,
+        healthPercent: 75,
+        fertilityPercent: 60,
+        carryingCapacity: 18,
+        tick: 99);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredHerd = restored.GetAnimalCohort(herd.Id)!;
+
+    AssertEqual(herd, restoredHerd);
+    AssertEqual(settlement.Id, restored.GetOwner(herd.Id));
+    AssertEqual(0, restored.Validate().Count());
 }
 
 static void TestSettlementDailySimulationConsumesFoodAndBirths()

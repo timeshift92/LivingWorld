@@ -348,6 +348,21 @@ public static class WorldStateCodec
                             new XAttribute("steelCost", project.SteelCost),
                             new XAttribute("componentCost", project.ComponentCost)))),
                 new XElement(
+                    "AnimalCohorts",
+                    snapshot.AnimalCohorts.Select(cohort =>
+                        new XElement(
+                            "AnimalCohort",
+                            IdAttributes(cohort.Id),
+                            new XAttribute("ownerKind", cohort.OwnerId.Kind),
+                            new XAttribute("ownerId", cohort.OwnerId.Value),
+                            new XAttribute("animalKind", cohort.AnimalKind),
+                            new XAttribute("cohortType", cohort.Type),
+                            new XAttribute("count", cohort.Count),
+                            new XAttribute("healthPercent", cohort.HealthPercent),
+                            new XAttribute("fertilityPercent", cohort.FertilityPercent),
+                            new XAttribute("carryingCapacity", cohort.CarryingCapacity),
+                            new XAttribute("lastUpdatedTick", cohort.LastUpdatedTick)))),
+                new XElement(
                     "SpecialistPools",
                     snapshot.SpecialistPools.Select(specialists =>
                             new XElement(
@@ -755,6 +770,19 @@ public static class WorldStateCodec
                     RequiredInt(element, "completionTick"),
                     RequiredInt(element, "steelCost"),
                     RequiredInt(element, "componentCost")))
+                .ToList(),
+            AnimalCohorts = OptionalContainer(root, "AnimalCohorts")
+                .Elements("AnimalCohort")
+                .Select(element => new WorldAnimalCohort(
+                    ReadId(element),
+                    ReadEntityId(element, "ownerKind", "ownerId"),
+                    RequiredString(element, "animalKind"),
+                    RequiredEnum<AnimalCohortType>(element, "cohortType"),
+                    RequiredInt(element, "count"),
+                    RequiredInt(element, "healthPercent"),
+                    RequiredInt(element, "fertilityPercent"),
+                    RequiredInt(element, "carryingCapacity"),
+                    RequiredInt(element, "lastUpdatedTick")))
                 .ToList()
         };
 
