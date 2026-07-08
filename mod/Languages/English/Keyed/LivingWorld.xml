@@ -158,6 +158,7 @@
   <LW_MissionKind_Diplomat>diplomats</LW_MissionKind_Diplomat>
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
+  <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>
@@ -166,6 +167,24 @@
   <LW_EconomyCol_Output>Output/day</LW_EconomyCol_Output>
   <LW_EconomyCol_Change>Change/day</LW_EconomyCol_Change>
   <LW_EconomyCol_Wealth>Wealth</LW_EconomyCol_Wealth>
+  <LW_SettlementObserverTitle>Settlement observer</LW_SettlementObserverTitle>
+  <LW_SettlementObserver_Settlements>Settlements</LW_SettlementObserver_Settlements>
+  <LW_SettlementObserver_NoSettlement>No settlement selected.</LW_SettlementObserver_NoSettlement>
+  <LW_SettlementObserver_Overview>Status {status} | tier {tier} | population {total} (adults {adults}, children {children}, elders {elderly}) | wealth {wealth}</LW_SettlementObserver_Overview>
+  <LW_SettlementObserver_Production>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_SettlementObserver_Production>
+  <LW_SettlementObserver_FoodMigration>Food {food}, daily need {need}, days left {days} | migration pressure {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
+  <LW_SettlementObserver_Projects>Projects</LW_SettlementObserver_Projects>
+  <LW_SettlementObserver_NoActiveProject>No active construction or repair project.</LW_SettlementObserver_NoActiveProject>
+  <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_ProjectProgress>
+  <LW_SettlementObserver_Facilities>Facilities</LW_SettlementObserver_Facilities>
+  <LW_SettlementObserver_NoFacilities>No facilities built yet.</LW_SettlementObserver_NoFacilities>
+  <LW_SettlementObserver_FacilityLine>{kind} lvl {level}, condition {condition}%</LW_SettlementObserver_FacilityLine>
+  <LW_SettlementObserver_Resources>Resources</LW_SettlementObserver_Resources>
+  <LW_SettlementObserver_NoResources>No stored resources.</LW_SettlementObserver_NoResources>
+  <LW_SettlementObserver_ResourceLine>{resource}: {quantity}</LW_SettlementObserver_ResourceLine>
+  <LW_SettlementObserver_RecentEvents>Recent process events</LW_SettlementObserver_RecentEvents>
+  <LW_SettlementObserver_NoRecentEvents>No recent process events for this settlement.</LW_SettlementObserver_NoRecentEvents>
+  <LW_SettlementObserver_EventLine>{tick}: {kind} - {summary}</LW_SettlementObserver_EventLine>
   <LW_Tier_Camp>Camp</LW_Tier_Camp>
   <LW_Tier_Village>Village</LW_Tier_Village>
   <LW_Tier_Town>Town</LW_Tier_Town>

@@ -158,6 +158,7 @@
   <LW_MissionKind_Diplomat>дипломаты</LW_MissionKind_Diplomat>
   <LW_InspectThreatLine>Под угрозой: приближается варбанд - прибытие примерно через {days} дн.</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Открыть таблицу населения и экономики</LW_OpenEconomyWindow>
+  <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>
   <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Фракция</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Поселения</LW_EconomyCol_Settlements>
@@ -166,6 +167,24 @@
   <LW_EconomyCol_Output>Выпуск/день</LW_EconomyCol_Output>
   <LW_EconomyCol_Change>Изм./день</LW_EconomyCol_Change>
   <LW_EconomyCol_Wealth>Богатство</LW_EconomyCol_Wealth>
+  <LW_SettlementObserverTitle>Наблюдение за поселениями</LW_SettlementObserverTitle>
+  <LW_SettlementObserver_Settlements>Поселения</LW_SettlementObserver_Settlements>
+  <LW_SettlementObserver_NoSettlement>Поселение не выбрано.</LW_SettlementObserver_NoSettlement>
+  <LW_SettlementObserver_Overview>Статус {status} | уровень {tier} | население {total} (взрослые {adults}, дети {children}, старики {elderly}) | богатство {wealth}</LW_SettlementObserver_Overview>
+  <LW_SettlementObserver_Production>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_SettlementObserver_Production>
+  <LW_SettlementObserver_FoodMigration>Еда {food}, расход/день {need}, дней запаса {days} | давление миграции {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
+  <LW_SettlementObserver_Projects>Проекты</LW_SettlementObserver_Projects>
+  <LW_SettlementObserver_NoActiveProject>Нет активной стройки или ремонта.</LW_SettlementObserver_NoActiveProject>
+  <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, готово {progress}%, осталось около {days} дн.</LW_SettlementObserver_ProjectProgress>
+  <LW_SettlementObserver_Facilities>Постройки</LW_SettlementObserver_Facilities>
+  <LW_SettlementObserver_NoFacilities>Постройки ещё не построены.</LW_SettlementObserver_NoFacilities>
+  <LW_SettlementObserver_FacilityLine>{kind} ур. {level}, состояние {condition}%</LW_SettlementObserver_FacilityLine>
+  <LW_SettlementObserver_Resources>Ресурсы</LW_SettlementObserver_Resources>
+  <LW_SettlementObserver_NoResources>Нет складских ресурсов.</LW_SettlementObserver_NoResources>
+  <LW_SettlementObserver_ResourceLine>{resource}: {quantity}</LW_SettlementObserver_ResourceLine>
+  <LW_SettlementObserver_RecentEvents>Последние события процесса</LW_SettlementObserver_RecentEvents>
+  <LW_SettlementObserver_NoRecentEvents>По этому поселению пока нет недавних событий процесса.</LW_SettlementObserver_NoRecentEvents>
+  <LW_SettlementObserver_EventLine>{tick}: {kind} - {summary}</LW_SettlementObserver_EventLine>
   <LW_Tier_Camp>Лагерь</LW_Tier_Camp>
   <LW_Tier_Village>Деревня</LW_Tier_Village>
   <LW_Tier_Town>Городок</LW_Tier_Town>

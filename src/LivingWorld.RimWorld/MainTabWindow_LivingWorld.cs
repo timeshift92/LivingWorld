@@ -105,6 +105,11 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             Find.WindowStack.Add(new LivingWorldEconomyWindow());
         }
 
+        if (listing.ButtonText("LW_OpenSettlementObserverWindow".Translate()))
+        {
+            Find.WindowStack.Add(new LivingWorldSettlementObserverWindow());
+        }
+
         listing.Gap(6f);
 
         RefreshCachedRows(state);

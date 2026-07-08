@@ -246,6 +246,7 @@ var tests = new List<(string Name, Action Test)>
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
     ("shows destroyed settlements as world-map ruin markers", TestRimWorldRuinWorldObjectMarker),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
+    ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -6718,6 +6719,51 @@ static void TestRimWorldEconomyWindow()
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     foreach (var key in new[] { "LW_EconomyWindowTitle", "LW_EconomyCol_Settlements", "LW_EconomyCol_Tier", "LW_EconomyCol_Output", "LW_EconomyCol_Change", "LW_Tier_City", "LW_OpenEconomyWindow" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldSettlementObserverWindow()
+{
+    var root = FindRepoRoot();
+
+    var windowPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs");
+    AssertFileExists(windowPath);
+    var window = File.ReadAllText(windowPath);
+
+    AssertContains("class LivingWorldSettlementObserverWindow : Window", window);
+    AssertContains("GetSettlementPopulation", window);
+    AssertContains("GetSettlementProductionStatus", window);
+    AssertContains("GetSettlementFacilities", window);
+    AssertContains("SettlementProjectStatus.Active", window);
+    AssertContains("ResourcesForOwner", window);
+    AssertContains("WorldEventKind.SettlementProjectStarted", window);
+    AssertContains("WorldEventKind.SettlementFacilityBuilt", window);
+    AssertContains("WorldEventKind.SettlementDeveloped", window);
+    AssertContains("LW_SettlementObserver_ProjectProgress", window);
+    AssertContains("LW_SettlementObserver_NoActiveProject", window);
+
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    AssertContains("new LivingWorldSettlementObserverWindow()", mainTab);
+    AssertContains("LW_OpenSettlementObserverWindow", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_OpenSettlementObserverWindow",
+        "LW_SettlementObserverTitle",
+        "LW_SettlementObserver_Settlements",
+        "LW_SettlementObserver_Overview",
+        "LW_SettlementObserver_Projects",
+        "LW_SettlementObserver_Facilities",
+        "LW_SettlementObserver_Resources",
+        "LW_SettlementObserver_RecentEvents",
+        "LW_SettlementObserver_NoActiveProject",
+        "LW_SettlementObserver_ProjectProgress"
+    })
     {
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);
