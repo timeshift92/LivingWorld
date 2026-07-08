@@ -3185,6 +3185,8 @@ static void TestRimWorldWorldEconomyMainTab()
     AssertContains("cachedFactionEconomyRows", mainTab);
     AssertContains("LW_FactionEconomyLine", mainTab);
     AssertContains("WealthBand", mainTab);
+    // E4b: the economy section reads the priced ledger wealth snapshot, not just a raw material sum.
+    AssertContains("GetFactionWealth(factionId)?.TotalWealth", mainTab);
 
     var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));

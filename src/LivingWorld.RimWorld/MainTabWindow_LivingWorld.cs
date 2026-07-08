@@ -446,9 +446,13 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .Take(MaxWarRows)
             .Select(factionId =>
             {
-                var stock = state.Settlements
-                    .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
-                    .Sum(settlement => FactionMaterialStock(state, settlement.Id));
+                // E4b: read the priced ledger wealth (silver + valued material) the economy sim
+                // records each day; fall back to a raw material sum only before the first daily
+                // refresh has run.
+                var stock = state.GetFactionWealth(factionId)?.TotalWealth
+                    ?? state.Settlements
+                        .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
+                        .Sum(settlement => FactionMaterialStock(state, settlement.Id));
                 var wealth = debugExact ? stock.ToString() : WealthBand(stock);
                 return (FactionId: factionId, Text: "LW_FactionEconomyLine".Translate(
                     factionId.Named("faction"),
@@ -461,8 +465,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .ToList();
     }
 
-    // A settlement's material stockpile across the tracked resources — a proxy until Codex's
-    // ledger wealth (E1) lands; shown as a band so the player is not omniscient.
+    // Fallback only: a settlement's raw material stockpile across the tracked resources, used just
+    // until the first daily wealth refresh records a priced snapshot (E1/E4b). Shown as a band so
+    // the player is not omniscient.
     private static int FactionMaterialStock(WorldState state, EntityId settlementId)
     {
         return state.GetOwnedResourceQuantity(settlementId, "PackagedSurvivalMeal")
@@ -471,14 +476,16 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + state.GetOwnedResourceQuantity(settlementId, "ComponentIndustrial");
     }
 
-    private static string WealthBand(int stock)
+    // Bands are calibrated for the priced faction wealth (silver + valued material), which is much
+    // larger than a raw quantity count. Exact totals show only under debug.
+    private static string WealthBand(int wealth)
     {
-        if (stock < 100)
+        if (wealth < 1000)
         {
             return "LW_WealthBandPoor".Translate();
         }
 
-        return stock < 500
+        return wealth < 8000
             ? "LW_WealthBandModest".Translate()
             : "LW_WealthBandWealthy".Translate();
     }
