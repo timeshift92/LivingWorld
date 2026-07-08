@@ -38,6 +38,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> rewardedVictoryConflictIds = new();
     private List<long> ruinSiteIds = new();
 
+    // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
+    // builds during world-generation previews, so a new game does not spam a dozen identical lines.
+    private static string? lastLoggedLedgerSummary;
+
     public LivingWorldWorldComponent(World world)
         : base(world)
     {
@@ -1227,7 +1231,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             LastBootstrapStatus = "initialized";
             if (settings.debugLogging)
             {
-                Log.Message($"[LivingWorld] Ledger initialized. {GetSummary()}");
+                var summary = GetSummary();
+                if (summary != lastLoggedLedgerSummary)
+                {
+                    lastLoggedLedgerSummary = summary;
+                    Log.Message($"[LivingWorld] Ledger initialized. {summary}");
+                }
             }
         }
         catch (Exception ex)

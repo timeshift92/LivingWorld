@@ -39,8 +39,16 @@ public static class LivingWorldTraderWealthPatch
             return;
         }
 
-        var silver = ThingMaker.MakeThing(ThingDefOf.Silver);
-        silver.stackCount = bonusSilver;
-        __result.inventory.innerContainer.TryAdd(silver, canMergeWithExistingStacks: true);
+        // Fail-open: never let a stock tweak break trader generation or the trade window.
+        try
+        {
+            var silver = ThingMaker.MakeThing(ThingDefOf.Silver);
+            silver.stackCount = bonusSilver;
+            __result.inventory.innerContainer.TryAdd(silver, canMergeWithExistingStacks: true);
+        }
+        catch (System.Exception ex)
+        {
+            Log.Warning($"[LivingWorld] trader silver bonus failed safely: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 }
