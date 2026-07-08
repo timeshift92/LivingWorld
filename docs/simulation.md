@@ -479,6 +479,13 @@ Resolved army movements are not permanent history. `ArmyMovementPruneService`
 keeps traveling and recent resolved movements for UI/cooldown context, then
 removes old resolved movement records. Durable history remains in `WorldEvent`.
 
+Terminal caravans follow the same active-state rule. `WorldCaravan` remains in
+the ledger while it is traveling and for a short post-resolution window, then
+`CaravanPruneService` removes old `Arrived`/`Destroyed` rows. This does not
+delete resources: arrival already moved cargo to the target settlement, and
+destruction already removed caravan-owned cargo. Durable caravan history remains
+in `WorldEvent`.
+
 The service is idempotent. Once `WorldFactionRecord.Status == Collapsed`, later
 daily passes do not emit duplicate collapse events. This keeps history readable
 and prevents repeated effects.
@@ -523,6 +530,12 @@ ledger-карты. Он сохраняется в `WorldState`, уменьшае
 bootstrap RimWorld layer создаёт стартовый резерв как
 `settlements * targetWorldPopulationPerSettlement`, но daily flow не может
 создавать людей сверх этого запаса.
+
+Legacy saves from before this field are repaired once in the RimWorld component:
+if the save is already bootstrapped, has settlements, and has not run the bridge,
+the component seeds the reservoir and stores a migration flag. That is a save
+compatibility bridge, not a replenishment rule; once the reservoir is consumed,
+future refills must come from explicit gameplay sources.
 
 Вымирание фракций (`FactionLifecycleService.SimulateCollapses`) вызывалось в дневном тике **уже до этого среза**; данный срез добавил именно drifter-конвейер (Arrival/Founding/Assimilation), а не привязку вымирания.
 

@@ -233,6 +233,10 @@ LivingWorld/
 - resolved `WorldArmyMovement` records have `StatusTick` and are pruned by
   `ArmyMovementPruneService` after a retention window; long-term history remains in
   `WorldEvent`;
+- terminal `WorldCaravan` records (`Arrived`/`Destroyed`) are pruned by
+  `CaravanPruneService` after the same retention window. Cargo is already
+  delivered or zeroed before pruning, so active caravan rows do not become
+  permanent history or permanent save bloat;
 - population query считает только `Alive` citizens, которыми реально владеет settlement;
 - RimWorld world-object bootstrap идет через importer whitelist: по умолчанию импортируется только vanilla `Settlement`, а sites/camps/quest objects остаются rejected diagnostics.
 

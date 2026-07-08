@@ -133,6 +133,14 @@ It is the finite outside-world population reserve consumed by
 arrivals will not create people until a system explicitly replenishes the
 reservoir.
 
+The RimWorld save layer has one compatibility bridge for pre-reservoir saves:
+when a save is already bootstrapped, has settlements, and has not yet run the
+bridge, `LivingWorldWorldComponent` seeds `DrifterArrivalReservoir` once and
+persists a separate `migratedDrifterReservoir` flag. Fresh worlds set that flag
+during bootstrap. This prevents old saves from silently losing all future
+drifter arrivals while also preventing a legitimately depleted reservoir from
+refilling on every reload.
+
 `Caravans` are saved as their own optional container. Cargo remains in the
 resource ledger and is owned by `EntityKind.Caravan`, so the save format keeps
 the entity separate from the inventory:
@@ -147,17 +155,26 @@ the entity separate from the inventory:
 ```
 
 The `Caravans` container is optional for backward compatibility with saves from
-before persistent caravans.
+before persistent caravans. It is active state, not durable history: traveling
+caravans persist, while terminal caravans (`Arrived` or `Destroyed`) are removed
+by `CaravanPruneService` after the retention window. Delivered cargo remains
+owned by the target settlement; destroyed cargo is already removed before the
+caravan row is pruned. Long-term history stays in `WorldEvent`.
 
 Текущие обязательные инварианты после загрузки:
 
 - `worldSeed` приходит из seed RimWorld world и round-trip'ится через XML;
-- `drifterArrivalReservoir` round-trip'ится как root attribute; старые сейвы без него получают `0`;
+- `drifterArrivalReservoir` round-trip'ится как root attribute; старые Core XML
+  payloads без него получают `0`, then the RimWorld component may apply the
+  one-time legacy bridge described above;
 - `MigrationGroups` читается как optional container для обратной совместимости со старыми сейвами;
 - `FactionRecords` читается как optional container для обратной совместимости со старыми сейвами;
 - `SettlementCapabilities` читается как optional container для обратной совместимости со старыми сейвами;
 - `SpecialistPools` читается как optional container для обратной совместимости со старыми сейвами;
 - `Caravans` читается как optional container для обратной совместимости со старыми сейвами;
+- terminal caravans may be absent after retention pruning; consumers must use
+  `WorldEvent` for long-term caravan history rather than assuming every completed
+  caravan row remains in active state;
 - `playerFactionId` читается как optional root attribute: старые сейвы без него
   считаются не имеющими Core-защиты игрока, пока RimWorld layer не передаст id;
 - каждый `Alive` citizen должен иметь owner;
