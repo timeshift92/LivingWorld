@@ -4,6 +4,13 @@
 **Owner:** Claude (both Core + RimWorld lanes, by explicit user authorization overriding the usual Core=Codex split).
 **Date:** 2026-07-08.
 
+## Build status (as of 2026-07-08)
+
+- **Slice 1 — DONE** (merged `051834e`): player attacks register in the war ledger (third party). Core `PlayerBelligerenceService` + RW `LivingWorldSettlementDefeatPatch` (reflection-verified hook). Unit + structural tests.
+- **Slice 2 — DONE** (merged `2df4a85`): diplomat-gated alliances. Core `AllianceService` (alliance = Ally-stance goodwill, **no new save state**) + main-tab "Ally with X against Y" buttons + defeat-hook ally credit. EN/RU + tests.
+- **Slice 3 — DEFERRED (needs live iteration):** war objectives from an ally. Heavy RimWorld quest-system integration that cannot be verified headless; build with the user available to test.
+- **Slice 4 — BLOCKED (needs a Core prerequisite):** victory & spoils. **Nothing in Core currently sets `WorldConflictStatus.Resolved` — wars never end**, so there is no victory trigger to hook. Requires a Core war-resolution mechanism (when/how a war concludes), which overlaps Codex's war-balance work and must be coordinated, not built solo. Building victory rewards before it exists would be dead code that never fires.
+
 ## Goal
 
 Let the player become a real belligerent in the Living World's NPC-vs-NPC wars — not just an observer. The player can fight in a war as an independent **third party**, and can formally **ally** with a faction (gated behind a diplomat exchange) to fight alongside it, earn reputation and rewards, and help decide the war's outcome.
