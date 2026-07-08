@@ -162,6 +162,7 @@ var tests = new List<(string Name, Action Test)>
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
+    ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -3990,6 +3991,42 @@ static void TestRimWorldWorldGenSettingsWindow()
     AssertContains("<LW_WorldGenBlurb>", ru);
     AssertContains("<LW_WorldGenAdvancedHint>", en);
     AssertContains("<LW_WorldGenAdvancedHint>", ru);
+}
+
+static void TestRimWorldEconomyWindow()
+{
+    var root = FindRepoRoot();
+
+    var windowPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldEconomyWindow.cs");
+    AssertFileExists(windowPath);
+    var window = File.ReadAllText(windowPath);
+
+    // A columnar table: one row per faction with settlements, population, top tier and wealth.
+    AssertContains("class LivingWorldEconomyWindow : Window", window);
+    AssertContains("GroupBy(settlement => settlement.FactionId", window);
+    AssertContains("GetSettlementPopulation", window);
+    AssertContains("SettlementDevelopmentService.GetTier", window);
+    // Prefers the Core wealth snapshot, falls back to a live material sum so it is never empty.
+    AssertContains("GetFactionWealth", window);
+    AssertContains("LW_EconomyCol_Faction", window);
+    AssertContains("LW_EconomyCol_Population", window);
+    AssertContains("LW_EconomyCol_Wealth", window);
+    // Reuses the native faction icon + comparative wealth bar treatment.
+    AssertContains("FactionIcon", window);
+    AssertContains("BaseContent.WhiteTex", window);
+
+    // The main tab opens it via a button.
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    AssertContains("new LivingWorldEconomyWindow()", mainTab);
+    AssertContains("LW_OpenEconomyWindow", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_EconomyWindowTitle", "LW_EconomyCol_Settlements", "LW_EconomyCol_Tier", "LW_Tier_City", "LW_OpenEconomyWindow" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldWorldArmyMarker()

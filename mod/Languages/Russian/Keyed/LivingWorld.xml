@@ -72,6 +72,17 @@
   <LW_WorldGenButton>Настройка Живого мира</LW_WorldGenButton>
   <LW_ArmyMarkerInspect>Варбанд {faction} идёт на {target} - прибытие примерно через {days} дн.</LW_ArmyMarkerInspect>
   <LW_InspectThreatLine>Под угрозой: приближается варбанд - прибытие примерно через {days} дн.</LW_InspectThreatLine>
+  <LW_OpenEconomyWindow>Открыть таблицу населения и экономики</LW_OpenEconomyWindow>
+  <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>
+  <LW_EconomyCol_Faction>Фракция</LW_EconomyCol_Faction>
+  <LW_EconomyCol_Settlements>Поселения</LW_EconomyCol_Settlements>
+  <LW_EconomyCol_Population>Население</LW_EconomyCol_Population>
+  <LW_EconomyCol_Tier>Макс. уровень</LW_EconomyCol_Tier>
+  <LW_EconomyCol_Wealth>Богатство</LW_EconomyCol_Wealth>
+  <LW_Tier_Camp>Лагерь</LW_Tier_Camp>
+  <LW_Tier_Village>Деревня</LW_Tier_Village>
+  <LW_Tier_Town>Городок</LW_Tier_Town>
+  <LW_Tier_City>Город</LW_Tier_City>
   <LW_WorldGenBlurb>Живой мир ведёт по каждому поселению фракций живой учёт людей и ресурсов - они растут, мигрируют, торгуют и воюют, даже когда вы их не видите. Размер планеты и населённость задаются ванильными настройками мира выше.</LW_WorldGenBlurb>
   <LW_WorldGenAdvancedHint>Тонкая настройка (размеры поселений, экономика, дрифтеры) - в Настройки - Настройки модов - Живой мир.</LW_WorldGenAdvancedHint>
   <LW_DrifterArrivalLetterLabel>Приход дрифтера</LW_DrifterArrivalLetterLabel>

@@ -72,6 +72,17 @@
   <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
   <LW_ArmyMarkerInspect>{faction} warband marching on {target} - arrives in about {days} day(s).</LW_ArmyMarkerInspect>
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
+  <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
+  <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
+  <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>
+  <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>
+  <LW_EconomyCol_Population>Population</LW_EconomyCol_Population>
+  <LW_EconomyCol_Tier>Top tier</LW_EconomyCol_Tier>
+  <LW_EconomyCol_Wealth>Wealth</LW_EconomyCol_Wealth>
+  <LW_Tier_Camp>Camp</LW_Tier_Camp>
+  <LW_Tier_Village>Village</LW_Tier_Village>
+  <LW_Tier_Town>Town</LW_Tier_Town>
+  <LW_Tier_City>City</LW_Tier_City>
   <LW_WorldGenBlurb>Living World tracks every faction settlement as a living ledger of people and resources - they grow, migrate, trade and wage war even when you never see them. World size and population are set by the vanilla planet options above.</LW_WorldGenBlurb>
   <LW_WorldGenAdvancedHint>Fine-tuning (settlement sizes, economy, drifters) lives in Options - Mod Settings - Living World.</LW_WorldGenAdvancedHint>
   <LW_DrifterArrivalLetterLabel>Drifter arrival</LW_DrifterArrivalLetterLabel>

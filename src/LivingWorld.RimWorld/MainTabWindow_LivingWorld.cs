@@ -93,11 +93,20 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         }
 
         listing.Label(lastActionResult ?? "LW_RaidHookStatus".Translate());
-        listing.Gap(8f);
+        listing.Gap(4f);
+
+        // Opens the columnar Population/Economy table (F-1) — the at-a-glance companion to the
+        // scrolling lists below.
+        if (listing.ButtonText("LW_OpenEconomyWindow".Translate()))
+        {
+            Find.WindowStack.Add(new LivingWorldEconomyWindow());
+        }
+
+        listing.Gap(6f);
 
         RefreshCachedRows(state);
 
-        var scrollRect = listing.GetRect(inRect.height - 90f);
+        var scrollRect = listing.GetRect(inRect.height - 130f);
         var viewHeight = 140f
             + (cachedSettlementRows.Count * 88f)
             + (cachedKnownIntelRows.Count * 30f)
