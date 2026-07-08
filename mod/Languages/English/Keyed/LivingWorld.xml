@@ -29,6 +29,22 @@
   <LW_KnowledgeLine>Known info: source {source} | confidence {confidence} | age {ageDays} days | stale {stale} | population {populationBand} | food {food} | migration {migration} | production {production}</LW_KnowledgeLine>
   <LW_ProductionLine>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_ProductionLine>
   <LW_ProductionHiddenLine>Exact production is unknown. Get fresher intel or visit the settlement map.</LW_ProductionHiddenLine>
+  <LW_InspectFacilitiesExactLine>Facilities: {facilities}</LW_InspectFacilitiesExactLine>
+  <LW_InspectFacilitiesBandLine>Development: {band}</LW_InspectFacilitiesBandLine>
+  <LW_InspectFacilitiesNone>none built</LW_InspectFacilitiesNone>
+  <LW_InspectFacilityItem>{kind} lvl {level} ({condition}%)</LW_InspectFacilityItem>
+  <LW_InspectFacilityProjectBuildExact>Building: {kind} - about {days} day(s) left</LW_InspectFacilityProjectBuildExact>
+  <LW_InspectFacilityProjectRepairExact>Repairing: {kind} - about {days} day(s) left</LW_InspectFacilityProjectRepairExact>
+  <LW_InspectFacilityProjectCoarseLine>Currently developing its settlement.</LW_InspectFacilityProjectCoarseLine>
+  <LW_FacilityDevBand_None>none</LW_FacilityDevBand_None>
+  <LW_FacilityDevBand_Basic>basic</LW_FacilityDevBand_Basic>
+  <LW_FacilityDevBand_Developed>developed</LW_FacilityDevBand_Developed>
+  <LW_FacilityDevBand_Advanced>advanced</LW_FacilityDevBand_Advanced>
+  <LW_FacilityKind_Farm>Farm</LW_FacilityKind_Farm>
+  <LW_FacilityKind_Workshop>Workshop</LW_FacilityKind_Workshop>
+  <LW_FacilityKind_Clinic>Clinic</LW_FacilityKind_Clinic>
+  <LW_FacilityKind_PowerPlant>Power plant</LW_FacilityKind_PowerPlant>
+  <LW_FacilityKind_Storage>Storage</LW_FacilityKind_Storage>
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Alive {citizens} | Dead {deadCitizens} | Returned {returnedCitizens} | Captured {prisonerCitizens} | Meals {meals} | Steel {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner} | Missing {missing}</LW_RaidOutcomeLine>

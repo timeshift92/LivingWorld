@@ -190,6 +190,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines Living World main tab", TestRimWorldMainTab),
     ("limits Living World main tab rendering work", TestRimWorldMainTabLimitsRenderingWork),
     ("adds Living World settlement population to inspect panel", TestRimWorldSettlementInspectPatch),
+    ("surfaces facilities and projects in the inspect panel with fog-of-war gating", TestRimWorldSettlementFacilitiesInspection),
     ("patches vanilla enemy raids into Living World population", TestRimWorldRaidIncidentPatch),
     ("patches generated raid pawns into Living World citizens", TestRimWorldRaidPawnGenerationPatch),
     ("patches pawn death into Living World casualties", TestRimWorldPawnKillPatch),
@@ -5144,6 +5145,44 @@ static void TestRimWorldSettlementInspectPatch()
     AssertContains("LW_InspectThreatLine", source);
     AssertContains("<LW_InspectThreatLine>", englishXml);
     AssertContains("<LW_InspectThreatLine>", russianXml);
+}
+
+// Task 4 RW-side: the inspect panel surfaces facilities + an active build/repair project, gated by
+// the same fog-of-war rule as production (exact only when the player has directly-known intel,
+// otherwise a coarse development band and a generic project note).
+static void TestRimWorldSettlementFacilitiesInspection()
+{
+    var root = FindRepoRoot();
+    var source = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementInspectPatch.cs"));
+
+    // Reads the Core facility/project ledger.
+    AssertContains("state.GetSettlementFacilities(settlementId)", source);
+    AssertContains("SettlementProjectStatus.Active", source);
+    // Gating: exact detail only behind ExactValuesVisible, coarse band otherwise.
+    AssertContains("known.ExactValuesVisible", source);
+    AssertContains("LW_InspectFacilitiesExactLine", source);
+    AssertContains("LW_InspectFacilitiesBandLine", source);
+    AssertContains("FacilityDevelopmentBand", source);
+    // Hidden entirely for unknown settlements, like the production line.
+    AssertContains("if (known == null)", source);
+    // Project note distinguishes build vs repair when exact, generic when coarse.
+    AssertContains("LW_InspectFacilityProjectBuildExact", source);
+    AssertContains("LW_InspectFacilityProjectRepairExact", source);
+    AssertContains("LW_InspectFacilityProjectCoarseLine", source);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_InspectFacilitiesExactLine", "LW_InspectFacilitiesBandLine", "LW_InspectFacilityItem",
+        "LW_InspectFacilityProjectBuildExact", "LW_InspectFacilityProjectCoarseLine",
+        "LW_FacilityDevBand_Basic", "LW_FacilityDevBand_Advanced",
+        "LW_FacilityKind_Farm", "LW_FacilityKind_Workshop", "LW_FacilityKind_Storage",
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldRaidIncidentPatch()

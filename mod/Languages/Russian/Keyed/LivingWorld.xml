@@ -29,6 +29,22 @@
   <LW_KnowledgeLine>Известные сведения: источник {source} | уверенность {confidence} | давность {ageDays} дн. | устарело {stale} | население {populationBand} | еда {food} | миграция {migration} | производство {production}</LW_KnowledgeLine>
   <LW_ProductionLine>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_ProductionLine>
   <LW_ProductionHiddenLine>Точное производство неизвестно. Нужны свежие сведения или посещение карты поселения.</LW_ProductionHiddenLine>
+  <LW_InspectFacilitiesExactLine>Постройки: {facilities}</LW_InspectFacilitiesExactLine>
+  <LW_InspectFacilitiesBandLine>Развитие: {band}</LW_InspectFacilitiesBandLine>
+  <LW_InspectFacilitiesNone>ничего не построено</LW_InspectFacilitiesNone>
+  <LW_InspectFacilityItem>{kind} ур. {level} ({condition}%)</LW_InspectFacilityItem>
+  <LW_InspectFacilityProjectBuildExact>Строит: {kind} - осталось около {days} дн.</LW_InspectFacilityProjectBuildExact>
+  <LW_InspectFacilityProjectRepairExact>Чинит: {kind} - осталось около {days} дн.</LW_InspectFacilityProjectRepairExact>
+  <LW_InspectFacilityProjectCoarseLine>Сейчас развивает своё поселение.</LW_InspectFacilityProjectCoarseLine>
+  <LW_FacilityDevBand_None>нет</LW_FacilityDevBand_None>
+  <LW_FacilityDevBand_Basic>базовое</LW_FacilityDevBand_Basic>
+  <LW_FacilityDevBand_Developed>развитое</LW_FacilityDevBand_Developed>
+  <LW_FacilityDevBand_Advanced>продвинутое</LW_FacilityDevBand_Advanced>
+  <LW_FacilityKind_Farm>Ферма</LW_FacilityKind_Farm>
+  <LW_FacilityKind_Workshop>Мастерская</LW_FacilityKind_Workshop>
+  <LW_FacilityKind_Clinic>Лечебница</LW_FacilityKind_Clinic>
+  <LW_FacilityKind_PowerPlant>Электростанция</LW_FacilityKind_PowerPlant>
+  <LW_FacilityKind_Storage>Склад</LW_FacilityKind_Storage>
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner} | Пропало {missing}</LW_RaidOutcomeLine>

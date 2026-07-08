@@ -102,6 +102,12 @@ public static class LivingWorldSettlementInspectPatch
             : "LW_ProductionHiddenLine".Translate().ToString();
         inspectLine = $"{inspectLine}\n{productionLine}";
 
+        var facilitiesLine = BuildFacilitiesLine(state, settlement.Id, known);
+        if (facilitiesLine != null)
+        {
+            inspectLine = $"{inspectLine}\n{facilitiesLine}";
+        }
+
         // Threat header: if a world-war army is marching on this settlement it is already visible
         // on the map (the warband marker), so surfacing it here is consistent with fog-of-war and
         // ties the map object to the settlement. Famine/growth stay inside the knowledge line so we
@@ -175,6 +181,113 @@ public static class LivingWorldSettlementInspectPatch
             production.Biome.Named("biome"),
             production.Hilliness.Named("hilliness"),
             production.TechLevel.Named("tech")).ToString();
+    }
+
+    // Surface the settlement's facilities and any in-flight build/repair project. Fog-of-war: only
+    // shown for settlements the player already knows something about (same rule the production line
+    // uses). Exact levels/condition/ETA appear only when the player has directly-known intel;
+    // otherwise the settlement's development is a coarse band and its project a generic note, so we
+    // never leak the exact ledger the player has not scouted.
+    private static string? BuildFacilitiesLine(WorldState state, EntityId settlementId, KnownSettlementInfo? known)
+    {
+        if (known == null)
+        {
+            return null;
+        }
+
+        var facilities = state.GetSettlementFacilities(settlementId);
+        SettlementProject? activeProject = null;
+        foreach (var project in state.SettlementProjects)
+        {
+            if (project.SettlementId == settlementId
+                && project.Status == SettlementProjectStatus.Active
+                && (activeProject == null || project.CompletionTick < activeProject.CompletionTick))
+            {
+                activeProject = project;
+            }
+        }
+
+        if (facilities.Count == 0 && activeProject == null)
+        {
+            return null;
+        }
+
+        string line;
+        if (known.ExactValuesVisible)
+        {
+            var facilityText = facilities.Count == 0
+                ? "LW_InspectFacilitiesNone".Translate().ToString()
+                : string.Join(", ", facilities
+                    .OrderBy(facility => facility.Kind)
+                    .ThenBy(facility => facility.Id.Value)
+                    .Select(facility => "LW_InspectFacilityItem".Translate(
+                        FacilityKindLabel(facility.Kind).Named("kind"),
+                        facility.Level.Named("level"),
+                        facility.ConditionPercent.Named("condition")).ToString()));
+            line = "LW_InspectFacilitiesExactLine".Translate(facilityText.Named("facilities")).ToString();
+        }
+        else
+        {
+            line = "LW_InspectFacilitiesBandLine".Translate(
+                FacilityDevelopmentBand(facilities.Count).Named("band")).ToString();
+        }
+
+        if (activeProject != null)
+        {
+            line = $"{line}\n{FormatProjectLine(activeProject, known.ExactValuesVisible)}";
+        }
+
+        return line;
+    }
+
+    private static string FormatProjectLine(SettlementProject project, bool exactVisible)
+    {
+        if (!exactVisible)
+        {
+            return "LW_InspectFacilityProjectCoarseLine".Translate().ToString();
+        }
+
+        var currentTick = Find.TickManager?.TicksGame ?? 0;
+        var days = Math.Max(0, (int)Math.Round((project.CompletionTick - currentTick) / 60000f));
+        var key = project.Kind == SettlementProjectKind.RepairFacility
+            ? "LW_InspectFacilityProjectRepairExact"
+            : "LW_InspectFacilityProjectBuildExact";
+        return key.Translate(
+            FacilityKindLabel(project.FacilityKind).Named("kind"),
+            days.Named("days")).ToString();
+    }
+
+    private static string FacilityKindLabel(SettlementFacilityKind kind)
+    {
+        return kind switch
+        {
+            SettlementFacilityKind.Farm => "LW_FacilityKind_Farm".Translate().ToString(),
+            SettlementFacilityKind.Workshop => "LW_FacilityKind_Workshop".Translate().ToString(),
+            SettlementFacilityKind.Clinic => "LW_FacilityKind_Clinic".Translate().ToString(),
+            SettlementFacilityKind.PowerPlant => "LW_FacilityKind_PowerPlant".Translate().ToString(),
+            SettlementFacilityKind.Storage => "LW_FacilityKind_Storage".Translate().ToString(),
+            _ => kind.ToString(),
+        };
+    }
+
+    private static string FacilityDevelopmentBand(int facilityCount)
+    {
+        if (facilityCount >= 5)
+        {
+            return "LW_FacilityDevBand_Advanced".Translate().ToString();
+        }
+
+        if (facilityCount >= 3)
+        {
+            return "LW_FacilityDevBand_Developed".Translate().ToString();
+        }
+
+        if (facilityCount >= 1)
+        {
+            return "LW_FacilityDevBand_Basic".Translate().ToString();
+        }
+
+        return "LW_FacilityDevBand_None".Translate().ToString();
     }
 
     private static WorldSettlement? FindSettlementForWorldObject(
