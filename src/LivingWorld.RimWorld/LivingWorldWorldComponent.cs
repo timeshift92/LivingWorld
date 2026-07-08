@@ -322,6 +322,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private void SimulateWorldDay(int day)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        RaidPreparationService.ReleaseExpiredPreparations(State, day * TicksPerDay);
         SettlementProductionService.SimulateDay(
             State,
             new SettlementProductionRequest(

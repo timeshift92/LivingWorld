@@ -27,6 +27,11 @@ public sealed record RaidPreparation(
     {
         return this with { Status = RaidPreparationStatus.Released };
     }
+
+    public RaidPreparation Launch()
+    {
+        return this with { Status = RaidPreparationStatus.Launched };
+    }
 }
 
 public sealed record RaidPreparationRequest(

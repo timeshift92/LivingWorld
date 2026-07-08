@@ -53,6 +53,8 @@ var tests = new List<(string Name, Action Test)>
     ("raid preparation reserves real citizens and supplies", TestRaidPreparationReservesRealCitizensAndSupplies),
     ("raid preparation fails without leaking citizens when supplies are insufficient", TestRaidPreparationFailsWithoutLeakingCitizensWhenSuppliesInsufficient),
     ("stale raid preparation returns reserved citizens and supplies", TestStaleRaidPreparationReturnsReservedCitizensAndResources),
+    ("launched raid preparation is not expired as stale", TestLaunchedRaidPreparationIsNotExpiredAsStale),
+    ("raid preparation terminal lifecycle cannot be reversed", TestRaidPreparationTerminalLifecycleCannotBeReversed),
     ("raid preparation survives save load", TestRaidPreparationSurvivesSaveLoad),
     ("materialization lease reserves concrete citizens", TestMaterializationLeaseReservesConcreteCitizens),
     ("materialization lease blocks double active leasing", TestMaterializationLeaseBlocksDoubleActiveLeasing),
@@ -111,6 +113,7 @@ var tests = new List<(string Name, Action Test)>
     ("keeps derived combat aggregates in sync with raid lifecycle", TestDerivedAggregatesTrackRaidLifecycle),
     ("prospering settlements develop housing over time", TestSettlementDevelopmentGrowsHousing),
     ("wires settlement development into the daily tick", TestRimWorldSettlementDevelopmentWiring),
+    ("wires stale raid preparation cleanup into the daily tick", TestRimWorldDailyTickReleasesExpiredRaidPreparations),
     ("diminishes settlement combat power past the threshold", TestSettlementPowerDiminishesPastThreshold),
     ("maps faction behavior archetypes to profiles", TestFactionBehaviorProfiles),
     ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
@@ -1424,6 +1427,69 @@ static void TestStaleRaidPreparationReturnsReservedCitizensAndResources()
     AssertEqual(4, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == settlement.Id));
     AssertEqual(10, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
     AssertEqual(0, state.GetOwnedResourceQuantity(preparation.ArmyId, "PackagedSurvivalMeal"));
+}
+
+static void TestLaunchedRaidPreparationIsNotExpiredAsStale()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("pirate-den-101", "Pirate Den", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Raider {i}", 30, Sex.Male, "raider", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 10);
+    RaidIntelService.RecordTradeIntel(state, new TradeIntelRequest("Pirate", 1000, 0, "gold sale"));
+    RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Hostile),
+        out var intent);
+    var preparation = RaidPreparationService.PrepareRaid(
+        state,
+        new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 10));
+
+    var launched = state.LaunchRaidPreparation(preparation.Id);
+    state.AdvanceToTick(preparation.ExpiresTick + 1);
+    var released = RaidPreparationService.ReleaseExpiredPreparations(state, state.CurrentTick);
+
+    AssertEqual(RaidPreparationStatus.Launched, launched.Status);
+    AssertEqual(0, released);
+    AssertEqual(RaidPreparationStatus.Launched, state.GetRaidPreparation(preparation.Id)!.Status);
+    AssertEqual(2, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == preparation.ArmyId));
+    AssertEqual(2, state.GetOwnedResourceQuantity(preparation.ArmyId, "PackagedSurvivalMeal"));
+}
+
+static void TestRaidPreparationTerminalLifecycleCannotBeReversed()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("pirate-den-101", "Pirate Den", "Pirate");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen($"Raider {i}", 30, Sex.Male, "raider", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 10);
+    RaidIntelService.RecordTradeIntel(state, new TradeIntelRequest("Pirate", 1000, 0, "gold sale"));
+    RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Hostile),
+        out var intent);
+    var launchedPrep = RaidPreparationService.PrepareRaid(
+        state,
+        new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 60_000));
+    var releasedPrep = RaidPreparationService.PrepareRaid(
+        state,
+        new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 60_000));
+
+    state.LaunchRaidPreparation(launchedPrep.Id);
+    state.ReleaseRaidPreparation(launchedPrep.Id);
+    state.ReleaseRaidPreparation(releasedPrep.Id);
+    state.LaunchRaidPreparation(releasedPrep.Id);
+
+    AssertEqual(RaidPreparationStatus.Launched, state.GetRaidPreparation(launchedPrep.Id)!.Status);
+    AssertEqual(RaidPreparationStatus.Released, state.GetRaidPreparation(releasedPrep.Id)!.Status);
 }
 
 static void TestRaidPreparationFailsWithoutLeakingCitizensWhenSuppliesInsufficient()
@@ -3928,10 +3994,17 @@ static void TestRimWorldRaidRoutesThroughPreparation()
     AssertContains("RaidIntentService.TryCreateBestIntent", worker);
     AssertContains("RaidPreparationService.PrepareRaid", worker);
     AssertContains("preparation.ArmyId", worker);
-    AssertContains("ReleaseRaidPreparation", worker);
+    AssertContains("LaunchRaidPreparation", worker);
     AssertContains("Math.Max(storytellerCombatants", worker);
     // No more ad-hoc reservation in the incident itself.
     AssertDoesNotContain("RaidPopulationAllocator.ReserveForRaid", worker);
+}
+
+static void TestRimWorldDailyTickReleasesExpiredRaidPreparations()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("RaidPreparationService.ReleaseExpiredPreparations", component);
+    AssertContains("day * TicksPerDay", component);
 }
 
 static void TestRimWorldRaidWarningFromIntel()

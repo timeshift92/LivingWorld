@@ -106,10 +106,14 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
             }
 
             RaidReconciliationService.ReleaseUndeployedReserves(component.State, preparation.ArmyId);
-            // Consumed either way; mark the record done so expired-preparation cleanup never re-touches
-            // the deployed army. (Core has no dedicated Launched transition yet — Release only flips the
-            // record status and does not release the deployed army.)
-            component.State.ReleaseRaidPreparation(preparation.Id);
+            if (executed)
+            {
+                component.State.LaunchRaidPreparation(preparation.Id);
+            }
+            else
+            {
+                component.State.ReleaseRaidPreparation(preparation.Id);
+            }
         }
     }
 

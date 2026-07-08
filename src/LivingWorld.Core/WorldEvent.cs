@@ -20,6 +20,7 @@ public enum WorldEventKind
     RaidIntelFactRecorded,
     RaidPreparationCreated,
     RaidPreparationReleased,
+    RaidPreparationLaunched,
     MaterializationLeaseCreated,
     MaterializationLeasePawnBound,
     MaterializationLeaseResolved,

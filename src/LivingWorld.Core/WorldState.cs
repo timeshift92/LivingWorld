@@ -1631,7 +1631,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Raid preparation {preparationId} does not exist.");
         }
 
-        if (preparation.Status == RaidPreparationStatus.Released)
+        if (preparation.Status != RaidPreparationStatus.Ready)
         {
             return preparation;
         }
@@ -1641,6 +1641,25 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.RaidPreparationReleased, released.Id, $"Raid preparation {released.Id} released.");
 
         return released;
+    }
+
+    public RaidPreparation LaunchRaidPreparation(EntityId preparationId)
+    {
+        if (!_raidPreparations.TryGetValue(preparationId, out var preparation))
+        {
+            throw new InvalidOperationException($"Raid preparation {preparationId} does not exist.");
+        }
+
+        if (preparation.Status != RaidPreparationStatus.Ready)
+        {
+            return preparation;
+        }
+
+        var launched = preparation.Launch();
+        _raidPreparations[preparationId] = launched;
+        AppendEvent(WorldEventKind.RaidPreparationLaunched, launched.Id, $"Raid preparation {launched.Id} launched.");
+
+        return launched;
     }
 
     public MaterializationLease CreateMaterializationLease(
