@@ -75,6 +75,25 @@
   <LW_SettingDrifterFlow>Enable drifter population flow</LW_SettingDrifterFlow>
   <LW_SettingDrifterArrivals>Max drifter arrivals per day</LW_SettingDrifterArrivals>
   <LW_SettingDrifterCeiling>World population ceiling</LW_SettingDrifterCeiling>
+  <LW_SettingsSection_Population>World population</LW_SettingsSection_Population>
+  <LW_SettingsSection_FactionActivity>Faction activity (world war)</LW_SettingsSection_FactionActivity>
+  <LW_SettingsSection_Development>Settlement development</LW_SettingsSection_Development>
+  <LW_SettingsSection_Baseline>Settlement baseline (world generation)</LW_SettingsSection_Baseline>
+  <LW_SettingsSection_Performance>Performance</LW_SettingsSection_Performance>
+  <LW_SettingsSection_Compatibility>Compatibility</LW_SettingsSection_Compatibility>
+  <LW_SettingsSection_Debug>Debug</LW_SettingsSection_Debug>
+  <LW_Settings_TargetDensity>Target population per settlement</LW_Settings_TargetDensity>
+  <LW_Settings_DrifterAssimilations>Max drifter assimilations per day</LW_Settings_DrifterAssimilations>
+  <LW_Settings_WorldWarEnabled>Enable the NPC world war</LW_Settings_WorldWarEnabled>
+  <LW_Settings_WorldWarEnabledTip>When on, NPC factions raid, scout, trade and wage war on each other. Automatically ceded to Rim War when it is active.</LW_Settings_WorldWarEnabledTip>
+  <LW_Settings_WorldWarTravelDays>Army/mission travel days</LW_Settings_WorldWarTravelDays>
+  <LW_Settings_WorldWarRaidCombatants>Warband combatants</LW_Settings_WorldWarRaidCombatants>
+  <LW_Settings_WorldWarCooldown>Warband cooldown (days)</LW_Settings_WorldWarCooldown>
+  <LW_Settings_WorldWarLetterCooldown>World war letter cooldown (days)</LW_Settings_WorldWarLetterCooldown>
+  <LW_Settings_DevelopmentEnabled>Settlements develop over time</LW_Settings_DevelopmentEnabled>
+  <LW_Settings_DevelopmentStep>Development step per day</LW_Settings_DevelopmentStep>
+  <LW_Settings_HousingHeadroom>Housing headroom</LW_Settings_HousingHeadroom>
+  <LW_Settings_CompatNoneActive>No conflicting mods detected. Living World drives the full NPC world.</LW_Settings_CompatNoneActive>
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
   <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
   <LW_MissionMarkerInspect>{faction} {kind}: heading to {target} - arrives in about {days} day(s).</LW_MissionMarkerInspect>

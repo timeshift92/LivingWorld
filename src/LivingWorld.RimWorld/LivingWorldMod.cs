@@ -6,7 +6,10 @@ namespace LivingWorld.RimWorld;
 
 public sealed class LivingWorldMod : Mod
 {
+    private const float ScrollbarWidth = 20f;
+
     private readonly LivingWorldSettings settings;
+    private Vector2 settingsScrollPosition;
 
     public LivingWorldMod(ModContentPack content)
         : base(content)
@@ -23,7 +26,11 @@ public sealed class LivingWorldMod : Mod
 
     public override void DoSettingsWindowContents(Rect inRect)
     {
-        LivingWorldSettingsDrawer.Draw(inRect, settings);
+        // The grouped sections do not fit a fixed settings window, so scroll them.
+        var viewRect = new Rect(0f, 0f, inRect.width - ScrollbarWidth, LivingWorldSettingsDrawer.PreferredHeight);
+        Widgets.BeginScrollView(inRect, ref settingsScrollPosition, viewRect);
+        LivingWorldSettingsDrawer.Draw(viewRect, settings);
+        Widgets.EndScrollView();
         settings.Write();
     }
 }

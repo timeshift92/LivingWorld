@@ -180,6 +180,9 @@ var tests = new List<(string Name, Action Test)>
     ("declares Harmony dependency and reference", TestRimWorldHarmonyDependency),
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
+    ("groups mod settings by player intent", TestLivingWorldSettingsAreGroupedByPlayerIntent),
+    ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
+    ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
@@ -3586,6 +3589,64 @@ static void TestRimWorldWorldMapSpeedTestOverride()
     AssertContains("<LW_Settings_WorldMapSpeedTestTip>", ru);
     AssertContains("<LW_Settings_WorldMapSpeedMultiplier>", en);
     AssertContains("<LW_Settings_WorldMapSpeedMultiplier>", ru);
+}
+
+static void TestLivingWorldSettingsAreGroupedByPlayerIntent()
+{
+    var drawer = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    foreach (var section in new[]
+    {
+        "LW_SettingsSection_Population",
+        "LW_SettingsSection_FactionActivity",
+        "LW_SettingsSection_Development",
+        "LW_SettingsSection_Baseline",
+        "LW_SettingsSection_Performance",
+        "LW_SettingsSection_Compatibility",
+        "LW_SettingsSection_Debug",
+    })
+    {
+        AssertContains(section, drawer);
+    }
+
+    // Ongoing behaviour is now exposed and grouped, not just the baseline sliders.
+    AssertContains("settings.worldWarEnabled", drawer);
+    AssertContains("settings.settlementDevelopmentEnabled", drawer);
+    AssertContains("settings.targetWorldPopulationPerSettlement", drawer);
+
+    // The grouped page scrolls (it does not fit a fixed settings window).
+    var mod = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldMod.cs"));
+    AssertContains("BeginScrollView", mod);
+}
+
+static void TestCompatibilitySettingsSurfaceCedenceState()
+{
+    var drawer = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("DrawCompatibilityState", drawer);
+    AssertContains("ModsConfig.IsActive(\"Torann.RimWar\")", drawer);
+    AssertContains("ModsConfig.IsActive(\"Matathias.Empire\")", drawer);
+    AssertContains("LW_WorldWarDisabledByRimWar", drawer);
+    AssertContains("LW_Settings_CompatNoneActive", drawer);
+}
+
+static void TestLivingWorldSettingsHaveRussianAndEnglishKeys()
+{
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_SettingsSection_Population",
+        "LW_SettingsSection_FactionActivity",
+        "LW_SettingsSection_Performance",
+        "LW_SettingsSection_Compatibility",
+        "LW_Settings_TargetDensity",
+        "LW_Settings_WorldWarEnabled",
+        "LW_Settings_DevelopmentEnabled",
+        "LW_Settings_CompatNoneActive",
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldEmpireInterop()

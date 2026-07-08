@@ -75,6 +75,25 @@
   <LW_SettingDrifterFlow>Включить поток населения (дрифтеры)</LW_SettingDrifterFlow>
   <LW_SettingDrifterArrivals>Макс. приходов дрифтеров в день</LW_SettingDrifterArrivals>
   <LW_SettingDrifterCeiling>Потолок населения мира</LW_SettingDrifterCeiling>
+  <LW_SettingsSection_Population>Население мира</LW_SettingsSection_Population>
+  <LW_SettingsSection_FactionActivity>Активность фракций (мировая война)</LW_SettingsSection_FactionActivity>
+  <LW_SettingsSection_Development>Развитие поселений</LW_SettingsSection_Development>
+  <LW_SettingsSection_Baseline>Базовые поселения (генерация мира)</LW_SettingsSection_Baseline>
+  <LW_SettingsSection_Performance>Производительность</LW_SettingsSection_Performance>
+  <LW_SettingsSection_Compatibility>Совместимость</LW_SettingsSection_Compatibility>
+  <LW_SettingsSection_Debug>Отладка</LW_SettingsSection_Debug>
+  <LW_Settings_TargetDensity>Целевое население на поселение</LW_Settings_TargetDensity>
+  <LW_Settings_DrifterAssimilations>Макс. ассимиляций дрифтеров в день</LW_Settings_DrifterAssimilations>
+  <LW_Settings_WorldWarEnabled>Включить мировую войну NPC</LW_Settings_WorldWarEnabled>
+  <LW_Settings_WorldWarEnabledTip>Если включено, NPC-фракции устраивают рейды, разведку, торговлю и войны между собой. Автоматически уступается Rim War, когда тот активен.</LW_Settings_WorldWarEnabledTip>
+  <LW_Settings_WorldWarTravelDays>Дней в пути (армии/миссии)</LW_Settings_WorldWarTravelDays>
+  <LW_Settings_WorldWarRaidCombatants>Бойцов в варбанде</LW_Settings_WorldWarRaidCombatants>
+  <LW_Settings_WorldWarCooldown>Кулдаун варбанда (дни)</LW_Settings_WorldWarCooldown>
+  <LW_Settings_WorldWarLetterCooldown>Кулдаун писем о войне (дни)</LW_Settings_WorldWarLetterCooldown>
+  <LW_Settings_DevelopmentEnabled>Поселения развиваются со временем</LW_Settings_DevelopmentEnabled>
+  <LW_Settings_DevelopmentStep>Шаг развития в день</LW_Settings_DevelopmentStep>
+  <LW_Settings_HousingHeadroom>Запас жилья</LW_Settings_HousingHeadroom>
+  <LW_Settings_CompatNoneActive>Конфликтующих модов не найдено. Living World ведёт весь NPC-мир.</LW_Settings_CompatNoneActive>
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
   <LW_WorldGenButton>Настройка Живого мира</LW_WorldGenButton>
   <LW_MissionMarkerInspect>{faction}, {kind}: движется к {target} - прибытие примерно через {days} дн.</LW_MissionMarkerInspect>
