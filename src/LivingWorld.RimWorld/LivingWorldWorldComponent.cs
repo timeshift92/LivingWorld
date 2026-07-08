@@ -33,6 +33,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int lastWorldWarLetterTick = int.MinValue;
     private int notifiedCaptureCount;
     private List<long> notifiedResolvedRaidArmyIds = new();
+    private List<long> notifiedRaidWarningFactIds = new();
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -167,6 +168,70 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // One rate-limited letter AFTER the whole catch-up loop — never one per simulated day.
         MaybeSendWorldWarLetter(currentTick);
         MaybeSendRaidConsequenceLetters();
+        MaybeSendRaidWarnings();
+    }
+
+    // A believable early warning: when a hostile faction has fresh raid intel about the player's
+    // colony (a scout sighting, a trader's word, a rumor...), tell the player a raid may follow and
+    // name the source. Deterministic (derived from ledger intel facts, not a random roll),
+    // rate-limited, and persisted per intel fact so a save/load never re-warns. Only while Living
+    // World actually drives raids (silent when ceded to Rim War).
+    private void MaybeSendRaidWarnings()
+    {
+        if (State.IsInitialWorldSeedingActive || IsRimWarActive)
+        {
+            return;
+        }
+
+        var active = State.RaidIntelFacts
+            .Where(fact => fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(State.CurrentTick))
+            .ToList();
+
+        var currentIds = new HashSet<long>(active.Select(fact => fact.Id.Value));
+        notifiedRaidWarningFactIds.RemoveAll(id => !currentIds.Contains(id));
+
+        var sent = 0;
+        foreach (var fact in active
+            .Where(fact => !notifiedRaidWarningFactIds.Contains(fact.Id.Value))
+            .OrderByDescending(fact => fact.ValueBand)
+            .ThenByDescending(fact => fact.Confidence)
+            .ThenBy(fact => fact.Id.Value))
+        {
+            notifiedRaidWarningFactIds.Add(fact.Id.Value);
+            if (sent >= 2)
+            {
+                // Cap warnings per pass so a burst of intel never floods the player.
+                continue;
+            }
+
+            var factionName = Find.FactionManager?.AllFactionsListForReading
+                .FirstOrDefault(candidate => candidate.def?.defName == fact.FactionId)?.Name
+                ?? fact.FactionId;
+            var sourcePhrase = RaidWarningSourceKey(fact.SourceKind).Translate();
+
+            Find.LetterStack?.ReceiveLetter(
+                "LW_RaidWarningLetterLabel".Translate(),
+                "LW_RaidWarningLetterText".Translate(
+                    factionName.Named("faction"),
+                    sourcePhrase.Named("source")),
+                LetterDefOf.ThreatSmall);
+            sent++;
+        }
+    }
+
+    private static string RaidWarningSourceKey(IntelSourceKind source)
+    {
+        return source switch
+        {
+            IntelSourceKind.Scout => "LW_RaidWarningSource_Scout",
+            IntelSourceKind.Trade => "LW_RaidWarningSource_Trade",
+            IntelSourceKind.Rumor => "LW_RaidWarningSource_Rumor",
+            IntelSourceKind.Prisoner => "LW_RaidWarningSource_Prisoner",
+            IntelSourceKind.Survivor => "LW_RaidWarningSource_Survivor",
+            IntelSourceKind.Refugee => "LW_RaidWarningSource_Refugee",
+            IntelSourceKind.DirectVisit => "LW_RaidWarningSource_DirectVisit",
+            _ => "LW_RaidWarningSource_Public",
+        };
     }
 
     // Closes the loop on a Living World raid the player just fought: once a raid's reserved citizens
@@ -598,6 +663,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);
         Scribe_Collections.Look(ref notifiedResolvedRaidArmyIds, "livingWorld_notifiedResolvedRaidArmyIds", LookMode.Value);
         notifiedResolvedRaidArmyIds ??= new List<long>();
+        Scribe_Collections.Look(ref notifiedRaidWarningFactIds, "livingWorld_notifiedRaidWarningFactIds", LookMode.Value);
+        notifiedRaidWarningFactIds ??= new List<long>();
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

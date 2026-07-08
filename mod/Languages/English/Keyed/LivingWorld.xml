@@ -122,4 +122,14 @@
   <LW_FactionRaidLetterText>A hostile faction is attacking with real Living World citizens from its ledger population.</LW_FactionRaidLetterText>
   <LW_RaidConsequenceLetterLabel>Raid aftermath</LW_RaidConsequenceLetterLabel>
   <LW_RaidConsequenceLetterText>That raid was staged from {settlement} ({faction}). Of {sent} raiders, {returned} made it home and {lost} were lost - {settlement} is weaker now.</LW_RaidConsequenceLetterText>
+  <LW_RaidWarningLetterLabel>Ominous interest</LW_RaidWarningLetterLabel>
+  <LW_RaidWarningLetterText>{faction} has taken an interest in your colony - {source}. A raid may follow.</LW_RaidWarningLetterText>
+  <LW_RaidWarningSource_Scout>a scout was spotted watching your settlement</LW_RaidWarningSource_Scout>
+  <LW_RaidWarningSource_Trade>word of your wealth spread through a trader</LW_RaidWarningSource_Trade>
+  <LW_RaidWarningSource_Rumor>rumors of your holdings are circulating</LW_RaidWarningSource_Rumor>
+  <LW_RaidWarningSource_Prisoner>a prisoner talked</LW_RaidWarningSource_Prisoner>
+  <LW_RaidWarningSource_Survivor>raid survivors reported back on you</LW_RaidWarningSource_Survivor>
+  <LW_RaidWarningSource_Refugee>refugees carried word of you</LW_RaidWarningSource_Refugee>
+  <LW_RaidWarningSource_DirectVisit>they scouted you during a visit</LW_RaidWarningSource_DirectVisit>
+  <LW_RaidWarningSource_Public>your colony's reputation precedes it</LW_RaidWarningSource_Public>
 </LanguageData>

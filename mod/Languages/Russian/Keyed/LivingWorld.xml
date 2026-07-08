@@ -122,4 +122,14 @@
   <LW_FactionRaidLetterText>Враждебная фракция атакует реальными жителями из ledger-населения Living World.</LW_FactionRaidLetterText>
   <LW_RaidConsequenceLetterLabel>Итоги рейда</LW_RaidConsequenceLetterLabel>
   <LW_RaidConsequenceLetterText>Тот рейд был снаряжён из {settlement} ({faction}). Из {sent} налётчиков домой вернулись {returned}, потеряно {lost} - {settlement} теперь слабее.</LW_RaidConsequenceLetterText>
+  <LW_RaidWarningLetterLabel>Тревожный интерес</LW_RaidWarningLetterLabel>
+  <LW_RaidWarningLetterText>{faction} заинтересовалась вашей колонией - {source}. Возможен рейд.</LW_RaidWarningLetterText>
+  <LW_RaidWarningSource_Scout>у вашего поселения заметили разведчика</LW_RaidWarningSource_Scout>
+  <LW_RaidWarningSource_Trade>слух о вашем богатстве разнёс торговец</LW_RaidWarningSource_Trade>
+  <LW_RaidWarningSource_Rumor>ходят слухи о ваших запасах</LW_RaidWarningSource_Rumor>
+  <LW_RaidWarningSource_Prisoner>проговорился пленник</LW_RaidWarningSource_Prisoner>
+  <LW_RaidWarningSource_Survivor>выжившие после рейда доложили о вас</LW_RaidWarningSource_Survivor>
+  <LW_RaidWarningSource_Refugee>беженцы принесли весть о вас</LW_RaidWarningSource_Refugee>
+  <LW_RaidWarningSource_DirectVisit>вас разведали во время визита</LW_RaidWarningSource_DirectVisit>
+  <LW_RaidWarningSource_Public>репутация вашей колонии опережает вас</LW_RaidWarningSource_Public>
 </LanguageData>

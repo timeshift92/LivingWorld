@@ -149,6 +149,8 @@ var tests = new List<(string Name, Action Test)>
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
     ("sends a raid consequence letter after a raid resolves", TestRimWorldRaidConsequenceLetter),
+    ("routes the custom faction raid through a prepared expedition", TestRimWorldRaidRoutesThroughPreparation),
+    ("warns the player from player-targeted raid intel", TestRimWorldRaidWarningFromIntel),
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
@@ -3717,6 +3719,41 @@ static void TestRimWorldWorldWarNotifications()
     AssertContains("<LW_WorldWarLetterText>", ru);
 }
 
+static void TestRimWorldRaidRoutesThroughPreparation()
+{
+    var worker = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldFactionRaid.cs"));
+    // The raid now asks Core for a prepared expedition (intent -> preparation) instead of reserving
+    // citizens ad-hoc; intel scales the size but the storyteller's points set the floor.
+    AssertContains("RaidIntentService.TryCreateBestIntent", worker);
+    AssertContains("RaidPreparationService.PrepareRaid", worker);
+    AssertContains("preparation.ArmyId", worker);
+    AssertContains("ReleaseRaidPreparation", worker);
+    AssertContains("Math.Max(storytellerCombatants", worker);
+    // No more ad-hoc reservation in the incident itself.
+    AssertDoesNotContain("RaidPopulationAllocator.ReserveForRaid", worker);
+}
+
+static void TestRimWorldRaidWarningFromIntel()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // A believable, deterministic warning when a hostile faction holds fresh player-targeted raid
+    // intel; source-labeled, rate-limited, persisted per fact, and silent when ceded to Rim War.
+    AssertContains("MaybeSendRaidWarnings", component);
+    AssertContains("RaidIntelTargetKind.PlayerColony", component);
+    AssertContains("RaidWarningSourceKey", component);
+    AssertContains("LW_RaidWarningLetterText", component);
+    AssertContains("notifiedRaidWarningFactIds", component);
+    AssertContains("Scribe_Collections.Look(ref notifiedRaidWarningFactIds", component);
+    AssertContains("IsRimWarActive", component);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_RaidWarningLetterText>", en);
+    AssertContains("<LW_RaidWarningLetterText>", ru);
+    AssertContains("<LW_RaidWarningSource_Scout>", en);
+    AssertContains("<LW_RaidWarningSource_Scout>", ru);
+}
+
 static void TestRimWorldRaidConsequenceLetter()
 {
     var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
@@ -5420,7 +5457,8 @@ static void TestRimWorldFactionRaidWorker()
     var source = File.ReadAllText(path);
 
     AssertContains("class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidEnemy", source);
-    AssertContains("RaidPopulationAllocator.ReserveForRaid", source);
+    // Routes through Core's intel-driven prepared expedition (see TestRimWorldRaidRoutesThroughPreparation).
+    AssertContains("RaidPreparationService.PrepareRaid", source);
     AssertContains("LivingWorldRaidBindingRuntime.TryAddReservation", source);
     AssertContains("base.TryExecuteWorker(parms)", source);
     AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", source);

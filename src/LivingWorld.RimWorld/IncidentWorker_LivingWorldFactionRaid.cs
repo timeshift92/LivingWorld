@@ -50,26 +50,43 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
             return false;
         }
 
-        var requestedCombatants = EstimateRequestedCombatants(parms.points);
-        var allocation = RaidPopulationAllocator.ReserveForRaid(
-            component.State,
-            new RaidPopulationAllocationRequest(
-                faction.def.defName,
-                $"Living World raid {Find.TickManager?.TicksGame ?? 0}",
-                requestedCombatants));
-        if (allocation.Status != RaidPopulationAllocationStatus.Success || allocation.Army == null)
+        // Ask Core for a prepared expedition instead of reserving ad-hoc: intel the faction holds
+        // about the player (from trade/scouting) drives a plunder intent, otherwise generic
+        // hostility. The storyteller's points set the floor; believable intel can scale the raid up.
+        var storytellerCombatants = EstimateRequestedCombatants(parms.points);
+        if (!RaidIntentService.TryCreateBestIntent(
+                component.State,
+                new RaidIntentRequest(faction.def.defName, FactionHostility.Hostile),
+                out var intent)
+            || intent == null)
         {
             return false;
         }
 
-        if (!LivingWorldRaidBindingRuntime.TryAddReservation(parms, allocation.Army.Id))
+        var scaledIntent = intent with { DesiredCombatants = Math.Max(storytellerCombatants, intent.DesiredCombatants) };
+
+        RaidPreparation preparation;
+        try
         {
-            RaidReconciliationService.ReleaseUndeployedReserves(component.State, allocation.Army.Id);
+            preparation = RaidPreparationService.PrepareRaid(
+                component.State,
+                new RaidPreparationRequest(scaledIntent, "Silver", 0, RaidIntelService.DefaultTradeIntelLifetimeTicks));
+        }
+        catch (InvalidOperationException)
+        {
+            // Could not reserve real citizens (no eligible adults) — no raid.
+            return false;
+        }
+
+        if (!LivingWorldRaidBindingRuntime.TryAddReservation(parms, preparation.ArmyId))
+        {
+            RaidReconciliationService.ReleaseUndeployedReserves(component.State, preparation.ArmyId);
+            component.State.ReleaseRaidPreparation(preparation.Id);
             return false;
         }
 
         parms.faction = faction;
-        var cappedPoints = Math.Max(MinimumRaidPoints, allocation.ReservedCombatants * PointsPerCombatant);
+        var cappedPoints = Math.Max(MinimumRaidPoints, preparation.ReservedCombatants * PointsPerCombatant);
         if (cappedPoints < parms.points)
         {
             parms.points = cappedPoints;
@@ -85,10 +102,14 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
         {
             if (!executed)
             {
-                Log.Warning($"[LivingWorld] Ledger raid failed after reserving {allocation.ReservedCombatants} citizens; releasing undeployed reserves.");
+                Log.Warning($"[LivingWorld] Prepared raid failed after reserving {preparation.ReservedCombatants} citizens; releasing undeployed reserves.");
             }
 
-            RaidReconciliationService.ReleaseUndeployedReserves(component.State, allocation.Army.Id);
+            RaidReconciliationService.ReleaseUndeployedReserves(component.State, preparation.ArmyId);
+            // Consumed either way; mark the record done so expired-preparation cleanup never re-touches
+            // the deployed army. (Core has no dedicated Launched transition yet — Release only flips the
+            // record status and does not release the deployed army.)
+            component.State.ReleaseRaidPreparation(preparation.Id);
         }
     }
 
