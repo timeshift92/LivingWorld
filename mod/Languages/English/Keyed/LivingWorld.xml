@@ -139,6 +139,8 @@
   <LW_Settings_DrifterAssimilations>Max drifter assimilations per day</LW_Settings_DrifterAssimilations>
   <LW_Settings_WorldWarEnabled>Enable the NPC world war</LW_Settings_WorldWarEnabled>
   <LW_Settings_WorldWarEnabledTip>When on, NPC factions raid, scout, trade and wage war on each other. Automatically ceded to Rim War when it is active.</LW_Settings_WorldWarEnabledTip>
+  <LW_Settings_TravelingRaids>Raids travel across the world map</LW_Settings_TravelingRaids>
+  <LW_Settings_TravelingRaidsTip>When on, faction raids set out from the attacker's nearest settlement and march across the world map to your colony - you see the warband coming and get a warning - instead of appearing at the map edge. Turn off to have raids arrive instantly.</LW_Settings_TravelingRaidsTip>
   <LW_Settings_WorldWarTravelDays>Army/mission travel days</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Warband combatants</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Warband cooldown (days)</LW_Settings_WorldWarCooldown>
@@ -157,6 +159,10 @@
   <LW_MissionReason_Caravan>moving real goods between settlements</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>gathering intel for future action (value {amount})</LW_MissionReason_Scout>
   <LW_MissionReason_Diplomat>negotiating faction relations (impact {amount})</LW_MissionReason_Diplomat>
+  <LW_MissionReason_Raid>marching to raid your colony</LW_MissionReason_Raid>
+  <LW_RaidApproachingLabel>Warband approaching</LW_RaidApproachingLabel>
+  <LW_RaidApproachingText>A {faction} war party has set out across the world toward {colony}. They should reach you in about {days} day(s). Track them on the world map and prepare your defenses.</LW_RaidApproachingText>
+  <LW_YourColony>your colony</LW_YourColony>
   <LW_RuinMarkerInspect>Ruins of a {faction} settlement.\nSalvage: {salvage} | Danger: {danger}</LW_RuinMarkerInspect>
   <LW_RuinSalvage_None>none</LW_RuinSalvage_None>
   <LW_RuinSalvage_Low>low</LW_RuinSalvage_Low>
@@ -166,6 +172,7 @@
   <LW_RuinDanger_Medium>moderate</LW_RuinDanger_Medium>
   <LW_RuinDanger_High>high</LW_RuinDanger_High>
   <LW_MissionKind_Warband>warband</LW_MissionKind_Warband>
+  <LW_MissionKind_RaidParty>war party</LW_MissionKind_RaidParty>
   <LW_MissionKind_Trader>caravan</LW_MissionKind_Trader>
   <LW_MissionKind_Scout>scouts</LW_MissionKind_Scout>
   <LW_MissionKind_Settler>settlers</LW_MissionKind_Settler>

@@ -22,6 +22,7 @@ public sealed class LivingWorldSettings : ModSettings
     public int drifterMinFounders = 4;
     public int drifterLeaderAptitudeThreshold = 70;
     public bool worldWarEnabled = true;
+    public bool travelingRaidsEnabled = true;
     public int worldWarTravelDays = 3;
     public int worldWarRaidCombatants = 8;
     public int worldWarWarbandCooldownDays = 8;
@@ -55,6 +56,7 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref drifterMinFounders, "drifterMinFounders", 4);
         Scribe_Values.Look(ref drifterLeaderAptitudeThreshold, "drifterLeaderAptitudeThreshold", 70);
         Scribe_Values.Look(ref worldWarEnabled, "worldWarEnabled", true);
+        Scribe_Values.Look(ref travelingRaidsEnabled, "travelingRaidsEnabled", true);
         Scribe_Values.Look(ref worldWarTravelDays, "worldWarTravelDays", 3);
         Scribe_Values.Look(ref worldWarRaidCombatants, "worldWarRaidCombatants", 8);
         Scribe_Values.Look(ref worldWarWarbandCooldownDays, "worldWarWarbandCooldownDays", 8);

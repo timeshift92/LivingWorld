@@ -4,6 +4,7 @@ using System.Linq;
 using LivingWorld.Core;
 using RimWorld;
 using RimWorld.Planet;
+using UnityEngine;
 using Verse;
 
 namespace LivingWorld.RimWorld;
@@ -38,6 +39,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> rewardedVictoryConflictIds = new();
     private List<long> ruinSiteIds = new();
     private List<long> offeredAllianceConflictIds = new();
+    private List<PendingApproachingRaid> approachingRaids = new();
+    private int nextApproachRaidId;
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -143,6 +146,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
         EnsureRuinSites();
+        SyncApproachingRaidMarkers();
     }
 
     public override void WorldComponentTick()
@@ -153,6 +157,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             return;
         }
+
+        // Materialize any travelling raids that have reached the colony — every tick, ahead of the
+        // daily-simulation gate below, so arrival lands on time rather than on the next day rollover.
+        ProcessApproachingRaidArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
         var currentDay = currentTick / TicksPerDay;
@@ -726,8 +734,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var existing = new Dictionary<string, WorldObject_LivingWorldArmy>(StringComparer.Ordinal);
         foreach (var worldObject in worldObjects.AllWorldObjects)
         {
-            if (worldObject is WorldObject_LivingWorldArmy marker && !string.IsNullOrEmpty(marker.MarkerKey))
+            if (worldObject is WorldObject_LivingWorldArmy marker
+                && !string.IsNullOrEmpty(marker.MarkerKey)
+                && !marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal))
             {
+                // Approaching-raid markers are managed by SyncApproachingRaidMarkers (they are keyed to
+                // RW incident state, not ledger travels); this ledger reconcile must not remove them.
                 existing[marker.MarkerKey] = marker;
             }
         }
@@ -890,6 +902,294 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             worldObjects.Add(marker);
         }
+    }
+
+    // Called by IncidentWorker_LivingWorldFactionRaid when the storyteller fires a faction raid. Turns
+    // the raid into a warband marching from the faction's nearest settlement to the colony tile, shown
+    // as a world-map marker, and defers the actual raid until it arrives. Returns false (so the raid
+    // fires immediately, unchanged) when travelling raids are off, there is no map target, or the
+    // faction has no settlement to march from — a raid is never cancelled.
+    public bool TryLaunchApproachingRaid(IncidentParms parms, Faction faction)
+    {
+        try
+        {
+            var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+            if (!settings.travelingRaidsEnabled)
+            {
+                return false;
+            }
+
+            if (parms?.target is not Map map)
+            {
+                return false;
+            }
+
+            var factionId = faction?.def?.defName;
+            if (string.IsNullOrWhiteSpace(factionId))
+            {
+                return false;
+            }
+
+            int targetTile = map.Tile;
+            var originTile = NearestFactionSettlementTile(faction!, targetTile);
+            if (originTile < 0)
+            {
+                return false;
+            }
+
+            var distance = Find.WorldGrid?.ApproxDistanceInTiles(originTile, targetTile) ?? 0f;
+            var travelTicks = ApproachingRaidRuntime.TravelTicksFor(distance);
+            var now = Find.TickManager?.TicksGame ?? 0;
+
+            var pending = new PendingApproachingRaid
+            {
+                FactionDefName = factionId!,
+                Points = parms.points,
+                TargetTile = targetTile,
+                OriginTile = originTile,
+                DepartTick = now,
+                ArrivalTick = now + travelTicks,
+                MarkerKey = $"{ApproachingRaidRuntime.MarkerKeyPrefix}{nextApproachRaidId++}",
+                TargetLabel = ResolveColonyLabel(map),
+            };
+            approachingRaids.Add(pending);
+            SyncApproachingRaidMarkers();
+
+            if (Current.ProgramState == ProgramState.Playing)
+            {
+                var days = Mathf.Max(1, Mathf.RoundToInt(travelTicks / (float)TicksPerDay));
+                var marker = FindApproachMarker(pending.MarkerKey);
+                var look = marker != null
+                    ? new LookTargets(marker)
+                    : new LookTargets((PlanetTile)targetTile);
+                Find.LetterStack?.ReceiveLetter(
+                    "LW_RaidApproachingLabel".Translate(),
+                    "LW_RaidApproachingText".Translate(
+                        (faction!.Name ?? factionId!).Named("faction"),
+                        pending.TargetLabel.Named("colony"),
+                        days.Named("days")),
+                    LetterDefOf.NegativeEvent,
+                    look);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Approaching-raid launch failed, firing raid immediately: {ex.Message}");
+            return false;
+        }
+    }
+
+    // Fires any travelling raids that have reached the colony. Cheap: the pending list is at most a
+    // handful of entries and this only acts when arrivalTick is reached.
+    private void ProcessApproachingRaidArrivals(int now)
+    {
+        if (approachingRaids.Count == 0)
+        {
+            return;
+        }
+
+        List<PendingApproachingRaid>? arrived = null;
+        foreach (var raid in approachingRaids)
+        {
+            if (raid.ArrivalTick <= now)
+            {
+                (arrived ??= new List<PendingApproachingRaid>()).Add(raid);
+            }
+        }
+
+        if (arrived == null)
+        {
+            return;
+        }
+
+        foreach (var raid in arrived)
+        {
+            approachingRaids.Remove(raid);
+            FireArrivedRaid(raid);
+        }
+
+        SyncApproachingRaidMarkers();
+    }
+
+    // Re-fires the Living World faction raid at its destination map with FiringArrival set so the
+    // incident worker skips the travel branch and spawns raiders now. Fail-open: if the map is gone
+    // (colony abandoned) or anything throws, the raid simply does not land — nothing is left dangling.
+    private void FireArrivedRaid(PendingApproachingRaid raid)
+    {
+        try
+        {
+            var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == raid.TargetTile);
+            if (map == null)
+            {
+                return;
+            }
+
+            var faction = Find.FactionManager?.AllFactionsListForReading
+                .FirstOrDefault(candidate => candidate.def?.defName == raid.FactionDefName);
+            if (faction == null)
+            {
+                return;
+            }
+
+            var def = DefDatabase<IncidentDef>.GetNamedSilentFail("LivingWorld_FactionRaid");
+            if (def?.Worker == null)
+            {
+                return;
+            }
+
+            var parms = StorytellerUtility.DefaultParmsNow(IncidentCategoryDefOf.ThreatBig, map);
+            parms.faction = faction;
+            if (raid.Points > 0f)
+            {
+                parms.points = raid.Points;
+            }
+
+            parms.target = map;
+
+            ApproachingRaidRuntime.FiringArrival = true;
+            try
+            {
+                def.Worker.TryExecute(parms);
+            }
+            finally
+            {
+                ApproachingRaidRuntime.FiringArrival = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Arrived raid failed to materialize: {ex.Message}");
+        }
+    }
+
+    // Reconciles the world-map markers for travelling raids with the pending list: a warband marker per
+    // in-flight raid, dropped once the raid has landed (or been cancelled). Positions animate each frame
+    // inside the marker's DrawPos, so this only manages membership. Kept separate from SyncArmyWorldObjects
+    // because these markers track RW incident state, not ledger travels.
+    private void SyncApproachingRaidMarkers()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var existing = new Dictionary<string, WorldObject_LivingWorldArmy>(StringComparer.Ordinal);
+        foreach (var worldObject in worldObjects.AllWorldObjects)
+        {
+            if (worldObject is WorldObject_LivingWorldArmy marker
+                && marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal))
+            {
+                existing[marker.MarkerKey] = marker;
+            }
+        }
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        var markerDef = settings.travelingRaidsEnabled
+            ? DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker")
+            : null;
+
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        if (markerDef != null)
+        {
+            foreach (var raid in approachingRaids)
+            {
+                if (raid.TargetTile < 0 || raid.OriginTile < 0)
+                {
+                    continue;
+                }
+
+                live.Add(raid.MarkerKey);
+
+                var faction = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == raid.FactionDefName);
+
+                var isNew = !existing.TryGetValue(raid.MarkerKey, out var marker);
+                marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+                marker.Tile = raid.TargetTile;
+                if (faction != null)
+                {
+                    marker.SetFaction(faction);
+                }
+
+                marker.Configure(
+                    raid.MarkerKey,
+                    "World/LivingWorld_Warband",
+                    "LW_MissionKind_RaidParty".Translate(),
+                    raid.OriginTile,
+                    raid.TargetTile,
+                    raid.DepartTick,
+                    raid.ArrivalTick,
+                    faction?.Name ?? raid.FactionDefName,
+                    raid.TargetLabel,
+                    0,
+                    0,
+                    string.Empty,
+                    "LW_MissionReason_Raid".Translate().ToString());
+                if (isNew)
+                {
+                    worldObjects.Add(marker);
+                }
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
+        }
+    }
+
+    private WorldObject_LivingWorldArmy? FindApproachMarker(string key)
+    {
+        return Find.WorldObjects?.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .FirstOrDefault(marker => marker.MarkerKey == key);
+    }
+
+    private static int NearestFactionSettlementTile(Faction faction, int targetTile)
+    {
+        var worldObjects = Find.WorldObjects;
+        var grid = Find.WorldGrid;
+        if (worldObjects == null || grid == null)
+        {
+            return -1;
+        }
+
+        var best = -1;
+        var bestDistance = float.MaxValue;
+        foreach (var settlement in worldObjects.Settlements)
+        {
+            if (settlement?.Faction != faction)
+            {
+                continue;
+            }
+
+            int tile = settlement.Tile;
+            if (tile < 0)
+            {
+                continue;
+            }
+
+            var distance = grid.ApproxDistanceInTiles(tile, targetTile);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = tile;
+            }
+        }
+
+        return best;
+    }
+
+    private static string ResolveColonyLabel(Map map)
+    {
+        var label = map?.Parent?.Label;
+        return string.IsNullOrWhiteSpace(label) ? "LW_YourColony".Translate().ToString() : label!;
     }
 
     private MissionMarkerDetails BuildWarbandMarkerDetails(WorldArmy army)
@@ -1130,6 +1430,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         ruinSiteIds ??= new List<long>();
         Scribe_Collections.Look(ref offeredAllianceConflictIds, "livingWorld_offeredAllianceConflictIds", LookMode.Value);
         offeredAllianceConflictIds ??= new List<long>();
+        Scribe_Collections.Look(ref approachingRaids, "livingWorld_approachingRaids", LookMode.Deep);
+        approachingRaids ??= new List<PendingApproachingRaid>();
+        Scribe_Values.Look(ref nextApproachRaidId, "livingWorld_nextApproachRaidId", 0);
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

@@ -257,6 +257,20 @@ ledger-населением, резервирует реальных гражд�
 `RaidPopulationAllocator`, отдаёт активный бой vanilla raid flow и затем
 закрывает незадействованных резервистов через `RaidReconciliationService`.
 
+**Travel path (traveling raids):** когда storyteller впервые фаерит
+`LivingWorld_FactionRaid`, инцидент не спавнит рейдеров у края карты сразу, а
+превращает рейд в **боевой отряд, идущий по карте мира** от ближайшего поселения
+атакующей фракции к тайлу колонии игрока (видимый маркер `WorldObject_LivingWorldArmy`
+с ETA + письмо-предупреждение с `LookTargets` на маркер). Отложенный рейд хранится в
+`LivingWorldWorldComponent.approachingRaids` (persisted). Когда отряд доходит
+(`ProcessApproachingRaidArrivals` каждый тик), компонент повторно фаерит тот же
+инцидент с `ApproachingRaidRuntime.FiringArrival = true` — это пропускает travel-ветку
+и запускает **тот же проверенный резерв-и-спавн путь** (Primary path выше). Fail-open:
+если травел выключен (`travelingRaidsEnabled`), нет map-цели или у фракции нет
+поселения-источника, `TryLaunchApproachingRaid` возвращает false и рейд фаерится
+мгновенно как раньше — **рейд никогда не теряется**. Механоиды и прочие не-humanlike
+угрозы идут ванильным путём (для них нужен отдельный «повод», это следующий срез).
+
 **Fallback path:** legacy vanilla raid patches are fallback. Harmony-перехват
 `IncidentWorker_RaidEnemy.TryResolveRaidFaction` нужен только для совместимости
 с ванильным storyteller и чужими инцидентами, которые всё ещё вызывают обычный

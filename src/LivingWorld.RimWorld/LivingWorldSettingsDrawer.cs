@@ -53,6 +53,7 @@ public static class LivingWorldSettingsDrawer
         // Faction Activity — the NPC world war.
         DrawSectionHeader(listing, "LW_SettingsSection_FactionActivity");
         listing.CheckboxLabeled("LW_Settings_WorldWarEnabled".Translate(), ref settings.worldWarEnabled, "LW_Settings_WorldWarEnabledTip".Translate());
+        listing.CheckboxLabeled("LW_Settings_TravelingRaids".Translate(), ref settings.travelingRaidsEnabled, "LW_Settings_TravelingRaidsTip".Translate());
         DrawIntSlider(listing, "LW_Settings_WorldWarTravelDays".Translate(), ref settings.worldWarTravelDays, 1, 15);
         DrawIntSlider(listing, "LW_Settings_WorldWarRaidCombatants".Translate(), ref settings.worldWarRaidCombatants, 1, 30);
         DrawIntSlider(listing, "LW_Settings_WorldWarCooldown".Translate(), ref settings.worldWarWarbandCooldownDays, 0, 30);

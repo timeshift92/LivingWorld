@@ -44,6 +44,21 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
             return false;
         }
 
+        // First storyteller fire: turn the raid into a warband that marches across the world map and
+        // materializes on arrival, so the player sees the threat coming instead of it appearing at the
+        // map edge. On arrival the world component re-fires this incident with FiringArrival set, which
+        // skips this branch and runs the normal reserve-and-spawn path below. If travel can't be set up
+        // (disabled, no map target, or the faction has no settlement to march from) it falls through and
+        // the raid fires immediately, so a raid is never lost.
+        if (!ApproachingRaidRuntime.FiringArrival)
+        {
+            var travelFaction = ResolveFaction(parms, component.State);
+            if (travelFaction != null && component.TryLaunchApproachingRaid(parms, travelFaction))
+            {
+                return true;
+            }
+        }
+
         var faction = ResolveFaction(parms, component.State);
         if (faction == null)
         {

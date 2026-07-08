@@ -296,6 +296,7 @@ var tests = new List<(string Name, Action Test)>
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
     ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
+    ("makes faction raids travel across the world map", TestRimWorldTravelingRaids),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8058,6 +8059,79 @@ static void TestRimWorldFactionRaidLocalization()
     AssertContains("<LW_FactionRaidLetterText>", englishXml);
     AssertContains("<LW_FactionRaidLetterText>", russianXml);
     AssertContains("<LivingWorld_FactionRaid.label>", incidentRussianXml);
+}
+
+static void TestRimWorldTravelingRaids()
+{
+    var root = FindRepoRoot();
+
+    // Runtime + persisted pending-raid model: an in-flight raid marches from its home settlement to the
+    // colony tile and materializes on arrival; all state is plain values so it round-trips through saves.
+    var runtimePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "ApproachingRaid.cs");
+    AssertFileExists(runtimePath);
+    var runtime = File.ReadAllText(runtimePath);
+    AssertContains("class PendingApproachingRaid : IExposable", runtime);
+    AssertContains("public static bool FiringArrival", runtime);
+    AssertContains("MarkerKeyPrefix", runtime);
+    AssertContains("TravelTicksFor", runtime);
+
+    // The incident worker defers the storyteller's raid into a travelling warband on first fire, and
+    // runs the normal reserve-and-spawn path when the component re-fires it at arrival.
+    var worker = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldFactionRaid.cs"));
+    AssertContains("ApproachingRaidRuntime.FiringArrival", worker);
+    AssertContains("component.TryLaunchApproachingRaid(parms, travelFaction)", worker);
+
+    // The world component launches the marching warband, materializes it on arrival every tick, and
+    // reconciles the travelling-raid markers separately from the ledger-driven army markers.
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("public bool TryLaunchApproachingRaid(IncidentParms parms, Faction faction)", component);
+    AssertContains("ProcessApproachingRaidArrivals(", component);
+    AssertContains("private void FireArrivedRaid(", component);
+    AssertContains("SyncApproachingRaidMarkers()", component);
+    AssertContains("NearestFactionSettlementTile(", component);
+    AssertContains("ApproachingRaidRuntime.FiringArrival = true", component);
+    AssertContains("def.Worker.TryExecute(parms)", component);
+    // In-flight raids persist across save/load.
+    AssertContains("livingWorld_approachingRaids", component);
+    // The travelling raid honours its own settings toggle.
+    AssertContains("settings.travelingRaidsEnabled", component);
+
+    // Fail-open: launching a travelling raid never throws out of the incident path.
+    AssertContains("firing raid immediately", component);
+
+    // Settings toggle wired and drawn.
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("travelingRaidsEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_TravelingRaids", drawer);
+
+    // RimWorld APIs the travelling-raid path depends on exist in this game version.
+    AssertRimWorldMethodExists("RimWorld.StorytellerUtility", "DefaultParmsNow");
+    AssertRimWorldMethodExists("RimWorld.Planet.WorldGrid", "ApproxDistanceInTiles");
+
+    // Localization present in both languages (parity is also enforced globally).
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_RaidApproachingLabel",
+        "LW_RaidApproachingText",
+        "LW_MissionKind_RaidParty",
+        "LW_MissionReason_Raid",
+        "LW_YourColony",
+        "LW_Settings_TravelingRaids",
+        "LW_Settings_TravelingRaidsTip",
+    })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
 }
 
 static void TestRaidPrimaryPathAndFallbackContract()

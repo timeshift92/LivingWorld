@@ -139,6 +139,8 @@
   <LW_Settings_DrifterAssimilations>Макс. ассимиляций дрифтеров в день</LW_Settings_DrifterAssimilations>
   <LW_Settings_WorldWarEnabled>Включить мировую войну NPC</LW_Settings_WorldWarEnabled>
   <LW_Settings_WorldWarEnabledTip>Если включено, NPC-фракции устраивают рейды, разведку, торговлю и войны между собой. Автоматически уступается Rim War, когда тот активен.</LW_Settings_WorldWarEnabledTip>
+  <LW_Settings_TravelingRaids>Рейды идут по карте мира</LW_Settings_TravelingRaids>
+  <LW_Settings_TravelingRaidsTip>Если включено, рейды фракций выходят из ближайшего поселения атакующего и идут по карте мира к вашей колонии — вы видите приближающийся отряд и получаете предупреждение — вместо появления у края карты. Выключите, чтобы рейды прибывали мгновенно.</LW_Settings_TravelingRaidsTip>
   <LW_Settings_WorldWarTravelDays>Дней в пути (армии/миссии)</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Бойцов в варбанде</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Кулдаун варбанда (дни)</LW_Settings_WorldWarCooldown>
@@ -157,6 +159,10 @@
   <LW_MissionReason_Caravan>перевозит реальные товары между поселениями</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>собирает разведданные для будущих действий (ценность {amount})</LW_MissionReason_Scout>
   <LW_MissionReason_Diplomat>ведёт переговоры между фракциями (эффект {amount})</LW_MissionReason_Diplomat>
+  <LW_MissionReason_Raid>идут разорить вашу колонию</LW_MissionReason_Raid>
+  <LW_RaidApproachingLabel>Приближается боевой отряд</LW_RaidApproachingLabel>
+  <LW_RaidApproachingText>Боевой отряд фракции {faction} выступил через весь мир к {colony}. Они доберутся примерно через {days} дн. Следите за ними на карте мира и готовьте оборону.</LW_RaidApproachingText>
+  <LW_YourColony>вашу колонию</LW_YourColony>
   <LW_RuinMarkerInspect>Руины поселения фракции {faction}.\nДобыча: {salvage} | Опасность: {danger}</LW_RuinMarkerInspect>
   <LW_RuinSalvage_None>нет</LW_RuinSalvage_None>
   <LW_RuinSalvage_Low>мало</LW_RuinSalvage_Low>
@@ -166,6 +172,7 @@
   <LW_RuinDanger_Medium>средняя</LW_RuinDanger_Medium>
   <LW_RuinDanger_High>высокая</LW_RuinDanger_High>
   <LW_MissionKind_Warband>варбанд</LW_MissionKind_Warband>
+  <LW_MissionKind_RaidParty>боевой отряд</LW_MissionKind_RaidParty>
   <LW_MissionKind_Trader>караван</LW_MissionKind_Trader>
   <LW_MissionKind_Scout>разведка</LW_MissionKind_Scout>
   <LW_MissionKind_Settler>поселенцы</LW_MissionKind_Settler>
