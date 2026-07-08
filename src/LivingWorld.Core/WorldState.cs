@@ -13,6 +13,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, RaidOpportunity> _raidOpportunities = new();
     private readonly Dictionary<EntityId, RaidIntelFact> _raidIntelFacts = new();
     private readonly Dictionary<EntityId, RaidPreparation> _raidPreparations = new();
+    private readonly Dictionary<EntityId, MaterializationLease> _materializationLeases = new();
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
@@ -77,6 +78,8 @@ public sealed class WorldState
     public IReadOnlyCollection<RaidIntelFact> RaidIntelFacts => _raidIntelFacts.Values;
 
     public IReadOnlyCollection<RaidPreparation> RaidPreparations => _raidPreparations.Values;
+
+    public IReadOnlyCollection<MaterializationLease> MaterializationLeases => _materializationLeases.Values;
 
     public IReadOnlyCollection<RaidPawnLink> RaidPawnLinks => _raidPawnLinks.Values;
 
@@ -206,6 +209,9 @@ public sealed class WorldState
                 .ToList(),
             RaidPreparations = _raidPreparations.Values
                 .OrderBy(preparation => preparation.Id.Value)
+                .ToList(),
+            MaterializationLeases = _materializationLeases.Values
+                .OrderBy(lease => lease.Id.Value)
                 .ToList()
         };
     }
@@ -287,6 +293,12 @@ public sealed class WorldState
         {
             state._raidPreparations.Add(preparation.Id, preparation);
             state.ReserveExistingId(preparation.Id);
+        }
+
+        foreach (var lease in snapshot.MaterializationLeases)
+        {
+            state._materializationLeases.Add(lease.Id, lease);
+            state.ReserveExistingId(lease.Id);
         }
 
         foreach (var link in snapshot.RaidPawnLinks)
@@ -1123,6 +1135,13 @@ public sealed class WorldState
             : null;
     }
 
+    public MaterializationLease? GetMaterializationLease(EntityId id)
+    {
+        return _materializationLeases.TryGetValue(id, out var lease)
+            ? lease
+            : null;
+    }
+
     public RaidPawnLink? GetRaidPawnLink(int pawnThingId)
     {
         return _raidPawnLinks.TryGetValue(pawnThingId, out var link)
@@ -1624,6 +1643,138 @@ public sealed class WorldState
         return released;
     }
 
+    public MaterializationLease CreateMaterializationLease(
+        EntityId citizenId,
+        EntityId sourceOwnerId,
+        EntityId returnOwnerId,
+        MaterializationPurpose purpose,
+        string purposeKey,
+        int lifetimeTicks)
+    {
+        ThrowIfNullOrWhiteSpace(purposeKey, nameof(purposeKey));
+        if (!_citizens.TryGetValue(citizenId, out var citizen))
+        {
+            throw new InvalidOperationException($"Citizen {citizenId} does not exist.");
+        }
+
+        if (citizen.Status != CitizenStatus.Alive)
+        {
+            throw new InvalidOperationException($"Citizen {citizenId} is not alive.");
+        }
+
+        EnsureOwnerExists(sourceOwnerId);
+        EnsureOwnerExists(returnOwnerId);
+        if (GetOwner(citizenId) != sourceOwnerId)
+        {
+            throw new InvalidOperationException($"Citizen {citizenId} is not owned by {sourceOwnerId}.");
+        }
+
+        var lease = new MaterializationLease(
+            NextId(EntityKind.MaterializationLease),
+            citizenId,
+            sourceOwnerId,
+            returnOwnerId,
+            purpose,
+            purposeKey,
+            CurrentTick,
+            CurrentTick + Math.Max(0, lifetimeTicks),
+            MaterializationLeaseLifecycle.Reserved,
+            null);
+
+        _materializationLeases.Add(lease.Id, lease);
+        AppendEvent(WorldEventKind.MaterializationLeaseCreated, lease.Id, $"Materialization lease {lease.Id} created for {citizenId}: {purpose}.");
+
+        return lease;
+    }
+
+    public MaterializationLease BindMaterializationLeasePawn(EntityId leaseId, int pawnThingId)
+    {
+        if (pawnThingId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pawnThingId), "Pawn thing ID must be positive.");
+        }
+
+        if (!_materializationLeases.TryGetValue(leaseId, out var lease))
+        {
+            throw new InvalidOperationException($"Materialization lease {leaseId} does not exist.");
+        }
+
+        if (!lease.IsActive)
+        {
+            throw new InvalidOperationException($"Materialization lease {leaseId} is already {lease.Lifecycle}.");
+        }
+
+        var bound = lease.BindPawn(pawnThingId);
+        _materializationLeases[leaseId] = bound;
+        AppendEvent(WorldEventKind.MaterializationLeasePawnBound, lease.Id, $"Pawn {pawnThingId} bound to materialization lease {lease.Id}.");
+
+        return bound;
+    }
+
+    public MaterializationLease ResolveMaterializationLease(EntityId leaseId, PawnFateKind fate, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_materializationLeases.TryGetValue(leaseId, out var lease))
+        {
+            throw new InvalidOperationException($"Materialization lease {leaseId} does not exist.");
+        }
+
+        if (!lease.IsActive)
+        {
+            return lease;
+        }
+
+        if (_citizens.TryGetValue(lease.CitizenId, out var citizen))
+        {
+            var status = fate switch
+            {
+                PawnFateKind.Dead => CitizenStatus.Dead,
+                PawnFateKind.Prisoner => CitizenStatus.Prisoner,
+                PawnFateKind.Missing => CitizenStatus.Missing,
+                PawnFateKind.Returned => CitizenStatus.Alive,
+                _ => throw new ArgumentOutOfRangeException(nameof(fate), fate, "Unknown pawn fate kind.")
+            };
+
+            _citizens[lease.CitizenId] = citizen with { Status = status };
+            if (fate == PawnFateKind.Returned)
+            {
+                _owners[lease.CitizenId] = lease.ReturnOwnerId;
+            }
+
+            MarkDerivedAggregatesDirty();
+        }
+
+        var resolved = lease.Resolve(fate);
+        _materializationLeases[leaseId] = resolved;
+        AppendEvent(WorldEventKind.MaterializationLeaseResolved, lease.Id, $"Materialization lease {lease.Id} resolved as {fate}: {reason}.");
+
+        return resolved;
+    }
+
+    public MaterializationLease ReleaseMaterializationLease(EntityId leaseId)
+    {
+        if (!_materializationLeases.TryGetValue(leaseId, out var lease))
+        {
+            throw new InvalidOperationException($"Materialization lease {leaseId} does not exist.");
+        }
+
+        if (!lease.IsActive)
+        {
+            return lease;
+        }
+
+        var released = lease.Release();
+        _materializationLeases[leaseId] = released;
+        if (_citizens.TryGetValue(lease.CitizenId, out var citizen) && citizen.Status == CitizenStatus.Alive)
+        {
+            _owners[lease.CitizenId] = lease.ReturnOwnerId;
+            MarkDerivedAggregatesDirty();
+        }
+
+        AppendEvent(WorldEventKind.MaterializationLeaseResolved, lease.Id, $"Materialization lease {lease.Id} released.");
+        return released;
+    }
+
     public RaidPawnLink LinkRaidPawn(int pawnThingId, EntityId citizenId, EntityId armyId)
     {
         if (pawnThingId <= 0)
@@ -2104,6 +2255,7 @@ public sealed class WorldState
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(ownerId),
             EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(ownerId),
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(ownerId),
+            EntityKind.MaterializationLease => _materializationLeases.ContainsKey(ownerId),
             _ => false
         };
     }
@@ -2121,6 +2273,7 @@ public sealed class WorldState
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(assetId),
             EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(assetId),
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(assetId),
+            EntityKind.MaterializationLease => _materializationLeases.ContainsKey(assetId),
             _ => false
         };
     }

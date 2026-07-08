@@ -51,7 +51,7 @@ bounded, expiring faction knowledge record for the new prepared-expedition flow.
 
 | PRP Task | System | Owner | Status | Note |
 |----------|--------|-------|--------|------|
-| Task 3 | Materialization leases | Codex core + Claude pawn-gen | ▢ | Generalizes the raid path; build when settlement-visits need it |
+| Task 3 | Materialization leases | Codex core + Claude pawn-gen | ◐ | Core foundation landed: `MaterializationLease`, lease lifecycle, fate sync, expiry release, save/load. RW pawn-gen consumer still pending. |
 | Task 4 | Facilities & settlement projects | Codex core + Claude bands | ▢ | Economy depth beyond population |
 | Task 5 | Ruins & relocation | Codex core + Claude markers | ▢ | Settlement physical lifecycle |
 | Task 6 | Conflict campaigns (`WorldConflict`) | Codex core + Claude summaries | ▢ | Wars as long-form politics, not isolated battles |

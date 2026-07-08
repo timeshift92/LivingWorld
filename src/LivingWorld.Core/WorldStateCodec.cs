@@ -178,6 +178,26 @@ public static class WorldStateCodec
                             new XAttribute("expiresTick", preparation.ExpiresTick),
                             new XAttribute("summary", preparation.Summary)))),
                 new XElement(
+                    "MaterializationLeases",
+                    snapshot.MaterializationLeases.Select(lease =>
+                        new XElement(
+                            "MaterializationLease",
+                            IdAttributes(lease.Id),
+                            new XAttribute("citizenKind", lease.CitizenId.Kind),
+                            new XAttribute("citizenId", lease.CitizenId.Value),
+                            new XAttribute("sourceOwnerKind", lease.SourceOwnerId.Kind),
+                            new XAttribute("sourceOwnerId", lease.SourceOwnerId.Value),
+                            new XAttribute("returnOwnerKind", lease.ReturnOwnerId.Kind),
+                            new XAttribute("returnOwnerId", lease.ReturnOwnerId.Value),
+                            new XAttribute("purpose", lease.Purpose),
+                            new XAttribute("purposeKey", lease.PurposeKey),
+                            new XAttribute("createdTick", lease.CreatedTick),
+                            new XAttribute("expiresTick", lease.ExpiresTick),
+                            new XAttribute("lifecycle", lease.Lifecycle),
+                            lease.PawnThingId.HasValue
+                                ? new XAttribute("pawnThingId", lease.PawnThingId.Value)
+                                : null))),
+                new XElement(
                     "RaidPawnLinks",
                     snapshot.RaidPawnLinks.Select(link =>
                         new XElement(
@@ -573,6 +593,20 @@ public static class WorldStateCodec
                     RequiredInt(element, "createdTick"),
                     RequiredInt(element, "expiresTick"),
                     RequiredString(element, "summary")))
+                .ToList(),
+            MaterializationLeases = OptionalContainer(root, "MaterializationLeases")
+                .Elements("MaterializationLease")
+                .Select(element => new MaterializationLease(
+                    ReadId(element),
+                    ReadEntityId(element, "citizenKind", "citizenId"),
+                    ReadEntityId(element, "sourceOwnerKind", "sourceOwnerId"),
+                    ReadEntityId(element, "returnOwnerKind", "returnOwnerId"),
+                    RequiredEnum<MaterializationPurpose>(element, "purpose"),
+                    RequiredString(element, "purposeKey"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredInt(element, "expiresTick"),
+                    RequiredEnum<MaterializationLeaseLifecycle>(element, "lifecycle"),
+                    TryOptionalInt(element, "pawnThingId")))
                 .ToList()
         };
 
@@ -909,6 +943,14 @@ public static class WorldStateCodec
         var attribute = element.Attribute(name);
         return attribute == null
             ? fallback
+            : int.Parse(attribute.Value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static int? TryOptionalInt(XElement element, string name)
+    {
+        var attribute = element.Attribute(name);
+        return attribute == null
+            ? null
             : int.Parse(attribute.Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 

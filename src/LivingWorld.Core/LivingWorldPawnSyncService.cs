@@ -51,6 +51,28 @@ public static class LivingWorldPawnSyncService
                 request.LedgerId);
         }
 
+        var lease = state.MaterializationLeases
+            .Where(lease => lease.CitizenId == request.LedgerId)
+            .OrderBy(lease => lease.IsActive ? 0 : 1)
+            .ThenBy(lease => lease.Id.Value)
+            .FirstOrDefault();
+
+        if (lease is { IsActive: true })
+        {
+            var resolved = MaterializationLeaseService.Resolve(
+                state,
+                new MaterializationLeaseResolveRequest(lease.Id, request.Fate, request.Reason));
+            return resolved.Status == MaterializationLeaseResolveStatus.Success
+                ? new PawnFateSyncResult(
+                    PawnFateSyncStatus.Success,
+                    $"Citizen {request.LedgerId} materialization lease synced as {request.Fate}.",
+                    request.LedgerId)
+                : new PawnFateSyncResult(
+                    PawnFateSyncStatus.InvalidRequest,
+                    resolved.Reason,
+                    request.LedgerId);
+        }
+
         var link = state.RaidPawnLinks
             .Where(link => link.CitizenId == request.LedgerId)
             .OrderBy(link => link.Status == RaidPawnLinkStatus.Active ? 0 : 1)

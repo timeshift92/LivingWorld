@@ -12,6 +12,7 @@ public enum EntityKind
     RaidOpportunity,
     RaidIntelFact,
     RaidPreparation,
+    MaterializationLease,
     Drifter,
     Caravan,
     Mission

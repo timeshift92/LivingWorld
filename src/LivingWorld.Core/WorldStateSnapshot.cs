@@ -46,4 +46,7 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<RaidPreparation> RaidPreparations { get; init; } =
         Array.Empty<RaidPreparation>();
+
+    public IReadOnlyList<MaterializationLease> MaterializationLeases { get; init; } =
+        Array.Empty<MaterializationLease>();
 }

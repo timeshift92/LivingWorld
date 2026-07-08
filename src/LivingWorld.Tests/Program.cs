@@ -54,6 +54,12 @@ var tests = new List<(string Name, Action Test)>
     ("raid preparation fails without leaking citizens when supplies are insufficient", TestRaidPreparationFailsWithoutLeakingCitizensWhenSuppliesInsufficient),
     ("stale raid preparation returns reserved citizens and supplies", TestStaleRaidPreparationReturnsReservedCitizensAndResources),
     ("raid preparation survives save load", TestRaidPreparationSurvivesSaveLoad),
+    ("materialization lease reserves concrete citizens", TestMaterializationLeaseReservesConcreteCitizens),
+    ("materialization lease blocks double active leasing", TestMaterializationLeaseBlocksDoubleActiveLeasing),
+    ("expired materialization lease releases reserved citizens", TestExpiredMaterializationLeaseReleasesReservedCitizen),
+    ("materialization lease reconciles pawn fate into ledger", TestMaterializationLeaseReconcilesPawnFate),
+    ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
+    ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -1475,6 +1481,200 @@ static void TestRaidPreparationSurvivesSaveLoad()
     AssertEqual(1, restored.RaidIntelFacts.Count);
     AssertEqual(1, restored.RaidPreparations.Count);
     AssertEqual(2, restored.GetOwnedResourceQuantity(savedPreparation.ArmyId, "PackagedSurvivalMeal"));
+}
+
+static void TestMaterializationLeaseReservesConcreteCitizens()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("visitor-town", "Visitor Town", "Outlander");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Visitor {i}", 24 + i, Sex.Female, "settler", settlement.Id);
+    }
+
+    var result = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:player-map",
+            2,
+            600));
+
+    AssertEqual(MaterializationLeaseStatus.Success, result.Status);
+    AssertEqual(2, result.Leases.Count);
+    AssertEqual(2, state.MaterializationLeases.Count);
+    AssertEqual(2, state.Events.Count(e => e.Kind == WorldEventKind.MaterializationLeaseCreated));
+    AssertEqual(settlement.Id, result.Leases[0].SourceOwnerId);
+    AssertEqual(settlement.Id, result.Leases[0].ReturnOwnerId);
+    AssertEqual(MaterializationLeaseLifecycle.Reserved, result.Leases[0].Lifecycle);
+    AssertEqual(700, result.Leases[0].ExpiresTick);
+}
+
+static void TestMaterializationLeaseBlocksDoubleActiveLeasing()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("visitor-town", "Visitor Town", "Outlander");
+    state.CreateCitizen("Visitor", 30, Sex.Male, "settler", settlement.Id);
+
+    var first = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:first",
+            1,
+            600));
+    var second = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.TradeCaravan,
+            "trade:second",
+            1,
+            600));
+
+    AssertEqual(MaterializationLeaseStatus.Success, first.Status);
+    AssertEqual(MaterializationLeaseStatus.InsufficientCitizens, second.Status);
+    AssertEqual(1, state.MaterializationLeases.Count);
+}
+
+static void TestExpiredMaterializationLeaseReleasesReservedCitizen()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("visitor-town", "Visitor Town", "Outlander");
+    state.CreateCitizen("Visitor", 30, Sex.Male, "settler", settlement.Id);
+
+    MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:first",
+            1,
+            10));
+    state.AdvanceToTick(111);
+    var released = MaterializationLeaseService.ReleaseExpiredLeases(state, state.CurrentTick);
+    var second = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.TradeCaravan,
+            "trade:second",
+            1,
+            600));
+
+    AssertEqual(1, released);
+    AssertEqual(MaterializationLeaseStatus.Success, second.Status);
+    AssertEqual(2, state.MaterializationLeases.Count);
+    AssertEqual(1, state.MaterializationLeases.Count(lease => lease.Lifecycle == MaterializationLeaseLifecycle.Released));
+}
+
+static void TestMaterializationLeaseReconcilesPawnFate()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("visitor-town", "Visitor Town", "Outlander");
+    state.CreateCitizen("Dead Visitor", 30, Sex.Male, "settler", settlement.Id);
+    state.CreateCitizen("Returned Visitor", 31, Sex.Female, "settler", settlement.Id);
+    state.CreateCitizen("Missing Visitor", 32, Sex.Male, "settler", settlement.Id);
+    state.CreateCitizen("Prisoner Visitor", 33, Sex.Female, "settler", settlement.Id);
+
+    var leases = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:player-map",
+            4,
+            600)).Leases;
+
+    MaterializationLeaseService.BindPawn(state, leases[0].Id, 101);
+    MaterializationLeaseService.BindPawn(state, leases[1].Id, 102);
+    MaterializationLeaseService.BindPawn(state, leases[2].Id, 103);
+    MaterializationLeaseService.BindPawn(state, leases[3].Id, 104);
+
+    AssertEqual(MaterializationLeaseResolveStatus.Success, MaterializationLeaseService.Resolve(
+        state,
+        new MaterializationLeaseResolveRequest(leases[0].Id, PawnFateKind.Dead, "killed on player map")).Status);
+    AssertEqual(MaterializationLeaseResolveStatus.Success, MaterializationLeaseService.Resolve(
+        state,
+        new MaterializationLeaseResolveRequest(leases[1].Id, PawnFateKind.Returned, "left the map alive")).Status);
+    AssertEqual(MaterializationLeaseResolveStatus.Success, MaterializationLeaseService.Resolve(
+        state,
+        new MaterializationLeaseResolveRequest(leases[2].Id, PawnFateKind.Missing, "map despawned while downed")).Status);
+    AssertEqual(MaterializationLeaseResolveStatus.Success, MaterializationLeaseService.Resolve(
+        state,
+        new MaterializationLeaseResolveRequest(leases[3].Id, PawnFateKind.Prisoner, "captured by player")).Status);
+
+    AssertEqual(CitizenStatus.Dead, state.GetCitizen(leases[0].CitizenId)!.Status);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(leases[1].CitizenId)!.Status);
+    AssertEqual(CitizenStatus.Missing, state.GetCitizen(leases[2].CitizenId)!.Status);
+    AssertEqual(CitizenStatus.Prisoner, state.GetCitizen(leases[3].CitizenId)!.Status);
+    AssertEqual(settlement.Id, state.GetOwner(leases[1].CitizenId));
+    AssertEqual(MaterializationLeaseLifecycle.Returned, state.GetMaterializationLease(leases[1].Id)!.Lifecycle);
+    AssertEqual(MaterializationLeaseResolveStatus.AlreadyResolved, MaterializationLeaseService.Resolve(
+        state,
+        new MaterializationLeaseResolveRequest(leases[1].Id, PawnFateKind.Returned, "again")).Status);
+}
+
+static void TestPawnFateSyncResolvesMaterializationLease()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("visitor-town", "Visitor Town", "Outlander");
+    state.CreateCitizen("Visitor", 30, Sex.Female, "settler", settlement.Id);
+    var lease = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:player-map",
+            1,
+            600)).Leases[0];
+    MaterializationLeaseService.BindPawn(state, lease.Id, 777);
+
+    var result = LivingWorldPawnSyncService.Apply(
+        state,
+        new PawnFateSyncRequest(lease.CitizenId, PawnFateKind.Missing, "lost on generated map"));
+
+    AssertEqual(PawnFateSyncStatus.Success, result.Status);
+    AssertEqual(CitizenStatus.Missing, state.GetCitizen(lease.CitizenId)!.Status);
+    AssertEqual(MaterializationLeaseLifecycle.Missing, state.GetMaterializationLease(lease.Id)!.Lifecycle);
+}
+
+static void TestMaterializationLeaseSurvivesSaveLoad()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("visitor-town", "Visitor Town", "Outlander");
+    state.CreateCitizen("Visitor", 30, Sex.Female, "settler", settlement.Id);
+    var lease = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:player-map",
+            1,
+            600)).Leases[0];
+    MaterializationLeaseService.BindPawn(state, lease.Id, 777);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredLease = restored.GetMaterializationLease(lease.Id)!;
+
+    AssertEqual(1, restored.MaterializationLeases.Count);
+    AssertEqual(lease.CitizenId, restoredLease.CitizenId);
+    AssertEqual(777, restoredLease.PawnThingId);
+    AssertEqual(MaterializationLeaseLifecycle.Materialized, restoredLease.Lifecycle);
+    AssertEqual(MaterializationPurpose.SettlementVisit, restoredLease.Purpose);
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()
