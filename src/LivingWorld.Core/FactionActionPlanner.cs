@@ -105,7 +105,8 @@ public static class FactionActionPlanner
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !ConflictService.IsTruceActive(state, factionId, settlement.FactionId, tick))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
-            .OrderBy(settlement => settlement.Id.Value)
+            .OrderBy(settlement => StableTargetScore("enemy", factionId, settlement.Id))
+            .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
 
         return enemy?.Id;
@@ -123,9 +124,38 @@ public static class FactionActionPlanner
                 var housing = state.GetSettlementCapability(candidate.Id)?.HousingCapacity ?? 0;
                 return population > 0 && housing <= population;
             })
-            .OrderBy(candidate => candidate.Id.Value)
+            .OrderBy(candidate => StableTargetScore("develop", factionId, candidate.Id))
+            .ThenBy(candidate => candidate.Id.Value)
             .FirstOrDefault();
         return settlement?.Id;
+    }
+
+    private static ulong StableTargetScore(string purpose, string factionId, EntityId targetId)
+    {
+        unchecked
+        {
+            const ulong offsetBasis = 14695981039346656037UL;
+            const ulong prime = 1099511628211UL;
+            var hash = offsetBasis;
+
+            Append(purpose);
+            Append("|");
+            Append(factionId);
+            Append("|");
+            Append(targetId.Kind.ToString());
+            Append(":");
+            Append(targetId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return hash;
+
+            void Append(string value)
+            {
+                foreach (var character in value ?? string.Empty)
+                {
+                    hash ^= character;
+                    hash *= prime;
+                }
+            }
+        }
     }
 
     private static WarAction DeterministicRandomAction(int tick, bool hasTarget)

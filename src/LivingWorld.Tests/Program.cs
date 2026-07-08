@@ -142,6 +142,7 @@ var tests = new List<(string Name, Action Test)>
     ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
+    ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
     ("non-combat world actions do not target the player faction", TestWorldWarNonCombatActionsSkipPlayerFaction),
@@ -3776,6 +3777,44 @@ static void TestFactionActionPlannerWarband()
 
     AssertEqual(WarAction.Warband, plan.Action);
     AssertEqual(victim.Id, plan.TargetSettlementId);
+}
+
+static void TestFactionActionPlannerSpreadsEnemyTargets()
+{
+    var state = new WorldState(4242);
+    var attackers = new[] { "ToxicPeople", "LeagueOfCrods", "OrangeDominion", "DustJackals" };
+    foreach (var faction in attackers)
+    {
+        var home = state.CreateSettlement($"home-{faction}", $"{faction} Home", faction);
+        for (var i = 0; i < 6; i++)
+        {
+            state.CreateCitizen($"{faction}-{i}", 30, Sex.Male, "fighter", home.Id);
+        }
+
+        state.AssignFactionBehavior(faction, FactionBehavior.Warmonger);
+    }
+
+    // Keep attackers from targeting each other so every faction sees the same target pool. The old
+    // Id-only target ordering dogpiles all of them onto Target One.
+    for (var i = 0; i < attackers.Length; i++)
+    {
+        for (var j = i + 1; j < attackers.Length; j++)
+        {
+            DiplomacyService.AdjustGoodwill(state, attackers[i], attackers[j], 80);
+        }
+    }
+
+    var targetOne = state.CreateSettlement("target-one", "Target One", "TargetOneFaction");
+    var targetTwo = state.CreateSettlement("target-two", "Target Two", "TargetTwoFaction");
+    var targetThree = state.CreateSettlement("target-three", "Target Three", "TargetThreeFaction");
+    var targetIds = new[] { targetOne.Id, targetTwo.Id, targetThree.Id };
+
+    var chosenTargets = attackers
+        .Select(faction => FactionActionPlanner.Plan(state, faction, 60_000).TargetSettlementId)
+        .ToList();
+
+    AssertEqual(true, chosenTargets.All(target => target.HasValue && targetIds.Contains(target.Value)));
+    AssertEqual(true, chosenTargets.Distinct().Count() > 1);
 }
 
 static void TestFactionActionPlannerSkipsAlliedTargets()
