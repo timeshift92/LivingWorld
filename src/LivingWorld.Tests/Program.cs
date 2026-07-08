@@ -258,6 +258,8 @@ var tests = new List<(string Name, Action Test)>
     ("defines the faction raid incident worker", TestRimWorldFactionRaidWorker),
     ("disables the faction raid incident while Rim War is active", TestRimWorldFactionRaidHonorsRimWarGuard),
     ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
+    ("materializes settlement visitors as ledger citizens via leases", TestRimWorldSettlementVisitMaterialization),
+    ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
     ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
@@ -5790,6 +5792,75 @@ static void TestRimWorldPawnExitPatch()
     AssertContains("PawnFateKind.Prisoner", source);
     AssertContains("PawnFateKind.Returned", source);
     AssertContains("PawnFateKind.Missing", source);
+}
+
+// Task 3 RW-side: neutral arrivals (visitors, trade caravans) are bound to ledger citizens through
+// a SettlementVisit lease. Front half only — fate write-back reuses the shared sync service.
+static void TestRimWorldSettlementVisitMaterialization()
+{
+    var root = FindRepoRoot();
+
+    // The Harmony hook: IncidentWorker_NeutralGroup.SpawnPawns is the single generation point for
+    // both visitor groups and trade caravans, and it exists in this RimWorld build.
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldNeutralGroupBindingPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("[HarmonyPatch(typeof(IncidentWorker_NeutralGroup), \"SpawnPawns\")]", patch);
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_NeutralGroup", "SpawnPawns");
+    AssertContains("ref List<Pawn> __result", patch);
+    AssertContains("LivingWorldVisitorBindingService.BindVisitorPawns", patch);
+
+    // The binding service: leases citizens from the faction's settlement and stamps the identity comp,
+    // mirroring the raid binding. Fail-safe on missing settlement/citizens.
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldVisitorBindingService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+    AssertContains("MaterializationLeaseService.CreateLeases", service);
+    AssertContains("MaterializationPurpose.SettlementVisit", service);
+    AssertContains("MaterializationLeaseService.BindPawn", service);
+    AssertContains("identity.SetLedgerId(lease.CitizenId)", service);
+    AssertContains("IsInitialWorldSeedingActive", service);
+
+    // The back half is already shared: a SettlementVisit lease resolves through the same pawn-fate
+    // sync service the raid path uses, so the exit/kill/capture patches write back visit fates too.
+    var syncService = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.Core", "LivingWorldPawnSyncService.cs"));
+    AssertContains("state.MaterializationLeases", syncService);
+    AssertContains("MaterializationLeaseService.Resolve", syncService);
+}
+
+// Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a
+// bound visit pawn's fate returns its citizen to the ledger exactly like a raider's.
+static void TestSettlementVisitLeaseResolvesThroughPawnSync()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("home", "Home", "Drifters");
+    var citizen = state.CreateCitizen("Visitor", 30, Sex.Male, "farmer", settlement.Id);
+
+    var leaseResult = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:Drifters",
+            1,
+            60_000));
+    AssertEqual(MaterializationLeaseStatus.Success, leaseResult.Status);
+    var lease = leaseResult.Leases.Single();
+    AssertEqual(citizen.Id, lease.CitizenId);
+
+    var bind = MaterializationLeaseService.BindPawn(state, lease.Id, 7777);
+    AssertEqual(MaterializationLeaseBindStatus.Success, bind.Status);
+
+    // The exit/kill/capture patches all funnel through Apply(ledgerId, fate); a returning visitor
+    // resolves its lease as Returned.
+    var sync = LivingWorldPawnSyncService.Apply(
+        state,
+        new PawnFateSyncRequest(citizen.Id, PawnFateKind.Returned, "visitor left the map"));
+    AssertEqual(PawnFateSyncStatus.Success, sync.Status);
+
+    var resolved = state.MaterializationLeases.Single(l => l.Id == lease.Id);
+    AssertEqual(MaterializationLeaseLifecycle.Returned, resolved.Lifecycle);
 }
 
 static void TestRimWorldPawnIdentityService()
