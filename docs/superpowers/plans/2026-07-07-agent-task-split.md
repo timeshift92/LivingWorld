@@ -414,9 +414,11 @@ bands, F-1 table) now reads real value. Deterministic + conservation-safe; test
 
 ### Still open in Codex's Core lane (Claude can take if Codex stays overloaded)
 
-- **E4b (NOT STARTED):** have the economy UI/logic consume `VirtualTradeService` for prices and the
-  wealth snapshots for value end-to-end (main-tab `FactionMaterialStock` still sums raw quantities;
-  it could now read `GetFactionWealth`). Small.
+- **E4b (Claude): DONE (commit `701e814`).** The main-tab World Economy section now reads the
+  priced faction wealth snapshot (`GetFactionWealth().TotalWealth`) instead of summing raw
+  quantities (raw sum kept only as a pre-first-tick fallback); `WealthBand` recalibrated for the
+  priced scale. F-1 already consumed the snapshot, so the two economy views are consistent. Test
+  updated. (Trade-price surfacing via `VirtualTradeService` in the UI remains an optional extra.)
 - **O1 (NOT STARTED):** cache per-faction/per-settlement aggregates (population, wealth, combat
   power) instead of re-LINQ-ing citizens each call; also fixes war-loop scale (G3). Biggest scale win.
 - **O2 (NOT STARTED):** save/load throughput for 20k–100k-entity ledgers (the serialization
