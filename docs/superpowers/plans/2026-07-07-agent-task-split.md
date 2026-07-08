@@ -389,10 +389,23 @@ per the user's "just do it" — Codex overloaded.
   only `ArmyMovements` — never the fog-gated population/food — so it matches the public UI-2 marker
   and leaks no unscouted state). EN/RU + folded into `TestRimWorldSettlementInspectPatch`. (Famine/
   growth intentionally stay inside the fog-gated knowledge line, not surfaced as glyphs.)
-- **F-1 (Claude UI + Codex data, backlog): Columnar Population/Economy window** (like
-  `ED_MainTabWindow_Population`) instead of the scrolling label list. Cross-lane: the columnar view
-  is Claude's, but the per-faction/per-settlement aggregates it needs are Core (Codex). Status:
-  BACKLOG — needs Codex coordination before Claude builds the window.
+- **F-1 (Claude): DONE.** `LivingWorldEconomyWindow` — a columnar Population/Economy table, one
+  aligned row per faction (settlements, population, top `SettlementTier`, wealth) with native
+  faction icons + comparative wealth bars, opened from a button on the Living World tab. Built on
+  Codex's economy core (commit `1661df3`): `SettlementDevelopmentService.GetTier`,
+  `FactionWealthSnapshot`/`WorldState.GetFactionWealth`. Wealth prefers the Core snapshot and falls
+  back to a live material-stock sum so the table is populated today. Test `TestRimWorldEconomyWindow`.
+
+### Codex TODO surfaced while building F-1: drive the wealth snapshots
+
+Codex's economy core (`SettlementWealthService`, `FactionWealthSnapshot`, price book,
+`VirtualTradeService`) is present and codec-persisted, but nothing in the **daily simulation calls
+`SettlementWealthService.RefreshSettlement`/`RefreshFaction`**, so `GetFactionWealth`/
+`GetSettlementWealth` stay empty until a save records them. Two Core-lane items for Codex:
+1. Wire `RefreshSettlement` (per settlement) + `RefreshFaction` (per faction) into the daily tick
+   (`SettlementDailySimulationService` or the world-day loop) so wealth tracks the sim.
+2. Define the canonical `ResourcePriceBook` (silver key + unit prices) the refresh uses — there is
+   no default one in the tree today; F-1 and any economy UI will sharpen automatically once it lands.
 
 ## Review Contract
 
