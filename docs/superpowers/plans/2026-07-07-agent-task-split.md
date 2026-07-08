@@ -396,16 +396,27 @@ per the user's "just do it" — Codex overloaded.
   `FactionWealthSnapshot`/`WorldState.GetFactionWealth`. Wealth prefers the Core snapshot and falls
   back to a live material-stock sum so the table is populated today. Test `TestRimWorldEconomyWindow`.
 
-### Codex TODO surfaced while building F-1: drive the wealth snapshots
+### Wealth snapshots now driven (Codex TODO — DONE by Claude)
 
-Codex's economy core (`SettlementWealthService`, `FactionWealthSnapshot`, price book,
-`VirtualTradeService`) is present and codec-persisted, but nothing in the **daily simulation calls
-`SettlementWealthService.RefreshSettlement`/`RefreshFaction`**, so `GetFactionWealth`/
-`GetSettlementWealth` stay empty until a save records them. Two Core-lane items for Codex:
-1. Wire `RefreshSettlement` (per settlement) + `RefreshFaction` (per faction) into the daily tick
-   (`SettlementDailySimulationService` or the world-day loop) so wealth tracks the sim.
-2. Define the canonical `ResourcePriceBook` (silver key + unit prices) the refresh uses — there is
-   no default one in the tree today; F-1 and any economy UI will sharpen automatically once it lands.
+Codex's economy core (`SettlementWealthService`, `FactionWealthSnapshot`, `VirtualTradeService`)
+was present and codec-persisted but never refreshed, so `GetFactionWealth`/`GetSettlementWealth`
+stayed empty. **DONE (Claude, commit `01a1d3d`):** added `SettlementWealthService.DefaultPriceBook`
+(canonical silver key + per-resource unit values for the ledger's tracked resources: Steel 2,
+PackagedSurvivalMeal 14, MedicineIndustrial 18, ComponentIndustrial 24) and `RefreshAll`, called at
+the end of each simulated world day so wealth tracks end-of-day stock. The economy UI (main-tab
+bands, F-1 table) now reads real value. Deterministic + conservation-safe; test
+`TestSettlementWealthRefreshAllUsesDefaultPrices`.
+
+### Still open in Codex's Core lane (Claude can take if Codex stays overloaded)
+
+- **E4b (NOT STARTED):** have the economy UI/logic consume `VirtualTradeService` for prices and the
+  wealth snapshots for value end-to-end (main-tab `FactionMaterialStock` still sums raw quantities;
+  it could now read `GetFactionWealth`). Small.
+- **O1 (NOT STARTED):** cache per-faction/per-settlement aggregates (population, wealth, combat
+  power) instead of re-LINQ-ing citizens each call; also fixes war-loop scale (G3). Biggest scale win.
+- **O2 (NOT STARTED):** save/load throughput for 20k–100k-entity ledgers (the serialization
+  blocker). Touches `WorldStateCodec` — higher risk.
+- **EMP2 (BACKLOG):** real Empire adapter. **O3 (BACKLOG):** tiered/heat-map ticking cadence.
 
 ## Review Contract
 
