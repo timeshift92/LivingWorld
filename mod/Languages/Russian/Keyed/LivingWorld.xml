@@ -119,6 +119,14 @@
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
   <LW_WorldGenButton>Настройка Живого мира</LW_WorldGenButton>
   <LW_MissionMarkerInspect>{faction}, {kind}: движется к {target} - прибытие примерно через {days} дн.</LW_MissionMarkerInspect>
+  <LW_RuinMarkerInspect>Руины поселения фракции {faction}.\nДобыча: {salvage} | Опасность: {danger}</LW_RuinMarkerInspect>
+  <LW_RuinSalvage_None>нет</LW_RuinSalvage_None>
+  <LW_RuinSalvage_Low>мало</LW_RuinSalvage_Low>
+  <LW_RuinSalvage_Medium>средне</LW_RuinSalvage_Medium>
+  <LW_RuinSalvage_High>богато</LW_RuinSalvage_High>
+  <LW_RuinDanger_Low>низкая</LW_RuinDanger_Low>
+  <LW_RuinDanger_Medium>средняя</LW_RuinDanger_Medium>
+  <LW_RuinDanger_High>высокая</LW_RuinDanger_High>
   <LW_MissionKind_Warband>варбанд</LW_MissionKind_Warband>
   <LW_MissionKind_Trader>караван</LW_MissionKind_Trader>
   <LW_MissionKind_Scout>разведка</LW_MissionKind_Scout>

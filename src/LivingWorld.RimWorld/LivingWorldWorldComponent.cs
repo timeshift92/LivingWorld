@@ -134,6 +134,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
+        SyncRuinWorldObjects();
     }
 
     public override void WorldComponentTick()
@@ -437,6 +438,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Visualize the day's world-war army movements on the globe (display only — the ledger
         // remains the source of truth). Cheap: it only touches active traveling movements.
         SyncArmyWorldObjects();
+
+        // Mark the ruins of settlements destroyed by faction collapse (display only). Reconciled the
+        // same way as army markers: a marker per active ruin, dropped when the ruin is reclaimed or
+        // pruned from the ledger.
+        SyncRuinWorldObjects();
     }
 
     // Reconciles the world-map mission markers with the ledger's active travels: a marker per
@@ -624,6 +630,104 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         var parts = slug!.Split(':');
         return parts.Length >= 3 && int.TryParse(parts[2], out var tile) ? tile : -1;
+    }
+
+    // Reconciles world-map ruin markers with the ledger's active ruins: a static marker per ruined
+    // settlement, dropped once the ruin is reclaimed or pruned. Unlike army markers these never move,
+    // so this only manages membership. Display only — the ledger stays the source of truth.
+    private void SyncRuinWorldObjects()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var existing = new Dictionary<string, WorldObject_LivingWorldRuin>(StringComparer.Ordinal);
+        foreach (var worldObject in worldObjects.AllWorldObjects)
+        {
+            if (worldObject is WorldObject_LivingWorldRuin marker && !string.IsNullOrEmpty(marker.MarkerKey))
+            {
+                existing[marker.MarkerKey] = marker;
+            }
+        }
+
+        var ruinDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_RuinMarker");
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        if (ruinDef != null)
+        {
+            foreach (var ruin in State.Ruins)
+            {
+                if (ruin.Status != RuinStatus.Active)
+                {
+                    continue;
+                }
+
+                var tile = ParseSettlementTile(ruin.Slug);
+                if (tile < 0)
+                {
+                    continue;
+                }
+
+                var key = $"ruin:{ruin.Id.Value}";
+                live.Add(key);
+                if (existing.ContainsKey(key))
+                {
+                    continue;
+                }
+
+                var marker = (WorldObject_LivingWorldRuin)WorldObjectMaker.MakeWorldObject(ruinDef);
+                marker.Tile = tile;
+                marker.Configure(
+                    key,
+                    ruin.Name,
+                    ResolveFactionLabel(ruin.FormerFactionId),
+                    RuinSalvageBandLabel(ruin.SalvageBand),
+                    RuinDangerBandLabel(ruin.DangerBand));
+                worldObjects.Add(marker);
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
+        }
+    }
+
+    private static string ResolveFactionLabel(string factionId)
+    {
+        if (string.IsNullOrEmpty(factionId))
+        {
+            return factionId ?? string.Empty;
+        }
+
+        var faction = Find.FactionManager?.AllFactionsListForReading
+            .FirstOrDefault(candidate => candidate.def?.defName == factionId);
+        return faction?.Name ?? factionId;
+    }
+
+    private static string RuinSalvageBandLabel(RuinSalvageBand band)
+    {
+        return band switch
+        {
+            RuinSalvageBand.High => "LW_RuinSalvage_High".Translate().ToString(),
+            RuinSalvageBand.Medium => "LW_RuinSalvage_Medium".Translate().ToString(),
+            RuinSalvageBand.Low => "LW_RuinSalvage_Low".Translate().ToString(),
+            _ => "LW_RuinSalvage_None".Translate().ToString(),
+        };
+    }
+
+    private static string RuinDangerBandLabel(RuinDangerBand band)
+    {
+        return band switch
+        {
+            RuinDangerBand.High => "LW_RuinDanger_High".Translate().ToString(),
+            RuinDangerBand.Medium => "LW_RuinDanger_Medium".Translate().ToString(),
+            _ => "LW_RuinDanger_Low".Translate().ToString(),
+        };
     }
 
     // Rim War (Torann.RimWar) drives world factions the same way; when it is active Living

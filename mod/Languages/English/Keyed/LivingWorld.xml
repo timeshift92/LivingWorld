@@ -119,6 +119,14 @@
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
   <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
   <LW_MissionMarkerInspect>{faction} {kind}: heading to {target} - arrives in about {days} day(s).</LW_MissionMarkerInspect>
+  <LW_RuinMarkerInspect>Ruins of a {faction} settlement.\nSalvage: {salvage} | Danger: {danger}</LW_RuinMarkerInspect>
+  <LW_RuinSalvage_None>none</LW_RuinSalvage_None>
+  <LW_RuinSalvage_Low>low</LW_RuinSalvage_Low>
+  <LW_RuinSalvage_Medium>moderate</LW_RuinSalvage_Medium>
+  <LW_RuinSalvage_High>rich</LW_RuinSalvage_High>
+  <LW_RuinDanger_Low>low</LW_RuinDanger_Low>
+  <LW_RuinDanger_Medium>moderate</LW_RuinDanger_Medium>
+  <LW_RuinDanger_High>high</LW_RuinDanger_High>
   <LW_MissionKind_Warband>warband</LW_MissionKind_Warband>
   <LW_MissionKind_Trader>caravan</LW_MissionKind_Trader>
   <LW_MissionKind_Scout>scouts</LW_MissionKind_Scout>
