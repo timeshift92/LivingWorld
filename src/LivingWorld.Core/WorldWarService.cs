@@ -77,7 +77,7 @@ public static class WorldWarService
             battleResult.BattlesResolved,
             battleResult.SettlementsCaptured,
             actionResult.ColoniesFounded,
-            actionResult.CaravansCompleted + caravanMovement.Arrived,
+            caravanMovement.Arrived,
             actionResult.ScoutingReports,
             actionResult.DiplomaticMissions)
         {

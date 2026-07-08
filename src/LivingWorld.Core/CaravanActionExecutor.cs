@@ -19,6 +19,12 @@ internal static class CaravanActionExecutor
         var quantity = Math.Min(
             request.CaravanQuantity,
             state.GetOwnedResourceQuantity(source.Id, request.CaravanResourceKey));
+        if (quantity <= 0)
+        {
+            // Nothing to haul — do not launch an empty caravan that just churns create/destroy events.
+            return false;
+        }
+
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
         var caravan = state.CreateCaravan(
             $"{factionId} caravan",

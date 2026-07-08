@@ -3,7 +3,7 @@ namespace LivingWorld.Core;
 internal sealed record WorldWarActionExecutionResult(
     int WarbandsLaunched,
     int ColoniesFounded,
-    int CaravansCompleted,
+    int CaravansLaunched,
     int ScoutingReports,
     int DiplomaticMissions,
     int DevelopmentsCompleted);

@@ -128,6 +128,8 @@ var tests = new List<(string Name, Action Test)>
     ("persistent caravan preserves cargo through save load", TestPersistentCaravanSerialization),
     ("destroying a persistent caravan removes its cargo", TestDestroyPersistentCaravanRemovesCargo),
     ("prunes terminal caravans after the retention window", TestCaravanPruneRemovesTerminalCaravans),
+    ("persistent caravan still delivers after load", TestPersistentCaravanArrivesAfterLoad),
+    ("derived aggregates track capture and expansion", TestDerivedAggregatesTrackCaptureAndExpansion),
     ("migrates the drifter reservoir for legacy saves", TestRimWorldDrifterReservoirLegacyMigration),
     ("world war develop action invests in a settlement", TestWorldWarDevelopActionInvestsInSettlement),
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
@@ -3140,6 +3142,51 @@ static void TestRimWorldDrifterReservoirLegacyMigration()
     AssertContains("Scribe_Values.Look(ref migratedDrifterReservoir", component);
     AssertContains("State.DrifterArrivalReservoir > 0 || State.Settlements.Count == 0", component);
     AssertContains("migratedDrifterReservoir = true", component);
+}
+
+static void TestPersistentCaravanArrivesAfterLoad()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    state.AddResource(source.Id, "Steel", 50);
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000);
+    state.TransferResource(source.Id, caravan.Id, "Steel", 20, "cargo");
+
+    // A caravan saved mid-flight must still deliver its cargo when it arrives after load.
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var arrived = restored.MarkCaravanArrived(caravan.Id);
+
+    AssertEqual(CaravanStatus.Arrived, arrived.Status);
+    AssertEqual(20, restored.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(0, restored.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+    AssertEqual(0, restored.Validate().Count());
+}
+
+static void TestDerivedAggregatesTrackCaptureAndExpansion()
+{
+    var state = new WorldState(4242);
+    var raider = state.CreateSettlement("a", "A", "Raiders");
+    var settler = state.CreateSettlement("b", "B", "Settlers");
+    for (var i = 0; i < 20; i++)
+    {
+        state.CreateCitizen("A" + i, 30, Sex.Male, "settler", raider.Id);
+        state.CreateCitizen("B" + i, 30, Sex.Male, "settler", settler.Id);
+    }
+
+    // Prime the caches, then mutate faction ownership via capture — both faction aggregates must track it.
+    AssertFactionAggregateMatchesFullScan(state, "Raiders");
+    AssertFactionAggregateMatchesFullScan(state, "Settlers");
+    state.CaptureSettlement(settler.Id, "Raiders");
+    AssertFactionAggregateMatchesFullScan(state, "Raiders");
+    AssertFactionAggregateMatchesFullScan(state, "Settlers");
+    AssertAggregateMatchesFullScan(state, settler.Id);
+
+    // Expansion moves adults to a new colony — the source settlement aggregate must track the drop.
+    AssertAggregateMatchesFullScan(state, raider.Id);
+    state.ExpandSettlement(raider.Id, "a-colony", "A Colony", 6);
+    AssertAggregateMatchesFullScan(state, raider.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Raiders");
 }
 
 static void TestWorldWarDevelopActionInvestsInSettlement()
