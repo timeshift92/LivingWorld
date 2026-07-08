@@ -48,6 +48,12 @@
   <LW_WorldWarLetterText>The world's factions are at war. {captures} settlement(s) have changed hands since the last report.</LW_WorldWarLetterText>
   <LW_EmpireActiveNote>Empire manages your own empire; Living World tracks the NPC world's factions.</LW_EmpireActiveNote>
   <LW_WorldEconomyHeader>World economy</LW_WorldEconomyHeader>
+  <LW_WatchersHeader>Watching your colony</LW_WatchersHeader>
+  <LW_WatcherLine>{faction}: {band} interest, {days}d ago</LW_WatcherLine>
+  <LW_IntelBand_Low>low</LW_IntelBand_Low>
+  <LW_IntelBand_Moderate>moderate</LW_IntelBand_Moderate>
+  <LW_IntelBand_High>high</LW_IntelBand_High>
+  <LW_IntelBand_Extreme>extreme</LW_IntelBand_Extreme>
   <LW_FactionEconomyLine>{faction}: {wealth}</LW_FactionEconomyLine>
   <LW_WealthBandPoor>poor</LW_WealthBandPoor>
   <LW_WealthBandModest>modest</LW_WealthBandModest>

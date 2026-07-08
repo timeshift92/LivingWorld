@@ -37,6 +37,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private List<(string FactionId, string Text, float Fill)> cachedFactionStrengthRows = new();
     private List<string> cachedWarHistoryRows = new();
     private List<(string FactionId, string Text, float Fill)> cachedFactionEconomyRows = new();
+    private List<(string FactionId, string Text, float Fill)> cachedWatcherRows = new();
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
@@ -120,6 +121,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedWarHistoryRows.Count * 24f)
             + 30f
             + (cachedFactionEconomyRows.Count * 26f)
+            + 30f
+            + (cachedWatcherRows.Count * 26f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -225,6 +228,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         y += 30f;
 
         foreach (var row in cachedFactionEconomyRows)
+        {
+            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text, row.Fill);
+            y += 26f;
+        }
+
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_WatchersHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedWatcherRows)
         {
             DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text, row.Fill);
             y += 26f;
@@ -463,6 +475,42 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         cachedFactionEconomyRows = economyRaw
             .Select(row => (row.FactionId, row.Text, maxStock > 0 ? (float)row.Value / maxStock : 0f))
             .ToList();
+
+        // Watchers: factions that have raid intel about the player's colony (from trade/scouting).
+        // One row per faction (its strongest active fact), showing how much they know as a band and
+        // how fresh it is — the persistent companion to the source-labelled warning letters.
+        cachedWatcherRows = state.RaidIntelFacts
+            .Where(fact => fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(currentTick))
+            .GroupBy(fact => fact.FactionId, System.StringComparer.Ordinal)
+            .Select(group => group
+                .OrderByDescending(fact => fact.ValueBand)
+                .ThenByDescending(fact => fact.Confidence)
+                .First())
+            .OrderByDescending(fact => fact.ValueBand)
+            .ThenByDescending(fact => fact.Confidence)
+            .ThenBy(fact => fact.FactionId, System.StringComparer.Ordinal)
+            .Take(MaxWarRows)
+            .Select(fact =>
+            {
+                var ageDays = System.Math.Max(0, (currentTick - fact.CreatedTick) / 60_000);
+                var text = "LW_WatcherLine".Translate(
+                    fact.FactionId.Named("faction"),
+                    IntelBand(fact.ValueBand).Named("band"),
+                    ageDays.Named("days")).ToString();
+                return (fact.FactionId, text, Mathf.Clamp01(fact.Confidence / 100f));
+            })
+            .ToList();
+    }
+
+    private static string IntelBand(RaidIntelValueBand band)
+    {
+        return band switch
+        {
+            RaidIntelValueBand.Extreme => "LW_IntelBand_Extreme".Translate(),
+            RaidIntelValueBand.High => "LW_IntelBand_High".Translate(),
+            RaidIntelValueBand.Moderate => "LW_IntelBand_Moderate".Translate(),
+            _ => "LW_IntelBand_Low".Translate(),
+        };
     }
 
     // Fallback only: a settlement's raw material stockpile across the tracked resources, used just

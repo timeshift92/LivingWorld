@@ -160,6 +160,7 @@ var tests = new List<(string Name, Action Test)>
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
+    ("shows factions watching the player in the main tab", TestRimWorldWatchersSection),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes citizens in compact save block", TestWorldStateSerializesCitizensCompactly),
@@ -4091,6 +4092,27 @@ static void TestRimWorldEmpireInterop()
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     AssertContains("<LW_EmpireActiveNote>", en);
     AssertContains("<LW_EmpireActiveNote>", ru);
+}
+
+static void TestRimWorldWatchersSection()
+{
+    var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    // A "watching your colony" section lists factions that hold player-targeted raid intel, shown as
+    // an interest band + freshness (never exact), with the faction icon.
+    AssertContains("LW_WatchersHeader", mainTab);
+    AssertContains("cachedWatcherRows", mainTab);
+    AssertContains("RaidIntelTargetKind.PlayerColony", mainTab);
+    AssertContains("LW_WatcherLine", mainTab);
+    AssertContains("IntelBand", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_WatchersHeader>", en);
+    AssertContains("<LW_WatchersHeader>", ru);
+    AssertContains("<LW_WatcherLine>", en);
+    AssertContains("<LW_WatcherLine>", ru);
+    AssertContains("<LW_IntelBand_Extreme>", en);
+    AssertContains("<LW_IntelBand_Extreme>", ru);
 }
 
 static void TestRimWorldWorldEconomyMainTab()

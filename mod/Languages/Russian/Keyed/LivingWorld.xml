@@ -48,6 +48,12 @@
   <LW_WorldWarLetterText>Фракции мира воюют. С прошлого сообщения сменили владельца поселений: {captures}.</LW_WorldWarLetterText>
   <LW_EmpireActiveNote>Empire управляет вашей империей; Living World ведёт фракции NPC-мира.</LW_EmpireActiveNote>
   <LW_WorldEconomyHeader>Мировая экономика</LW_WorldEconomyHeader>
+  <LW_WatchersHeader>Следят за вашей колонией</LW_WatchersHeader>
+  <LW_WatcherLine>{faction}: интерес {band}, {days} дн. назад</LW_WatcherLine>
+  <LW_IntelBand_Low>низкий</LW_IntelBand_Low>
+  <LW_IntelBand_Moderate>умеренный</LW_IntelBand_Moderate>
+  <LW_IntelBand_High>высокий</LW_IntelBand_High>
+  <LW_IntelBand_Extreme>крайний</LW_IntelBand_Extreme>
   <LW_FactionEconomyLine>{faction}: {wealth}</LW_FactionEconomyLine>
   <LW_WealthBandPoor>бедная</LW_WealthBandPoor>
   <LW_WealthBandModest>умеренная</LW_WealthBandModest>
