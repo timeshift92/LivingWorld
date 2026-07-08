@@ -268,6 +268,18 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 lastActionResult = (result.Status == AllianceFormStatus.Formed
                     ? "LW_AllianceFormed".Translate(ResolveFactionName(offer.AllyFactionId).Named("faction"))
                     : "LW_AllianceFailed".Translate(ResolveFactionName(offer.AllyFactionId).Named("faction"))).ToString();
+
+                // Slice 3: the new ally names the enemy as your war objective.
+                if (result.Status == AllianceFormStatus.Formed)
+                {
+                    Find.LetterStack?.ReceiveLetter(
+                        "LW_AllianceObjectiveLetterLabel".Translate(),
+                        "LW_AllianceObjectiveLetterText".Translate(
+                            ResolveFactionName(offer.AllyFactionId).Named("ally"),
+                            ResolveFactionName(offer.EnemyFactionId).Named("enemy")),
+                        LetterDefOf.PositiveEvent);
+                }
+
                 RefreshCachedRows(state);
             }
 

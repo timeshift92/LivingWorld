@@ -31,6 +31,10 @@
   <LW_ProposeAllianceButton>Ally with {faction} against {enemy}</LW_ProposeAllianceButton>
   <LW_AllianceFormed>Allied with {faction}. Your attacks on their enemies now earn their gratitude.</LW_AllianceFormed>
   <LW_AllianceFailed>Could not ally with {faction} right now.</LW_AllianceFailed>
+  <LW_AllianceObjectiveLetterLabel>War objective</LW_AllianceObjectiveLetterLabel>
+  <LW_AllianceObjectiveLetterText>{ally} asks you to strike {enemy}. Defeat {enemy}'s settlements to earn {ally}'s favour and help win the war.</LW_AllianceObjectiveLetterText>
+  <LW_PlayerVictoryLetterLabel>Victory</LW_PlayerVictoryLetterLabel>
+  <LW_PlayerVictoryLetterText>{ally} has won the war against {enemy}, and you share in the victory. Your standing with {ally} rises.</LW_PlayerVictoryLetterText>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>
   <LW_FoodStatusShortage>food shortage</LW_FoodStatusShortage>

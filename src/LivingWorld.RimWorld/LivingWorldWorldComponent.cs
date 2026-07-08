@@ -35,6 +35,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> notifiedResolvedRaidArmyIds = new();
     private List<long> notifiedRaidWarningFactIds = new();
     private List<long> notifiedConflictIds = new();
+    private List<long> rewardedVictoryConflictIds = new();
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -172,8 +173,32 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendRaidConsequenceLetters();
         MaybeSendRaidWarnings();
         MaybeSendConflictLetters();
+        MaybeGrantVictoryRewards();
 
         LogSimulationDebugSnapshot(simulatedDays, currentTick);
+    }
+
+    // Player war participation Slice 4: when a war the player joined has resolved in the ally's favour,
+    // grant the shared-victory windfall and announce it. Persisted per conflict so each win pays once.
+    private void MaybeGrantVictoryRewards()
+    {
+        var rewarded = new HashSet<long>(rewardedVictoryConflictIds);
+        var victories = PlayerVictoryService.GrantVictoryRewards(State, rewarded, State.CurrentTick);
+        if (victories.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var victory in victories)
+        {
+            rewardedVictoryConflictIds.Add(victory.ConflictId);
+            Find.LetterStack?.ReceiveLetter(
+                "LW_PlayerVictoryLetterLabel".Translate(),
+                "LW_PlayerVictoryLetterText".Translate(
+                    ResolveFactionLabel(victory.AllyFactionId).Named("ally"),
+                    ResolveFactionLabel(victory.EnemyFactionId).Named("enemy")),
+                LetterDefOf.PositiveEvent);
+        }
     }
 
     private int lastLoggedEventCount = -1;
@@ -534,6 +559,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             {
                 ResolveFactionCollapses = true,
             });
+
+        // End wars that have been decided (large exhaustion gap, or one side wiped out) — runs after
+        // collapses so a faction that just lost its last settlement loses its wars too. Without this
+        // no war ever concludes, so player victory rewards would never fire.
+        ConflictResolutionService.SimulateDay(State, day * TicksPerDay);
 
         // Refresh the economy wealth snapshots from end-of-day stock so the economy UI (main tab
         // bands, the population/economy table) reads real silver + material value instead of a
@@ -970,6 +1000,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         notifiedRaidWarningFactIds ??= new List<long>();
         Scribe_Collections.Look(ref notifiedConflictIds, "livingWorld_notifiedConflictIds", LookMode.Value);
         notifiedConflictIds ??= new List<long>();
+        Scribe_Collections.Look(ref rewardedVictoryConflictIds, "livingWorld_rewardedVictoryConflictIds", LookMode.Value);
+        rewardedVictoryConflictIds ??= new List<long>();
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

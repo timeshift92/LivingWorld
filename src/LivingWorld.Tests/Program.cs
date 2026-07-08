@@ -160,6 +160,8 @@ var tests = new List<(string Name, Action Test)>
     ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
     ("player attack registers the player as a war belligerent", TestPlayerBelligerenceRecordsPlayerAttack),
     ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
+    ("a decided war resolves and rewards the player's ally victory", TestWarResolvesAndRewardsPlayerVictory),
+    ("daily tick drives war resolution and victory rewards", TestRimWorldWarResolutionAndVictoryWiring),
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
@@ -4353,6 +4355,76 @@ static void TestAllianceFormsAndCreditsOnPlayerAttack()
 
     // The player cannot ally with itself.
     AssertEqual(AllianceFormStatus.AllyIsPlayer, AllianceService.FormAlliance(state, "Player", 400).Status);
+}
+
+// Slices 3-4 foundation: a decided war resolves, and the player who allied with the winner shares in
+// the victory exactly once.
+static void TestWarResolvesAndRewardsPlayerVictory()
+{
+    var state = new WorldState(4242);
+    state.SetPlayerFactionId("Player");
+    state.CreateSettlement("ally-town", "Ally Town", "Settlers");
+    state.CreateSettlement("enemy-town", "Enemy Town", "Raiders");
+
+    ConflictService.GetOrCreateConflict(state, "Settlers", "Raiders", 100);
+    AssertEqual(AllianceFormStatus.Formed, AllianceService.FormAlliance(state, "Settlers", 200).Status);
+
+    // The enemy takes a decisive beating (large exhaustion lead) so the ally wins.
+    ConflictService.RecordBattleOutcome(
+        state, "Settlers", "Raiders", attackerLosses: 0, defenderLosses: 40, capturedSettlementId: null, tick: 300);
+
+    // Not yet resolved before the resolution pass.
+    var conflictBefore = state.Conflicts.Single();
+    AssertEqual(WorldConflictStatus.Active, conflictBefore.Status);
+    AssertEqual("Settlers", ConflictResolutionService.WinnerOf(conflictBefore));
+
+    var resolution = ConflictResolutionService.SimulateDay(state, 360);
+    AssertEqual(1, resolution.ResolvedConflicts);
+    AssertEqual(WorldConflictStatus.Resolved, state.Conflicts.Single().Status);
+
+    // The player shares in the ally's victory (a goodwill windfall), and only once.
+    var rewarded = new HashSet<long>();
+    var before = DiplomacyService.GetGoodwill(state, "Player", "Settlers");
+    var victories = PlayerVictoryService.GrantVictoryRewards(state, rewarded, 360);
+    AssertEqual(1, victories.Count);
+    AssertEqual("Settlers", victories[0].AllyFactionId);
+    AssertEqual("Raiders", victories[0].EnemyFactionId);
+    AssertEqual(before + PlayerVictoryService.VictoryGoodwill, DiplomacyService.GetGoodwill(state, "Player", "Settlers"));
+
+    foreach (var victory in victories)
+    {
+        rewarded.Add(victory.ConflictId);
+    }
+
+    AssertEqual(0, PlayerVictoryService.GrantVictoryRewards(state, rewarded, 400).Count);
+}
+
+// The RimWorld daily tick drives war resolution + victory rewards, and the alliance UI announces the
+// war objective on formation.
+static void TestRimWorldWarResolutionAndVictoryWiring()
+{
+    var root = FindRepoRoot();
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("ConflictResolutionService.SimulateDay", component);
+    AssertContains("PlayerVictoryService.GrantVictoryRewards", component);
+    AssertContains("rewardedVictoryConflictIds", component);
+    AssertContains("Scribe_Collections.Look(ref rewardedVictoryConflictIds", component);
+    AssertContains("LW_PlayerVictoryLetterText", component);
+
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    AssertContains("LW_AllianceObjectiveLetterText", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_PlayerVictoryLetterLabel", "LW_PlayerVictoryLetterText",
+        "LW_AllianceObjectiveLetterLabel", "LW_AllianceObjectiveLetterText",
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestTrucePreventsNewWarbandsUntilExpired()

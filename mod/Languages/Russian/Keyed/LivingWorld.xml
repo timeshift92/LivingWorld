@@ -31,6 +31,10 @@
   <LW_ProposeAllianceButton>Союз с {faction} против {enemy}</LW_ProposeAllianceButton>
   <LW_AllianceFormed>Заключён союз с {faction}. Твои атаки на их врагов теперь приносят их благодарность.</LW_AllianceFormed>
   <LW_AllianceFailed>Сейчас не удалось заключить союз с {faction}.</LW_AllianceFailed>
+  <LW_AllianceObjectiveLetterLabel>Военная цель</LW_AllianceObjectiveLetterLabel>
+  <LW_AllianceObjectiveLetterText>{ally} просит ударить по {enemy}. Разбивай поселения {enemy}, чтобы заслужить расположение {ally} и помочь выиграть войну.</LW_AllianceObjectiveLetterText>
+  <LW_PlayerVictoryLetterLabel>Победа</LW_PlayerVictoryLetterLabel>
+  <LW_PlayerVictoryLetterText>{ally} выиграл войну против {enemy}, и ты разделяешь победу. Твоя репутация с {ally} растёт.</LW_PlayerVictoryLetterText>
   <LW_ListLimited>Показано {shown} из {total}. Полный ledger хранится в памяти и сохранении.</LW_ListLimited>
   <LW_FoodStatusOk>стабильно</LW_FoodStatusOk>
   <LW_FoodStatusShortage>нехватка еды</LW_FoodStatusShortage>
