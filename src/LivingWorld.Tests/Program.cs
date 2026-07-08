@@ -247,7 +247,7 @@ var tests = new List<(string Name, Action Test)>
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
-    ("shows destroyed settlements as world-map ruin markers", TestRimWorldRuinWorldObjectMarker),
+    ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
@@ -7020,51 +7020,27 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_MissionKind_Trader>", ru);
 }
 
-// Task 5 RW-side: destroyed settlements show a static world-map ruin marker reconciled from the
-// ledger's active ruins, reporting the former faction plus coarse salvage/danger bands.
-static void TestRimWorldRuinWorldObjectMarker()
+// Task 5 RW-side, made live: destroyed settlements become REAL, lootable RimWorld sites (abandoned
+// settlements) the player can caravan to and clear for salvage — not display-only markers. Built once
+// per ruin (persisted), fail-open, via the reflection-verified SiteMaker API.
+static void TestRimWorldRuinSites()
 {
     var root = FindRepoRoot();
-
-    var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_RuinMarker.xml");
-    AssertFileExists(defPath);
-    var defXml = File.ReadAllText(defPath);
-    AssertContains("<defName>LivingWorld_RuinMarker</defName>", defXml);
-    AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldRuin</worldObjectClass>", defXml);
-
-    var markerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldRuin.cs");
-    AssertFileExists(markerPath);
-    var marker = File.ReadAllText(markerPath);
-    AssertContains("class WorldObject_LivingWorldRuin : WorldObject", marker);
-    AssertContains("public override string GetInspectString()", marker);
-    AssertContains("LW_RuinMarkerInspect", marker);
-    AssertContains("public override void ExposeData()", marker);
-    // Static marker: no travel interpolation, unlike the army marker.
-    AssertDoesNotContain("Vector3.Slerp", marker);
-
-    // The component reconciles ruin markers from the ledger each day and on load: a marker per
-    // active ruin, keyed and dropped when the ruin is reclaimed/pruned. Reuses the slug->tile parse.
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
-    AssertContains("SyncRuinWorldObjects()", component);
+
+    AssertContains("EnsureRuinSites()", component);
+    AssertContains("SiteMaker.MakeSite", component);
+    AssertContains("SitePartDefOf.AbandonedSettlement", component);
     AssertContains("State.Ruins", component);
     AssertContains("RuinStatus.Active", component);
-    AssertContains("LivingWorld_RuinMarker", component);
     AssertContains("ParseSettlementTile(ruin.Slug)", component);
-    AssertContains("RuinSalvageBandLabel", component);
-    AssertContains("RuinDangerBandLabel", component);
-
-    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
-    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    foreach (var key in new[]
-    {
-        "LW_RuinMarkerInspect",
-        "LW_RuinSalvage_None", "LW_RuinSalvage_High",
-        "LW_RuinDanger_Low", "LW_RuinDanger_High",
-    })
-    {
-        AssertContains($"<{key}>", en);
-        AssertContains($"<{key}>", ru);
-    }
+    // Built once per ruin, persisted so a site is never re-created after save/load.
+    AssertContains("ruinSiteIds", component);
+    AssertContains("Scribe_Collections.Look(ref ruinSiteIds", component);
+    // Fail-open: a site that cannot be built is caught, never thrown inside the tick.
+    AssertContains("ruin site creation failed safely", component);
+    // The real RimWorld site-building API exists in this build.
+    AssertRimWorldMethodExists("RimWorld.Planet.SiteMaker", "MakeSite");
 }
 
 static void TestRimWorldDrifterFlowSettings()

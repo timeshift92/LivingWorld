@@ -36,6 +36,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> notifiedRaidWarningFactIds = new();
     private List<long> notifiedConflictIds = new();
     private List<long> rewardedVictoryConflictIds = new();
+    private List<long> ruinSiteIds = new();
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -136,7 +137,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
-        SyncRuinWorldObjects();
+        EnsureRuinSites();
     }
 
     public override void WorldComponentTick()
@@ -600,7 +601,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Mark the ruins of settlements destroyed by faction collapse (display only). Reconciled the
         // same way as army markers: a marker per active ruin, dropped when the ruin is reclaimed or
         // pruned from the ledger.
-        SyncRuinWorldObjects();
+        EnsureRuinSites();
     }
 
     // Reconciles the world-map mission markers with the ledger's active travels: a marker per
@@ -860,69 +861,72 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         return parts.Length >= 3 && int.TryParse(parts[2], out var tile) ? tile : -1;
     }
 
-    // Reconciles world-map ruin markers with the ledger's active ruins: a static marker per ruined
-    // settlement, dropped once the ruin is reclaimed or pruned. Unlike army markers these never move,
-    // so this only manages membership. Display only — the ledger stays the source of truth.
-    private void SyncRuinWorldObjects()
+    // Turns the ledger's active ruins into REAL, lootable RimWorld sites (abandoned settlements the
+    // player can caravan to and clear for salvage) instead of display-only markers. Built once per
+    // ruin (tracked in ruinSiteIds); vanilla owns the site's lifecycle afterwards. Fail-open: a site
+    // that cannot be built is skipped, never throwing inside the daily tick.
+    private void EnsureRuinSites()
     {
         var worldObjects = Find.WorldObjects;
-        if (worldObjects == null)
+        var sitePart = SitePartDefOf.AbandonedSettlement;
+        if (worldObjects == null || sitePart == null)
         {
             return;
         }
 
-        var existing = new Dictionary<string, WorldObject_LivingWorldRuin>(StringComparer.Ordinal);
-        foreach (var worldObject in worldObjects.AllWorldObjects)
+        var alreadyBuilt = new HashSet<long>(ruinSiteIds);
+        foreach (var ruin in State.Ruins)
         {
-            if (worldObject is WorldObject_LivingWorldRuin marker && !string.IsNullOrEmpty(marker.MarkerKey))
+            if (ruin.Status != RuinStatus.Active || alreadyBuilt.Contains(ruin.Id.Value))
             {
-                existing[marker.MarkerKey] = marker;
+                continue;
             }
-        }
 
-        var ruinDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_RuinMarker");
-        var live = new HashSet<string>(StringComparer.Ordinal);
-        if (ruinDef != null)
-        {
-            foreach (var ruin in State.Ruins)
+            var tile = ParseSettlementTile(ruin.Slug);
+            if (tile < 0)
             {
-                if (ruin.Status != RuinStatus.Active)
+                continue;
+            }
+
+            // Mark attempted before building so a failure never retries every tick.
+            ruinSiteIds.Add(ruin.Id.Value);
+            try
+            {
+                var site = SiteMaker.MakeSite(
+                    sitePart,
+                    tile,
+                    faction: null,
+                    ifHostileThenMustRemainHostile: false,
+                    threatPoints: RuinThreatPoints(ruin.DangerBand),
+                    worldObjectDef: null);
+                if (site == null)
                 {
                     continue;
                 }
 
-                var tile = ParseSettlementTile(ruin.Slug);
-                if (tile < 0)
+                site.Tile = tile;
+                worldObjects.Add(site);
+                if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
                 {
-                    continue;
+                    Log.Message(
+                        $"[LivingWorld] ruin site created for '{ruin.Name}' (former {ruin.FormerFactionId}) at tile {tile}.");
                 }
-
-                var key = $"ruin:{ruin.Id.Value}";
-                live.Add(key);
-                if (existing.ContainsKey(key))
-                {
-                    continue;
-                }
-
-                var marker = (WorldObject_LivingWorldRuin)WorldObjectMaker.MakeWorldObject(ruinDef);
-                marker.Tile = tile;
-                marker.Configure(
-                    key,
-                    ruin.Name,
-                    ResolveFactionLabel(ruin.FormerFactionId),
-                    RuinSalvageBandLabel(ruin.SalvageBand),
-                    RuinDangerBandLabel(ruin.DangerBand));
-                worldObjects.Add(marker);
             }
-        }
-
-        foreach (var pair in existing)
-        {
-            if (!live.Contains(pair.Key))
+            catch (Exception ex)
             {
-                worldObjects.Remove(pair.Value);
+                Log.Warning($"[LivingWorld] ruin site creation failed safely: {ex.GetType().Name}: {ex.Message}");
             }
         }
+    }
+
+    private static int RuinThreatPoints(RuinDangerBand band)
+    {
+        return band switch
+        {
+            RuinDangerBand.High => 800,
+            RuinDangerBand.Medium => 400,
+            _ => 150,
+        };
     }
 
     private static string ResolveFactionLabel(string factionId)
@@ -935,27 +939,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var faction = Find.FactionManager?.AllFactionsListForReading
             .FirstOrDefault(candidate => candidate.def?.defName == factionId);
         return faction?.Name ?? factionId;
-    }
-
-    private static string RuinSalvageBandLabel(RuinSalvageBand band)
-    {
-        return band switch
-        {
-            RuinSalvageBand.High => "LW_RuinSalvage_High".Translate().ToString(),
-            RuinSalvageBand.Medium => "LW_RuinSalvage_Medium".Translate().ToString(),
-            RuinSalvageBand.Low => "LW_RuinSalvage_Low".Translate().ToString(),
-            _ => "LW_RuinSalvage_None".Translate().ToString(),
-        };
-    }
-
-    private static string RuinDangerBandLabel(RuinDangerBand band)
-    {
-        return band switch
-        {
-            RuinDangerBand.High => "LW_RuinDanger_High".Translate().ToString(),
-            RuinDangerBand.Medium => "LW_RuinDanger_Medium".Translate().ToString(),
-            _ => "LW_RuinDanger_Low".Translate().ToString(),
-        };
     }
 
     // Rim War (Torann.RimWar) drives world factions the same way; when it is active Living
@@ -1025,6 +1008,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         notifiedConflictIds ??= new List<long>();
         Scribe_Collections.Look(ref rewardedVictoryConflictIds, "livingWorld_rewardedVictoryConflictIds", LookMode.Value);
         rewardedVictoryConflictIds ??= new List<long>();
+        Scribe_Collections.Look(ref ruinSiteIds, "livingWorld_ruinSiteIds", LookMode.Value);
+        ruinSiteIds ??= new List<long>();
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {
