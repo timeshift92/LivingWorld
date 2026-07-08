@@ -57,19 +57,24 @@ public static class LivingWorldSettlementDefeatPatch
         }
 
         var ledgerSettlement = ResolveLedgerSettlement(component.State, factionBase);
-        // A fallen settlement is a decisive loss for its faction; weight the pressure by the garrison
-        // the ledger knows about, capped so a huge settlement never produces absurd war exhaustion.
-        var defenderLosses = ledgerSettlement != null
-            ? Math.Min(50, Math.Max(1, component.State.GetSettlementPopulation(ledgerSettlement.Id).Total))
-            : 8;
         var currentTick = Find.TickManager?.TicksGame ?? 0;
 
-        var intervention = PlayerConflictInterventionService.RecordSettlementAttack(
-            component.State,
-            factionDefName!,
-            defenderLosses,
-            ledgerSettlement?.Id,
-            currentTick);
+        var defeat = ledgerSettlement != null
+            ? PlayerSettlementDefeatService.RecordDefeat(
+                component.State,
+                ledgerSettlement.Id,
+                factionDefName!,
+                currentTick,
+                "player defeated settlement")
+            : null;
+        var fallbackIntervention = ledgerSettlement == null
+            ? PlayerConflictInterventionService.RecordSettlementAttack(
+                component.State,
+                factionDefName!,
+                defenderLosses: 8,
+                capturedSettlementId: null,
+                currentTick)
+            : null;
 
         // Slice 2: any player-allied faction at war with the one that just fell is grateful.
         var alliesCredited = AllianceService.CreditAlliesOnPlayerAttack(
@@ -77,13 +82,16 @@ public static class LivingWorldSettlementDefeatPatch
             factionDefName!,
             AllianceService.DefaultAllyGratitude,
             currentTick);
+        component.EnsureRuinSites();
 
         if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message(
                 $"[LivingWorld] player defeated {factionDefName} settlement '{factionBase.LabelCap}'"
-                + $" -> pressured {intervention.ConflictsPressured} war(s), aggression={intervention.AggressionRecorded},"
-                + $" allies credited {alliesCredited} (losses {defenderLosses}).");
+                + $" -> destroyed={defeat?.Destroyed ?? false}, refugees={defeat?.RefugeesCreated ?? 0},"
+                + $" pressured {defeat?.ConflictsPressured ?? fallbackIntervention?.ConflictsPressured ?? 0} war(s),"
+                + $" aggression={defeat?.AggressionRecorded ?? fallbackIntervention?.AggressionRecorded ?? false},"
+                + $" allies credited {alliesCredited}.");
         }
     }
 
@@ -94,6 +102,8 @@ public static class LivingWorldSettlementDefeatPatch
         var factionId = worldObject.Faction?.def?.defName ?? "UnknownFaction";
         var tileToken = $":{worldObject.Tile}:";
         return state.Settlements.FirstOrDefault(candidate =>
+            candidate.IsActive
+            &&
             string.Equals(candidate.FactionId, factionId, StringComparison.Ordinal)
             && candidate.Slug.Contains(tileToken));
     }

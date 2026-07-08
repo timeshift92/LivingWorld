@@ -162,6 +162,7 @@ var tests = new List<(string Name, Action Test)>
     ("repeated losses increase faction war exhaustion", TestRepeatedLossesIncreaseFactionWarExhaustion),
     ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
     ("player attack pressures the victim's wars as a third party", TestPlayerInterventionPressuresVictimWars),
+    ("player settlement defeat destroys ledger settlement", TestPlayerSettlementDefeatDestroysLedgerSettlement),
     ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
     ("a decided war resolves and rewards the player's ally victory", TestWarResolvesAndRewardsPlayerVictory),
     ("daily tick drives war resolution and victory rewards", TestRimWorldWarResolutionAndVictoryWiring),
@@ -4463,6 +4464,48 @@ static void TestPlayerInterventionPressuresVictimWars()
     AssertEqual(0, PlayerConflictInterventionService.RecordSettlementAttack(state, "Player", 5, null, 1).ConflictsPressured);
 }
 
+static void TestPlayerSettlementDefeatDestroysLedgerSettlement()
+{
+    var state = new WorldState(4242);
+    state.SetPlayerFactionId("Player");
+    var victim = state.CreateSettlement("worldobject:Settlement:42:Raiders", "Raider Base", "Raiders");
+    state.CreateSettlement("rival-town", "Rival Town", "Settlers");
+    var adult = state.CreateCitizen("Defender", 33, Sex.Male, "soldier", victim.Id);
+    state.AddResource(victim.Id, "Steel", 80);
+    ConflictService.GetOrCreateConflict(state, "Raiders", "Settlers", 100);
+
+    var result = PlayerSettlementDefeatService.RecordDefeat(
+        state,
+        victim.Id,
+        defeatedFactionId: "Raiders",
+        tick: 180_000,
+        reason: "player destroyed settlement");
+
+    AssertEqual(true, result.Destroyed);
+    AssertEqual(1, result.ConflictsPressured);
+    AssertEqual(false, result.AggressionRecorded);
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(victim.Id)!.Status);
+    AssertEqual(1, state.Ruins.Count);
+    AssertEqual(victim.Id, state.Ruins.Single().OriginalSettlementId);
+    AssertEqual(80, state.GetOwnedResourceQuantity(state.Ruins.Single().Id, "Steel"));
+    AssertEqual(CitizenStatus.Refugee, state.GetCitizen(adult.Id)!.Status);
+    AssertEqual(1, state.Conflicts.Single().GetWarExhaustion("Raiders"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDestroyed));
+
+    var duplicate = PlayerSettlementDefeatService.RecordDefeat(
+        state,
+        victim.Id,
+        defeatedFactionId: "Raiders",
+        tick: 181_000,
+        reason: "duplicate defeat callback");
+
+    AssertEqual(false, duplicate.Destroyed);
+    AssertEqual(0, duplicate.ConflictsPressured);
+    AssertEqual(1, state.Ruins.Count);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDestroyed));
+    AssertEqual(0, state.Validate().Count());
+}
+
 // Slice 2 of player war participation: an alliance (modelled as an Ally-stance goodwill relation,
 // no new save state) forms only when the ally is at war, and defeating the ally's enemy earns
 // the ally's gratitude.
@@ -6549,7 +6592,13 @@ static void TestRimWorldPlayerAttackRegistersConflict()
     AssertContains("public static void Prefix(Settlement factionBase)", patch);
     // Only records on an actual defeat, resolved to the ledger settlement, and never returns false.
     AssertContains("SettlementDefeatUtility.IsDefeated", patch);
+    AssertContains("PlayerSettlementDefeatService.RecordDefeat", patch);
+    AssertContains("SettlementLifecycleService.DestroySettlement", File.ReadAllText(Path.Combine(root, "src", "LivingWorld.Core", "PlayerSettlementDefeatService.cs")));
+    AssertContains("component.EnsureRuinSites()", patch);
+    // If the RimWorld base cannot be matched to the ledger, preserve the old war-pressure fallback
+    // instead of silently ignoring the player's attack.
     AssertContains("PlayerConflictInterventionService.RecordSettlementAttack", patch);
+    AssertContains("fallbackIntervention", patch);
     // Dedup guard so a repeated CheckDefeated call never records the same defeat twice.
     AssertContains("RecordedDefeats", patch);
     AssertContains("factionBase.ID", patch);

@@ -492,6 +492,25 @@ how to materialize a real player-visible incident. Non-combat world-war actions
 quietly trade with, spy on, or alter goodwill for player-owned settlements from
 the abstract NPC simulation.
 
+When the player defeats an NPC settlement on an actual RimWorld map, the RimWorld
+layer now bridges that visible event back into the ledger through
+`PlayerSettlementDefeatService.RecordDefeat`:
+
+1. resolve the vanilla `Settlement` to the ledger settlement by faction and tile;
+2. call `SettlementLifecycleService.DestroySettlement`;
+3. move owned resources into a `WorldRuin`;
+4. turn living citizens into refugees;
+5. pressure the defeated faction's active wars through
+   `PlayerConflictInterventionService`;
+6. create the world-map ruin site immediately through `EnsureRuinSites`.
+
+If the vanilla settlement cannot be matched to the ledger, Living World preserves
+the older fallback and still records player war pressure for the defeated faction,
+but it does not invent a ruin or resources. This keeps compatibility fail-open:
+player action still affects diplomacy/war, while physical destruction and
+lootable ruin sites only run when the ledger has a real settlement to own the
+consequences.
+
 Counting is deliberately broader than settlement population:
 
 - `Alive`, `Prisoner`, `Refugee` and `Migrating` citizens still keep their

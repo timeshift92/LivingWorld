@@ -865,7 +865,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // player can caravan to and clear for salvage) instead of display-only markers. Built once per
     // ruin (tracked in ruinSiteIds); vanilla owns the site's lifecycle afterwards. Fail-open: a site
     // that cannot be built is skipped, never throwing inside the daily tick.
-    private void EnsureRuinSites()
+    public void EnsureRuinSites()
     {
         var worldObjects = Find.WorldObjects;
         var sitePart = SitePartDefOf.AbandonedSettlement;
