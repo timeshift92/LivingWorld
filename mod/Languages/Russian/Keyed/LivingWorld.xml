@@ -52,6 +52,10 @@
   <LW_WealthBandPoor>бедная</LW_WealthBandPoor>
   <LW_WealthBandModest>умеренная</LW_WealthBandModest>
   <LW_WealthBandWealthy>богатая</LW_WealthBandWealthy>
+  <LW_PopulationBandTiny>крошечная</LW_PopulationBandTiny>
+  <LW_PopulationBandSmall>малая</LW_PopulationBandSmall>
+  <LW_PopulationBandMedium>средняя</LW_PopulationBandMedium>
+  <LW_PopulationBandLarge>крупная</LW_PopulationBandLarge>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>На загруженной карте видно пешек: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Население Living World: нет данных для этого поселения (в ledger-е поселений: {settlements})</LW_InspectPopulationMissingLine>

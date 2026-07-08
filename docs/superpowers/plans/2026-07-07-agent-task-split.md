@@ -527,6 +527,22 @@ Minor follow-ups: **all DONE (commit `afc956c`)** — `CaravansCompleted` now co
 (dispatcher's launch counter renamed `CaravansLaunched`, removing the double-count); zero-cargo caravan
 launch guarded; added load-then-arrive caravan and capture/expansion aggregate-invalidation tests.
 
+### Follow-up review hardening — Codex (2026-07-08)
+
+Multi-angle review after `afc956c` found four high issues. Status: DONE in `codex/review-high-fixes`.
+
+- battle capture now relocates surviving attackers' `SettlementId` with ownership so derived
+  settlement/faction population and combat power stay correct;
+- blocked player-settlement battles stand the ledger army down and return reserved citizens to
+  source instead of leaving arrived armies/citizens in limbo;
+- caravan/scout/diplomat world-war selectors skip the player faction just like warband targets;
+- `IncidentWorker_LivingWorldFactionRaid` honors the Rim War guard, and the economy popup shows
+  population/wealth bands unless debug logging enables exact values.
+
+Tests added/extended: `TestBattleAttackerSurvivorsOccupyCapturedSettlement`,
+`TestBattleAgainstPlayerFactionIsBlocked`, `TestWorldWarNonCombatActionsSkipPlayerFaction`,
+`TestRimWorldFactionRaidHonorsRimWarGuard`, `TestRimWorldEconomyWindow`.
+
 ## Review Contract
 
 For every completed task, the other agent reviews from these angles before merge:

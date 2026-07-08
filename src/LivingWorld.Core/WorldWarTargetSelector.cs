@@ -26,6 +26,7 @@ internal static class WorldWarTargetSelector
     {
         return state.Settlements
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+            .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Hostile)
             .OrderBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
@@ -35,6 +36,7 @@ internal static class WorldWarTargetSelector
     {
         return state.Settlements
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+            .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .OrderBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }
@@ -54,6 +56,7 @@ internal static class WorldWarTargetSelector
             .OrderBy(settlement => settlement.Id.Value)
             .Select(settlement => settlement.FactionId)
             .Where(targetFaction => !string.Equals(targetFaction, factionId, StringComparison.Ordinal))
+            .Where(targetFaction => !state.IsPlayerFaction(targetFaction))
             .Where(targetFaction => !state.IsFactionIrreconcilable(targetFaction))
             .Where(targetFaction => !state.IsFactionIrreconcilable(factionId))
             .Distinct(StringComparer.Ordinal)

@@ -465,8 +465,13 @@ Core now has a defense-in-depth player faction guard. If
 `WorldState.PlayerFactionId` is set, the world-war planner never selects that
 faction as an autonomous target, `FactionLifecycleService` never collapses it,
 and `WorldBattleService.TryResolve` returns `BlockedPlayerSettlement` rather than
-silently resolving a ledger battle. The RimWorld layer must materialize a real
-player-visible incident for such attacks.
+silently resolving a ledger battle. A blocked player-settlement battle stands
+the ledger army down and returns reserved attackers to their source settlement,
+so no arrived army or citizen remains in limbo while the RimWorld layer decides
+how to materialize a real player-visible incident. Non-combat world-war actions
+(caravan, scouting, diplomacy) also skip the player faction; they must not
+quietly trade with, spy on, or alter goodwill for player-owned settlements from
+the abstract NPC simulation.
 
 Counting is deliberately broader than settlement population:
 
@@ -489,6 +494,15 @@ in `WorldEvent`.
 The service is idempotent. Once `WorldFactionRecord.Status == Collapsed`, later
 daily passes do not emit duplicate collapse events. This keeps history readable
 and prevents repeated effects.
+
+### Player-facing information visibility
+
+Living World's ledger may know exact population, wealth, losses and resources,
+but the player UI should not expose those values by default. Settlement inspect
+strings use `KnownSettlementInfo` from direct visits, scouts and traders. Global
+world-war/economy views show coarse strength, population and wealth bands unless
+debug logging is enabled. Exact values remain available for development and
+diagnostics, not as normal omniscient gameplay information.
 
 ## Drifter lifecycle
 

@@ -851,7 +851,7 @@ Turn caravan from instant transfer into real entity.
 
 | Risk | Severity | Status | Recommendation |
 |---|---:|---|---|
-| Core can still target/collapse player if imported by non-vanilla path | Medium | Closed by C4 | Keep tests around planner/lifecycle/battle guard |
+| Core can still target/collapse player if imported by non-vanilla path | Medium | Closed by C4 + review hardening | Keep tests around planner/lifecycle/battle guard and non-combat target selectors |
 | `_armyMovements` grows forever | Medium | Closed by C5 | Monitor retention value during long-play saves |
 | WorldWarService grows too broad | Medium | Closed by C6 | Keep dispatcher/executor boundary tested |
 | War-loop scans citizens daily | Medium later | Closed by C7/O1 | Keep aggregate/full-scan tests around citizen and ownership transitions |
@@ -860,6 +860,8 @@ Turn caravan from instant transfer into real entity.
 | Drifters may feel like magic spawn | Medium | Closed by finite arrival reservoir | Add explicit replenishment sources: refugees, liberated prisoners, evacuation, diplomacy |
 | Legacy saves lose drifter arrivals after finite reservoir | Medium | Closed by one-time RimWorld migration bridge | Keep the migration flag persisted so depleted reservoirs do not refill |
 | Save format may grow too large | Medium later | Main XML element explosion closed by O2 | Consider binary/chunk storage only after profiling real large saves |
+| Player-facing UI leaks exact global ledger data | High | Closed for economy popup and existing main-tab strength/economy bands | Keep exact values behind debug logging or explicit intel |
+| Custom Living World raid can double-drive with Rim War | High | Closed by Rim War guard in faction raid worker | Keep Rim War-active tests around every new world-map/threat entrypoint |
 | UI remains debug-heavy | Low | Acceptable for now | Split player UI/dev UI later |
 
 ---

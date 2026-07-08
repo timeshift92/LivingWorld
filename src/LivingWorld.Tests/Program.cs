@@ -114,6 +114,7 @@ var tests = new List<(string Name, Action Test)>
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
+    ("non-combat world actions do not target the player faction", TestWorldWarNonCombatActionsSkipPlayerFaction),
     ("cautious faction can choose deliberate development", TestFactionActionPlannerChoosesDevelop),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
     ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
@@ -203,6 +204,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines Russian incident def localization", TestRimWorldIncidentDefRussianLocalization),
     ("defines the faction raid incident def", TestRimWorldFactionRaidIncidentDef),
     ("defines the faction raid incident worker", TestRimWorldFactionRaidWorker),
+    ("disables the faction raid incident while Rim War is active", TestRimWorldFactionRaidHonorsRimWarGuard),
     ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
     ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
@@ -2590,7 +2592,12 @@ static void TestBattleAttackerSurvivorsOccupyCapturedSettlement()
     foreach (var attackerId in survivingAttackers)
     {
         AssertEqual(target.Id, state.GetOwner(attackerId));
+        AssertEqual(target.Id, state.GetCitizen(attackerId)!.SettlementId);
     }
+
+    AssertEqual(9, state.GetSettlementPopulation(target.Id).Adults);
+    AssertAggregateMatchesFullScan(state, target.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirates");
 }
 
 static void TestBattleDefenderHoldsAndArmyStandsDown()
@@ -2725,7 +2732,11 @@ static void TestBattleAgainstPlayerFactionIsBlocked()
     AssertEqual(BattleResolutionStatus.BlockedPlayerSettlement, result.Status);
     AssertEqual(null, result.Outcome);
     AssertEqual("PlayerFaction", state.GetSettlement(playerBase.Id)!.FactionId);
-    AssertEqual(ArmyMovementStatus.Arrived, state.GetArmyMovement(army.Id)!.Status);
+    AssertEqual(ArmyMovementStatus.Disbanded, state.GetArmyMovement(army.Id)!.Status);
+    foreach (var citizen in state.Citizens.Where(citizen => citizen.Name.StartsWith("P", StringComparison.Ordinal)))
+    {
+        AssertEqual(source.Id, state.GetOwner(citizen.Id));
+    }
     AssertEqual(0, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
 }
 
@@ -2796,6 +2807,70 @@ static void TestFactionActionPlannerSkipsPlayerFactionTarget()
 
     AssertEqual(WarAction.ScoutingParty, plan.Action);
     AssertEqual(null, plan.TargetSettlementId);
+}
+
+static void TestWorldWarNonCombatActionsSkipPlayerFaction()
+{
+    var state = new WorldState(4242);
+    var playerBase = state.CreateSettlement("player-base", "Player Base", "PlayerFaction");
+    state.SetPlayerFactionId("PlayerFaction");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("C" + i, 30, Sex.Female, "colonist", playerBase.Id);
+    }
+
+    var village = state.CreateSettlement("village", "Village", "Villagers");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("V" + i, 30, Sex.Female, "settler", village.Id);
+    }
+
+    var market = state.CreateSettlement("market", "Market", "Traders");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("T" + i, 30, Sex.Male, "merchant", market.Id);
+    }
+
+    state.AddResource(market.Id, "Steel", 40);
+    state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+
+    state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+
+    AssertEqual(0, state.GetOwnedResourceQuantity(playerBase.Id, "Steel"));
+    AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
+
+    var watch = state.CreateSettlement("watch", "Watch", "Scouts");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "scout", watch.Id);
+    }
+
+    state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
+    var scoutMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Scout);
+    AssertEqual(village.Id, scoutMission.TargetSettlementId);
+    AssertEqual(null, state.GetKnownSettlementInfo(playerBase.Id));
+
+    var envoys = state.CreateSettlement("envoys", "Envoys", "Envoys");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("E" + i, 30, Sex.Female, "diplomat", envoys.Id);
+    }
+
+    state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
+    state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(IntelSourceKind.Scout, state.GetKnownSettlementInfo(village.Id)!.SourceKind);
+    var diplomaticMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat);
+    AssertEqual(village.Id, diplomaticMission.TargetSettlementId);
+    AssertEqual("Villagers", diplomaticMission.TargetFactionId);
+    AssertEqual(0, DiplomacyService.GetGoodwill(state, "Envoys", "PlayerFaction"));
+
+    state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(300_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", "Villagers"));
 }
 
 static void TestFactionActionPlannerChoosesDevelop()
@@ -4417,6 +4492,8 @@ static void TestRimWorldEconomyWindow()
     AssertContains("SettlementDevelopmentService.GetTier", window);
     // Prefers the Core wealth snapshot, falls back to a live material sum so it is never empty.
     AssertContains("GetFactionWealth", window);
+    AssertContains("debugExact ? data.Population.ToString() : PopulationBand(data.Population)", window);
+    AssertContains("debugExact ? data.Wealth.ToString() : WealthBand(data.Wealth)", window);
     AssertContains("LW_EconomyCol_Faction", window);
     AssertContains("LW_EconomyCol_Population", window);
     AssertContains("LW_EconomyCol_Wealth", window);
@@ -5026,6 +5103,15 @@ static void TestRimWorldFactionRaidWorker()
     AssertContains("EstimateRequestedCombatants", source);
     AssertContains("humanlikeFaction", source);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_RaidEnemy", "TryExecuteWorker");
+}
+
+static void TestRimWorldFactionRaidHonorsRimWarGuard()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldFactionRaid.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("component.IsRimWarActive", source);
 }
 
 static void TestRimWorldRaidPawnGenerationAttachesIdentity()

@@ -27,6 +27,7 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
         var component = LivingWorldWorldComponent.Instance;
         return component != null
             && component.IsBootstrapped
+            && !component.IsRimWarActive
             && ResolveFaction(parms, component.State) != null;
     }
 
@@ -34,6 +35,11 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
     {
         var component = LivingWorldWorldComponent.Instance;
         if (component == null)
+        {
+            return false;
+        }
+
+        if (component.IsRimWarActive)
         {
             return false;
         }

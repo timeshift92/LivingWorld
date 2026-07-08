@@ -13,10 +13,11 @@ namespace LivingWorld.RimWorld;
 /// with faction icons and comparative wealth bars. This is the "at a glance" companion to the
 /// scrolling label lists on the main tab (inspired by Economics-and-Demography's population tab).
 ///
-/// It reads only live, populated ledger data: population from <c>GetSettlementPopulation</c>, tier
-/// from <c>SettlementDevelopmentService.GetTier</c>, and wealth from the faction wealth snapshot
-/// when the Core sim has recorded one, otherwise a live material-stock fallback. Rows are cached on
-/// a tick throttle so the popup never recomputes aggregates every frame.
+/// It derives bands from live ledger data: population from <c>GetSettlementPopulation</c>, tier from
+/// <c>SettlementDevelopmentService.GetTier</c>, and wealth from the faction wealth snapshot when the
+/// Core sim has recorded one, otherwise a live material-stock fallback. Exact population and wealth
+/// values are shown only while debug logging is enabled. Rows are cached on a tick throttle so the
+/// popup never recomputes aggregates every frame.
 /// </summary>
 public sealed class LivingWorldEconomyWindow : Window
 {
@@ -134,8 +135,12 @@ public sealed class LivingWorldEconomyWindow : Window
 
         var factionName = faction?.Name ?? data.FactionId;
         Widgets.Label(new Rect(nameX, rect.y, xSettlements - nameX, rect.height), factionName);
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        var population = debugExact ? data.Population.ToString() : PopulationBand(data.Population);
+        var wealth = debugExact ? data.Wealth.ToString() : WealthBand(data.Wealth);
+
         Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), data.Settlements.ToString());
-        Widgets.Label(new Rect(xPopulation, rect.y, xTier - xPopulation, rect.height), data.Population.ToString());
+        Widgets.Label(new Rect(xPopulation, rect.y, xTier - xPopulation, rect.height), population);
         Widgets.Label(new Rect(xTier, rect.y, xWealth - xTier, rect.height), TierLabel(data.TopTier));
 
         // Wealth cell: comparative faction-coloured bar (share of the richest faction) + value.
@@ -150,7 +155,7 @@ public sealed class LivingWorldEconomyWindow : Window
             GUI.color = previous;
         }
 
-        Widgets.Label(wealthRect, data.Wealth.ToString());
+        Widgets.Label(wealthRect, wealth);
     }
 
     private void RefreshRows(WorldState state)
@@ -207,6 +212,38 @@ public sealed class LivingWorldEconomyWindow : Window
             + state.GetOwnedResourceQuantity(settlement.Id, "Steel")
             + state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial")
             + state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    }
+
+    private static string PopulationBand(int population)
+    {
+        if (population < 8)
+        {
+            return "LW_PopulationBandTiny".Translate();
+        }
+
+        if (population < 20)
+        {
+            return "LW_PopulationBandSmall".Translate();
+        }
+
+        if (population < 60)
+        {
+            return "LW_PopulationBandMedium".Translate();
+        }
+
+        return "LW_PopulationBandLarge".Translate();
+    }
+
+    private static string WealthBand(int wealth)
+    {
+        if (wealth < 1000)
+        {
+            return "LW_WealthBandPoor".Translate();
+        }
+
+        return wealth < 8000
+            ? "LW_WealthBandModest".Translate()
+            : "LW_WealthBandWealthy".Translate();
     }
 
     private static string TierLabel(SettlementTier tier)

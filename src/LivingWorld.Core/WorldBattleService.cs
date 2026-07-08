@@ -80,6 +80,9 @@ public static class WorldBattleService
 
         if (state.IsPlayerFaction(targetSettlement.FactionId))
         {
+            var blockedAttackers = Combatants(state, armyId);
+            TransferSurvivingAttackers(state, blockedAttackers, army.Id, army.SourceSettlementId);
+            state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
             return new BattleResolutionResult(BattleResolutionStatus.BlockedPlayerSettlement, null);
         }
 
@@ -181,6 +184,11 @@ public static class WorldBattleService
             if (transfer.Status != OwnershipTransferStatus.Success)
             {
                 throw new InvalidOperationException(transfer.Reason);
+            }
+
+            if (destinationId.Kind == EntityKind.Settlement && current.SettlementId != destinationId)
+            {
+                state.ReplaceCitizenForSimulation(current with { SettlementId = destinationId });
             }
         }
     }

@@ -52,6 +52,10 @@
   <LW_WealthBandPoor>poor</LW_WealthBandPoor>
   <LW_WealthBandModest>modest</LW_WealthBandModest>
   <LW_WealthBandWealthy>wealthy</LW_WealthBandWealthy>
+  <LW_PopulationBandTiny>tiny</LW_PopulationBandTiny>
+  <LW_PopulationBandSmall>small</LW_PopulationBandSmall>
+  <LW_PopulationBandMedium>medium</LW_PopulationBandMedium>
+  <LW_PopulationBandLarge>large</LW_PopulationBandLarge>
   <LW_InspectPopulationLine>{knowledge}</LW_InspectPopulationLine>
   <LW_MapVisiblePawnsLine>Visible pawns on loaded map: {visiblePawns}</LW_MapVisiblePawnsLine>
   <LW_InspectPopulationMissingLine>Living World population: no data for this settlement (ledger settlements: {settlements})</LW_InspectPopulationMissingLine>
