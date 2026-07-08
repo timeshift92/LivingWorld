@@ -406,6 +406,34 @@ per the user's "just do it" — Codex overloaded.
   when the war is off or Rim War is active. Def + icon + inspect string (EN/RU) + test
   `TestRimWorldWorldArmyMarker`. **Needs an in-game smoke test** — world rendering is untestable
   headless; structural tests + net472 build (validates every RimWorld API/override) are green.
+- **UI-2 per-action icons — Stage A (Claude): DONE (commit `56fe4c9`).** The marker was generalized
+  so each ledger travel shows its own icon: marching **warbands** (crossed swords, `WorldArmyMovement`)
+  and hauling **caravans** (wagon, Core's conservation-safe `WorldCaravan` — Codex already built the
+  caravan travel/goods-reservation, so this was pure visualization). The marker now carries a
+  per-instance texture + kind noun + string key so the two id spaces dedupe cleanly; the reconciler
+  spawns/removes markers for both. Clean-room icon set (scout/settler/trader/diplomat) shipped in
+  `Textures/World/`. Inspect string generalized to `LW_MissionMarkerInspect` with per-kind nouns
+  (EN/RU). Test extended.
+- **UI-2 per-action icons — Stage B (Claude, backlog): Scout / Diplomat / Settler travel.** Those
+  actions still resolve instantly (no world object). Making them travel-then-apply like Rim War needs
+  a Core mission model: Scout/Diplomat carry nothing (conservation-trivial), Settler moves adults (needs
+  in-transit reservation like the caravan does for goods). Icons already in the tree. Status: BACKLOG.
+
+### In-game playtest fixes (Claude)
+
+Found while the user playtested the mod in a full modlist (Rim War + Empire + E&D + AutoTranslation):
+
+- **Invalid incident category — DONE (commit `db3ba5a`).** `LivingWorld_DrifterArrival` referenced a
+  non-existent `IncidentCategoryDef` `AllyArrival`, logging a red "category is undefined" at load.
+  Switched to `Misc` (vanilla `WandererJoin`'s category). Note: the structural test had been asserting
+  the broken value — structural tests can't see cross-references to real RimWorld defs, so the test now
+  pins `Misc` and forbids `AllyArrival`.
+- **Missing mod preview — DONE (commit `7443ee9`).** `Preview.png`/`icon.png` lived only in the repo-root
+  `About/` (README/GitHub), not in `mod/About/` (what the installer deploys), so RimWorld showed no mod
+  preview. Copied both into `mod/About/`.
+- **Note:** the other red errors in that playtest (Rim War `WarObject.GetInspectString` FloodFill crash,
+  Rim War × E&D gizmo NRE, broken RU grammar rules) are third-party, not Living World. Our Rim War
+  mutual-exclusion worked: with Rim War active we added no markers and stood our world war down.
 - **UI-5 (Claude): DONE.** Threat header on the settlement inspect: when a world-war army is
   marching on a settlement, its inspect leads with "arrives in ~N days" (`BuildThreatLine`, reads
   only `ArmyMovements` — never the fog-gated population/food — so it matches the public UI-2 marker
