@@ -373,13 +373,26 @@ per the user's "just do it" — Codex overloaded.
   the master on/off toggle + a short blurb (`DrawWorldGenEssentials`) — density is vanilla's
   population slider, so we stopped duplicating it. All numeric knobs stay in Options → Mod Settings
   via the full `LivingWorldSettingsDrawer.Draw`. Tests updated (patch + window).
-- **UI-2 (Claude, backlog): World-map objects with icons.** Materialise ledger armies/warbands/
-  settlers as world objects on the globe with Rim-War-style icons (clean-room PNGs). Biggest visual
-  win but needs world-object materialization + new art. Status: BACKLOG.
-- **UI-5 (Claude, backlog): Status glyphs on the settlement inspect** (war/famine/growth, à la
-  Rim War `Exclamation`/`clock_warning`). Status: BACKLOG.
+- **UI-2 (Claude): DONE.** World-map army markers. `WorldObject_LivingWorldArmy` (display-only)
+  interpolates along the sphere from the origin settlement tile to the target tile using the
+  ledger travel clock (`DrawPos` + `Find.WorldGrid.GetTileCenter` + `Vector3.Slerp`; tile parsed
+  from the settlement `Slug`, since Core has no tile geometry), tinted by faction colour, with a
+  clean-room crossed-swords icon (`Textures/World/LivingWorld_Warband.png`) in the Rim War style.
+  It never pathfinds — took only Rim War's `Material`/tile-interp idioms, NOT its `WarObject`
+  pathfollower (our sim stays in the ledger). The world component reconciles markers from active
+  `WorldArmyMovement`s each simulated day and on load (`SyncArmyWorldObjects`), and clears them
+  when the war is off or Rim War is active. Def + icon + inspect string (EN/RU) + test
+  `TestRimWorldWorldArmyMarker`. **Needs an in-game smoke test** — world rendering is untestable
+  headless; structural tests + net472 build (validates every RimWorld API/override) are green.
+- **UI-5 (Claude): DONE.** Threat header on the settlement inspect: when a world-war army is
+  marching on a settlement, its inspect leads with "arrives in ~N days" (`BuildThreatLine`, reads
+  only `ArmyMovements` — never the fog-gated population/food — so it matches the public UI-2 marker
+  and leaks no unscouted state). EN/RU + folded into `TestRimWorldSettlementInspectPatch`. (Famine/
+  growth intentionally stay inside the fog-gated knowledge line, not surfaced as glyphs.)
 - **F-1 (Claude UI + Codex data, backlog): Columnar Population/Economy window** (like
-  `ED_MainTabWindow_Population`) instead of the scrolling label list. Status: BACKLOG.
+  `ED_MainTabWindow_Population`) instead of the scrolling label list. Cross-lane: the columnar view
+  is Claude's, but the per-faction/per-settlement aggregates it needs are Core (Codex). Status:
+  BACKLOG — needs Codex coordination before Claude builds the window.
 
 ## Review Contract
 
