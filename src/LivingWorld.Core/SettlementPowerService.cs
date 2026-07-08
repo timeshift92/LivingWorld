@@ -34,8 +34,7 @@ public static class SettlementPowerService
             throw new ArgumentNullException(nameof(state));
         }
 
-        var combatants = state.GetSettlementPopulation(settlementId).Adults;
-        return new SettlementPower(combatants, CombatPowerOf(combatants));
+        return state.GetSettlementDerivedAggregate(settlementId).Power;
     }
 
     /// <summary>

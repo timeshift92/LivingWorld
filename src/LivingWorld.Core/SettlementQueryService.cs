@@ -9,18 +9,7 @@ public static class SettlementQueryService
             throw new ArgumentNullException(nameof(state));
         }
 
-        var citizens = state.Citizens
-            .Where(citizen =>
-                citizen.SettlementId == settlementId
-                && citizen.Status == CitizenStatus.Alive
-                && state.GetOwner(citizen.Id) == settlementId)
-            .ToList();
-
-        return new SettlementPopulation(
-            citizens.Count,
-            citizens.Count(citizen => citizen.IsChild),
-            citizens.Count(citizen => citizen.IsAdult),
-            citizens.Count(citizen => citizen.IsElderly));
+        return state.GetSettlementPopulation(settlementId);
     }
 
     public static SettlementFoodStatus GetFoodStatus(

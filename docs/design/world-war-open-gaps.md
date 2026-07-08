@@ -110,5 +110,6 @@ not allied with — intended trade, not a bug.
 
 ## Owner / order (remaining)
 
-1. **Codex — G3/O1** cached population/power aggregates for war-loop scale.
+1. **Codex — G3/O1 — DONE.** Cached settlement/faction resident population and
+   combat power aggregates now back the war-loop power reads.
 2. **Codex — O2** compact/cohort serialization for large saves.

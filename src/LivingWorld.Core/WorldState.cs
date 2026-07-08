@@ -22,12 +22,15 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, SettlementWealthSnapshot> _settlementWealth = new();
     private readonly Dictionary<string, FactionWealthSnapshot> _factionWealth = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
+    private readonly Dictionary<EntityId, SettlementDerivedAggregate> _settlementAggregates = new();
+    private readonly Dictionary<string, FactionDerivedAggregate> _factionAggregates = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
     private readonly List<WorldEvent> _events = new();
     private readonly Dictionary<EntityKind, long> _nextIds = new();
     private int eventSuppressionDepth;
     private int initialWorldSeedingDepth;
+    private bool derivedAggregatesDirty = true;
     private string? playerFactionId;
 
     public WorldState(int worldSeed)
@@ -312,6 +315,7 @@ public sealed class WorldState
             factionId);
 
         _settlements.Add(settlement.Id, settlement);
+        MarkDerivedAggregatesDirty();
         AppendEvent(WorldEventKind.SettlementCreated, settlement.Id, $"Settlement {settlement.Id} created.");
 
         return settlement;
@@ -348,6 +352,7 @@ public sealed class WorldState
 
         _citizens.Add(citizen.Id, citizen);
         _owners[citizen.Id] = settlementId;
+        MarkDerivedAggregatesDirty();
         AppendEvent(WorldEventKind.CitizenCreated, citizen.Id, $"Citizen {citizen.Id} created.");
         AppendEvent(WorldEventKind.OwnershipAssigned, citizen.Id, $"Citizen {citizen.Id} assigned to {settlementId}.");
 
@@ -364,6 +369,7 @@ public sealed class WorldState
         _citizens.Add(citizen.Id, citizen);
         _owners[citizen.Id] = citizen.SettlementId;
         ReserveExistingId(citizen.Id);
+        MarkDerivedAggregatesDirty();
         AppendEvent(WorldEventKind.CitizenImported, citizen.Id, $"Citizen {citizen.Id} imported.");
     }
 
@@ -463,6 +469,7 @@ public sealed class WorldState
 
         var dead = citizen with { Status = CitizenStatus.Dead };
         _citizens[citizenId] = dead;
+        MarkDerivedAggregatesDirty();
         AppendEvent(WorldEventKind.CitizenDied, citizenId, $"Citizen {citizenId} died: {reason}.");
         return dead;
     }
@@ -481,6 +488,7 @@ public sealed class WorldState
         var previousFaction = settlement.FactionId;
         var captured = settlement with { FactionId = newFactionId };
         _settlements[settlementId] = captured;
+        MarkDerivedAggregatesDirty();
         AppendEvent(
             WorldEventKind.SettlementCaptured,
             settlementId,
@@ -531,6 +539,7 @@ public sealed class WorldState
             _citizens[settler.Id] = settler with { SettlementId = colony.Id };
             _owners[settler.Id] = colony.Id;
         }
+        MarkDerivedAggregatesDirty();
 
         AppendEvent(
             WorldEventKind.SettlementFounded,
@@ -1114,6 +1123,7 @@ public sealed class WorldState
         var refugee = citizen with { Status = CitizenStatus.Refugee };
         _citizens[citizenId] = refugee;
         _owners[citizenId] = citizenId;
+        MarkDerivedAggregatesDirty();
         AppendEvent(WorldEventKind.RefugeeCreated, citizenId, $"Citizen {citizenId} became refugee: {reason}.");
 
         return refugee;
@@ -1145,6 +1155,7 @@ public sealed class WorldState
         };
         _citizens[citizenId] = migrated;
         _owners[citizenId] = targetSettlementId;
+        MarkDerivedAggregatesDirty();
         AppendEvent(WorldEventKind.MigrationCompleted, citizenId, $"Citizen {citizenId} migrated to {targetSettlementId}: {reason}.");
 
         return migrated;
@@ -1281,6 +1292,7 @@ public sealed class WorldState
         if (_citizens.TryGetValue(link.CitizenId, out var citizen) && citizen.Status != CitizenStatus.Dead)
         {
             _citizens[link.CitizenId] = citizen with { Status = CitizenStatus.Dead };
+            MarkDerivedAggregatesDirty();
             AppendEvent(WorldEventKind.CitizenDied, link.CitizenId, $"Citizen {link.CitizenId} died: {reason}.");
         }
 
@@ -1335,6 +1347,7 @@ public sealed class WorldState
         if (_citizens.TryGetValue(link.CitizenId, out var citizen) && citizen.Status != CitizenStatus.Prisoner)
         {
             _citizens[link.CitizenId] = citizen with { Status = CitizenStatus.Prisoner };
+            MarkDerivedAggregatesDirty();
         }
 
         var prisonerLink = link.MarkPrisoner();
@@ -1363,6 +1376,7 @@ public sealed class WorldState
             && citizen.Status != CitizenStatus.Missing)
         {
             _citizens[link.CitizenId] = citizen with { Status = CitizenStatus.Missing };
+            MarkDerivedAggregatesDirty();
         }
 
         var missingLink = link.MarkMissing();
@@ -1411,7 +1425,31 @@ public sealed class WorldState
 
     public SettlementPopulation GetSettlementPopulation(EntityId settlementId)
     {
-        return SettlementQueryService.GetPopulation(this, settlementId);
+        return GetSettlementDerivedAggregate(settlementId).Population;
+    }
+
+    public SettlementDerivedAggregate GetSettlementDerivedAggregate(EntityId settlementId)
+    {
+        EnsureDerivedAggregates();
+        return _settlementAggregates.TryGetValue(settlementId, out var aggregate)
+            ? aggregate
+            : new SettlementDerivedAggregate(
+                settlementId,
+                string.Empty,
+                new SettlementPopulation(0, 0, 0, 0),
+                new SettlementPower(0, 0));
+    }
+
+    public FactionDerivedAggregate GetFactionDerivedAggregate(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        EnsureDerivedAggregates();
+        return _factionAggregates.TryGetValue(factionId, out var aggregate)
+            ? aggregate
+            : new FactionDerivedAggregate(
+                factionId,
+                new SettlementPopulation(0, 0, 0, 0),
+                new SettlementPower(0, 0));
     }
 
     public SettlementFoodStatus GetSettlementFoodStatus(
@@ -1640,6 +1678,10 @@ public sealed class WorldState
     internal void SetOwnerForLedger(EntityId assetId, EntityId ownerId)
     {
         _owners[assetId] = ownerId;
+        if (assetId.Kind == EntityKind.Citizen)
+        {
+            MarkDerivedAggregatesDirty();
+        }
     }
 
     internal void ReplaceCitizenForSimulation(WorldCitizen citizen)
@@ -1650,6 +1692,7 @@ public sealed class WorldState
         }
 
         _citizens[citizen.Id] = citizen;
+        MarkDerivedAggregatesDirty();
     }
 
     private bool OwnerExists(EntityId ownerId)
@@ -1730,6 +1773,82 @@ public sealed class WorldState
         };
     }
 
+    private void MarkDerivedAggregatesDirty()
+    {
+        derivedAggregatesDirty = true;
+    }
+
+    private void EnsureDerivedAggregates()
+    {
+        if (!derivedAggregatesDirty)
+        {
+            return;
+        }
+
+        var settlementAccumulators = _settlements.Values.ToDictionary(
+            settlement => settlement.Id,
+            settlement => new SettlementAggregateAccumulator(settlement.Id, settlement.FactionId));
+
+        foreach (var citizen in _citizens.Values)
+        {
+            if (citizen.Status != CitizenStatus.Alive
+                || !_owners.TryGetValue(citizen.Id, out var ownerId)
+                || ownerId != citizen.SettlementId
+                || !settlementAccumulators.TryGetValue(citizen.SettlementId, out var accumulator))
+            {
+                continue;
+            }
+
+            accumulator.Add(citizen);
+        }
+
+        _settlementAggregates.Clear();
+        foreach (var accumulator in settlementAccumulators.Values)
+        {
+            var population = accumulator.ToPopulation();
+            _settlementAggregates[accumulator.SettlementId] = new SettlementDerivedAggregate(
+                accumulator.SettlementId,
+                accumulator.FactionId,
+                population,
+                new SettlementPower(
+                    population.Adults,
+                    SettlementPowerService.CombatPowerOf(population.Adults)));
+        }
+
+        _factionAggregates.Clear();
+        foreach (var factionGroup in _settlementAggregates.Values
+            .GroupBy(aggregate => aggregate.FactionId, StringComparer.Ordinal))
+        {
+            var population = SumPopulations(factionGroup.Select(aggregate => aggregate.Population));
+            var combatants = factionGroup.Sum(aggregate => aggregate.Power.Combatants);
+            var combatPower = factionGroup.Sum(aggregate => aggregate.Power.CombatPower);
+            _factionAggregates[factionGroup.Key] = new FactionDerivedAggregate(
+                factionGroup.Key,
+                population,
+                new SettlementPower(combatants, combatPower));
+        }
+
+        derivedAggregatesDirty = false;
+    }
+
+    private static SettlementPopulation SumPopulations(IEnumerable<SettlementPopulation> populations)
+    {
+        var total = 0;
+        var children = 0;
+        var adults = 0;
+        var elderly = 0;
+
+        foreach (var population in populations)
+        {
+            total += population.Total;
+            children += population.Children;
+            adults += population.Adults;
+            elderly += population.Elderly;
+        }
+
+        return new SettlementPopulation(total, children, adults, elderly);
+    }
+
     private void AppendEvent(WorldEventKind kind, EntityId? subjectId, string summary)
     {
         if (eventSuppressionDepth > 0)
@@ -1743,5 +1862,45 @@ public sealed class WorldState
             CurrentTick,
             subjectId,
             summary));
+    }
+
+    private sealed class SettlementAggregateAccumulator
+    {
+        private int total;
+        private int children;
+        private int adults;
+        private int elderly;
+
+        public SettlementAggregateAccumulator(EntityId settlementId, string factionId)
+        {
+            SettlementId = settlementId;
+            FactionId = factionId;
+        }
+
+        public EntityId SettlementId { get; }
+
+        public string FactionId { get; }
+
+        public void Add(WorldCitizen citizen)
+        {
+            total++;
+            if (citizen.IsChild)
+            {
+                children++;
+            }
+            else if (citizen.IsElderly)
+            {
+                elderly++;
+            }
+            else
+            {
+                adults++;
+            }
+        }
+
+        public SettlementPopulation ToPopulation()
+        {
+            return new SettlementPopulation(total, children, adults, elderly);
+        }
     }
 }

@@ -92,6 +92,8 @@ var tests = new List<(string Name, Action Test)>
     ("keeps the player faction out of lifecycle collapse", TestFactionLifecycleSkipsPlayerFaction),
     ("serializes player faction identity", TestPlayerFactionIdentitySerialization),
     ("computes settlement combat power from living adults", TestSettlementPowerFromLivingAdults),
+    ("keeps derived population aggregates in sync with citizen lifecycle", TestDerivedAggregatesTrackPopulationLifecycle),
+    ("keeps derived combat aggregates in sync with raid lifecycle", TestDerivedAggregatesTrackRaidLifecycle),
     ("prospering settlements develop housing over time", TestSettlementDevelopmentGrowsHousing),
     ("wires settlement development into the daily tick", TestRimWorldSettlementDevelopmentWiring),
     ("diminishes settlement combat power past the threshold", TestSettlementPowerDiminishesPastThreshold),
@@ -2266,6 +2268,75 @@ static void TestSettlementPowerDiminishesPastThreshold()
     // 50 * 100 + 10 * 50 = 5500: diminishing returns past the 50-combatant threshold
     // keep a huge settlement from producing unbounded, linear military power.
     AssertEqual(5500, power.CombatPower);
+}
+
+static void TestDerivedAggregatesTrackPopulationLifecycle()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("source", "Source", "Pirate");
+    var target = state.CreateSettlement("target", "Target", "Pirate");
+
+    var child = state.CreateCitizen("Child", 12, Sex.Female, "settler", source.Id);
+    var adult = state.CreateCitizen("Adult", 30, Sex.Male, "settler", source.Id);
+    state.CreateCitizen("Elder", 70, Sex.Female, "settler", source.Id);
+
+    AssertAggregateMatchesFullScan(state, source.Id);
+    AssertAggregateMatchesFullScan(state, target.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    state.MarkCitizenDead(adult.Id, "test casualty");
+    AssertAggregateMatchesFullScan(state, source.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    state.MarkCitizenRefugee(child.Id, "starvation");
+    AssertAggregateMatchesFullScan(state, source.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    state.CompleteCitizenMigration(child.Id, target.Id, "stable destination");
+    AssertAggregateMatchesFullScan(state, source.Id);
+    AssertAggregateMatchesFullScan(state, target.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+}
+
+static void TestDerivedAggregatesTrackRaidLifecycle()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("camp", "Camp", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Raider {i + 1}", 24 + i, Sex.Male, "soldier", settlement.Id);
+    }
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 8);
+
+    AssertAggregateMatchesFullScan(state, settlement.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    var allocation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "raid", 3));
+    AssertAggregateMatchesFullScan(state, settlement.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    RaidPawnBindingService.BindRaidPawns(state, allocation.Army!.Id, new[] { 101, 102 });
+    RaidReconciliationService.ReleaseUndeployedReserves(state, allocation.Army.Id);
+    AssertAggregateMatchesFullScan(state, settlement.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    RaidPawnBindingService.MarkPawnReturned(state, 101, "returned");
+    AssertAggregateMatchesFullScan(state, settlement.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    RaidPawnBindingService.MarkPawnMissing(state, 102, "lost");
+    AssertAggregateMatchesFullScan(state, settlement.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
+
+    var secondAllocation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "second raid", 1));
+    RaidPawnBindingService.BindRaidPawns(state, secondAllocation.Army!.Id, new[] { 103 });
+    RaidPawnBindingService.MarkPawnPrisoner(state, 103, "captured");
+    AssertAggregateMatchesFullScan(state, settlement.Id);
+    AssertFactionAggregateMatchesFullScan(state, "Pirate");
 }
 
 static void TestFactionBehaviorProfiles()
@@ -4704,6 +4775,68 @@ static void TestRaidPrimaryPathAndFallbackContract()
     AssertContains("legacy vanilla raid patches are fallback", docs);
     AssertContains("LivingWorld_FactionRaid", raidPatchSource);
     AssertContains("fallback", raidPatchSource);
+}
+
+static void AssertAggregateMatchesFullScan(WorldState state, EntityId settlementId)
+{
+    var aggregate = state.GetSettlementDerivedAggregate(settlementId);
+    var fullScan = FullScanPopulation(state, settlementId);
+
+    AssertEqual(fullScan, aggregate.Population);
+    AssertEqual(fullScan.Adults, aggregate.Power.Combatants);
+    AssertEqual(SettlementPowerService.CombatPowerOf(fullScan.Adults), aggregate.Power.CombatPower);
+    AssertEqual(fullScan, state.GetSettlementPopulation(settlementId));
+    AssertEqual(aggregate.Power, SettlementPowerService.GetSettlementPower(state, settlementId));
+}
+
+static void AssertFactionAggregateMatchesFullScan(WorldState state, string factionId)
+{
+    var aggregate = state.GetFactionDerivedAggregate(factionId);
+    var settlements = state.Settlements
+        .Where(settlement => string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+        .Select(settlement => settlement.Id)
+        .ToList();
+    var fullScan = SumPopulations(settlements.Select(settlementId => FullScanPopulation(state, settlementId)));
+    var combatants = settlements.Sum(settlementId => FullScanPopulation(state, settlementId).Adults);
+    var combatPower = settlements.Sum(settlementId =>
+        SettlementPowerService.CombatPowerOf(FullScanPopulation(state, settlementId).Adults));
+
+    AssertEqual(fullScan, aggregate.Population);
+    AssertEqual(combatants, aggregate.Power.Combatants);
+    AssertEqual(combatPower, aggregate.Power.CombatPower);
+}
+
+static SettlementPopulation FullScanPopulation(WorldState state, EntityId settlementId)
+{
+    var citizens = state.Citizens
+        .Where(citizen =>
+            citizen.SettlementId == settlementId
+            && citizen.Status == CitizenStatus.Alive
+            && state.GetOwner(citizen.Id) == settlementId)
+        .ToList();
+
+    return new SettlementPopulation(
+        citizens.Count,
+        citizens.Count(citizen => citizen.IsChild),
+        citizens.Count(citizen => citizen.IsAdult),
+        citizens.Count(citizen => citizen.IsElderly));
+}
+
+static SettlementPopulation SumPopulations(IEnumerable<SettlementPopulation> populations)
+{
+    var total = 0;
+    var children = 0;
+    var adults = 0;
+    var elderly = 0;
+    foreach (var population in populations)
+    {
+        total += population.Total;
+        children += population.Children;
+        adults += population.Adults;
+        elderly += population.Elderly;
+    }
+
+    return new SettlementPopulation(total, children, adults, elderly);
 }
 
 static string FindRepoRoot()

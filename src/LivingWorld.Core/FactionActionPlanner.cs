@@ -93,9 +93,7 @@ public static class FactionActionPlanner
 
     private static int FactionPower(WorldState state, string factionId)
     {
-        return state.Settlements
-            .Where(settlement => string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
-            .Sum(settlement => SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower);
+        return state.GetFactionDerivedAggregate(factionId).Power.CombatPower;
     }
 
     private static EntityId? FindEnemyTarget(WorldState state, string factionId)

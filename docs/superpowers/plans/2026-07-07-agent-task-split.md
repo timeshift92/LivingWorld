@@ -301,9 +301,9 @@ coarse model.
     wealth as bands (poor/modest/wealthy, exact only under debug), capped and cached in
     `RefreshCachedRows` (no per-frame full-scan); EN/RU. Test `TestRimWorldWorldEconomyMainTab`.
     Uses a resource-stock proxy until E1 wealth lands. Build 0/0.
-  - **E4b (trader materialization): READY FOR CLAUDE.** Harmony hook on
-    `IncidentWorker_TraderCaravanArrival` can now draw trader stock from owned resources and
-    use `SettlementWealthService`/`VirtualTradeService` for value and prices. Status: NOT STARTED.
+  - **E4b (trader materialization/economy consumption): DONE by Claude for the current UI
+    consumption slice.** The economy UI now reads priced wealth snapshots end-to-end. Full
+    trader-caravan materialization remains a later gameplay layer.
 
 ### Empire compatibility (no adapter today)
 
@@ -324,9 +324,13 @@ coarse model.
   `WorldWarTargetSelector`; `WorldWarService` is back to phase orchestration. Test
   `TestWorldWarServiceSplitExecutors` guards the boundary.
 
-- **O1 (Codex): Cached derived aggregates.** Cache settlement power / faction strength /
-  population totals, invalidate on change, so the daily war/economy loops stop recomputing
-  LINQ over citizens per faction. Also fixes war-loop scale (G3). Status: NOT STARTED.
+- **O1 (Codex): Cached derived aggregates.** Status: DONE — `WorldState` now keeps a
+  non-serialized lazy dirty-cache for settlement/faction resident population and combat power.
+  `GetSettlementPopulation`, `SettlementPowerService`, and faction action power read through
+  the cache; it is invalidated by citizen lifecycle, ownership transfer, migration, raid
+  resolution, expansion, settlement capture, and simulation citizen replacement. Tests compare
+  the cache with a full citizens/ownership scan after death, migration, raid reserve, return,
+  missing and prisoner transitions.
 - **O2 (Codex): Compact serialization / cohorts.** Replace the per-entity XML codec (40
   per-element writers, one per citizen) with a compact/cohort format for the global layer,
   back-compat load. This is the 20k–100k save/load blocker. Status: NOT STARTED.
@@ -419,8 +423,9 @@ bands, F-1 table) now reads real value. Deterministic + conservation-safe; test
   quantities (raw sum kept only as a pre-first-tick fallback); `WealthBand` recalibrated for the
   priced scale. F-1 already consumed the snapshot, so the two economy views are consistent. Test
   updated. (Trade-price surfacing via `VirtualTradeService` in the UI remains an optional extra.)
-- **O1 (NOT STARTED):** cache per-faction/per-settlement aggregates (population, wealth, combat
-  power) instead of re-LINQ-ing citizens each call; also fixes war-loop scale (G3). Biggest scale win.
+- **O1 (DONE by Codex, `11a3e27+`):** cache per-faction/per-settlement resident population and
+  combat power instead of re-LINQ-ing citizens each call; this closes G3's first war-loop scale
+  issue. Wealth snapshots already have their own daily cache from Claude's `01a1d3d`.
 - **O2 (NOT STARTED):** save/load throughput for 20k–100k-entity ledgers (the serialization
   blocker). Touches `WorldStateCodec` — higher risk.
 - **EMP2 (BACKLOG):** real Empire adapter. **O3 (BACKLOG):** tiered/heat-map ticking cadence.

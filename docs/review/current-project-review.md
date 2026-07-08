@@ -800,6 +800,12 @@ action details from drifting back into `WorldWarService`.
 
 Prepare for large populations.
 
+Status: DONE for the first aggregate foundation. `WorldState` now owns a
+non-serialized derived aggregate cache for settlement/faction resident population
+and combat power. The cache is rebuilt lazily from the ledger after load and
+invalidated by citizen lifecycle/status changes, ownership transfer, migration,
+raid outcomes, expansion, capture and simulation replacement.
+
 ### Required changes
 
 - Settlement population aggregate.
@@ -846,7 +852,7 @@ Turn caravan from instant transfer into real entity.
 | Core can still target/collapse player if imported by non-vanilla path | Medium | Closed by C4 | Keep tests around planner/lifecycle/battle guard |
 | `_armyMovements` grows forever | Medium | Closed by C5 | Monitor retention value during long-play saves |
 | WorldWarService grows too broad | Medium | Closed by C6 | Keep dispatcher/executor boundary tested |
-| War-loop scans citizens daily | Medium later | Open | Add aggregates |
+| War-loop scans citizens daily | Medium later | Closed by C7/O1 | Keep aggregate/full-scan tests around citizen and ownership transitions |
 | Caravan is instant transfer | Low now / High later | Accepted abstraction | Design WorldCaravan |
 | Drifters may feel like magic spawn | Medium | Needs framing | Add finite reservoir |
 | Save format may grow too large | Medium later | Not urgent | Chunk/compress/migrate later |
@@ -870,7 +876,7 @@ It should complete:
 C4 — Player faction defense-in-depth (done)
 C5 — Army movement pruning (done)
 C6 — WorldWarService split (done)
-C7 — Population/faction aggregates foundation
+C7 — Population/faction aggregates foundation (done)
 ```
 
 After that, the project will be ready for the next real feature layer:
