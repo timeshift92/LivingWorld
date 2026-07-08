@@ -322,7 +322,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private void SimulateWorldDay(int day)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        // Release stale raid preparations and materialization leases whose window elapsed, so
+        // reserved citizens/supplies return to their settlements instead of leaking. Cheap: both only
+        // touch active records past their expiry.
         RaidPreparationService.ReleaseExpiredPreparations(State, day * TicksPerDay);
+        MaterializationLeaseService.ReleaseExpiredLeases(State, day * TicksPerDay);
         SettlementProductionService.SimulateDay(
             State,
             new SettlementProductionRequest(
@@ -405,12 +409,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         FactionLifecycleService.SimulateCollapses(
             State,
             new FactionLifecycleRequest(day * TicksPerDay));
-
-        // Release stale raid preparations and materialization leases whose window elapsed, so
-        // reserved citizens/supplies return to their settlements instead of leaking. Cheap: both only
-        // touch active records past their expiry.
-        RaidPreparationService.ReleaseExpiredPreparations(State, day * TicksPerDay);
-        MaterializationLeaseService.ReleaseExpiredLeases(State, day * TicksPerDay);
 
         // Refresh the economy wealth snapshots from end-of-day stock so the economy UI (main tab
         // bands, the population/economy table) reads real silver + material value instead of a
