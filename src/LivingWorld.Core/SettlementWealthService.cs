@@ -42,6 +42,37 @@ public sealed record FactionWealthSnapshot(
 
 public static class SettlementWealthService
 {
+    // Canonical price book for the resources the ledger actually tracks, in silver-equivalent unit
+    // values close to their RimWorld market values. Silver itself is the numeraire (price 1).
+    public static ResourcePriceBook DefaultPriceBook { get; } = ResourcePriceBook.FromSilver(
+        "Silver",
+        new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Steel"] = 2,
+            ["PackagedSurvivalMeal"] = 14,
+            ["MedicineIndustrial"] = 18,
+            ["ComponentIndustrial"] = 24,
+        });
+
+    // Recomputes every settlement and faction wealth snapshot from current stock. Deterministic and
+    // conservation-safe (reads quantities, writes only snapshots). Call once per simulated day after
+    // the day's economy has settled so the numbers reflect end-of-day stock.
+    public static void RefreshAll(WorldState state, ResourcePriceBook prices)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        foreach (var factionId in state.Settlements
+            .Select(settlement => settlement.FactionId)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(factionId => factionId, StringComparer.Ordinal))
+        {
+            RefreshFaction(state, factionId, prices);
+        }
+    }
+
     public static SettlementWealthSnapshot RefreshSettlement(
         WorldState state,
         EntityId settlementId,

@@ -284,6 +284,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             State,
             new FactionLifecycleRequest(day * TicksPerDay));
 
+        // Refresh the economy wealth snapshots from end-of-day stock so the economy UI (main tab
+        // bands, the population/economy table) reads real silver + material value instead of a
+        // fallback. Deterministic and conservation-safe (writes only snapshots).
+        SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook);
+
         // Visualize the day's world-war army movements on the globe (display only — the ledger
         // remains the source of truth). Cheap: it only touches active traveling movements.
         SyncArmyWorldObjects();

@@ -25,6 +25,7 @@ var tests = new List<(string Name, Action Test)>
     ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
     ("builds settlement production profile from terrain and technology", TestSettlementProductionProfileUsesTerrainAndTechnology),
     ("calculates and caches settlement and faction wealth", TestSettlementWealthServiceCachesWealth),
+    ("refreshes all faction wealth with the default price book", TestSettlementWealthRefreshAllUsesDefaultPrices),
     ("deep production uses archetype labor scale and complexity", TestSettlementProductionUsesDepthModifiers),
     ("virtual trade conserves goods and silver", TestVirtualTradeTransfersGoodsAndSilver),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
@@ -672,6 +673,36 @@ static void TestSettlementProductionProfileUsesTerrainAndTechnology()
     AssertEqual(1, fertileIndustrial.ComponentPerAdult);
     AssertEqual(0, desertNeolithic.FoodPerAdult);
     AssertEqual(0, desertNeolithic.ComponentPerAdult);
+}
+
+static void TestSettlementWealthRefreshAllUsesDefaultPrices()
+{
+    var state = new WorldState(999);
+    var camp = state.CreateSettlement("camp", "Camp", "Pirates");
+    var town = state.CreateSettlement("town", "Town", "Traders");
+    state.AddResource(camp.Id, "Silver", 50);
+    state.AddResource(camp.Id, "Steel", 100);               // 100 * 2 = 200 material
+    state.AddResource(town.Id, "PackagedSurvivalMeal", 10); // 10 * 14 = 140 material
+    state.AddResource(town.Id, "ComponentIndustrial", 2);   // 2 * 24 = 48 material
+
+    SettlementWealthService.RefreshAll(state, SettlementWealthService.DefaultPriceBook);
+
+    var pirates = state.GetFactionWealth("Pirates")!;
+    AssertEqual(50, pirates.Silver);
+    AssertEqual(200, pirates.MaterialWealth);
+    AssertEqual(250, pirates.TotalWealth);
+
+    var traders = state.GetFactionWealth("Traders")!;
+    AssertEqual(0, traders.Silver);
+    AssertEqual(188, traders.MaterialWealth);
+    AssertEqual(188, traders.TotalWealth);
+
+    // Per-settlement snapshots are recorded too, not just the faction rollup.
+    AssertEqual(250, state.GetSettlementWealth(camp.Id)!.TotalWealth);
+
+    // The daily world tick drives the refresh with the canonical price book.
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook)", component);
 }
 
 static void TestSettlementWealthServiceCachesWealth()
