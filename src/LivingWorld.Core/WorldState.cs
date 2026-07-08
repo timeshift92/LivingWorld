@@ -8,6 +8,8 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldCaravan> _caravans = new();
     private readonly Dictionary<EntityId, WorldMission> _missions = new();
     private readonly Dictionary<EntityId, WorldRuin> _ruins = new();
+    private readonly Dictionary<EntityId, WorldConflict> _conflicts = new();
+    private readonly Dictionary<(EntityId ConflictId, EntityId SettlementId), ConflictClaim> _conflictClaims = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -63,6 +65,10 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldMission> Missions => _missions.Values;
 
     public IReadOnlyCollection<WorldRuin> Ruins => _ruins.Values;
+
+    public IReadOnlyCollection<WorldConflict> Conflicts => _conflicts.Values;
+
+    public IReadOnlyCollection<ConflictClaim> ConflictClaims => _conflictClaims.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -216,6 +222,13 @@ public sealed class WorldState
             Ruins = _ruins.Values
                 .OrderBy(ruin => ruin.Id.Value)
                 .ToList(),
+            Conflicts = _conflicts.Values
+                .OrderBy(conflict => conflict.Id.Value)
+                .ToList(),
+            ConflictClaims = _conflictClaims.Values
+                .OrderBy(claim => claim.ConflictId.Value)
+                .ThenBy(claim => claim.SettlementId.Value)
+                .ToList(),
             RaidIntelFacts = _raidIntelFacts.Values
                 .OrderBy(fact => fact.Id.Value)
                 .ToList(),
@@ -282,6 +295,17 @@ public sealed class WorldState
         {
             state._ruins.Add(ruin.Id, Normalize(ruin));
             state.ReserveExistingId(ruin.Id);
+        }
+
+        foreach (var conflict in snapshot.Conflicts)
+        {
+            state._conflicts.Add(conflict.Id, Normalize(conflict));
+            state.ReserveExistingId(conflict.Id);
+        }
+
+        foreach (var claim in snapshot.ConflictClaims)
+        {
+            state._conflictClaims[(claim.ConflictId, claim.SettlementId)] = Normalize(claim);
         }
 
         foreach (var group in snapshot.MigrationGroups)
@@ -866,6 +890,73 @@ public sealed class WorldState
     internal bool RemoveRuinForLedger(EntityId ruinId)
     {
         return _ruins.Remove(ruinId);
+    }
+
+    internal WorldConflict CreateConflictForLedger(string factionA, string factionB, int tick)
+    {
+        ThrowIfNullOrWhiteSpace(factionA, nameof(factionA));
+        ThrowIfNullOrWhiteSpace(factionB, nameof(factionB));
+
+        var conflict = Normalize(new WorldConflict(
+            NextId(EntityKind.Conflict),
+            factionA,
+            factionB,
+            WorldConflictStatus.Active,
+            Math.Max(0, tick),
+            Math.Max(0, tick),
+            WarExhaustionA: 0,
+            WarExhaustionB: 0,
+            TruceExpiresTick: 0,
+            RefugeesCreated: 0));
+        _conflicts.Add(conflict.Id, conflict);
+        return conflict;
+    }
+
+    internal WorldConflict RecordConflictForLedger(WorldConflict conflict)
+    {
+        if (conflict == null)
+        {
+            throw new ArgumentNullException(nameof(conflict));
+        }
+
+        if (conflict.Id.Kind != EntityKind.Conflict)
+        {
+            throw new InvalidOperationException($"Conflict id {conflict.Id} is not a conflict id.");
+        }
+
+        var normalized = Normalize(conflict);
+        _conflicts[normalized.Id] = normalized;
+        ReserveExistingId(normalized.Id);
+        return normalized;
+    }
+
+    public WorldConflict? GetConflict(EntityId conflictId)
+    {
+        return _conflicts.TryGetValue(conflictId, out var conflict)
+            ? conflict
+            : null;
+    }
+
+    internal ConflictClaim RecordConflictClaimForLedger(ConflictClaim claim)
+    {
+        if (claim == null)
+        {
+            throw new ArgumentNullException(nameof(claim));
+        }
+
+        if (!_conflicts.ContainsKey(claim.ConflictId))
+        {
+            throw new InvalidOperationException($"Conflict {claim.ConflictId} does not exist.");
+        }
+
+        if (!_settlements.ContainsKey(claim.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {claim.SettlementId} does not exist.");
+        }
+
+        var normalized = Normalize(claim);
+        _conflictClaims[(normalized.ConflictId, normalized.SettlementId)] = normalized;
+        return normalized;
     }
 
     // A faction expands by relocating some of a settlement's living adults into a brand-new
@@ -2440,6 +2531,19 @@ public sealed class WorldState
                 yield return $"Ruin {ruin.Id} references missing reclaimed settlement {ruin.ReclaimedSettlementId.Value}.";
             }
         }
+
+        foreach (var claim in _conflictClaims.Values.OrderBy(claim => claim.ConflictId.Value).ThenBy(claim => claim.SettlementId.Value))
+        {
+            if (!_conflicts.ContainsKey(claim.ConflictId))
+            {
+                yield return $"Conflict claim references missing conflict {claim.ConflictId}.";
+            }
+
+            if (!_settlements.ContainsKey(claim.SettlementId))
+            {
+                yield return $"Conflict claim references missing settlement {claim.SettlementId}.";
+            }
+        }
     }
 
     private EntityId NextId(EntityKind kind)
@@ -2534,6 +2638,7 @@ public sealed class WorldState
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(ownerId),
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(ownerId),
             EntityKind.Ruin => _ruins.ContainsKey(ownerId),
+            EntityKind.Conflict => _conflicts.ContainsKey(ownerId),
             _ => false
         };
     }
@@ -2555,6 +2660,7 @@ public sealed class WorldState
             EntityKind.SettlementFacility => _settlementFacilities.ContainsKey(assetId),
             EntityKind.SettlementProject => _settlementProjects.ContainsKey(assetId),
             EntityKind.Ruin => _ruins.ContainsKey(assetId),
+            EntityKind.Conflict => _conflicts.ContainsKey(assetId),
             _ => false
         };
     }
@@ -2626,6 +2732,30 @@ public sealed class WorldState
             ClaimFactionId = string.IsNullOrWhiteSpace(ruin.ClaimFactionId) ? "Unknown" : ruin.ClaimFactionId.Trim(),
             CreatedTick = Math.Max(0, ruin.CreatedTick),
             StatusTick = Math.Max(0, ruin.StatusTick)
+        };
+    }
+
+    private static WorldConflict Normalize(WorldConflict conflict)
+    {
+        return conflict with
+        {
+            FactionA = string.IsNullOrWhiteSpace(conflict.FactionA) ? "UnknownA" : conflict.FactionA.Trim(),
+            FactionB = string.IsNullOrWhiteSpace(conflict.FactionB) ? "UnknownB" : conflict.FactionB.Trim(),
+            StartedTick = Math.Max(0, conflict.StartedTick),
+            StatusTick = Math.Max(0, conflict.StatusTick),
+            WarExhaustionA = Math.Max(0, conflict.WarExhaustionA),
+            WarExhaustionB = Math.Max(0, conflict.WarExhaustionB),
+            TruceExpiresTick = Math.Max(0, conflict.TruceExpiresTick),
+            RefugeesCreated = Math.Max(0, conflict.RefugeesCreated)
+        };
+    }
+
+    private static ConflictClaim Normalize(ConflictClaim claim)
+    {
+        return claim with
+        {
+            ClaimantFactionId = string.IsNullOrWhiteSpace(claim.ClaimantFactionId) ? "Unknown" : claim.ClaimantFactionId.Trim(),
+            Tick = Math.Max(0, claim.Tick)
         };
     }
 

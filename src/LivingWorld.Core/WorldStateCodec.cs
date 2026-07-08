@@ -103,6 +103,32 @@ public static class WorldStateCodec
                                 : null,
                             new XAttribute("statusTick", ruin.StatusTick)))),
                 new XElement(
+                    "Conflicts",
+                    snapshot.Conflicts.Select(conflict =>
+                        new XElement(
+                            "Conflict",
+                            IdAttributes(conflict.Id),
+                            new XAttribute("factionA", conflict.FactionA),
+                            new XAttribute("factionB", conflict.FactionB),
+                            new XAttribute("status", conflict.Status),
+                            new XAttribute("startedTick", conflict.StartedTick),
+                            new XAttribute("statusTick", conflict.StatusTick),
+                            new XAttribute("warExhaustionA", conflict.WarExhaustionA),
+                            new XAttribute("warExhaustionB", conflict.WarExhaustionB),
+                            new XAttribute("truceExpiresTick", conflict.TruceExpiresTick),
+                            new XAttribute("refugeesCreated", conflict.RefugeesCreated)))),
+                new XElement(
+                    "ConflictClaims",
+                    snapshot.ConflictClaims.Select(claim =>
+                        new XElement(
+                            "ConflictClaim",
+                            new XAttribute("conflictKind", claim.ConflictId.Kind),
+                            new XAttribute("conflictId", claim.ConflictId.Value),
+                            new XAttribute("settlementKind", claim.SettlementId.Kind),
+                            new XAttribute("settlementId", claim.SettlementId.Value),
+                            new XAttribute("claimantFactionId", claim.ClaimantFactionId),
+                            new XAttribute("tick", claim.Tick)))),
+                new XElement(
                     "MigrationGroups",
                     snapshot.MigrationGroups.Select(group =>
                         new XElement(
@@ -636,6 +662,28 @@ public static class WorldStateCodec
                     RequiredEnum<RuinStatus>(element, "status"),
                     TryReadEntityId(element, "reclaimedSettlementKind", "reclaimedSettlementId"),
                     OptionalInt(element, "statusTick", RequiredInt(element, "createdTick"))))
+                .ToList(),
+            Conflicts = OptionalContainer(root, "Conflicts")
+                .Elements("Conflict")
+                .Select(element => new WorldConflict(
+                    ReadId(element),
+                    RequiredString(element, "factionA"),
+                    RequiredString(element, "factionB"),
+                    RequiredEnum<WorldConflictStatus>(element, "status"),
+                    RequiredInt(element, "startedTick"),
+                    RequiredInt(element, "statusTick"),
+                    RequiredInt(element, "warExhaustionA"),
+                    RequiredInt(element, "warExhaustionB"),
+                    RequiredInt(element, "truceExpiresTick"),
+                    OptionalInt(element, "refugeesCreated", 0)))
+                .ToList(),
+            ConflictClaims = OptionalContainer(root, "ConflictClaims")
+                .Elements("ConflictClaim")
+                .Select(element => new ConflictClaim(
+                    ReadEntityId(element, "conflictKind", "conflictId"),
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredString(element, "claimantFactionId"),
+                    RequiredInt(element, "tick")))
                 .ToList(),
             RaidIntelFacts = OptionalContainer(root, "RaidIntelFacts")
                 .Elements("RaidIntelFact")

@@ -119,9 +119,7 @@ public static class WorldBattleService
         // The battle is over; the army stands down either way.
         state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
 
-        return new BattleResolutionResult(
-            BattleResolutionStatus.Resolved,
-            new BattleOutcome(
+        var outcome = new BattleOutcome(
                 armyId,
                 targetId,
                 attackerWins ? BattleWinner.Attacker : BattleWinner.Defender,
@@ -129,7 +127,19 @@ public static class WorldBattleService
                 defenderPower,
                 attackerLosses,
                 defenderLosses,
-                captured));
+                captured);
+        ConflictService.RecordBattleOutcome(
+            state,
+            army.FactionId,
+            targetSettlement.FactionId,
+            attackerLosses,
+            defenderLosses,
+            captured ? targetId : null,
+            state.CurrentTick);
+
+        return new BattleResolutionResult(
+            BattleResolutionStatus.Resolved,
+            outcome);
     }
 
     private static int LossCount(int combatants, int percent)

@@ -58,7 +58,12 @@ public enum WorldEventKind
     SettlementAbandoned,
     SettlementRelocationStarted,
     RuinReclaimed,
-    RuinPruned
+    RuinPruned,
+    ConflictStarted,
+    ConflictUpdated,
+    ConflictClaimRecorded,
+    ConflictTruceStarted,
+    WarRefugeesRecorded
 }
 
 public sealed record WorldEvent(

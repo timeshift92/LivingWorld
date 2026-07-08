@@ -44,6 +44,12 @@ public sealed record WorldStateSnapshot(
     public IReadOnlyList<WorldRuin> Ruins { get; init; } =
         Array.Empty<WorldRuin>();
 
+    public IReadOnlyList<WorldConflict> Conflicts { get; init; } =
+        Array.Empty<WorldConflict>();
+
+    public IReadOnlyList<ConflictClaim> ConflictClaims { get; init; } =
+        Array.Empty<ConflictClaim>();
+
     public IReadOnlyList<RaidIntelFact> RaidIntelFacts { get; init; } =
         Array.Empty<RaidIntelFact>();
 

@@ -141,6 +141,10 @@ var tests = new List<(string Name, Action Test)>
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
     ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
+    ("repeated losses increase faction war exhaustion", TestRepeatedLossesIncreaseFactionWarExhaustion),
+    ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
+    ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
+    ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
     ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
@@ -3646,6 +3650,114 @@ static void TestWorldWarLaunchesAndResolvesWarband()
     // The war is legible in world history: the warband set out and the settlement fell.
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WarbandLaunched));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestRepeatedLossesIncreaseFactionWarExhaustion()
+{
+    var state = new WorldState(4242);
+    var conflict = ConflictService.GetOrCreateConflict(state, "Raiders", "Settlers", 60_000);
+
+    ConflictService.RecordBattleOutcome(
+        state,
+        conflict.Id,
+        attackerFactionId: "Raiders",
+        defenderFactionId: "Settlers",
+        attackerLosses: 2,
+        defenderLosses: 5,
+        capturedSettlementId: null,
+        tick: 120_000);
+    ConflictService.RecordBattleOutcome(
+        state,
+        conflict.Id,
+        attackerFactionId: "Raiders",
+        defenderFactionId: "Settlers",
+        attackerLosses: 3,
+        defenderLosses: 4,
+        capturedSettlementId: null,
+        tick: 180_000);
+
+    var updated = state.GetConflict(conflict.Id)!;
+    AssertEqual(5, updated.GetWarExhaustion("Raiders"));
+    AssertEqual(9, updated.GetWarExhaustion("Settlers"));
+    AssertEqual(1, state.Conflicts.Count);
+    AssertEqual(2, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.ConflictUpdated));
+}
+
+static void TestConflictClaimTracksCapturedSettlement()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Raiders");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", source.Id);
+    }
+
+    var target = state.CreateSettlement("village", "Village", "Settlers");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Female, "settler", target.Id);
+    }
+
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Raiders", "Raiders", 6, FoodPerCitizen: 0));
+    var army = reservation.Army!;
+    state.DispatchArmy(army.Id, target.Id, 60_000);
+    state.SetArmyMovementStatus(army.Id, ArmyMovementStatus.Arrived);
+
+    WorldBattleService.Resolve(state, army.Id);
+
+    var conflict = state.Conflicts.Single();
+    var claim = state.ConflictClaims.Single();
+    AssertEqual(target.Id, claim.SettlementId);
+    AssertEqual("Raiders", claim.ClaimantFactionId);
+    AssertEqual(conflict.Id, claim.ConflictId);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.ConflictClaimRecorded));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    AssertEqual(conflict, restored.GetConflict(conflict.Id));
+    AssertEqual(claim, restored.ConflictClaims.Single());
+}
+
+static void TestTrucePreventsNewWarbandsUntilExpired()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var target = state.CreateSettlement("village", "Village", "Settlers");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    ConflictService.StartTruce(state, "Raiders", "Settlers", startTick: 60_000, expiresTick: 180_000);
+
+    var blocked = FactionActionPlanner.Plan(state, "Raiders", 120_000);
+    var expired = FactionActionPlanner.Plan(state, "Raiders", 240_000);
+
+    AssertEqual(WarAction.ScoutingParty, blocked.Action);
+    AssertEqual(null, blocked.TargetSettlementId);
+    AssertEqual(WarAction.Warband, expired.Action);
+    AssertEqual(target.Id, expired.TargetSettlementId);
+}
+
+static void TestWarRefugeesEnterFinitePopulationFlow()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("frontier", "Frontier", "Settlers");
+    var first = state.CreateCitizen("Ada", 31, Sex.Female, "farmer", settlement.Id);
+    var second = state.CreateCitizen("Bo", 12, Sex.Male, "child", settlement.Id);
+    var destroyed = SettlementLifecycleService.DestroySettlement(state, settlement.Id, 60_000, "war");
+
+    var conflict = ConflictService.GetOrCreateConflict(state, "Raiders", "Settlers", 60_000);
+    ConflictService.RecordWarRefugees(state, conflict.Id, "Settlers", destroyed.RefugeesCreated, 60_000);
+
+    var updated = state.GetConflict(conflict.Id)!;
+    AssertEqual(2, updated.RefugeesCreated);
+    AssertEqual(CitizenStatus.Refugee, state.GetCitizen(first.Id)!.Status);
+    AssertEqual(CitizenStatus.Refugee, state.GetCitizen(second.Id)!.Status);
+    AssertEqual(2, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Refugee));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WarRefugeesRecorded));
 }
 
 static void TestWorldWarWarbandCooldownThrottlesLaunches()

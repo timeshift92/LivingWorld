@@ -18,7 +18,8 @@ public enum EntityKind
     Mission,
     SettlementFacility,
     SettlementProject,
-    Ruin
+    Ruin,
+    Conflict
 }
 
 public readonly record struct EntityId(EntityKind Kind, long Value)

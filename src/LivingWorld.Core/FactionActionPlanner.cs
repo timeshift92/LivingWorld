@@ -48,7 +48,7 @@ public static class FactionActionPlanner
         }
 
         var developmentTarget = FindDevelopmentTarget(state, factionId);
-        var target = FindEnemyTarget(state, factionId);
+        var target = FindEnemyTarget(state, factionId, tick);
 
         var action = profile.Behavior switch
         {
@@ -97,12 +97,13 @@ public static class FactionActionPlanner
         return state.GetFactionDerivedAggregate(factionId).Power.CombatPower;
     }
 
-    private static EntityId? FindEnemyTarget(WorldState state, string factionId)
+    private static EntityId? FindEnemyTarget(WorldState state, string factionId, int tick)
     {
         var enemy = state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
+            .Where(settlement => !ConflictService.IsTruceActive(state, factionId, settlement.FactionId, tick))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
             .OrderBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
