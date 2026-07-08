@@ -152,6 +152,10 @@ var tests = new List<(string Name, Action Test)>
     ("world mission survives save load and arrives", TestWorldMissionSurvivesSaveLoadAndArrives),
     ("persistent caravan still delivers after load", TestPersistentCaravanArrivesAfterLoad),
     ("derived aggregates track capture and expansion", TestDerivedAggregatesTrackCaptureAndExpansion),
+    ("destroyed settlement leaves ruin and refugees", TestDestroyedSettlementLeavesRuinAndRefugees),
+    ("relocation moves citizens and resources through migration group", TestRelocationMovesCitizensAndResourcesThroughMigrationGroup),
+    ("ruin can be reclaimed without duplicating resources", TestRuinCanBeReclaimedWithoutDuplicatingResources),
+    ("old inactive ruins can be pruned after history is recorded", TestOldInactiveRuinsCanBePrunedAfterHistoryIsRecorded),
     ("migrates the drifter reservoir for legacy saves", TestRimWorldDrifterReservoirLegacyMigration),
     ("world war develop action invests in a settlement", TestWorldWarDevelopActionInvestsInSettlement),
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
@@ -3918,6 +3922,138 @@ static void TestDerivedAggregatesTrackCaptureAndExpansion()
     state.ExpandSettlement(raider.Id, "a-colony", "A Colony", 6);
     AssertAggregateMatchesFullScan(state, raider.Id);
     AssertFactionAggregateMatchesFullScan(state, "Raiders");
+}
+
+static void TestDestroyedSettlementLeavesRuinAndRefugees()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("frontier", "Frontier", "Settlers");
+    var adult = state.CreateCitizen("Ada", 31, Sex.Female, "farmer", settlement.Id);
+    var child = state.CreateCitizen("Bo", 9, Sex.Male, "child", settlement.Id);
+    state.AddResource(settlement.Id, "Steel", 90);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 20);
+
+    var result = SettlementLifecycleService.DestroySettlement(
+        state,
+        settlement.Id,
+        tick: 120_000,
+        reason: "burned");
+
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(settlement.Id)!.Status);
+    AssertEqual(1, state.Ruins.Count);
+    AssertEqual(settlement.Id, result.Ruin.OriginalSettlementId);
+    AssertEqual(RuinSalvageBand.Medium, result.Ruin.SalvageBand);
+    AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(CitizenStatus.Refugee, state.GetCitizen(adult.Id)!.Status);
+    AssertEqual(CitizenStatus.Refugee, state.GetCitizen(child.Id)!.Status);
+    AssertEqual(adult.Id, state.GetOwner(adult.Id));
+    AssertEqual(child.Id, state.GetOwner(child.Id));
+    AssertEqual(90, state.GetOwnedResourceQuantity(result.Ruin.Id, "Steel"));
+    AssertEqual(20, state.GetOwnedResourceQuantity(result.Ruin.Id, "PackagedSurvivalMeal"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDestroyed));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestRelocationMovesCitizensAndResourcesThroughMigrationGroup()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("unsafe", "Unsafe", "Settlers");
+    var target = state.CreateSettlement("safe", "Safe", "Settlers");
+    var first = state.CreateCitizen("Ada", 31, Sex.Female, "farmer", source.Id);
+    var second = state.CreateCitizen("Bo", 34, Sex.Male, "builder", source.Id);
+    state.AddResource(source.Id, "Steel", 80);
+    state.AddResource(source.Id, "PackagedSurvivalMeal", 30);
+
+    var result = SettlementLifecycleService.StartRelocation(
+        state,
+        source.Id,
+        target.Id,
+        tick: 10_000,
+        arrivalTick: 70_000,
+        reason: "unsafe");
+
+    AssertEqual(SettlementLifecycleStatus.Abandoned, state.GetSettlement(source.Id)!.Status);
+    AssertEqual(1, state.Ruins.Count);
+    AssertEqual(MigrationGroupStatus.Traveling, result.MigrationGroup.Status);
+    AssertEqual(result.MigrationGroup.Id, state.GetOwner(first.Id));
+    AssertEqual(result.MigrationGroup.Id, state.GetOwner(second.Id));
+    AssertEqual(80, state.GetOwnedResourceQuantity(result.MigrationGroup.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+
+    var completed = MigrationService.SimulateDay(
+        state,
+        new MigrationSimulationRequest(70_000, "PackagedSurvivalMeal", 1, 99, 0));
+
+    AssertEqual(2, completed.MigrationsCompleted);
+    AssertEqual(MigrationGroupStatus.Arrived, state.GetMigrationGroup(result.MigrationGroup.Id)!.Status);
+    AssertEqual(target.Id, state.GetOwner(first.Id));
+    AssertEqual(target.Id, state.GetOwner(second.Id));
+    AssertEqual(80, state.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(30, state.GetOwnedResourceQuantity(target.Id, "PackagedSurvivalMeal"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(result.MigrationGroup.Id, "Steel"));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestRuinCanBeReclaimedWithoutDuplicatingResources()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("old-town", "Old Town", "Settlers");
+    state.AddResource(settlement.Id, "Steel", 100);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 5);
+    var ruin = SettlementLifecycleService.DestroySettlement(
+        state,
+        settlement.Id,
+        tick: 60_000,
+        reason: "abandoned").Ruin;
+    state = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    ruin = state.GetRuin(ruin.Id)!;
+
+    var reclaimed = SettlementLifecycleService.ReclaimRuin(
+        state,
+        ruin.Id,
+        claimantFactionId: "Rebuilders",
+        tick: 120_000);
+
+    AssertEqual(RuinStatus.Reclaimed, state.GetRuin(ruin.Id)!.Status);
+    AssertEqual(settlement.Id, reclaimed.Settlement.Id);
+    AssertEqual("Rebuilders", reclaimed.Settlement.FactionId);
+    AssertEqual(SettlementLifecycleStatus.Active, reclaimed.Settlement.Status);
+    AssertEqual(100, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(ruin.Id, "Steel"));
+    AssertEqual(5, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RuinReclaimed));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestOldInactiveRuinsCanBePrunedAfterHistoryIsRecorded()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("old-town", "Old Town", "Settlers");
+    state.AddResource(settlement.Id, "Steel", 100);
+    var ruin = SettlementLifecycleService.DestroySettlement(
+        state,
+        settlement.Id,
+        tick: 60_000,
+        reason: "abandoned").Ruin;
+    SettlementLifecycleService.ReclaimRuin(state, ruin.Id, "Rebuilders", tick: 120_000);
+    var eventsBeforePrune = state.Events.Count;
+
+    var early = SettlementLifecycleService.PruneInactiveRuins(
+        state,
+        currentTick: 4 * 60_000,
+        retentionDays: 5);
+    var pruned = SettlementLifecycleService.PruneInactiveRuins(
+        state,
+        currentTick: 8 * 60_000,
+        retentionDays: 5);
+
+    AssertEqual(0, early.Pruned);
+    AssertEqual(1, pruned.Pruned);
+    AssertEqual(null, state.GetRuin(ruin.Id));
+    AssertEqual(eventsBeforePrune + 1, state.Events.Count);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RuinPruned));
+    AssertEqual(0, state.GetOwnedResourceQuantity(ruin.Id, "Steel"));
 }
 
 static void TestWorldWarDevelopActionInvestsInSettlement()

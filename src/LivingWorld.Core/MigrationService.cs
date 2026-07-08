@@ -130,6 +130,20 @@ public static class MigrationService
                 completed++;
             }
 
+            foreach (var resource in state.ResourcesForOwner(group.Id).ToList())
+            {
+                var transfer = state.TransferResource(
+                    group.Id,
+                    target.Id,
+                    resource.ResourceKey,
+                    resource.Quantity,
+                    "migration group arrived");
+                if (transfer.Status != OwnershipTransferStatus.Success)
+                {
+                    throw new InvalidOperationException(transfer.Reason);
+                }
+            }
+
             state.MarkMigrationGroupArrived(group.Id);
         }
 

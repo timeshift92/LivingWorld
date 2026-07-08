@@ -7,6 +7,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldArmy> _armies = new();
     private readonly Dictionary<EntityId, WorldCaravan> _caravans = new();
     private readonly Dictionary<EntityId, WorldMission> _missions = new();
+    private readonly Dictionary<EntityId, WorldRuin> _ruins = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -60,6 +61,8 @@ public sealed class WorldState
 
     public IReadOnlyCollection<WorldCaravan> Caravans => _caravans.Values;
     public IReadOnlyCollection<WorldMission> Missions => _missions.Values;
+
+    public IReadOnlyCollection<WorldRuin> Ruins => _ruins.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -210,6 +213,9 @@ public sealed class WorldState
             Missions = _missions.Values
                 .OrderBy(mission => mission.Id.Value)
                 .ToList(),
+            Ruins = _ruins.Values
+                .OrderBy(ruin => ruin.Id.Value)
+                .ToList(),
             RaidIntelFacts = _raidIntelFacts.Values
                 .OrderBy(fact => fact.Id.Value)
                 .ToList(),
@@ -270,6 +276,12 @@ public sealed class WorldState
         {
             state._missions.Add(mission.Id, mission);
             state.ReserveExistingId(mission.Id);
+        }
+
+        foreach (var ruin in snapshot.Ruins)
+        {
+            state._ruins.Add(ruin.Id, Normalize(ruin));
+            state.ReserveExistingId(ruin.Id);
         }
 
         foreach (var group in snapshot.MigrationGroups)
@@ -760,6 +772,100 @@ public sealed class WorldState
             settlementId,
             $"Settlement {settlementId} captured by {newFactionId} from {previousFaction}.");
         return captured;
+    }
+
+    internal WorldSettlement SetSettlementLifecycleStatusForLedger(
+        EntityId settlementId,
+        SettlementLifecycleStatus status)
+    {
+        if (!_settlements.TryGetValue(settlementId, out var settlement))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        var updated = settlement with { Status = status };
+        _settlements[settlementId] = updated;
+        MarkDerivedAggregatesDirty();
+        return updated;
+    }
+
+    internal WorldSettlement SetSettlementFactionAndStatusForLedger(
+        EntityId settlementId,
+        string factionId,
+        SettlementLifecycleStatus status)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+
+        if (!_settlements.TryGetValue(settlementId, out var settlement))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        var updated = settlement with { FactionId = factionId, Status = status };
+        _settlements[settlementId] = updated;
+        MarkDerivedAggregatesDirty();
+        return updated;
+    }
+
+    internal WorldRuin CreateRuinForLedger(
+        WorldSettlement settlement,
+        string claimFactionId,
+        RuinSalvageBand salvageBand,
+        RuinDangerBand dangerBand,
+        int tick)
+    {
+        if (settlement == null)
+        {
+            throw new ArgumentNullException(nameof(settlement));
+        }
+
+        ThrowIfNullOrWhiteSpace(claimFactionId, nameof(claimFactionId));
+
+        var ruin = Normalize(new WorldRuin(
+            NextId(EntityKind.Ruin),
+            settlement.Id,
+            settlement.Slug,
+            settlement.Name,
+            settlement.FactionId,
+            claimFactionId,
+            salvageBand,
+            dangerBand,
+            Math.Max(0, tick),
+            RuinStatus.Active,
+            null,
+            Math.Max(0, tick)));
+        _ruins.Add(ruin.Id, ruin);
+        return ruin;
+    }
+
+    internal WorldRuin RecordRuinForLedger(WorldRuin ruin)
+    {
+        if (ruin == null)
+        {
+            throw new ArgumentNullException(nameof(ruin));
+        }
+
+        if (ruin.Id.Kind != EntityKind.Ruin)
+        {
+            throw new InvalidOperationException($"Ruin id {ruin.Id} is not a ruin id.");
+        }
+
+        var normalized = Normalize(ruin);
+        _ruins[normalized.Id] = normalized;
+        ReserveExistingId(normalized.Id);
+        return normalized;
+    }
+
+    public WorldRuin? GetRuin(EntityId ruinId)
+    {
+        return _ruins.TryGetValue(ruinId, out var ruin)
+            ? ruin
+            : null;
+    }
+
+    internal bool RemoveRuinForLedger(EntityId ruinId)
+    {
+        return _ruins.Remove(ruinId);
     }
 
     // A faction expands by relocating some of a settlement's living adults into a brand-new
@@ -2321,6 +2427,19 @@ public sealed class WorldState
                 yield return $"Production profile references missing settlement {profile.SettlementId}.";
             }
         }
+
+        foreach (var ruin in _ruins.Values.OrderBy(ruin => ruin.Id.Value))
+        {
+            if (!_settlements.ContainsKey(ruin.OriginalSettlementId))
+            {
+                yield return $"Ruin {ruin.Id} references missing original settlement {ruin.OriginalSettlementId}.";
+            }
+
+            if (ruin.ReclaimedSettlementId.HasValue && !_settlements.ContainsKey(ruin.ReclaimedSettlementId.Value))
+            {
+                yield return $"Ruin {ruin.Id} references missing reclaimed settlement {ruin.ReclaimedSettlementId.Value}.";
+            }
+        }
     }
 
     private EntityId NextId(EntityKind kind)
@@ -2414,6 +2533,7 @@ public sealed class WorldState
             EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(ownerId),
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(ownerId),
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(ownerId),
+            EntityKind.Ruin => _ruins.ContainsKey(ownerId),
             _ => false
         };
     }
@@ -2434,6 +2554,7 @@ public sealed class WorldState
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(assetId),
             EntityKind.SettlementFacility => _settlementFacilities.ContainsKey(assetId),
             EntityKind.SettlementProject => _settlementProjects.ContainsKey(assetId),
+            EntityKind.Ruin => _ruins.ContainsKey(assetId),
             _ => false
         };
     }
@@ -2492,6 +2613,19 @@ public sealed class WorldState
             CompletionTick = Math.Max(started, project.CompletionTick),
             SteelCost = Math.Max(0, project.SteelCost),
             ComponentCost = Math.Max(0, project.ComponentCost)
+        };
+    }
+
+    private static WorldRuin Normalize(WorldRuin ruin)
+    {
+        return ruin with
+        {
+            Slug = string.IsNullOrWhiteSpace(ruin.Slug) ? "unknown-ruin" : ruin.Slug.Trim(),
+            Name = string.IsNullOrWhiteSpace(ruin.Name) ? "Unknown Ruin" : ruin.Name.Trim(),
+            FormerFactionId = string.IsNullOrWhiteSpace(ruin.FormerFactionId) ? "Unknown" : ruin.FormerFactionId.Trim(),
+            ClaimFactionId = string.IsNullOrWhiteSpace(ruin.ClaimFactionId) ? "Unknown" : ruin.ClaimFactionId.Trim(),
+            CreatedTick = Math.Max(0, ruin.CreatedTick),
+            StatusTick = Math.Max(0, ruin.StatusTick)
         };
     }
 

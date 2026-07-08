@@ -53,7 +53,12 @@ public enum WorldEventKind
     SettlementProjectCompleted,
     SettlementFacilityBuilt,
     SettlementFacilityDamaged,
-    SettlementFacilityRepaired
+    SettlementFacilityRepaired,
+    SettlementDestroyed,
+    SettlementAbandoned,
+    SettlementRelocationStarted,
+    RuinReclaimed,
+    RuinPruned
 }
 
 public sealed record WorldEvent(

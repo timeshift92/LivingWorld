@@ -1,10 +1,21 @@
 namespace LivingWorld.Core;
 
+public enum SettlementLifecycleStatus
+{
+    Active,
+    Abandoned,
+    Destroyed,
+}
+
 public sealed record WorldSettlement(
     EntityId Id,
     string Slug,
     string Name,
-    string FactionId);
+    string FactionId,
+    SettlementLifecycleStatus Status = SettlementLifecycleStatus.Active)
+{
+    public bool IsActive => Status == SettlementLifecycleStatus.Active;
+}
 
 public readonly record struct SettlementPopulation(
     int Total,

@@ -41,6 +41,9 @@ public sealed record WorldStateSnapshot(
     public IReadOnlyList<WorldMission> Missions { get; init; } =
         Array.Empty<WorldMission>();
 
+    public IReadOnlyList<WorldRuin> Ruins { get; init; } =
+        Array.Empty<WorldRuin>();
+
     public IReadOnlyList<RaidIntelFact> RaidIntelFacts { get; init; } =
         Array.Empty<RaidIntelFact>();
 

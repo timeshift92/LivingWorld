@@ -83,6 +83,7 @@ public static class FactionActionPlanner
         }
 
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Select(settlement => settlement.FactionId)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(factionId => factionId, StringComparer.Ordinal)
@@ -99,6 +100,7 @@ public static class FactionActionPlanner
     private static EntityId? FindEnemyTarget(WorldState state, string factionId)
     {
         var enemy = state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
@@ -111,6 +113,7 @@ public static class FactionActionPlanner
     private static EntityId? FindDevelopmentTarget(WorldState state, string factionId)
     {
         var settlement = state.Settlements
+            .Where(candidate => candidate.IsActive)
             .Where(candidate => string.Equals(candidate.FactionId, factionId, StringComparison.Ordinal))
             .Where(candidate => state.GetOwnedResourceQuantity(candidate.Id, "Silver") >= 100)
             .Where(candidate =>

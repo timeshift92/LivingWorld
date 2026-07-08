@@ -31,7 +31,8 @@ public static class WorldStateCodec
                             IdAttributes(settlement.Id),
                             new XAttribute("slug", settlement.Slug),
                             new XAttribute("name", settlement.Name),
-                            new XAttribute("factionId", settlement.FactionId)))),
+                            new XAttribute("factionId", settlement.FactionId),
+                            new XAttribute("status", settlement.Status)))),
                 new XElement(
                     "Citizens",
                     new XAttribute("format", "compact-v2"),
@@ -78,6 +79,29 @@ public static class WorldStateCodec
                             new XAttribute("status", mission.Status),
                             new XAttribute("targetFactionId", mission.TargetFactionId),
                             new XAttribute("amount", mission.Amount)))),
+                new XElement(
+                    "Ruins",
+                    snapshot.Ruins.Select(ruin =>
+                        new XElement(
+                            "Ruin",
+                            IdAttributes(ruin.Id),
+                            new XAttribute("originalSettlementKind", ruin.OriginalSettlementId.Kind),
+                            new XAttribute("originalSettlementId", ruin.OriginalSettlementId.Value),
+                            new XAttribute("slug", ruin.Slug),
+                            new XAttribute("name", ruin.Name),
+                            new XAttribute("formerFactionId", ruin.FormerFactionId),
+                            new XAttribute("claimFactionId", ruin.ClaimFactionId),
+                            new XAttribute("salvageBand", ruin.SalvageBand),
+                            new XAttribute("dangerBand", ruin.DangerBand),
+                            new XAttribute("createdTick", ruin.CreatedTick),
+                            new XAttribute("status", ruin.Status),
+                            ruin.ReclaimedSettlementId.HasValue
+                                ? new XAttribute("reclaimedSettlementKind", ruin.ReclaimedSettlementId.Value.Kind)
+                                : null,
+                            ruin.ReclaimedSettlementId.HasValue
+                                ? new XAttribute("reclaimedSettlementId", ruin.ReclaimedSettlementId.Value.Value)
+                                : null,
+                            new XAttribute("statusTick", ruin.StatusTick)))),
                 new XElement(
                     "MigrationGroups",
                     snapshot.MigrationGroups.Select(group =>
@@ -437,7 +461,8 @@ public static class WorldStateCodec
                     ReadId(element),
                     RequiredString(element, "slug"),
                     RequiredString(element, "name"),
-                    RequiredString(element, "factionId")))
+                    RequiredString(element, "factionId"),
+                    OptionalEnum(element, "status", SettlementLifecycleStatus.Active)))
                 .ToList(),
             DecodeCitizens(RequiredContainer(root, "Citizens")),
             RequiredContainer(root, "Armies")
@@ -595,6 +620,22 @@ public static class WorldStateCodec
                     TargetFactionId = OptionalString(element, "targetFactionId") ?? string.Empty,
                     Amount = OptionalInt(element, "amount", 0),
                 })
+                .ToList(),
+            Ruins = OptionalContainer(root, "Ruins")
+                .Elements("Ruin")
+                .Select(element => new WorldRuin(
+                    ReadId(element),
+                    ReadEntityId(element, "originalSettlementKind", "originalSettlementId"),
+                    RequiredString(element, "slug"),
+                    RequiredString(element, "name"),
+                    RequiredString(element, "formerFactionId"),
+                    RequiredString(element, "claimFactionId"),
+                    RequiredEnum<RuinSalvageBand>(element, "salvageBand"),
+                    RequiredEnum<RuinDangerBand>(element, "dangerBand"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredEnum<RuinStatus>(element, "status"),
+                    TryReadEntityId(element, "reclaimedSettlementKind", "reclaimedSettlementId"),
+                    OptionalInt(element, "statusTick", RequiredInt(element, "createdTick"))))
                 .ToList(),
             RaidIntelFacts = OptionalContainer(root, "RaidIntelFacts")
                 .Elements("RaidIntelFact")
