@@ -39,6 +39,9 @@
   <LW_AllianceOfferText>An envoy from {ally} arrives: they are at war with {enemy} and offer you an alliance. Accept, and {ally} becomes a real ally (they help in fights and trade) — but {enemy} will become your enemy and raid you.</LW_AllianceOfferText>
   <LW_AllianceOfferAccept>Accept the alliance</LW_AllianceOfferAccept>
   <LW_AllianceOfferDecline>Decline</LW_AllianceOfferDecline>
+  <LW_RuinSiteLetterLabel>Ruins to salvage</LW_RuinSiteLetterLabel>
+  <LW_RuinSiteLetterText>A {faction} settlement has fallen to ruin. Its remains lie abandoned nearby — send a caravan to clear them for salvage.</LW_RuinSiteLetterText>
+  <LW_RaidWarningWellArmed>This is a wealthy, well-armed faction — expect a hard-hitting raid.</LW_RaidWarningWellArmed>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>
   <LW_FoodStatusShortage>food shortage</LW_FoodStatusShortage>

@@ -381,11 +381,19 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 ?? fact.FactionId;
             var sourcePhrase = RaidWarningSourceKey(fact.SourceKind).Translate();
 
+            var warningText = "LW_RaidWarningLetterText".Translate(
+                factionName.Named("faction"),
+                sourcePhrase.Named("source")).ToString();
+            // Telegraph a hard raid when the faction is wealthy/well-armed (the economy -> raid bridge),
+            // so the warning conveys not just "a raid may come" but "and it will hit hard".
+            if (FactionRaidStrengthService.WealthRaidMultiplier(State, fact.FactionId) >= 1.15f)
+            {
+                warningText += " " + "LW_RaidWarningWellArmed".Translate();
+            }
+
             Find.LetterStack?.ReceiveLetter(
                 "LW_RaidWarningLetterLabel".Translate(),
-                "LW_RaidWarningLetterText".Translate(
-                    factionName.Named("faction"),
-                    sourcePhrase.Named("source")),
+                warningText,
                 LetterDefOf.ThreatSmall);
             sent++;
 
@@ -991,6 +999,18 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
                 site.Tile = tile;
                 worldObjects.Add(site);
+
+                // Surface the ruin as a loot opportunity the player can act on (jump to it), not a
+                // silent marker. Only in-game, so loading a save never re-announces old ruins.
+                if (Current.ProgramState == ProgramState.Playing)
+                {
+                    Find.LetterStack?.ReceiveLetter(
+                        "LW_RuinSiteLetterLabel".Translate(),
+                        "LW_RuinSiteLetterText".Translate(ResolveFactionLabel(ruin.FormerFactionId).Named("faction")),
+                        LetterDefOf.PositiveEvent,
+                        new LookTargets(site));
+                }
+
                 if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
                 {
                     Log.Message(
