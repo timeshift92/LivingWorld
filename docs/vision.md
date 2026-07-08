@@ -1,356 +1,539 @@
-# Living World - Vision
+# Living World — Vision, Design & Research
 
-## Цель проекта
+> Archived from the README to keep the README a short introduction. The authoritative, up-to-date plans live in [docs/roadmap.md](roadmap.md), [docs/research/](research/) and [docs/design/](design/). This file preserves the original long-form vision, design principles, planned systems and research notes.
 
-Living World - это крупный мод для RimWorld, цель которого заменить ощущение "событийного рассказчика" на ощущение непрерывно живущего мира.
+---
 
-Главный принцип:
+## Important implementation policy
 
-> Ничто не появляется из воздуха.
+Living World is an **original implementation**.
 
-Рейдеры, торговцы, беженцы, животные, армии, семьи и поселения должны быть частью одной persistent world simulation. Если событию нужны люди или животные, система должна выбрать уже существующие сущности из глобального мира, а не сгенерировать их только потому, что инциденту нужен контент.
+Existing RimWorld mods are used only as research references. They help us understand what works, what does not work, where compatibility problems appear, and which high-level mechanics are worth designing in our own way.
 
-Долгосрочная цель шире одного мода: Living World Core должен стать фундаментом для новой экосистемы RimWorld-модов. Войны, дипломатия, экономика, дети, болезни, экология, транспорт и колонии должны иметь возможность использовать Living World как общий источник истины.
+Living World must not copy:
 
-## Что именно меняется по сравнению с vanilla RimWorld
+- source code;
+- compiled DLLs;
+- XML definitions;
+- formulas/balancing tables;
+- UI graphics;
+- icons;
+- textures;
+- preview images;
+- text descriptions;
+- naming schemes that are unique to another mod;
+- internal class structures as direct clones.
 
-Vanilla RimWorld часто работает как генератор событий:
+What we can use:
 
-- рассказчик решил создать рейд;
-- игра сгенерировала группу pawn'ов;
-- после события большая часть этих pawn'ов больше не имеет значения для мира.
+- general ideas;
+- observed gameplay behavior;
+- architectural lessons;
+- compatibility lessons;
+- known limitations of existing approaches;
+- public mod descriptions as research context;
+- independently designed systems inspired by the same problem domain.
 
-Living World должен работать иначе:
+In short:
 
-- при генерации мира создается конечная популяция людей, животных и поселений;
-- каждый человек принадлежит поселению, семье, фракции и социальной структуре;
-- каждый рейд, караван, торговец или беженец берется из этой популяции;
-- смерть, плен, ранение, миграция и разрушение поселения навсегда меняют мир.
+```text
+Study ideas, learn lessons, write our own code.
+```
 
-## Базовые масштабы
+---
 
-Целевой масштаб:
+## Core idea
 
-- 20,000-100,000 людей;
-- 100,000+ животных;
-- десятки поселений;
-- несколько фракций с реальными демографическими, экономическими и военными последствиями.
+In vanilla RimWorld, many events are generated on demand:
 
-Пример стартового мира:
+- raids generate attackers;
+- traders generate goods;
+- caravans appear as incidents;
+- world pawns often exist only when the game needs them;
+- settlements are mostly abstract points on the map.
 
-- Humans: 18,000;
-- Wild animals: 45,000;
-- Domestic animals: 8,000;
-- Settlements: 62.
+Living World aims to change this philosophy.
 
-После генерации мира новые люди появляются только через рождение или через явно разрешенные правила сценария. Новые животные появляются через размножение. Если проект позже добавит offworld arrivals, это должно быть отдельное явное правило, а не скрытый fallback генерации.
+Instead of generating entities from nowhere, the simulation should select existing entities from the world ledger.
 
-## Исходные требования из брифа
+Example:
 
-Этот раздел фиксирует исходную постановку как требования, чтобы дальнейшая архитектура имела явное обоснование.
+```text
+Pirate settlement #14
+Population: 736
+Available fighters: 124
+Raid selected: 58 fighters
+Killed in battle: 7
+Returned home: 51
+New available fighters: 117
+Population: 729
+```
 
-### Persistent World
+A caravan should not be a temporary event. It should be a real group of people, animals and goods sent from a real settlement. If the caravan is destroyed, those people, animals and goods are lost permanently.
 
-- При генерации нового мира создается конечное количество людей.
-- Создается конечное количество животных.
-- Создаются поселения.
-- Каждый человек получает поселение, семью, профессию, возраст, пол и социальные связи.
-- Рождение и смерть постоянны.
+---
 
-Архитектурное следствие: нужен global world ledger, а не набор временных incident pawn'ов.
+## Design principles
 
-### No Fake Spawning
+### 1. Persistent world
 
-- Рейды, торговцы, гости, беженцы и животные должны выбираться из уже существующих сущностей.
-- Если пиратское поселение имеет 742 жителей и 118 боеспособных, рейд на 45 человек должен взять 45 реальных людей.
-- Если 20 погибают, население поселения и фракции уменьшается навсегда.
+The world has a persistent state that survives between events and saves.
 
-Архитектурное следствие: все vanilla и modded generation paths должны проходить через allocation/materialization слой.
+Every important world entity must have an identity:
 
-### Persistent Animals
+- humans;
+- animals;
+- settlements;
+- factions;
+- armies;
+- caravans;
+- traders;
+- resources;
+- historical events.
 
-- Дикие животные существуют глобально.
-- Животные мигрируют, размножаются, умирают, охотятся и голодают.
-- Исчезновение волков или оленей должно менять глобальную популяцию.
+### 2. Ledger-first simulation
 
-Архитектурное следствие: wildlife spawn должен быть заменен выбором из regional animal pool.
+The source of truth is the ledger, not generated incidents.
 
-### Settlements
+Events are projections of the ledger:
 
-Каждое поселение должно иметь:
+```text
+WorldState -> Simulation System -> World Event -> Materialized RimWorld objects
+```
 
-- population;
-- children/adults/elderly;
-- soldiers/workers;
-- food;
-- medicine;
-- livestock;
-- production;
-- housing;
-- economy;
-- technology;
-- military power.
+### 3. No magic spawning
 
-Архитектурное следствие: поселение является долгоживущей сущностью с daily simulation, а не просто world object marker.
+Living World should avoid creating new pawns, animals, goods or armies without accounting for where they came from.
 
-### Demographics and families
+Vanilla generation can still be used as a materialization mechanism, but the result must be tied back to world entities.
 
-Каждый человек должен иметь:
+### 4. Materialization / dematerialization
 
-- unique ID;
-- name;
+Most of the world should not run full pawn AI all the time.
+
+Living World separates:
+
+- **abstract persistent entities** stored in `WorldState`;
+- **materialized RimWorld pawns/things/world objects** created only when needed.
+
+When a raid, caravan, battle or settlement map becomes active, abstract entities are materialized. When they leave the active map, the result is written back into the ledger.
+
+### 5. Deterministic simulation
+
+The simulation should be reproducible where possible.
+
+Systems should use stable IDs, controlled random seeds, scheduled updates and event logs.
+
+### 6. Layered simulation
+
+Living World should support multiple simulation levels:
+
+| Level | Scope | Simulation detail |
+|---|---|---|
+| Active | Player map and currently loaded maps | Full RimWorld logic |
+| Regional | Nearby settlements, caravans and conflicts | Simplified periodic logic |
+| Global | Rest of the planet | Aggregate simulation only |
+
+This is required for performance. The project should support thousands or tens of thousands of world entities without running full AI for all of them.
+
+---
+
+## Planned systems
+
+### LivingWorld.Core
+
+The core module owns the world state and the simulation scheduler.
+
+Responsibilities:
+
+- stable IDs;
+- world entity registry;
+- save/load;
+- event log;
+- deterministic random streams;
+- simulation ticks;
+- materialization contracts;
+- compatibility API.
+
+### Population & Demography
+
+Tracks human population across factions and settlements.
+
+Planned data:
+
+- person ID;
 - age;
 - sex;
-- parents;
-- children;
-- partner;
+- family links;
 - faction;
 - settlement;
 - profession;
-- skills;
-- traits;
-- health;
-- diseases;
-- inventory;
-- status.
+- health state;
+- combat eligibility;
+- migration state.
 
-Архитектурное следствие: `WorldCitizen` должен быть достаточно богатой записью, но все равно легче `Pawn`.
+Planned mechanics:
+
+- births;
+- deaths;
+- aging;
+- migration;
+- family impact;
+- disease impact;
+- settlement abandonment;
+- faction decline and recovery.
 
 ### Economy
 
-Поселения должны считать:
+Tracks production, consumption, storage and trade.
 
-- food production;
+Planned mechanics:
+
+- settlement production;
 - food consumption;
-- construction;
-- crafting;
-- mining;
-- agriculture;
-- trade;
-- storage.
-
-Если production fails, начинается starvation.
-
-Архитектурное следствие: экономика должна быть отдельным сервисом, который создает события кризиса и миграции.
-
-### Ecology
-
-Predator-prey relationships должны естественно стабилизироваться.
-
-Пример:
-
-- больше волков;
-- меньше оленей;
-- голод волков;
-- падение популяции волков;
-- восстановление оленей.
-
-Архитектурное следствие: животные не могут быть только map spawn decorations.
+- goods storage;
+- trade surpluses;
+- finite silver mode;
+- item category valuation;
+- settlement loot based on actual storage;
+- caravan goods tied to origin settlement.
 
 ### Military
 
-- Армии состоят из реальных людей.
-- Потери навсегда ослабляют фракции.
-- Большие войны должны менять цивилизации.
-- Разрушенные поселения не должны восстанавливаться магически.
+Tracks armies, raids, warbands, scouts and losses.
 
-Архитектурное следствие: `RaidPlanner` и `WarSimulator` должны работать с citizen IDs, а не с anonymous pawn generation.
+Planned mechanics:
+
+- persistent armies;
+- real recruitment from settlement populations;
+- raid size limited by available fighters;
+- battlefield losses written back into the ledger;
+- army movement on the world map;
+- settlement defense strength;
+- reinforcement logic;
+- long-term war exhaustion.
 
 ### Diplomacy
 
-Система должна поддерживать:
+Tracks faction relationships and long-term strategy.
+
+Planned mechanics:
 
 - wars;
 - peace;
-- trade;
 - alliances;
 - tribute;
-- vassals;
+- vassalage;
+- faction collapse;
 - civil wars;
-- faction splits;
-- migration;
-- refugees.
+- strategic decisions based on population, economy and military capacity.
 
-Архитектурное следствие: дипломатия должна быть доменным модулем, а не набором storyteller incidents.
+### Ecology
+
+Tracks animal populations and ecosystem pressure.
+
+Planned mechanics:
+
+- regional animal populations;
+- births and deaths;
+- predator/prey pressure;
+- migration;
+- overhunting consequences;
+- biome-based carrying capacity.
 
 ### World History
 
-Мир должен вести историю:
+Records important world events.
 
-- epidemics;
+Examples:
+
 - wars;
-- famine;
-- casualties;
-- destroyed settlements;
-- migrations.
+- epidemics;
+- famines;
+- settlement founding;
+- settlement destruction;
+- population crashes;
+- major battles;
+- faction collapse.
 
-Архитектурное следствие: нужен append-only event log и summary/history layer.
+---
 
-### Simulation levels
+## Research sources and inspiration
 
-Обязательные уровни:
+Living World is a standalone project. It is **not** intended to be built on top of existing mods.
 
-- Active: текущая карта, полный RimWorld AI.
-- Regional: близкие регионы, simplified AI.
-- Global: остальной мир, statistical simulation only.
+The following mods are used as research sources for architecture, design lessons and feature comparison only.
 
-Архитектурное следствие: нельзя симулировать все карты и всех pawn'ов полноценно.
+No code, art assets, XML definitions, text, compiled DLLs, formulas, balancing tables or proprietary resources should be copied into Living World.
 
-### Compatibility
+These projects are treated as prior art and design inspiration. Living World will implement its own data models, algorithms, APIs, Harmony patches and simulation flow.
 
-Архитектура должна быть модульной и учитывать:
+### RimWar Threaded
 
-- Economics & Demography;
-- Hospitality;
-- Vanilla Expanded;
-- Biotech children;
-- Children, School and Learning;
-- Vehicle Framework;
-- Performance Fish;
-- RocketMan.
+Repository:
 
-Архитектурное следствие: нужны adapters и public API вместо hard dependency на каждый мод.
+https://github.com/TorannD/RimWar---Threaded
 
-## Основные принципы
+License:
 
-### 1. Никогда не хранить весь мир как Pawn
+- MIT License.
+- Although the license is permissive, Living World will not copy RimWar code by default.
+- RimWar is used as a research source for planet-layer gameplay and world-object simulation concepts.
 
-Это ключевое ограничение проекта.
+Ideas to study and redesign independently:
 
-Большинство жителей мира должны существовать как легкие записи данных, например `WorldCitizen`, а не как полноценные RimWorld `Pawn`.
+- planet-layer activity;
+- `WorldComponent`-based simulation;
+- moving world objects such as warbands, scouts, diplomats and traders;
+- settlement power/points as a cheap abstraction;
+- periodic world updates;
+- faction actions selected from weighted choices;
+- settlement reinforcement logic;
+- interaction between caravans and war objects;
+- world object pathing and detection concepts.
 
-Минимальная запись человека:
+What must not be copied directly:
 
-- ID;
-- возраст;
-- пол;
-- семья;
-- здоровье;
-- профессия;
-- поселение;
-- фракция;
-- статус.
+- source code;
+- class structures as direct clones;
+- exact Harmony patches;
+- exact balancing values;
+- art assets;
+- text strings;
+- XML definitions.
 
-Настоящий `Pawn` создается только тогда, когда человек появляется на активной карте, в караване, рейде, торговой группе, гостях, плену или другом player-visible контексте.
+How Living World should improve on it:
 
-Обоснование: 20,000-50,000 полноценных pawn'ов создадут огромную нагрузку на память, сохранения, здоровье, relations, apparel, inventory, needs и AI. Это убьет производительность и сделает проект архитектурно нестабильным.
+- replace `points-first` with `ledger-first`;
+- store real population and resources behind military strength;
+- separate simulation data from RimWorld materialized objects;
+- make Harmony patches thin adapters rather than core logic;
+- make military losses affect actual population and economy.
 
-### 2. Event Sourcing
+### Economics & Demography
 
-Все важные изменения мира должны записываться как события:
+Repository:
 
-- `CitizenBorn`;
-- `CitizenDied`;
-- `CitizenMarried`;
-- `SettlementDestroyed`;
-- `WarStarted`;
-- `RaidReturned`;
-- `CropFailure`;
-- `AnimalMigration`;
-- `FactionSplit`;
-- `RefugeesCreated`.
+https://github.com/helldanpwnz/Economics-and-Demography
 
-События нужны не только для истории. Они дают:
+License status:
 
-- воспроизводимость;
-- анализ причин;
-- отладку;
-- возможность частичного восстановления после ошибок;
-- понятные объяснения игроку, почему мир изменился.
+- No `LICENSE` file was found in the repository during research.
+- No explicit license statement was found in the README during research.
+- Treat the project as **source-available but not reusable** unless the author adds a license or gives permission.
+- Do not copy code, XML, text, balancing formulas, tables or assets from this project.
 
-Обоснование: для такого масштаба нельзя ограничиться текущими счетчиками. Нужно знать, почему фракция ослабла, откуда появились беженцы, почему поселение вымерло и какие действия игрока вызвали цепочку последствий.
+Ideas to study and redesign independently:
 
-### 3. Вся логика через сервисы
+- population counters per settlement/faction;
+- adults/children/elders as demographic groups;
+- births and deaths affected by tech level and resources;
+- migration/desertion based on living conditions;
+- faction expansion when population/resources are sufficient;
+- settlement abandonment when population collapses;
+- raids limited by actual population and demographics;
+- daily production and consumption;
+- settlement storage;
+- persistent goods;
+- faction-to-faction trade;
+- finite money / gold standard option;
+- global inflation/homeostasis model;
+- low-TPS background simulation.
 
-Объекты данных не должны содержать сложную бизнес-логику.
+What must not be copied directly:
 
-Правильная модель:
+- source code;
+- formulas;
+- balancing tables;
+- exact economy implementation;
+- text descriptions;
+- XML definitions;
+- assets.
 
-- `BirthService`;
-- `MigrationService`;
-- `RaidPlanner`;
-- `SettlementSimulator`;
-- `AnimalSimulator`;
-- `WarSimulator`;
-- `EconomySimulator`.
+How Living World should improve on it:
 
-Записи вроде `WorldCitizen`, `WorldAnimal`, `WorldSettlement` должны хранить состояние. Сервисы должны менять это состояние через явные операции и события.
+- use aggregate counters only for global/regional simulation layers;
+- keep a path toward real individual people in the ledger;
+- allow lazy generation/materialization of detailed people from demographic cohorts;
+- connect economy directly to raids, migration, diplomacy and ecology;
+- make all economic changes traceable through event sourcing.
 
-Обоснование: проект будет очень большим. Если логика окажется внутри самих объектов, систему станет трудно тестировать, мигрировать, профилировать и расширять.
+### Empire Refactored
 
-### 4. Собственный публичный API
+Steam Workshop:
 
-Living World должен предоставлять API для других модов:
+https://steamcommunity.com/workshop/filedetails/?id=3701480464
 
-- получить гражданина;
-- получить поселение;
-- убить или переместить гражданина через контролируемую операцию;
-- создать миграцию;
-- получить численность населения;
-- получить популяцию животных;
-- подписаться на события мира.
+GitHub:
 
-Обоснование: если проект станет популярным, другие моддеры будут хотеть интеграцию. Лучше дать стабильный `ILivingWorldApi`, чем заставлять всех использовать Harmony-патчи против внутренних классов.
+https://github.com/matathias/Empire-1_6-Continued
 
-Правильное направление интеграции:
+License:
+
+- GNU General Public License v3.0.
+- GPL-3.0 is copyleft.
+- Living World will not copy GPL code unless the project intentionally changes its own licensing strategy.
+- The safe approach is to study gameplay ideas and write an original implementation.
+
+Ideas to study and redesign independently:
+
+- player-controlled colony/vassal layer;
+- taxes paid in silver or goods;
+- colony events with player choices;
+- edicts/policies split into social, tax and military categories;
+- squads as configurable military units;
+- manual defense battles;
+- in-game codex/help system;
+- XML-driven extensibility;
+- settlement/resource types defined by XML;
+- submod-friendly architecture designed to avoid Harmony patching.
+
+What must not be copied directly:
+
+- GPL source code;
+- icons, banners, UI graphics, faction flags or other assets;
+- exact XML schema;
+- implementation classes;
+- text strings;
+- balancing tables;
+- player-empire gameplay flow as a direct clone.
+
+How Living World should improve on it:
+
+- support player colonies as one possible projection of the global world state;
+- make taxes and goods come from real settlement storage;
+- make squads consume real population, equipment and wages;
+- provide a clean public API for other mods;
+- prefer data-driven definitions and adapters over large Harmony patch sets.
+
+---
+
+## Licensing policy for Living World
+
+Living World should be developed as an original implementation.
+
+Rules:
+
+1. Ideas, mechanics and architectural lessons can be studied.
+2. Code must not be copied from other mods.
+3. Art assets must not be copied from other mods.
+4. XML definitions must not be copied from other mods.
+5. Text descriptions must not be copied from other mods.
+6. Formulas and balancing tables must be independently designed.
+7. Public documentation should credit research sources.
+8. If a repository has no license, treat it as copyrighted and not reusable.
+9. If GPL code is used, the affected project/license strategy must be reviewed before merging.
+10. Every Living World module should be written as original code.
+
+Recommended license for Living World:
+
+- **MIT** if the goal is maximum reuse and permissive open source.
+- **GPL-3.0** only if the project intentionally wants strong copyleft.
+- **MPL-2.0** if the project wants a middle ground: file-level copyleft while allowing broader integration.
+
+Current recommendation: **MIT for code**, with a separate clear rule that generated art/assets are project-owned and should not be reused without permission unless later relicensed.
+
+---
+
+## Architecture direction
+
+Living World should not be a compatibility patch over RimWar, Economics & Demography or Empire Refactored.
+
+It should become a standalone core with adapters.
+
+Proposed structure:
 
 ```text
-RimWar Adapter / E&D Adapter / other mods
-  -> use Living World API
-  -> consume citizens, ownership, resources, armies and history
+LivingWorld.Core
+  WorldState
+  EntityRegistry
+  EventLog
+  SimulationClock
+  DeterministicRandom
+  SaveLoad
+
+LivingWorld.Population
+  People
+  Cohorts
+  Families
+  BirthDeathMigration
+
+LivingWorld.Economy
+  Resources
+  Production
+  Consumption
+  Storage
+  Trade
+  Inflation
+
+LivingWorld.Military
+  Armies
+  Raids
+  Scouts
+  Reinforcements
+  Losses
+
+LivingWorld.Diplomacy
+  Relations
+  Wars
+  Peace
+  Vassals
+  Treaties
+
+LivingWorld.Ecology
+  AnimalPopulations
+  Migration
+  PredatorPrey
+  CarryingCapacity
+
+LivingWorld.RimWorldAdapter
+  HarmonyPatches
+  Materialization
+  Dematerialization
+  VanillaIncidentBridge
+  UI
 ```
 
-Неправильное направление:
+---
+
+## Milestone 1: MVP proposal
+
+The first milestone should not attempt to simulate everything.
+
+Recommended MVP:
+
+1. `WorldState` saved in `WorldComponent`.
+2. Stable IDs for settlements and factions.
+3. Settlement population counters.
+4. Simple daily demographic update.
+5. Raid budget limited by faction/settlement population.
+6. Losses from raids written back into population.
+7. Debug UI showing settlement population and military pool.
+8. Event log for births, deaths, raids and losses.
+
+MVP rule:
 
 ```text
-Living World
-  -> depends on RimWar internals
-  -> depends on E&D population owner
+No raid should be allowed to happen without being accounted for in world state.
 ```
 
-Обоснование: если Living World строится поверх чужой архитектуры, он наследует чужие ограничения. Если Living World предоставляет нижний слой, другие моды получают стабильный foundation.
+---
 
-### 5. Детерминированная симуляция
+## Project status
 
-Симуляция должна использовать seed мира и контролируемые random streams.
+Early research and architecture phase.
 
-При одинаковом seed и одинаковых входных событиях мир должен развиваться одинаково.
+Current focus:
 
-Это дает:
+- reverse engineering major RimWorld world-simulation mods;
+- defining a safe original architecture;
+- preparing `LivingWorld.Core` MVP;
+- establishing branding and documentation.
 
-- воспроизводимость багов;
-- стабильные тесты;
-- исторические сценарии;
-- возможность сравнивать сохранения;
-- понятное расследование "почему это случилось".
+---
 
-Обоснование: без детерминизма ошибки в такой системе будут почти невозможно повторять.
+## Disclaimer
 
-### 6. Реальные последствия
+Living World is an independent RimWorld mod project.
 
-Действия игрока должны менять мир.
-
-Пример:
-
-1. игрок уничтожил 300 рейдеров;
-2. у фракции стало меньше взрослых боеспособных людей;
-3. просела экономика поселений, потому что часть солдат была работниками;
-4. снизилась рождаемость и выросла нагрузка на семьи;
-5. появились беженцы;
-6. соседняя фракция увидела слабость и начала войну.
-
-Обоснование: это и есть смысл проекта. Рейд должен быть не отдельной сценой, а событием с долгосрочным следом в мире.
-
-## Non-goals на ранних этапах
-
-На ранних этапах не нужно пытаться реализовать всю цивилизационную симуляцию сразу.
-
-Не нужно начинать с:
-
-- полноценной дипломатии всех фракций;
-- полной экономики всех ресурсов;
-- сложной экологии всех видов;
-- UI для каждого аспекта мира;
-- максимальной совместимости со всеми модами.
-
-Первый ценный вертикальный срез: реальные рейдеры из реального поселения с постоянными потерями.
+RimWorld is developed by Ludeon Studios. Existing mods mentioned in this README belong to their respective authors. They are referenced only for research, comparison and credit.
