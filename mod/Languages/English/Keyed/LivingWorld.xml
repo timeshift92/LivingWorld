@@ -129,6 +129,13 @@
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
   <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
   <LW_MissionMarkerInspect>{faction} {kind}: heading to {target} - arrives in about {days} day(s).</LW_MissionMarkerInspect>
+  <LW_MissionMarkerStrengthLine>Force: {combatants} people, strength {strength}</LW_MissionMarkerStrengthLine>
+  <LW_MissionMarkerResourceLine>Cargo/supplies: {resources}</LW_MissionMarkerResourceLine>
+  <LW_MissionMarkerReasonLine>Purpose: {reason}</LW_MissionMarkerReasonLine>
+  <LW_MissionReason_Warband>military action ordered by its faction</LW_MissionReason_Warband>
+  <LW_MissionReason_Caravan>moving real goods between settlements</LW_MissionReason_Caravan>
+  <LW_MissionReason_Scout>gathering intel for future action (value {amount})</LW_MissionReason_Scout>
+  <LW_MissionReason_Diplomat>negotiating faction relations (impact {amount})</LW_MissionReason_Diplomat>
   <LW_RuinMarkerInspect>Ruins of a {faction} settlement.\nSalvage: {salvage} | Danger: {danger}</LW_RuinMarkerInspect>
   <LW_RuinSalvage_None>none</LW_RuinSalvage_None>
   <LW_RuinSalvage_Low>low</LW_RuinSalvage_Low>

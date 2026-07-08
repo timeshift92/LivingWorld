@@ -596,7 +596,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     army.SourceSettlementId,
                     movement.TargetSettlementId,
                     movement.DepartTick,
-                    movement.ArrivalTick);
+                    movement.ArrivalTick,
+                    BuildWarbandMarkerDetails(army));
             }
 
             // Caravans hauling goods between settlements (Core's caravan travel system).
@@ -616,7 +617,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     caravan.SourceSettlementId,
                     caravan.TargetSettlementId,
                     caravan.DepartTick,
-                    caravan.ArrivalTick);
+                    caravan.ArrivalTick,
+                    BuildCaravanMarkerDetails(caravan));
             }
 
             // Scout / diplomat missions travelling to a target settlement.
@@ -643,7 +645,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     mission.OriginSettlementId,
                     mission.TargetSettlementId,
                     mission.DepartTick,
-                    mission.ArrivalTick);
+                    mission.ArrivalTick,
+                    BuildMissionMarkerDetails(mission));
             }
         }
 
@@ -668,7 +671,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         EntityId originSettlementId,
         EntityId targetSettlementId,
         int departTick,
-        int arrivalTick)
+        int arrivalTick,
+        MissionMarkerDetails details)
     {
         var target = State.GetSettlement(targetSettlementId);
         if (target == null)
@@ -683,10 +687,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
 
         live.Add(key);
-        if (existing.ContainsKey(key))
-        {
-            return;
-        }
 
         var origin = State.GetSettlement(originSettlementId);
         var originTile = origin != null ? ParseSettlementTile(origin.Slug) : targetTile;
@@ -698,7 +698,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var faction = Find.FactionManager?.AllFactionsListForReading
             .FirstOrDefault(candidate => candidate.def?.defName == factionId);
 
-        var marker = (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+        var isNew = !existing.TryGetValue(key, out var marker);
+        marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
         marker.Tile = targetTile;
         if (faction != null)
         {
@@ -714,8 +715,77 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             departTick,
             arrivalTick,
             faction?.Name ?? factionId,
-            target.Name);
-        worldObjects.Add(marker);
+            target.Name,
+            details.Combatants,
+            details.Strength,
+            details.ResourceSummary,
+            details.Reason);
+        if (isNew)
+        {
+            worldObjects.Add(marker);
+        }
+    }
+
+    private MissionMarkerDetails BuildWarbandMarkerDetails(WorldArmy army)
+    {
+        var combatants = State.Citizens.Count(citizen =>
+            citizen.Status == CitizenStatus.Alive
+            && citizen.IsAdult
+            && State.GetOwner(citizen.Id) == army.Id);
+        var strength = SettlementPowerService.CombatPowerOf(combatants);
+        var resources = FormatResourceSummary(ResourceLedgerService.GetResources(State, army.Id));
+        var reason = "LW_MissionReason_Warband".Translate().ToString();
+        return new MissionMarkerDetails(combatants, strength, resources, reason);
+    }
+
+    private MissionMarkerDetails BuildCaravanMarkerDetails(WorldCaravan caravan)
+    {
+        var resources = FormatResourceSummary(ResourceLedgerService.GetResources(State, caravan.Id));
+        var reason = "LW_MissionReason_Caravan".Translate().ToString();
+        return new MissionMarkerDetails(0, 0, resources, reason);
+    }
+
+    private MissionMarkerDetails BuildMissionMarkerDetails(WorldMission mission)
+    {
+        var reasonKey = mission.Kind == WorldMissionKind.Scout
+            ? "LW_MissionReason_Scout"
+            : "LW_MissionReason_Diplomat";
+        var reason = reasonKey.Translate(mission.Amount.Named("amount")).ToString();
+        return new MissionMarkerDetails(0, 0, string.Empty, reason);
+    }
+
+    private static string FormatResourceSummary(IReadOnlyList<ResourceStack> resources)
+    {
+        var visible = resources
+            .Where(resource => resource.Quantity > 0)
+            .OrderByDescending(resource => resource.Quantity)
+            .ThenBy(resource => resource.ResourceKey, StringComparer.Ordinal)
+            .Take(3)
+            .Select(resource => $"{resource.ResourceKey} x{resource.Quantity}")
+            .ToList();
+
+        return visible.Count == 0
+            ? string.Empty
+            : string.Join(", ", visible);
+    }
+
+    private sealed class MissionMarkerDetails
+    {
+        public MissionMarkerDetails(int combatants, int strength, string resourceSummary, string reason)
+        {
+            Combatants = combatants;
+            Strength = strength;
+            ResourceSummary = resourceSummary ?? string.Empty;
+            Reason = reason ?? string.Empty;
+        }
+
+        public int Combatants { get; }
+
+        public int Strength { get; }
+
+        public string ResourceSummary { get; }
+
+        public string Reason { get; }
     }
 
     // Ledger settlement slugs are "worldobject:{defName}:{tile}:{factionId}", so the RimWorld world

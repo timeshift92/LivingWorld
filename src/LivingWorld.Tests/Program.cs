@@ -6313,6 +6313,17 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("WorldOverlayTransparentLit", marker);
     AssertContains("public override void ExposeData()", marker);
     AssertContains("LW_MissionMarkerInspect", marker);
+    AssertContains("LW_MissionMarkerStrengthLine", marker);
+    AssertContains("LW_MissionMarkerResourceLine", marker);
+    AssertContains("LW_MissionMarkerReasonLine", marker);
+    AssertContains("combatants.Named(\"combatants\")", marker);
+    AssertContains("strength.Named(\"strength\")", marker);
+    AssertContains("resourceSummary.Named(\"resources\")", marker);
+    AssertContains("reason.Named(\"reason\")", marker);
+    AssertContains("Scribe_Values.Look(ref combatants", marker);
+    AssertContains("Scribe_Values.Look(ref strength", marker);
+    AssertContains("Scribe_Values.Look(ref resourceSummary", marker);
+    AssertContains("Scribe_Values.Look(ref reason", marker);
     // The marker's icon is per-instance (chosen by kind), not the fixed def texture.
     AssertContains("texPath: textureName", marker);
 
@@ -6327,6 +6338,11 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("CaravanStatus.Traveling", component);
     AssertContains("World/LivingWorld_Warband", component);
     AssertContains("World/LivingWorld_Trader", component);
+    AssertContains("BuildWarbandMarkerDetails", component);
+    AssertContains("BuildCaravanMarkerDetails", component);
+    AssertContains("BuildMissionMarkerDetails", component);
+    AssertContains("ResourceLedgerService.GetResources", component);
+    AssertContains("existing.TryGetValue(key", component);
     // Scout and diplomat missions are rendered too, each with its own icon.
     AssertContains("State.Missions", component);
     AssertContains("WorldMissionStatus.Traveling", component);
@@ -6353,6 +6369,12 @@ static void TestRimWorldWorldArmyMarker()
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     AssertContains("<LW_MissionMarkerInspect>", en);
     AssertContains("<LW_MissionMarkerInspect>", ru);
+    AssertContains("<LW_MissionMarkerStrengthLine>", en);
+    AssertContains("<LW_MissionMarkerStrengthLine>", ru);
+    AssertContains("<LW_MissionMarkerResourceLine>", en);
+    AssertContains("<LW_MissionMarkerResourceLine>", ru);
+    AssertContains("<LW_MissionMarkerReasonLine>", en);
+    AssertContains("<LW_MissionMarkerReasonLine>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
 }

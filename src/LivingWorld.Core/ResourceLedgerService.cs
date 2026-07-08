@@ -56,6 +56,16 @@ public static class ResourceLedgerService
         return GetQuantity(state, ownerId, resourceKey.DefName);
     }
 
+    public static IReadOnlyList<ResourceStack> GetResources(WorldState state, EntityId ownerId)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        return state.ResourcesForOwner(ownerId);
+    }
+
     public static int ConsumeResource(
         WorldState state,
         EntityId ownerId,

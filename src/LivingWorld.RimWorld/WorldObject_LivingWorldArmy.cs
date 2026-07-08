@@ -1,5 +1,6 @@
 using RimWorld;
 using RimWorld.Planet;
+using System.Text;
 using UnityEngine;
 using Verse;
 
@@ -24,6 +25,10 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     private int arrivalTick;
     private string factionLabel = string.Empty;
     private string targetLabel = string.Empty;
+    private int combatants;
+    private int strength;
+    private string resourceSummary = string.Empty;
+    private string reason = string.Empty;
 
     private Material? cachedMaterial;
 
@@ -38,7 +43,11 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
         int departTick,
         int arrivalTick,
         string factionLabel,
-        string targetLabel)
+        string targetLabel,
+        int combatants,
+        int strength,
+        string resourceSummary,
+        string reason)
     {
         this.markerKey = markerKey ?? string.Empty;
         this.textureName = string.IsNullOrEmpty(textureName) ? "World/LivingWorld_Warband" : textureName;
@@ -49,6 +58,10 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
         this.arrivalTick = arrivalTick;
         this.factionLabel = factionLabel ?? string.Empty;
         this.targetLabel = targetLabel ?? string.Empty;
+        this.combatants = combatants;
+        this.strength = strength;
+        this.resourceSummary = resourceSummary ?? string.Empty;
+        this.reason = reason ?? string.Empty;
         cachedMaterial = null;
     }
 
@@ -110,11 +123,34 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     {
         var remainingTicks = arrivalTick - (Find.TickManager?.TicksGame ?? arrivalTick);
         var days = Mathf.Max(0, Mathf.RoundToInt(remainingTicks / 60000f));
-        return "LW_MissionMarkerInspect".Translate(
+        var builder = new StringBuilder();
+        builder.Append("LW_MissionMarkerInspect".Translate(
             factionLabel.Named("faction"),
             kindNoun.Named("kind"),
             targetLabel.Named("target"),
-            days.Named("days"));
+            days.Named("days")));
+
+        if (combatants > 0 || strength > 0)
+        {
+            builder.AppendLine();
+            builder.Append("LW_MissionMarkerStrengthLine".Translate(
+                combatants.Named("combatants"),
+                strength.Named("strength")));
+        }
+
+        if (!string.IsNullOrWhiteSpace(resourceSummary))
+        {
+            builder.AppendLine();
+            builder.Append("LW_MissionMarkerResourceLine".Translate(resourceSummary.Named("resources")));
+        }
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            builder.AppendLine();
+            builder.Append("LW_MissionMarkerReasonLine".Translate(reason.Named("reason")));
+        }
+
+        return builder.ToString();
     }
 
     public override void ExposeData()
@@ -129,5 +165,9 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
         Scribe_Values.Look(ref arrivalTick, "lwArrivalTick", 0);
         Scribe_Values.Look(ref factionLabel, "lwFactionLabel", string.Empty);
         Scribe_Values.Look(ref targetLabel, "lwTargetLabel", string.Empty);
+        Scribe_Values.Look(ref combatants, "lwCombatants", 0);
+        Scribe_Values.Look(ref strength, "lwStrength", 0);
+        Scribe_Values.Look(ref resourceSummary, "lwResourceSummary", string.Empty);
+        Scribe_Values.Look(ref reason, "lwReason", string.Empty);
     }
 }
