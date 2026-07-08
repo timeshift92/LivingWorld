@@ -60,6 +60,13 @@
   <LW_FacilityKind_Clinic>Clinic</LW_FacilityKind_Clinic>
   <LW_FacilityKind_PowerPlant>Power plant</LW_FacilityKind_PowerPlant>
   <LW_FacilityKind_Storage>Storage</LW_FacilityKind_Storage>
+  <LW_InspectAnimalsExactLine>Animals: {animals}</LW_InspectAnimalsExactLine>
+  <LW_InspectAnimalItem>{kind} x{count}</LW_InspectAnimalItem>
+  <LW_InspectAnimalsBandLine>Animals: {band}</LW_InspectAnimalsBandLine>
+  <LW_AnimalBand_Sparse>sparse</LW_AnimalBand_Sparse>
+  <LW_AnimalBand_Moderate>moderate</LW_AnimalBand_Moderate>
+  <LW_AnimalBand_Abundant>abundant</LW_AnimalBand_Abundant>
+  <LW_AnimalBand_Teeming>teeming</LW_AnimalBand_Teeming>
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Alive {citizens} | Dead {deadCitizens} | Returned {returnedCitizens} | Captured {prisonerCitizens} | Meals {meals} | Steel {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner} | Missing {missing}</LW_RaidOutcomeLine>

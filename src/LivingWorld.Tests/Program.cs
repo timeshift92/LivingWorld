@@ -222,6 +222,7 @@ var tests = new List<(string Name, Action Test)>
     ("limits Living World main tab rendering work", TestRimWorldMainTabLimitsRenderingWork),
     ("adds Living World settlement population to inspect panel", TestRimWorldSettlementInspectPatch),
     ("surfaces facilities and projects in the inspect panel with fog-of-war gating", TestRimWorldSettlementFacilitiesInspection),
+    ("surfaces settlement animal cohorts in the inspect panel", TestRimWorldSettlementAnimalsInspection),
     ("patches vanilla enemy raids into Living World population", TestRimWorldRaidIncidentPatch),
     ("patches generated raid pawns into Living World citizens", TestRimWorldRaidPawnGenerationPatch),
     ("patches pawn death into Living World casualties", TestRimWorldPawnKillPatch),
@@ -6229,6 +6230,33 @@ static void TestRimWorldSettlementFacilitiesInspection()
         "LW_InspectFacilityProjectBuildExact", "LW_InspectFacilityProjectCoarseLine",
         "LW_FacilityDevBand_Basic", "LW_FacilityDevBand_Advanced",
         "LW_FacilityKind_Farm", "LW_FacilityKind_Workshop", "LW_FacilityKind_Storage",
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+// Task 7 RW visibility: the inspect panel surfaces the settlement's animal cohorts, fog-of-war gated
+// (exact herd sizes only when directly known, else a coarse abundance band).
+static void TestRimWorldSettlementAnimalsInspection()
+{
+    var root = FindRepoRoot();
+    var source = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementInspectPatch.cs"));
+
+    AssertContains("BuildAnimalsLine", source);
+    AssertContains("state.AnimalCohorts", source);
+    AssertContains("known.ExactValuesVisible", source);
+    AssertContains("LW_InspectAnimalsExactLine", source);
+    AssertContains("LW_InspectAnimalsBandLine", source);
+    AssertContains("AnimalAbundanceBand", source);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_InspectAnimalsExactLine", "LW_InspectAnimalItem", "LW_InspectAnimalsBandLine",
+        "LW_AnimalBand_Sparse", "LW_AnimalBand_Teeming",
     })
     {
         AssertContains($"<{key}>", en);

@@ -108,6 +108,12 @@ public static class LivingWorldSettlementInspectPatch
             inspectLine = $"{inspectLine}\n{facilitiesLine}";
         }
 
+        var animalsLine = BuildAnimalsLine(state, settlement.Id, known);
+        if (animalsLine != null)
+        {
+            inspectLine = $"{inspectLine}\n{animalsLine}";
+        }
+
         // Threat header: if a world-war army is marching on this settlement it is already visible
         // on the map (the warband marker), so surfacing it here is consistent with fog-of-war and
         // ties the map object to the settlement. Famine/growth stay inside the knowledge line so we
@@ -288,6 +294,70 @@ public static class LivingWorldSettlementInspectPatch
         }
 
         return "LW_FacilityDevBand_None".Translate().ToString();
+    }
+
+    // Surface the settlement's animal cohorts (Task 7). Same fog-of-war rule as production/facilities:
+    // exact herd sizes only when the player has directly-known intel, otherwise a coarse abundance band.
+    private static string? BuildAnimalsLine(WorldState state, EntityId settlementId, KnownSettlementInfo? known)
+    {
+        if (known == null)
+        {
+            return null;
+        }
+
+        var cohorts = state.AnimalCohorts
+            .Where(cohort => cohort.OwnerId == settlementId && cohort.Count > 0)
+            .ToList();
+        if (cohorts.Count == 0)
+        {
+            return null;
+        }
+
+        if (known.ExactValuesVisible)
+        {
+            var text = string.Join(", ", cohorts
+                .OrderByDescending(cohort => cohort.Count)
+                .ThenBy(cohort => cohort.Id.Value)
+                .Take(6)
+                .Select(cohort => "LW_InspectAnimalItem".Translate(
+                    AnimalKindLabel(cohort.AnimalKind).Named("kind"),
+                    cohort.Count.Named("count")).ToString()));
+            return "LW_InspectAnimalsExactLine".Translate(text.Named("animals")).ToString();
+        }
+
+        return "LW_InspectAnimalsBandLine".Translate(
+            AnimalAbundanceBand(cohorts.Sum(cohort => cohort.Count)).Named("band")).ToString();
+    }
+
+    private static string AnimalKindLabel(string kind)
+    {
+        if (string.IsNullOrEmpty(kind))
+        {
+            return kind ?? string.Empty;
+        }
+
+        var def = DefDatabase<PawnKindDef>.GetNamedSilentFail(kind);
+        return !string.IsNullOrEmpty(def?.label) ? def!.label.CapitalizeFirst() : kind;
+    }
+
+    private static string AnimalAbundanceBand(int total)
+    {
+        if (total >= 120)
+        {
+            return "LW_AnimalBand_Teeming".Translate();
+        }
+
+        if (total >= 40)
+        {
+            return "LW_AnimalBand_Abundant".Translate();
+        }
+
+        if (total >= 10)
+        {
+            return "LW_AnimalBand_Moderate".Translate();
+        }
+
+        return "LW_AnimalBand_Sparse".Translate();
     }
 
     private static WorldSettlement? FindSettlementForWorldObject(

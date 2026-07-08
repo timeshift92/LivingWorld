@@ -60,6 +60,13 @@
   <LW_FacilityKind_Clinic>Лечебница</LW_FacilityKind_Clinic>
   <LW_FacilityKind_PowerPlant>Электростанция</LW_FacilityKind_PowerPlant>
   <LW_FacilityKind_Storage>Склад</LW_FacilityKind_Storage>
+  <LW_InspectAnimalsExactLine>Животные: {animals}</LW_InspectAnimalsExactLine>
+  <LW_InspectAnimalItem>{kind} x{count}</LW_InspectAnimalItem>
+  <LW_InspectAnimalsBandLine>Животные: {band}</LW_InspectAnimalsBandLine>
+  <LW_AnimalBand_Sparse>мало</LW_AnimalBand_Sparse>
+  <LW_AnimalBand_Moderate>умеренно</LW_AnimalBand_Moderate>
+  <LW_AnimalBand_Abundant>много</LW_AnimalBand_Abundant>
+  <LW_AnimalBand_Teeming>изобилие</LW_AnimalBand_Teeming>
   <LW_SettlementLine>{name} [{faction}]\n{knowledge}\n{production}</LW_SettlementLine>
   <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner} | Пропало {missing}</LW_RaidOutcomeLine>
