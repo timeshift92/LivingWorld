@@ -26,7 +26,7 @@ the player never sees.
 | P1-C2 | `RaidIntent` + `RaidPreparationService`: turn intel into an intent, **reserve real citizens + supplies** from a source settlement, stale-release on expiry (exactly once). | Core/Codex | P1-C1 | ▢ |
 | P1-R1 | Route the custom faction-raid incident through a **prepared expedition** from Core instead of ad-hoc reservation. | RW/Claude | P1-C2 | ▢ |
 | P1-R2 | **Believable warning** before the raid — a letter/alert only when a source justifies it (scout sighting, rumor, ally warning). Deterministic, source-labeled, rate-limited. | RW/Claude | P1-C1, P1-C2 | ▢ |
-| P1-R3 | **Consequence surfacing** — after a raid: letter *"came from {settlement} of {faction}; it is weaker now"* + inspect/tab bands. **No Core dependency — Claude can start now on the existing raid path.** | RW/Claude | — | ▢ **← start here** |
+| P1-R3 | **Consequence surfacing** — after a raid: letter *"came from {settlement} of {faction}; it is weaker now"*. **✅ DONE (commit `492781d`)** — `MaybeSendRaidConsequenceLetters` sends one rate-limited, persisted letter per resolved `WorldRaidOutcome` (attribution + losses); EN/RU + test. Independent of Core, on the existing raid path. | RW/Claude | — | ✅ |
 | P1-R4 | EN/RU localization + structural tests for the above. | RW/Claude | P1-R1..R3 | ▢ |
 
 **Slice done when** the acceptance story runs: sell value → faction learns (bounded) → prepares from
