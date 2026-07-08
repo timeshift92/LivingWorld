@@ -418,10 +418,17 @@ per the user's "just do it" — Codex overloaded.
   spawns/removes markers for both. Clean-room icon set (scout/settler/trader/diplomat) shipped in
   `Textures/World/`. Inspect string generalized to `LW_MissionMarkerInspect` with per-kind nouns
   (EN/RU). Test extended.
-- **UI-2 per-action icons — Stage B (Claude, backlog): Scout / Diplomat / Settler travel.** Those
-  actions still resolve instantly (no world object). Making them travel-then-apply like Rim War needs
-  a Core mission model: Scout/Diplomat carry nothing (conservation-trivial), Settler moves adults (needs
-  in-transit reservation like the caravan does for goods). Icons already in the tree. Status: BACKLOG.
+- **UI-2 per-action icons — Stage B (Claude): DONE (commit `078c598`).** Scout & diplomat now travel
+  the world map as a new `WorldMission` Core concept and apply their effect on arrival (scout hands over
+  intel, diplomat improves relations) instead of instantly — mirroring warband/caravan travel.
+  `WorldMissionService` advances them in the daily war tick; executors dispatch one mission per faction
+  in flight; additive codec section (`missionKind` avoids colliding with the entity id's `kind` attr).
+  The RimWorld layer renders each with its own icon (binoculars / scroll). Tests: scout/diplomat
+  behaviour updated to on-arrival effects, plus a mission save/load + arrival test. 204 tests.
+- **UI-2 Settler travel (Claude, backlog): special case.** Unlike scout/diplomat/caravan/warband, a
+  settler founds a **new** colony — there is no pre-existing target settlement/tile to travel to, so it
+  cannot be rendered as a "march to target" without first choosing a colony site. Deferred until a
+  colony-site-selection step exists; it still founds instantly today. Status: BACKLOG.
 
 ### In-game playtest fixes (Claude)
 
@@ -516,8 +523,9 @@ the integrated `main`). Verdicts:
   a legitimately-depleted reservoir is never refilled; fresh worlds set the flag at bootstrap. Test
   `TestRimWorldDrifterReservoirLegacyMigration`. 201 tests green.
 
-Remaining Minor follow-ups (opportunistic, not done): `CaravansCompleted` double-count, zero-cargo caravan
-launch guard, load-then-arrive + capture/expansion invalidation test coverage.
+Minor follow-ups: **all DONE (commit `afc956c`)** — `CaravansCompleted` now counts only arrivals
+(dispatcher's launch counter renamed `CaravansLaunched`, removing the double-count); zero-cargo caravan
+launch guarded; added load-then-arrive caravan and capture/expansion aggregate-invalidation tests.
 
 ## Review Contract
 
