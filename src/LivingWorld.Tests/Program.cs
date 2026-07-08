@@ -159,7 +159,7 @@ var tests = new List<(string Name, Action Test)>
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
     ("repeated losses increase faction war exhaustion", TestRepeatedLossesIncreaseFactionWarExhaustion),
     ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
-    ("player attack registers the player as a war belligerent", TestPlayerBelligerenceRecordsPlayerAttack),
+    ("player attack pressures the victim's wars as a third party", TestPlayerInterventionPressuresVictimWars),
     ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
     ("a decided war resolves and rewards the player's ally victory", TestWarResolvesAndRewardsPlayerVictory),
     ("daily tick drives war resolution and victory rewards", TestRimWorldWarResolutionAndVictoryWiring),
@@ -4333,35 +4333,43 @@ static void TestConflictClaimTracksCapturedSettlement()
     AssertEqual(claim, restored.ConflictClaims.Single());
 }
 
-// Slice 1 of player war participation: a decisive player attack on an NPC settlement registers the
-// player as a belligerent in the conflict ledger, weakening the defender and claiming the settlement.
-static void TestPlayerBelligerenceRecordsPlayerAttack()
+// Slice 1 of player war participation: a player attack pressures the VICTIM faction in every war it
+// is fighting (not the player, who is never made a belligerent or ally), claims a captured settlement
+// once, and — with no active war — records a standalone aggression event.
+static void TestPlayerInterventionPressuresVictimWars()
 {
     var state = new WorldState(4242);
-    state.SetPlayerFactionId("PlayerFaction");
+    state.SetPlayerFactionId("Player");
     var enemyTown = state.CreateSettlement("enemy-town", "Enemy Town", "Raiders");
+    state.CreateSettlement("rival-town", "Rival Town", "Settlers");
 
-    var conflict = PlayerBelligerenceService.RecordPlayerAttack(
-        state,
-        defenderFactionId: "Raiders",
-        defenderLosses: 8,
-        capturedSettlementId: enemyTown.Id,
-        tick: 120_000);
+    // The victim (Raiders) is already at war with Settlers.
+    ConflictService.GetOrCreateConflict(state, "Raiders", "Settlers", 100);
 
-    AssertEqual(false, conflict is null);
-    AssertEqual(true, conflict!.Involves("PlayerFaction"));
-    AssertEqual(true, conflict.Involves("Raiders"));
-    AssertEqual(8, conflict.GetWarExhaustion("Raiders"));
-    AssertEqual(0, conflict.GetWarExhaustion("PlayerFaction"));
+    var result = PlayerConflictInterventionService.RecordSettlementAttack(state, "Raiders", 8, enemyTown.Id, 200);
+    AssertEqual(1, result.ConflictsPressured);
+    AssertEqual(false, result.AggressionRecorded);
 
-    var claim = state.ConflictClaims.Single();
+    var war = state.Conflicts.Single();
+    AssertEqual(8, war.GetWarExhaustion("Raiders"));   // victim exhaustion rises in its existing war
+    AssertEqual(0, war.GetWarExhaustion("Settlers"));  // the victim's enemy is untouched
+    AssertEqual(false, state.Conflicts.Any(conflict => conflict.Involves("Player"))); // player is not a belligerent
+    var claim = state.ConflictClaims.Single();         // captured settlement claimed once, by the player
     AssertEqual(enemyTown.Id, claim.SettlementId);
-    AssertEqual("PlayerFaction", claim.ClaimantFactionId);
+    AssertEqual("Player", claim.ClaimantFactionId);
 
-    // No-ops: no player faction set, and the player cannot be its own enemy.
+    // With no active war, the attack records an aggression event, not a conflict.
+    var peaceful = new WorldState(7);
+    peaceful.SetPlayerFactionId("Player");
+    var peacefulResult = PlayerConflictInterventionService.RecordSettlementAttack(peaceful, "Tribe", 5, null, 10);
+    AssertEqual(0, peacefulResult.ConflictsPressured);
+    AssertEqual(true, peacefulResult.AggressionRecorded);
+    AssertEqual(0, peaceful.Conflicts.Count());
+
+    // Guards: no player faction, and attacking the player itself, are no-ops.
     var noPlayer = new WorldState(1);
-    AssertEqual(true, PlayerBelligerenceService.RecordPlayerAttack(noPlayer, "Raiders", 5, null, 1) is null);
-    AssertEqual(true, PlayerBelligerenceService.RecordPlayerAttack(state, "PlayerFaction", 5, null, 1) is null);
+    AssertEqual(false, PlayerConflictInterventionService.RecordSettlementAttack(noPlayer, "Raiders", 5, null, 1).AggressionRecorded);
+    AssertEqual(0, PlayerConflictInterventionService.RecordSettlementAttack(state, "Player", 5, null, 1).ConflictsPressured);
 }
 
 // Slice 2 of player war participation: an alliance (modelled as an Ally-stance goodwill relation,
@@ -6407,8 +6415,8 @@ static void TestSettlementVisitLeaseResolvesThroughPawnSync()
 }
 
 // Player war participation Slice 1 (RW): defeating an NPC settlement on its map records the player as
-// a belligerent through PlayerBelligerenceService. The hook is a Prefix on the real RimWorld defeat
-// method (verified via reflection); it never blocks the vanilla destruction.
+// a third-party intervener through PlayerConflictInterventionService. The hook is a Prefix on the real
+// RimWorld defeat method (verified via reflection); it dedups, and never blocks the vanilla destruction.
 static void TestRimWorldPlayerAttackRegistersConflict()
 {
     var root = FindRepoRoot();
@@ -6421,7 +6429,10 @@ static void TestRimWorldPlayerAttackRegistersConflict()
     AssertContains("public static void Prefix(Settlement factionBase)", patch);
     // Only records on an actual defeat, resolved to the ledger settlement, and never returns false.
     AssertContains("SettlementDefeatUtility.IsDefeated", patch);
-    AssertContains("PlayerBelligerenceService.RecordPlayerAttack", patch);
+    AssertContains("PlayerConflictInterventionService.RecordSettlementAttack", patch);
+    // Dedup guard so a repeated CheckDefeated call never records the same defeat twice.
+    AssertContains("RecordedDefeats", patch);
+    AssertContains("factionBase.ID", patch);
     // Slice 2: the same defeat credits any player-allied faction at war with the defeated one.
     AssertContains("AllianceService.CreditAlliesOnPlayerAttack", patch);
     AssertDoesNotContain("return false", patch);
