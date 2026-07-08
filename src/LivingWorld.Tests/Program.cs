@@ -141,6 +141,7 @@ var tests = new List<(string Name, Action Test)>
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
+    ("sends a raid consequence letter after a raid resolves", TestRimWorldRaidConsequenceLetter),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
@@ -3521,6 +3522,28 @@ static void TestRimWorldWorldWarNotifications()
     AssertContains("<LW_WorldWarLetterLabel>", ru);
     AssertContains("<LW_WorldWarLetterText>", en);
     AssertContains("<LW_WorldWarLetterText>", ru);
+}
+
+static void TestRimWorldRaidConsequenceLetter()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // After a Living World raid resolves, one letter attributes it to the source settlement/faction
+    // and reports the losses (the "raid used real people, and they are weaker now" payoff).
+    AssertContains("MaybeSendRaidConsequenceLetters", component);
+    AssertContains("RaidOutcomes", component);
+    AssertContains("outcome.IsResolved", component);
+    AssertContains("SourceSettlementId", component);
+    AssertContains("LW_RaidConsequenceLetterText", component);
+    // Persisted per-raid so save/load never re-announces a raid that already resolved.
+    AssertContains("notifiedResolvedRaidArmyIds", component);
+    AssertContains("Scribe_Collections.Look(ref notifiedResolvedRaidArmyIds", component);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_RaidConsequenceLetterText>", en);
+    AssertContains("<LW_RaidConsequenceLetterText>", ru);
+    AssertContains("<LW_RaidConsequenceLetterLabel>", en);
+    AssertContains("<LW_RaidConsequenceLetterLabel>", ru);
 }
 
 static void TestRimWorldEmpireInterop()

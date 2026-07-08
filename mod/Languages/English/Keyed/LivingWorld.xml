@@ -98,4 +98,6 @@
   <LW_DrifterArrivalLetterText>{0}, a drifter from beyond the world, has arrived and wishes to join your colony.</LW_DrifterArrivalLetterText>
   <LW_FactionRaidLetterLabel>Living World raid</LW_FactionRaidLetterLabel>
   <LW_FactionRaidLetterText>A hostile faction is attacking with real Living World citizens from its ledger population.</LW_FactionRaidLetterText>
+  <LW_RaidConsequenceLetterLabel>Raid aftermath</LW_RaidConsequenceLetterLabel>
+  <LW_RaidConsequenceLetterText>That raid was staged from {settlement} ({faction}). Of {sent} raiders, {returned} made it home and {lost} were lost - {settlement} is weaker now.</LW_RaidConsequenceLetterText>
 </LanguageData>

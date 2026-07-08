@@ -98,4 +98,6 @@
   <LW_DrifterArrivalLetterText>{0} — дрифтер из-за края мира — прибыл и хочет вступить в вашу колонию.</LW_DrifterArrivalLetterText>
   <LW_FactionRaidLetterLabel>Рейд Living World</LW_FactionRaidLetterLabel>
   <LW_FactionRaidLetterText>Враждебная фракция атакует реальными жителями из ledger-населения Living World.</LW_FactionRaidLetterText>
+  <LW_RaidConsequenceLetterLabel>Итоги рейда</LW_RaidConsequenceLetterLabel>
+  <LW_RaidConsequenceLetterText>Тот рейд был снаряжён из {settlement} ({faction}). Из {sent} налётчиков домой вернулись {returned}, потеряно {lost} - {settlement} теперь слабее.</LW_RaidConsequenceLetterText>
 </LanguageData>

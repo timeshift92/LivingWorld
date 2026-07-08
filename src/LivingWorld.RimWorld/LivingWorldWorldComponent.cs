@@ -32,6 +32,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private bool? empireActive;
     private int lastWorldWarLetterTick = int.MinValue;
     private int notifiedCaptureCount;
+    private List<long> notifiedResolvedRaidArmyIds = new();
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -165,6 +166,58 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         // One rate-limited letter AFTER the whole catch-up loop — never one per simulated day.
         MaybeSendWorldWarLetter(currentTick);
+        MaybeSendRaidConsequenceLetters();
+    }
+
+    // Closes the loop on a Living World raid the player just fought: once a raid's reserved citizens
+    // are all reconciled (dead/captured/returned/missing), tell the player where it came from and
+    // that the source settlement is now weaker — the visible payoff of "the raid used real people".
+    // Losses the player directly observed on their own map, so exact numbers are legitimate here.
+    private void MaybeSendRaidConsequenceLetters()
+    {
+        if (State.IsInitialWorldSeedingActive)
+        {
+            return;
+        }
+
+        var resolved = State.RaidOutcomes
+            .Where(outcome => outcome.IsResolved)
+            .ToList();
+
+        var currentIds = new HashSet<long>(resolved.Select(outcome => outcome.ArmyId.Value));
+        notifiedResolvedRaidArmyIds.RemoveAll(id => !currentIds.Contains(id));
+
+        var sent = 0;
+        foreach (var outcome in resolved
+            .Where(outcome => !notifiedResolvedRaidArmyIds.Contains(outcome.ArmyId.Value))
+            .OrderBy(outcome => outcome.Tick)
+            .ThenBy(outcome => outcome.ArmyId.Value))
+        {
+            notifiedResolvedRaidArmyIds.Add(outcome.ArmyId.Value);
+            if (sent >= 3)
+            {
+                // Cap letters per pass so a long catch-up never floods the player.
+                continue;
+            }
+
+            var settlement = State.GetSettlement(outcome.SourceSettlementId);
+            var settlementName = settlement?.Name ?? outcome.FactionId;
+            var factionName = Find.FactionManager?.AllFactionsListForReading
+                .FirstOrDefault(candidate => candidate.def?.defName == outcome.FactionId)?.Name
+                ?? outcome.FactionId;
+            var lost = outcome.Dead + outcome.Prisoner + outcome.Missing;
+
+            Find.LetterStack?.ReceiveLetter(
+                "LW_RaidConsequenceLetterLabel".Translate(),
+                "LW_RaidConsequenceLetterText".Translate(
+                    settlementName.Named("settlement"),
+                    factionName.Named("faction"),
+                    outcome.Sent.Named("sent"),
+                    outcome.Returned.Named("returned"),
+                    lost.Named("lost")),
+                LetterDefOf.NeutralEvent);
+            sent++;
+        }
     }
 
     // Surfaces the world war to the player as an occasional, rate-limited letter that summarizes
@@ -543,6 +596,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref lastWorldWarLetterTick, "livingWorld_lastWorldWarLetterTick", int.MinValue);
         Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
         Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);
+        Scribe_Collections.Look(ref notifiedResolvedRaidArmyIds, "livingWorld_notifiedResolvedRaidArmyIds", LookMode.Value);
+        notifiedResolvedRaidArmyIds ??= new List<long>();
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {
