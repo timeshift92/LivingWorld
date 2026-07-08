@@ -31,6 +31,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityKind, long> _nextIds = new();
     private int eventSuppressionDepth;
     private int initialWorldSeedingDepth;
+    private int drifterArrivalReservoir;
     private bool derivedAggregatesDirty = true;
     private string? playerFactionId;
 
@@ -74,6 +75,8 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldRaidOutcome> RaidOutcomes => _raidOutcomes.Values;
 
     public IReadOnlyCollection<Drifter> Drifters => _drifters.Values;
+
+    public int DrifterArrivalReservoir => drifterArrivalReservoir;
 
     public IReadOnlyCollection<SettlementProductionProfile> ProductionProfiles => _productionProfiles.Values;
 
@@ -168,6 +171,7 @@ public sealed class WorldState
             _drifters.Values.OrderBy(drifter => drifter.Id.Value).ToList())
         {
             PlayerFactionId = playerFactionId,
+            DrifterArrivalReservoir = drifterArrivalReservoir,
             SettlementCapabilities = _settlementCapabilities.Values
                 .OrderBy(capability => capability.SettlementId.Kind)
                 .ThenBy(capability => capability.SettlementId.Value)
@@ -199,6 +203,7 @@ public sealed class WorldState
         var state = new WorldState(snapshot.WorldSeed)
         {
             CurrentTick = snapshot.CurrentTick,
+            drifterArrivalReservoir = Math.Max(0, snapshot.DrifterArrivalReservoir),
             playerFactionId = snapshot.PlayerFactionId
         };
 
@@ -765,6 +770,34 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.DrifterArrived, drifter.Id, $"Drifter {drifter.Id} arrived from beyond the world.");
 
         return drifter;
+    }
+
+    public void AddDrifterArrivalReservoir(int quantity, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (quantity <= 0)
+        {
+            return;
+        }
+
+        drifterArrivalReservoir += quantity;
+        AppendEvent(
+            WorldEventKind.DrifterReservoirReplenished,
+            null,
+            $"Drifter arrival reservoir increased by {quantity}: {reason}.");
+    }
+
+    internal int ConsumeDrifterArrivalReservoir(int requestedQuantity)
+    {
+        if (requestedQuantity <= 0 || drifterArrivalReservoir <= 0)
+        {
+            return 0;
+        }
+
+        var consumed = Math.Min(requestedQuantity, drifterArrivalReservoir);
+        drifterArrivalReservoir -= consumed;
+        return consumed;
     }
 
     public Drifter? GetDrifter(EntityId id)

@@ -69,6 +69,8 @@ var tests = new List<(string Name, Action Test)>
     ("leaves a vanilla raid untouched when the faction has no living world population", TestVanillaRaidPassesThroughWithoutPopulation),
     ("consumes a standing opportunity when intercepting a vanilla raid", TestVanillaRaidConsumesOpportunityWhenPresent),
     ("frees orphaned reserves before intercepting a new vanilla raid", TestVanillaRaidInterceptionFreesPriorOrphans),
+    ("drifter arrival spends a finite external reservoir", TestDrifterArrivalSpendsFiniteReservoir),
+    ("drifter reservoir survives save load", TestDrifterReservoirSerializationRoundTrip),
     ("adds drifters toward the target world population in metered steps", TestDrifterArrivalFillsTowardTarget),
     ("idles the arrival tap when the world already meets its target", TestDrifterArrivalIdlesWhenWorldPopulated),
     ("never pushes world population past the hard ceiling", TestDrifterArrivalRespectsHardCeiling),
@@ -1757,9 +1759,43 @@ static void TestAbortedRaidReleaseReturnsOrphanedReserves()
     AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
 }
 
+static void TestDrifterArrivalSpendsFiniteReservoir()
+{
+    var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(3, "test reservoir");
+    var request = new DrifterArrivalRequest(
+        Tick: 0,
+        TargetWorldPopulation: 10,
+        HardCeiling: 100,
+        MaxArrivalsPerStep: 2);
+
+    AssertEqual(2, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 60_000 }).Arrived);
+    AssertEqual(1, state.DrifterArrivalReservoir);
+    AssertEqual(1, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 120_000 }).Arrived);
+    AssertEqual(0, state.DrifterArrivalReservoir);
+    AssertEqual(0, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 180_000 }).Arrived);
+    AssertEqual(3, state.Drifters.Count);
+}
+
+static void TestDrifterReservoirSerializationRoundTrip()
+{
+    var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(7, "test reservoir");
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(7, restored.DrifterArrivalReservoir);
+    var result = DrifterArrivalService.SimulateArrivals(
+        restored,
+        new DrifterArrivalRequest(60_000, TargetWorldPopulation: 10, HardCeiling: 100, MaxArrivalsPerStep: 3));
+    AssertEqual(3, result.Arrived);
+    AssertEqual(4, restored.DrifterArrivalReservoir);
+}
+
 static void TestDrifterArrivalFillsTowardTarget()
 {
     var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     var request = new DrifterArrivalRequest(
         Tick: 0,
         TargetWorldPopulation: 5,
@@ -1798,6 +1834,7 @@ static void TestDrifterArrivalIdlesWhenWorldPopulated()
 static void TestDrifterArrivalRespectsHardCeiling()
 {
     var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     var request = new DrifterArrivalRequest(
         Tick: 0,
         TargetWorldPopulation: 100,
@@ -1814,6 +1851,7 @@ static void TestDrifterArrivalRespectsHardCeiling()
 static void TestDrifterArrivalDisabled()
 {
     var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     var result = DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 50, HardCeiling: 100, MaxArrivalsPerStep: 0));
@@ -1825,6 +1863,7 @@ static void TestDrifterArrivalDisabled()
 static void TestDrifterArrivalRecordsUnaffiliated()
 {
     var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     var result = DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 3, HardCeiling: 100, MaxArrivalsPerStep: 2));
@@ -1870,6 +1909,7 @@ static void TestDrifterAssimilationJoinsSettlement()
 {
     var state = new WorldState(4242);
     var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
@@ -1895,6 +1935,7 @@ static void TestDrifterAssimilationSpreadsAcrossSettlements()
     var state = new WorldState(4242);
     var first = state.CreateSettlement("a", "A", "Outlander");
     var second = state.CreateSettlement("b", "B", "Outlander");
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
@@ -1911,6 +1952,7 @@ static void TestDrifterAssimilationSpreadsAcrossSettlements()
 static void TestDrifterAssimilationWithoutSettlement()
 {
     var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
@@ -1927,6 +1969,7 @@ static void TestDrifterAssimilationRespectsCap()
 {
     var state = new WorldState(4242);
     var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 3, HardCeiling: 100, MaxArrivalsPerStep: 3));
@@ -1944,6 +1987,7 @@ static void TestDrifterArrivalThenAssimilationConservesPopulation()
 {
     var state = new WorldState(4242);
     var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
 
     // Arrive 2 drifters, then assimilate them: world population (alive citizens +
     // drifters) is conserved at 2 — nobody appears or vanishes.
@@ -3359,6 +3403,7 @@ static void TestFactionLifecycleSerializationRoundTrip()
 static void TestDrifterSerializationRoundTrip()
 {
     var state = new WorldState(4242);
+    state.AddDrifterArrivalReservoir(10, "test reservoir");
     DrifterArrivalService.SimulateArrivals(
         state,
         new DrifterArrivalRequest(60_000, TargetWorldPopulation: 3, HardCeiling: 100, MaxArrivalsPerStep: 3));
@@ -3692,6 +3737,7 @@ static void TestRimWorldWorldComponent()
     AssertContains("MigrationService.SimulateDay", source);
     AssertContains("MigrationSimulationRequest", source);
     AssertContains("DrifterArrivalService.SimulateArrivals", source);
+    AssertContains("AddDrifterArrivalReservoir", source);
     AssertContains("DrifterFoundingService.SimulateFounding", source);
     AssertContains("DrifterAssimilationService.SimulateAssimilation", source);
     AssertContains("FactionLifecycleService.SimulateCollapses", source);
@@ -4647,6 +4693,8 @@ static void TestRimWorldKeyedTranslations()
     AssertContains("<LW_MainTitle>Живой мир</LW_MainTitle>", russianXml);
     AssertContains("Raid opportunities", englishXml);
     AssertContains("Поводы для рейда", russianXml);
+    AssertContains("External reserve", englishXml);
+    AssertContains("Внешний резерв", russianXml);
     AssertContains("Dead {deadCitizens}", englishXml);
     AssertContains("Погибшие {deadCitizens}", russianXml);
     AssertContains("Returned {returnedCitizens}", englishXml);

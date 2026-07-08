@@ -342,6 +342,11 @@ coarse model.
   movement timing, unload into the target settlement, and preserve/destroy cargo correctly
   through save/load. This closes the instant-transfer abstraction for goods; future work is
   caravan members, animals, route risk, ambushes and loot.
+- **P2 (Codex): Finite drifter arrival reservoir.** Status: DONE — drifter arrivals now spend
+  saved `WorldState.DrifterArrivalReservoir` instead of drawing from an unlimited tap. RimWorld
+  bootstrap seeds a finite outside-world reserve from settlement count and target population;
+  future systems should replenish it explicitly from refugees, liberated prisoners, evacuation
+  and diplomacy.
 - **O3 (Codex, later): Time-dilation / adaptive tick.** Tick cohorts/regions at variable
   frequency by relevance (quiet regions rarely, active wars often), per RocketMan/Missile
   Girl. Today: every settlement/faction ticks daily uniformly. Status: BACKLOG.

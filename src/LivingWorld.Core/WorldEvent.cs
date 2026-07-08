@@ -29,6 +29,7 @@ public enum WorldEventKind
     RaidResolved,
     DrifterArrived,
     DrifterAssimilated,
+    DrifterReservoirReplenished,
     SettlementFounded,
     FactionCollapsed,
     SettlementProductionUpdated,

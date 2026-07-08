@@ -102,6 +102,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             State.ProductionProfiles.Count.Named("productionProfiles"),
             State.IntelReports.Count.Named("intelReports"),
             State.RaidOpportunities.Count(opportunity => opportunity.Status == RaidOpportunityStatus.Active).Named("activeRaidOpportunities"),
+            State.DrifterArrivalReservoir.Named("drifterReservoir"),
             State.Events.Count.Named("events"));
     }
 
@@ -675,6 +676,14 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     worldSettlement.Id,
                     "settlement public disclosure");
             }
+
+            var initialDrifterReservoir = Math.Max(
+                0,
+                State.Settlements.Count * Math.Max(0, settings.targetWorldPopulationPerSettlement));
+            State.RunInitialWorldSeeding(() =>
+            {
+                State.AddDrifterArrivalReservoir(initialDrifterReservoir, "initial outside-world population reserve");
+            });
 
             bootstrapped = true;
             LastBootstrapSource = "world-objects";

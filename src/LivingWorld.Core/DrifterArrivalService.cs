@@ -9,12 +9,14 @@ public sealed record DrifterArrivalRequest(
 public sealed record DrifterArrivalResult(int Arrived, int PoolSize);
 
 /// <summary>
-/// The metered "space tap": a homeostatic trickle of unaffiliated newcomers (drifters)
-/// that keeps the world population near a target without ever exceeding a hard ceiling.
+/// The metered external reservoir: a homeostatic trickle of unaffiliated newcomers
+/// (drifters) that keeps the world population near a target without ever exceeding
+/// a hard ceiling or the finite outside-world reserve.
 ///
 /// Homeostatic: arrivals only fill the deficit toward the target, so a healthy world gets
 /// none and a depleted one is topped up — but never more than <c>MaxArrivalsPerStep</c> at a
-/// time (metered "1–2, rarely more"), and never past <c>HardCeiling</c> ("not infinite").
+/// time (metered "1–2, rarely more"), never past <c>HardCeiling</c>, and never beyond
+/// <see cref="WorldState.DrifterArrivalReservoir"/>.
 /// </summary>
 public static class DrifterArrivalService
 {
@@ -33,7 +35,8 @@ public static class DrifterArrivalService
 
         var currentPopulation = WorldPopulation(state);
         var deficit = effectiveTarget - currentPopulation;
-        var arrivals = Math.Max(0, Math.Min(maxPerStep, deficit));
+        var requestedArrivals = Math.Max(0, Math.Min(maxPerStep, deficit));
+        var arrivals = state.ConsumeDrifterArrivalReservoir(requestedArrivals);
 
         for (var i = 0; i < arrivals; i++)
         {

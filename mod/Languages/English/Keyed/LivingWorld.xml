@@ -2,7 +2,7 @@
 <LanguageData>
   <LW_MainTitle>Living World</LW_MainTitle>
   <LW_WaitingForWorld>Living World is waiting for a RimWorld world to load.</LW_WaitingForWorld>
-  <LW_SummaryLine>Settlements: {settlements}, Citizens: {citizens}, Armies: {armies}, Production profiles: {productionProfiles}, Intel: {intelReports}, Raid opportunities: {activeRaidOpportunities}, Events: {events}</LW_SummaryLine>
+  <LW_SummaryLine>Settlements: {settlements}, Citizens: {citizens}, Armies: {armies}, Production profiles: {productionProfiles}, Intel: {intelReports}, Raid opportunities: {activeRaidOpportunities}, External reserve: {drifterReservoir}, Events: {events}</LW_SummaryLine>
   <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Source: {source} | Status: {status} | World objects: {totalWorldObjects} | Vanilla settlements: {vanillaSettlements} | Faction objects: {factionWorldObjects} | Importable: {importableWorldObjects} | Scan errors: {scanErrors} | Rejected: {rejectedTypes}</LW_DiagnosticLine>
   <LW_EmptyLedgerHint>The Living World ledger is empty. Retry bootstrap if the world has settlements, or create a visible test ledger to verify the mod pipeline.</LW_EmptyLedgerHint>
   <LW_BootstrapErrorHint>Living World caught a bootstrap error instead of crashing the window: {error}</LW_BootstrapErrorHint>

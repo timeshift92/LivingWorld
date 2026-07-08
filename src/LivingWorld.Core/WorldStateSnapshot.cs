@@ -21,6 +21,8 @@ public sealed record WorldStateSnapshot(
 {
     public string? PlayerFactionId { get; init; }
 
+    public int DrifterArrivalReservoir { get; init; }
+
     public IReadOnlyList<SettlementCapability> SettlementCapabilities { get; init; } =
         Array.Empty<SettlementCapability>();
 

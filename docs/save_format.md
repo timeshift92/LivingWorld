@@ -121,6 +121,18 @@ per-record XML:
 Derived aggregate caches are not saved. They are rebuilt lazily from citizens
 and ownership after load.
 
+`drifterArrivalReservoir` is saved as a root attribute because it is global
+world state, not a row collection:
+
+```xml
+<LivingWorldState ... drifterArrivalReservoir="320" />
+```
+
+It is the finite outside-world population reserve consumed by
+`DrifterArrivalService`. Legacy saves without the attribute load with `0`, so
+arrivals will not create people until a system explicitly replenishes the
+reservoir.
+
 `Caravans` are saved as their own optional container. Cargo remains in the
 resource ledger and is owned by `EntityKind.Caravan`, so the save format keeps
 the entity separate from the inventory:
@@ -140,6 +152,7 @@ before persistent caravans.
 Текущие обязательные инварианты после загрузки:
 
 - `worldSeed` приходит из seed RimWorld world и round-trip'ится через XML;
+- `drifterArrivalReservoir` round-trip'ится как root attribute; старые сейвы без него получают `0`;
 - `MigrationGroups` читается как optional container для обратной совместимости со старыми сейвами;
 - `FactionRecords` читается как optional container для обратной совместимости со старыми сейвами;
 - `SettlementCapabilities` читается как optional container для обратной совместимости со старыми сейвами;

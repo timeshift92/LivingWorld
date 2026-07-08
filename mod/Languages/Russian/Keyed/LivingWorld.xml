@@ -2,7 +2,7 @@
 <LanguageData>
   <LW_MainTitle>Живой мир</LW_MainTitle>
   <LW_WaitingForWorld>Живой мир ждёт загрузки мира RimWorld.</LW_WaitingForWorld>
-  <LW_SummaryLine>Поселения: {settlements}, Жители: {citizens}, Армии: {armies}, Профили производства: {productionProfiles}, Разведданные: {intelReports}, Поводы для рейда: {activeRaidOpportunities}, События: {events}</LW_SummaryLine>
+  <LW_SummaryLine>Поселения: {settlements}, Жители: {citizens}, Армии: {armies}, Профили производства: {productionProfiles}, Разведданные: {intelReports}, Поводы для рейда: {activeRaidOpportunities}, Внешний резерв: {drifterReservoir}, События: {events}</LW_SummaryLine>
   <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Источник: {source} | Статус: {status} | Объектов мира: {totalWorldObjects} | Vanilla-поселений: {vanillaSettlements} | Объектов с фракцией: {factionWorldObjects} | Импортируемых: {importableWorldObjects} | Ошибок сканирования: {scanErrors} | Отброшено: {rejectedTypes}</LW_DiagnosticLine>
   <LW_EmptyLedgerHint>Ledger Living World пуст. Повтори bootstrap, если в мире есть поселения, или создай видимый тестовый ledger для проверки цепочки мода.</LW_EmptyLedgerHint>
   <LW_BootstrapErrorHint>Living World поймал ошибку bootstrap и не дал окну упасть: {error}</LW_BootstrapErrorHint>

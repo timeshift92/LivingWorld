@@ -19,6 +19,7 @@ public static class WorldStateCodec
                 new XAttribute("version", "1"),
                 new XAttribute("worldSeed", snapshot.WorldSeed),
                 new XAttribute("currentTick", snapshot.CurrentTick),
+                new XAttribute("drifterArrivalReservoir", snapshot.DrifterArrivalReservoir),
                 snapshot.PlayerFactionId == null
                     ? null
                     : new XAttribute("playerFactionId", snapshot.PlayerFactionId),
@@ -454,6 +455,7 @@ public static class WorldStateCodec
                 .ToList())
         {
             PlayerFactionId = OptionalString(root, "playerFactionId"),
+            DrifterArrivalReservoir = OptionalInt(root, "drifterArrivalReservoir", 0),
             Caravans = OptionalContainer(root, "Caravans")
                 .Elements("Caravan")
                 .Select(element => new WorldCaravan(

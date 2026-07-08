@@ -856,7 +856,7 @@ Turn caravan from instant transfer into real entity.
 | WorldWarService grows too broad | Medium | Closed by C6 | Keep dispatcher/executor boundary tested |
 | War-loop scans citizens daily | Medium later | Closed by C7/O1 | Keep aggregate/full-scan tests around citizen and ownership transitions |
 | Caravan is instant transfer | Low now / High later | Closed by persistent WorldCaravan | Add ambush/loot/member gameplay later |
-| Drifters may feel like magic spawn | Medium | Needs framing | Add finite reservoir |
+| Drifters may feel like magic spawn | Medium | Closed by finite arrival reservoir | Add explicit replenishment sources: refugees, liberated prisoners, evacuation, diplomacy |
 | Save format may grow too large | Medium later | Main XML element explosion closed by O2 | Consider binary/chunk storage only after profiling real large saves |
 | UI remains debug-heavy | Low | Acceptable for now | Split player UI/dev UI later |
 
