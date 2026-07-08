@@ -156,6 +156,7 @@ var tests = new List<(string Name, Action Test)>
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
     ("repeated losses increase faction war exhaustion", TestRepeatedLossesIncreaseFactionWarExhaustion),
     ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
+    ("player attack registers the player as a war belligerent", TestPlayerBelligerenceRecordsPlayerAttack),
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
@@ -267,6 +268,7 @@ var tests = new List<(string Name, Action Test)>
     ("disables the faction raid incident while Rim War is active", TestRimWorldFactionRaidHonorsRimWarGuard),
     ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
     ("materializes settlement visitors as ledger citizens via leases", TestRimWorldSettlementVisitMaterialization),
+    ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
     ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
@@ -4219,6 +4221,37 @@ static void TestConflictClaimTracksCapturedSettlement()
     AssertEqual(claim, restored.ConflictClaims.Single());
 }
 
+// Slice 1 of player war participation: a decisive player attack on an NPC settlement registers the
+// player as a belligerent in the conflict ledger, weakening the defender and claiming the settlement.
+static void TestPlayerBelligerenceRecordsPlayerAttack()
+{
+    var state = new WorldState(4242);
+    state.SetPlayerFactionId("PlayerFaction");
+    var enemyTown = state.CreateSettlement("enemy-town", "Enemy Town", "Raiders");
+
+    var conflict = PlayerBelligerenceService.RecordPlayerAttack(
+        state,
+        defenderFactionId: "Raiders",
+        defenderLosses: 8,
+        capturedSettlementId: enemyTown.Id,
+        tick: 120_000);
+
+    AssertEqual(false, conflict is null);
+    AssertEqual(true, conflict!.Involves("PlayerFaction"));
+    AssertEqual(true, conflict.Involves("Raiders"));
+    AssertEqual(8, conflict.GetWarExhaustion("Raiders"));
+    AssertEqual(0, conflict.GetWarExhaustion("PlayerFaction"));
+
+    var claim = state.ConflictClaims.Single();
+    AssertEqual(enemyTown.Id, claim.SettlementId);
+    AssertEqual("PlayerFaction", claim.ClaimantFactionId);
+
+    // No-ops: no player faction set, and the player cannot be its own enemy.
+    var noPlayer = new WorldState(1);
+    AssertEqual(true, PlayerBelligerenceService.RecordPlayerAttack(noPlayer, "Raiders", 5, null, 1) is null);
+    AssertEqual(true, PlayerBelligerenceService.RecordPlayerAttack(state, "PlayerFaction", 5, null, 1) is null);
+}
+
 static void TestTrucePreventsNewWarbandsUntilExpired()
 {
     var state = new WorldState(4242);
@@ -6150,6 +6183,25 @@ static void TestSettlementVisitLeaseResolvesThroughPawnSync()
 
     var resolved = state.MaterializationLeases.Single(l => l.Id == lease.Id);
     AssertEqual(MaterializationLeaseLifecycle.Returned, resolved.Lifecycle);
+}
+
+// Player war participation Slice 1 (RW): defeating an NPC settlement on its map records the player as
+// a belligerent through PlayerBelligerenceService. The hook is a Prefix on the real RimWorld defeat
+// method (verified via reflection); it never blocks the vanilla destruction.
+static void TestRimWorldPlayerAttackRegistersConflict()
+{
+    var root = FindRepoRoot();
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementDefeatPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    AssertContains("[HarmonyPatch(typeof(SettlementDefeatUtility), \"CheckDefeated\")]", patch);
+    AssertRimWorldMethodExists("RimWorld.Planet.SettlementDefeatUtility", "CheckDefeated");
+    AssertContains("public static void Prefix(Settlement factionBase)", patch);
+    // Only records on an actual defeat, resolved to the ledger settlement, and never returns false.
+    AssertContains("SettlementDefeatUtility.IsDefeated", patch);
+    AssertContains("PlayerBelligerenceService.RecordPlayerAttack", patch);
+    AssertDoesNotContain("return false", patch);
 }
 
 static void TestRimWorldPawnIdentityService()
