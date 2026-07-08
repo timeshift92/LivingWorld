@@ -178,6 +178,7 @@ var tests = new List<(string Name, Action Test)>
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
+    ("announces newly declared NPC wars with a persisted letter", TestRimWorldConflictLetters),
     ("sends a raid consequence letter after a raid resolves", TestRimWorldRaidConsequenceLetter),
     ("routes the custom faction raid through a prepared expedition", TestRimWorldRaidRoutesThroughPreparation),
     ("warns the player from player-targeted raid intel", TestRimWorldRaidWarningFromIntel),
@@ -4721,6 +4722,28 @@ static void TestRimWorldWorldWarNotifications()
     AssertContains("<LW_WorldWarLetterLabel>", ru);
     AssertContains("<LW_WorldWarLetterText>", en);
     AssertContains("<LW_WorldWarLetterText>", ru);
+}
+
+// Task 6 RW-side: newly-declared NPC wars produce a batched, persisted, gated letter (distinct from
+// the capture letter, which reports territory changes rather than declarations).
+static void TestRimWorldConflictLetters()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("MaybeSendConflictLetters", component);
+    AssertContains("WorldConflictStatus.Active", component);
+    AssertContains("LW_ConflictLetterText", component);
+    // Persisted per conflict id so a save/load never re-announces an old war.
+    AssertContains("notifiedConflictIds", component);
+    AssertContains("Scribe_Collections.Look(ref notifiedConflictIds", component);
+    // Same gate as the capture letter: silent when the war is off, ceded to Rim War, or seeding.
+    AssertContains("!settings.worldWarEnabled || RimWarIsActive || State.IsInitialWorldSeedingActive", component);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_ConflictLetterLabel>", en);
+    AssertContains("<LW_ConflictLetterLabel>", ru);
+    AssertContains("<LW_ConflictLetterText>", en);
+    AssertContains("<LW_ConflictLetterText>", ru);
 }
 
 static void TestRimWorldReleasesStaleReservations()

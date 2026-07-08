@@ -34,6 +34,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int notifiedCaptureCount;
     private List<long> notifiedResolvedRaidArmyIds = new();
     private List<long> notifiedRaidWarningFactIds = new();
+    private List<long> notifiedConflictIds = new();
 
     public LivingWorldWorldComponent(World world)
         : base(world)
@@ -170,6 +171,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendWorldWarLetter(currentTick);
         MaybeSendRaidConsequenceLetters();
         MaybeSendRaidWarnings();
+        MaybeSendConflictLetters();
     }
 
     // A believable early warning: when a hostile faction has fresh raid intel about the player's
@@ -318,6 +320,46 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             LetterDefOf.NeutralEvent);
         lastWorldWarLetterTick = currentTick;
         notifiedCaptureCount = captureCount;
+    }
+
+    // Announces newly-declared wars between NPC factions — the political companion to the capture
+    // letter (which reports territory changes, not declarations). One batched letter per catch-up
+    // (headline war + count of any others that started in the same window) so a busy war-day never
+    // floods the player; each conflict is persisted so a save/load never re-announces it. Silent
+    // when the world war is off, ceded to Rim War, or during initial seeding.
+    private void MaybeSendConflictLetters()
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.worldWarEnabled || RimWarIsActive || State.IsInitialWorldSeedingActive)
+        {
+            return;
+        }
+
+        var known = new HashSet<long>(notifiedConflictIds);
+        var newConflicts = State.Conflicts
+            .Where(conflict => conflict.Status == WorldConflictStatus.Active
+                && !known.Contains(conflict.Id.Value))
+            .OrderBy(conflict => conflict.StartedTick)
+            .ThenBy(conflict => conflict.Id.Value)
+            .ToList();
+        if (newConflicts.Count == 0)
+        {
+            return;
+        }
+
+        var headline = newConflicts[0];
+        Find.LetterStack?.ReceiveLetter(
+            "LW_ConflictLetterLabel".Translate(),
+            "LW_ConflictLetterText".Translate(
+                ResolveFactionLabel(headline.FactionA).Named("factionA"),
+                ResolveFactionLabel(headline.FactionB).Named("factionB"),
+                newConflicts.Count.Named("count")),
+            LetterDefOf.NeutralEvent);
+
+        foreach (var conflict in newConflicts)
+        {
+            notifiedConflictIds.Add(conflict.Id.Value);
+        }
     }
 
     private void SimulateWorldDay(int day)
@@ -793,6 +835,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         notifiedResolvedRaidArmyIds ??= new List<long>();
         Scribe_Collections.Look(ref notifiedRaidWarningFactIds, "livingWorld_notifiedRaidWarningFactIds", LookMode.Value);
         notifiedRaidWarningFactIds ??= new List<long>();
+        Scribe_Collections.Look(ref notifiedConflictIds, "livingWorld_notifiedConflictIds", LookMode.Value);
+        notifiedConflictIds ??= new List<long>();
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

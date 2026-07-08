@@ -70,6 +70,8 @@
   <LW_WarHistoryLine>{tick}: {kind} - {summary}</LW_WarHistoryLine>
   <LW_WorldWarLetterLabel>World war</LW_WorldWarLetterLabel>
   <LW_WorldWarLetterText>The world's factions are at war. {captures} settlement(s) have changed hands since the last report.</LW_WorldWarLetterText>
+  <LW_ConflictLetterLabel>War declared</LW_ConflictLetterLabel>
+  <LW_ConflictLetterText>Word arrives that {factionA} and {factionB} have gone to war. New conflicts this period: {count}.</LW_ConflictLetterText>
   <LW_EmpireActiveNote>Empire manages your own empire; Living World tracks the NPC world's factions.</LW_EmpireActiveNote>
   <LW_WorldEconomyHeader>World economy</LW_WorldEconomyHeader>
   <LW_WatchersHeader>Watching your colony</LW_WatchersHeader>
