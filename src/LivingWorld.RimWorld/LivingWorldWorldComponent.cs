@@ -172,6 +172,56 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendRaidConsequenceLetters();
         MaybeSendRaidWarnings();
         MaybeSendConflictLetters();
+
+        LogSimulationDebugSnapshot(simulatedDays, currentTick);
+    }
+
+    private int lastLoggedEventCount = -1;
+
+    // Concise per-catch-up snapshot of the otherwise-invisible NPC world, written to Player.log when
+    // the debug-logging setting is on. The player cannot enter NPC settlements to watch them evolve,
+    // so this is the observability window: state counts + the raid-intel that drives incoming raids +
+    // the new ledger events (facility built, war declared, collapse, capture, ...) since last time.
+    private void LogSimulationDebugSnapshot(int simulatedDays, int currentTick)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.debugLogging)
+        {
+            return;
+        }
+
+        var activeSettlements = State.Settlements.Count(settlement => settlement.IsActive);
+        var pop = State.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive);
+        var facilities = State.SettlementFacilities.Count;
+        var activeProjects = State.SettlementProjects.Count(project => project.Status == SettlementProjectStatus.Active);
+        var activeConflicts = State.Conflicts.Count(conflict => conflict.Status != WorldConflictStatus.Resolved);
+        var activeRuins = State.Ruins.Count(ruin => ruin.Status == RuinStatus.Active);
+        var playerIntel = State.RaidIntelFacts.Count(fact =>
+            fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(currentTick));
+
+        Log.Message(
+            $"[LivingWorld] day {lastSimulatedDay} (+{simulatedDays}d): settlements {activeSettlements}/{State.Settlements.Count}"
+            + $" | pop {pop} | facilities {facilities} | projects {activeProjects} active"
+            + $" | conflicts {activeConflicts} | ruins {activeRuins} | player-raid-intel {playerIntel}");
+
+        var events = State.Events;
+        if (lastLoggedEventCount < 0)
+        {
+            // First snapshot of the session: don't replay the bootstrap history, just set the mark.
+            lastLoggedEventCount = events.Count;
+            return;
+        }
+
+        if (events.Count > lastLoggedEventCount)
+        {
+            var byKind = events
+                .Skip(lastLoggedEventCount)
+                .GroupBy(worldEvent => worldEvent.Kind)
+                .Select(group => $"{group.Key} x{group.Count()}");
+            Log.Message($"[LivingWorld]   new events: {string.Join(", ", byKind)}");
+        }
+
+        lastLoggedEventCount = events.Count;
     }
 
     // A believable early warning: when a hostile faction has fresh raid intel about the player's
@@ -219,6 +269,13 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     sourcePhrase.Named("source")),
                 LetterDefOf.ThreatSmall);
             sent++;
+
+            if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
+            {
+                Log.Message(
+                    $"[LivingWorld] raid warning sent: faction={fact.FactionId} source={fact.SourceKind}"
+                    + $" band={fact.ValueBand} confidence={fact.Confidence}");
+            }
         }
     }
 
