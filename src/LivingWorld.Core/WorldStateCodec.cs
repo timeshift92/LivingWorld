@@ -137,6 +137,47 @@ public static class WorldStateCodec
                             new XAttribute("combatantDemand", opportunity.CombatantDemand),
                             new XAttribute("reason", opportunity.Reason)))),
                 new XElement(
+                    "RaidIntelFacts",
+                    snapshot.RaidIntelFacts.Select(fact =>
+                        new XElement(
+                            "RaidIntelFact",
+                            IdAttributes(fact.Id),
+                            new XAttribute("sourceKind", fact.SourceKind),
+                            new XAttribute("factionId", fact.FactionId),
+                            new XAttribute("targetKind", fact.TargetKind),
+                            new XAttribute("targetKey", fact.TargetKey),
+                            new XAttribute("valueBand", fact.ValueBand),
+                            new XAttribute("confidence", fact.Confidence),
+                            new XAttribute("createdTick", fact.CreatedTick),
+                            new XAttribute("expiresTick", fact.ExpiresTick),
+                            new XAttribute("combatantDemand", fact.CombatantDemand),
+                            new XAttribute("summary", fact.Summary)))),
+                new XElement(
+                    "RaidPreparations",
+                    snapshot.RaidPreparations.Select(preparation =>
+                        new XElement(
+                            "RaidPreparation",
+                            IdAttributes(preparation.Id),
+                            new XAttribute("factionId", preparation.FactionId),
+                            new XAttribute("sourceSettlementKind", preparation.SourceSettlementId.Kind),
+                            new XAttribute("sourceSettlementId", preparation.SourceSettlementId.Value),
+                            new XAttribute("armyKind", preparation.ArmyId.Kind),
+                            new XAttribute("armyId", preparation.ArmyId.Value),
+                            preparation.IntelFactId.HasValue
+                                ? new XAttribute("intelFactKind", preparation.IntelFactId.Value.Kind)
+                                : null,
+                            preparation.IntelFactId.HasValue
+                                ? new XAttribute("intelFactId", preparation.IntelFactId.Value.Value)
+                                : null,
+                            new XAttribute("reason", preparation.Reason),
+                            new XAttribute("status", preparation.Status),
+                            new XAttribute("reservedCombatants", preparation.ReservedCombatants),
+                            new XAttribute("supplyResourceKey", preparation.SupplyResourceKey),
+                            new XAttribute("reservedSupplies", preparation.ReservedSupplies),
+                            new XAttribute("createdTick", preparation.CreatedTick),
+                            new XAttribute("expiresTick", preparation.ExpiresTick),
+                            new XAttribute("summary", preparation.Summary)))),
+                new XElement(
                     "RaidPawnLinks",
                     snapshot.RaidPawnLinks.Select(link =>
                         new XElement(
@@ -500,6 +541,38 @@ public static class WorldStateCodec
                     TargetFactionId = OptionalString(element, "targetFactionId") ?? string.Empty,
                     Amount = OptionalInt(element, "amount", 0),
                 })
+                .ToList(),
+            RaidIntelFacts = OptionalContainer(root, "RaidIntelFacts")
+                .Elements("RaidIntelFact")
+                .Select(element => new RaidIntelFact(
+                    ReadId(element),
+                    RequiredEnum<IntelSourceKind>(element, "sourceKind"),
+                    RequiredString(element, "factionId"),
+                    RequiredEnum<RaidIntelTargetKind>(element, "targetKind"),
+                    RequiredString(element, "targetKey"),
+                    RequiredEnum<RaidIntelValueBand>(element, "valueBand"),
+                    RequiredInt(element, "confidence"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredInt(element, "expiresTick"),
+                    RequiredInt(element, "combatantDemand"),
+                    RequiredString(element, "summary")))
+                .ToList(),
+            RaidPreparations = OptionalContainer(root, "RaidPreparations")
+                .Elements("RaidPreparation")
+                .Select(element => new RaidPreparation(
+                    ReadId(element),
+                    RequiredString(element, "factionId"),
+                    ReadEntityId(element, "sourceSettlementKind", "sourceSettlementId"),
+                    ReadEntityId(element, "armyKind", "armyId"),
+                    TryReadEntityId(element, "intelFactKind", "intelFactId"),
+                    RequiredEnum<RaidIntentReason>(element, "reason"),
+                    RequiredEnum<RaidPreparationStatus>(element, "status"),
+                    RequiredInt(element, "reservedCombatants"),
+                    RequiredString(element, "supplyResourceKey"),
+                    RequiredInt(element, "reservedSupplies"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredInt(element, "expiresTick"),
+                    RequiredString(element, "summary")))
                 .ToList()
         };
 

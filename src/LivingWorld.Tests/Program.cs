@@ -47,6 +47,13 @@ var tests = new List<(string Name, Action Test)>
     ("caps vanilla raid combatants to available adults", TestRaidPopulationAllocatorCapsToAvailableAdults),
     ("creates raid opportunity from valuable trade intel", TestTradeIntelCreatesRaidOpportunity),
     ("consumes raid opportunity before vanilla raid allocation", TestRaidOpportunityConsumesOnce),
+    ("records faction knowledge from trade intel without exact values", TestFactionKnowledgeRecordsTradeIntelAboutPlayer),
+    ("queries active faction raid intel facts", TestFactionKnowledgeServiceListsActiveRaidIntelFacts),
+    ("expired raid intel does not create new raid intent", TestRaidIntelExpiresAndStopsCreatingNewIntent),
+    ("raid preparation reserves real citizens and supplies", TestRaidPreparationReservesRealCitizensAndSupplies),
+    ("raid preparation fails without leaking citizens when supplies are insufficient", TestRaidPreparationFailsWithoutLeakingCitizensWhenSuppliesInsufficient),
+    ("stale raid preparation returns reserved citizens and supplies", TestStaleRaidPreparationReturnsReservedCitizensAndResources),
+    ("raid preparation survives save load", TestRaidPreparationSurvivesSaveLoad),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -1284,6 +1291,188 @@ static void TestRaidOpportunityConsumesOnce()
     AssertEqual(true, first);
     AssertEqual(RaidOpportunityStatus.Consumed, state.GetRaidOpportunity(opportunity!.Id)!.Status);
     AssertEqual(false, second);
+}
+
+static void TestFactionKnowledgeRecordsTradeIntelAboutPlayer()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(60_000);
+
+    var result = RaidIntelService.RecordTradeIntel(
+        state,
+        new TradeIntelRequest("Pirate", 6000, 2, "gold and psychite trade"));
+
+    AssertEqual(IntelReportStatus.Accepted, result.Status);
+    AssertEqual(1, state.RaidIntelFacts.Count);
+    AssertEqual(IntelSourceKind.Trade, result.RaidIntelFact!.SourceKind);
+    AssertEqual("Pirate", result.RaidIntelFact.FactionId);
+    AssertEqual(RaidIntelTargetKind.PlayerColony, result.RaidIntelFact.TargetKind);
+    AssertEqual(RaidIntelValueBand.High, result.RaidIntelFact.ValueBand);
+    AssertEqual(70, result.RaidIntelFact.Confidence);
+    AssertEqual(60_000, result.RaidIntelFact.CreatedTick);
+    AssertEqual(60_000 + RaidIntelService.DefaultTradeIntelLifetimeTicks, result.RaidIntelFact.ExpiresTick);
+    AssertEqual(false, result.RaidIntelFact.Summary.Contains("6000", StringComparison.Ordinal));
+}
+
+static void TestRaidIntelExpiresAndStopsCreatingNewIntent()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(10);
+
+    var result = RaidIntelService.RecordTradeIntel(
+        state,
+        new TradeIntelRequest("Pirate", 2000, 0, "gold sale"));
+
+    state.AdvanceToTick(result.RaidIntelFact!.ExpiresTick + 1);
+    var created = RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Neutral),
+        out var intent);
+
+    AssertEqual(false, created);
+    AssertEqual(null, intent);
+}
+
+static void TestFactionKnowledgeServiceListsActiveRaidIntelFacts()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var first = RaidIntelService.RecordTradeIntel(
+        state,
+        new TradeIntelRequest("Pirate", 1500, 0, "gold sale")).RaidIntelFact!;
+    RaidIntelService.RecordTradeIntel(
+        state,
+        new TradeIntelRequest("Outlander", 3000, 0, "weapon sale"));
+    state.AdvanceToTick(first.ExpiresTick + 1);
+    RaidIntelService.RecordTradeIntel(
+        state,
+        new TradeIntelRequest("Pirate", 2500, 0, "new gold sale"));
+
+    var active = FactionKnowledgeService.GetActiveRaidIntelFacts(state, "Pirate").ToList();
+
+    AssertEqual(1, active.Count);
+    AssertEqual(RaidIntelValueBand.High, active[0].ValueBand);
+    AssertEqual(false, active[0].IsExpired(state.CurrentTick));
+}
+
+static void TestRaidPreparationReservesRealCitizensAndSupplies()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("pirate-den-101", "Pirate Den", "Pirate");
+    for (var i = 0; i < 5; i++)
+    {
+        state.CreateCitizen($"Raider {i}", 25 + i, i % 2 == 0 ? Sex.Male : Sex.Female, "raider", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 10);
+    RaidIntelService.RecordTradeIntel(state, new TradeIntelRequest("Pirate", 1500, 0, "gold sale"));
+    var intentCreated = RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Hostile),
+        out var intent);
+
+    var preparation = RaidPreparationService.PrepareRaid(
+        state,
+        new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 60_000));
+
+    AssertEqual(true, intentCreated);
+    AssertEqual(RaidPreparationStatus.Ready, preparation.Status);
+    AssertEqual(settlement.Id, preparation.SourceSettlementId);
+    AssertEqual(3, preparation.ReservedCombatants);
+    AssertEqual(3, preparation.ReservedSupplies);
+    AssertEqual(3, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == preparation.ArmyId));
+    AssertEqual(3, state.GetOwnedResourceQuantity(preparation.ArmyId, "PackagedSurvivalMeal"));
+    AssertEqual(7, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+}
+
+static void TestStaleRaidPreparationReturnsReservedCitizensAndResources()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("pirate-den-101", "Pirate Den", "Pirate");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen($"Raider {i}", 30, Sex.Male, "raider", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 10);
+    RaidIntelService.RecordTradeIntel(state, new TradeIntelRequest("Pirate", 1000, 0, "gold sale"));
+    RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Hostile),
+        out var intent);
+    var preparation = RaidPreparationService.PrepareRaid(
+        state,
+        new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 10));
+
+    state.AdvanceToTick(preparation.ExpiresTick + 1);
+    var released = RaidPreparationService.ReleaseExpiredPreparations(state, state.CurrentTick);
+
+    AssertEqual(1, released);
+    AssertEqual(RaidPreparationStatus.Released, state.GetRaidPreparation(preparation.Id)!.Status);
+    AssertEqual(4, state.GetSettlementPopulation(settlement.Id).Adults);
+    AssertEqual(4, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == settlement.Id));
+    AssertEqual(10, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(preparation.ArmyId, "PackagedSurvivalMeal"));
+}
+
+static void TestRaidPreparationFailsWithoutLeakingCitizensWhenSuppliesInsufficient()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("pirate-den-101", "Pirate Den", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Raider {i}", 30, Sex.Male, "raider", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 1);
+    RaidIntelService.RecordTradeIntel(state, new TradeIntelRequest("Pirate", 1500, 0, "gold sale"));
+    RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Hostile),
+        out var intent);
+
+    AssertThrows<InvalidOperationException>(() =>
+        RaidPreparationService.PrepareRaid(
+            state,
+            new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 60_000)));
+
+    AssertEqual(0, state.RaidPreparations.Count);
+    AssertEqual(3, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == settlement.Id));
+    AssertEqual(1, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+}
+
+static void TestRaidPreparationSurvivesSaveLoad()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("pirate-den-101", "Pirate Den", "Pirate");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Raider {i}", 28, Sex.Female, "raider", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 5);
+    RaidIntelService.RecordTradeIntel(state, new TradeIntelRequest("Pirate", 1000, 0, "gold sale"));
+    RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Hostile),
+        out var intent);
+    var preparation = RaidPreparationService.PrepareRaid(
+        state,
+        new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 60_000));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var savedPreparation = restored.GetRaidPreparation(preparation.Id)!;
+
+    AssertEqual(preparation.Id, savedPreparation.Id);
+    AssertEqual(RaidPreparationStatus.Ready, savedPreparation.Status);
+    AssertEqual(preparation.ArmyId, savedPreparation.ArmyId);
+    AssertEqual(1, restored.RaidIntelFacts.Count);
+    AssertEqual(1, restored.RaidPreparations.Count);
+    AssertEqual(2, restored.GetOwnedResourceQuantity(savedPreparation.ArmyId, "PackagedSurvivalMeal"));
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()

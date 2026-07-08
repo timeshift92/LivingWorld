@@ -22,8 +22,8 @@ the player never sees.
 
 | ID | Task | Owner | Depends on | Status |
 |----|------|-------|-----------|--------|
-| P1-C1 | `RaidIntelFact` + `FactionKnowledgeService`: a hostile faction learns **bounded** facts about the player (from trade/scout/prisoner/rumor) with confidence + expiry. No exact wealth. | Core/Codex | — | ▢ |
-| P1-C2 | `RaidIntent` + `RaidPreparationService`: turn intel into an intent, **reserve real citizens + supplies** from a source settlement, stale-release on expiry (exactly once). | Core/Codex | P1-C1 | ▢ |
+| P1-C1 | `RaidIntelFact` + `FactionKnowledgeService`: a hostile faction learns **bounded** facts about the player (from trade/scout/prisoner/rumor) with confidence + expiry. No exact wealth. | Core/Codex | — | ✅ Core API landed (`RaidIntelFact` via trade intel, value bands, confidence, expiry, save/load) |
+| P1-C2 | `RaidIntent` + `RaidPreparationService`: turn intel into an intent, **reserve real citizens + supplies** from a source settlement, stale-release on expiry (exactly once). | Core/Codex | P1-C1 | ✅ Core API landed (`RaidIntentService`, `RaidPreparationService`, real citizens/supplies, stale release, save/load) |
 | P1-R1 | Route the custom faction-raid incident through a **prepared expedition** from Core instead of ad-hoc reservation. | RW/Claude | P1-C2 | ▢ |
 | P1-R2 | **Believable warning** before the raid — a letter/alert only when a source justifies it (scout sighting, rumor, ally warning). Deterministic, source-labeled, rate-limited. | RW/Claude | P1-C1, P1-C2 | ▢ |
 | P1-R3 | **Consequence surfacing** — after a raid: letter *"came from {settlement} of {faction}; it is weaker now"*. **✅ DONE (commit `492781d`)** — `MaybeSendRaidConsequenceLetters` sends one rate-limited, persisted letter per resolved `WorldRaidOutcome` (attribution + losses); EN/RU + test. Independent of Core, on the existing raid path. | RW/Claude | — | ✅ |
@@ -37,6 +37,12 @@ settlement → UI explains with bands & source labels (no omniscient exact value
 > satisfied** by the existing raid path (`CompLivingWorldIdentity`). The full lease generalization
 > (Task 3) is **not a blocker** for this slice — do it afterward, when a second consumer (settlement
 > visits) needs it. Avoid premature abstraction.
+
+**Core handoff after P1-C1/C2:** Claude can now route `IncidentWorker_LivingWorldFactionRaid`
+through `RaidIntentService.TryCreateBestIntent(...)` and `RaidPreparationService.PrepareRaid(...)`
+instead of ad-hoc reservation. The Core path keeps the old vanilla raid fallback intact:
+`RaidOpportunity` is still available for legacy flavor/consumption, while `RaidIntelFact` is the
+bounded, expiring faction knowledge record for the new prepared-expedition flow.
 
 ---
 

@@ -10,6 +10,8 @@ public enum EntityKind
     Event,
     IntelReport,
     RaidOpportunity,
+    RaidIntelFact,
+    RaidPreparation,
     Drifter,
     Caravan,
     Mission

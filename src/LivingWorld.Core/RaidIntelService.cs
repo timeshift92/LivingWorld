@@ -17,10 +17,14 @@ public sealed record IntelReportResult(
     IntelReportStatus Status,
     string Reason,
     WorldIntelReport? IntelReport,
-    RaidOpportunity? RaidOpportunity);
+    RaidOpportunity? RaidOpportunity)
+{
+    public RaidIntelFact? RaidIntelFact { get; init; }
+}
 
 public static class RaidIntelService
 {
+    public const int DefaultTradeIntelLifetimeTicks = 15 * 60_000;
     private const int MinimumTradeValueForRaidOpportunity = 500;
     private const int CombatantDemandValueDivisor = 500;
 
@@ -56,6 +60,17 @@ public static class RaidIntelService
             request.FactionId,
             valueScore,
             string.IsNullOrWhiteSpace(request.Summary) ? "Trade revealed valuable goods." : request.Summary);
+        var combatantDemand = Math.Max(1, valueScore / CombatantDemandValueDivisor);
+        var fact = state.RecordRaidIntelFact(
+            IntelSourceKind.Trade,
+            request.FactionId,
+            RaidIntelTargetKind.PlayerColony,
+            "player-colony",
+            ToValueBand(valueScore),
+            70,
+            DefaultTradeIntelLifetimeTicks,
+            combatantDemand,
+            SummarizeTradeIntel(valueScore, request.SensitiveGoodsCount));
 
         if (valueScore < MinimumTradeValueForRaidOpportunity)
         {
@@ -63,20 +78,54 @@ public static class RaidIntelService
                 IntelReportStatus.Accepted,
                 "Trade intel recorded without a raid opportunity.",
                 report,
-                null);
+                null)
+            {
+                RaidIntelFact = fact
+            };
         }
 
         var opportunity = state.CreateRaidOpportunity(
             request.FactionId,
             report.Id,
-            Math.Max(1, valueScore / CombatantDemandValueDivisor),
+            combatantDemand,
             report.Summary);
 
         return new IntelReportResult(
             IntelReportStatus.Accepted,
             "Trade intel created a raid opportunity.",
             report,
-            opportunity);
+            opportunity)
+        {
+            RaidIntelFact = fact
+        };
+    }
+
+    private static RaidIntelValueBand ToValueBand(int valueScore)
+    {
+        if (valueScore >= 8_000)
+        {
+            return RaidIntelValueBand.Extreme;
+        }
+
+        if (valueScore >= 1_500)
+        {
+            return RaidIntelValueBand.High;
+        }
+
+        if (valueScore >= 500)
+        {
+            return RaidIntelValueBand.Moderate;
+        }
+
+        return RaidIntelValueBand.Low;
+    }
+
+    private static string SummarizeTradeIntel(int valueScore, int sensitiveGoodsCount)
+    {
+        var band = ToValueBand(valueScore).ToString().ToLowerInvariant();
+        return sensitiveGoodsCount > 0
+            ? $"Trader reported {band} value goods and sensitive cargo."
+            : $"Trader reported {band} value goods.";
     }
 }
 

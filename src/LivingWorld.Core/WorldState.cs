@@ -11,6 +11,8 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
     private readonly Dictionary<EntityId, RaidOpportunity> _raidOpportunities = new();
+    private readonly Dictionary<EntityId, RaidIntelFact> _raidIntelFacts = new();
+    private readonly Dictionary<EntityId, RaidPreparation> _raidPreparations = new();
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
@@ -71,6 +73,10 @@ public sealed class WorldState
     public IReadOnlyCollection<KnownSettlementInfo> KnownSettlementInfos => _knownSettlementInfos.Values;
 
     public IReadOnlyCollection<RaidOpportunity> RaidOpportunities => _raidOpportunities.Values;
+
+    public IReadOnlyCollection<RaidIntelFact> RaidIntelFacts => _raidIntelFacts.Values;
+
+    public IReadOnlyCollection<RaidPreparation> RaidPreparations => _raidPreparations.Values;
 
     public IReadOnlyCollection<RaidPawnLink> RaidPawnLinks => _raidPawnLinks.Values;
 
@@ -194,6 +200,12 @@ public sealed class WorldState
                 .ToList(),
             Missions = _missions.Values
                 .OrderBy(mission => mission.Id.Value)
+                .ToList(),
+            RaidIntelFacts = _raidIntelFacts.Values
+                .OrderBy(fact => fact.Id.Value)
+                .ToList(),
+            RaidPreparations = _raidPreparations.Values
+                .OrderBy(preparation => preparation.Id.Value)
                 .ToList()
         };
     }
@@ -263,6 +275,18 @@ public sealed class WorldState
         {
             state._raidOpportunities.Add(opportunity.Id, opportunity);
             state.ReserveExistingId(opportunity.Id);
+        }
+
+        foreach (var fact in snapshot.RaidIntelFacts)
+        {
+            state._raidIntelFacts.Add(fact.Id, fact);
+            state.ReserveExistingId(fact.Id);
+        }
+
+        foreach (var preparation in snapshot.RaidPreparations)
+        {
+            state._raidPreparations.Add(preparation.Id, preparation);
+            state.ReserveExistingId(preparation.Id);
         }
 
         foreach (var link in snapshot.RaidPawnLinks)
@@ -1085,6 +1109,20 @@ public sealed class WorldState
             : null;
     }
 
+    public RaidIntelFact? GetRaidIntelFact(EntityId id)
+    {
+        return _raidIntelFacts.TryGetValue(id, out var fact)
+            ? fact
+            : null;
+    }
+
+    public RaidPreparation? GetRaidPreparation(EntityId id)
+    {
+        return _raidPreparations.TryGetValue(id, out var preparation)
+            ? preparation
+            : null;
+    }
+
     public RaidPawnLink? GetRaidPawnLink(int pawnThingId)
     {
         return _raidPawnLinks.TryGetValue(pawnThingId, out var link)
@@ -1473,6 +1511,117 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.RaidOpportunityConsumed, consumed.Id, $"Raid opportunity {consumed.Id} consumed.");
 
         return consumed;
+    }
+
+    public RaidIntelFact RecordRaidIntelFact(
+        IntelSourceKind sourceKind,
+        string factionId,
+        RaidIntelTargetKind targetKind,
+        string targetKey,
+        RaidIntelValueBand valueBand,
+        int confidence,
+        int lifetimeTicks,
+        int combatantDemand,
+        string summary)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        ThrowIfNullOrWhiteSpace(targetKey, nameof(targetKey));
+        ThrowIfNullOrWhiteSpace(summary, nameof(summary));
+
+        if (confidence < 0 || confidence > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(confidence), "Raid intel confidence must be between 0 and 100.");
+        }
+
+        if (combatantDemand <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(combatantDemand), "Raid intel combatant demand must be positive.");
+        }
+
+        var fact = new RaidIntelFact(
+            NextId(EntityKind.RaidIntelFact),
+            sourceKind,
+            factionId,
+            targetKind,
+            targetKey,
+            valueBand,
+            confidence,
+            CurrentTick,
+            CurrentTick + Math.Max(0, lifetimeTicks),
+            combatantDemand,
+            summary);
+
+        _raidIntelFacts.Add(fact.Id, fact);
+        AppendEvent(WorldEventKind.RaidIntelFactRecorded, fact.Id, $"Raid intel fact {fact.Id} recorded for {factionId}: {summary}.");
+
+        return fact;
+    }
+
+    public RaidPreparation CreateRaidPreparation(
+        string factionId,
+        EntityId sourceSettlementId,
+        EntityId armyId,
+        EntityId? intelFactId,
+        RaidIntentReason reason,
+        RaidPreparationStatus status,
+        int reservedCombatants,
+        string supplyResourceKey,
+        int reservedSupplies,
+        int expiresTick,
+        string summary)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        ThrowIfNullOrWhiteSpace(supplyResourceKey, nameof(supplyResourceKey));
+        ThrowIfNullOrWhiteSpace(summary, nameof(summary));
+
+        if (reservedCombatants < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(reservedCombatants), "Reserved combatants cannot be negative.");
+        }
+
+        if (reservedSupplies < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(reservedSupplies), "Reserved supplies cannot be negative.");
+        }
+
+        var preparation = new RaidPreparation(
+            NextId(EntityKind.RaidPreparation),
+            factionId,
+            sourceSettlementId,
+            armyId,
+            intelFactId,
+            reason,
+            status,
+            reservedCombatants,
+            supplyResourceKey,
+            reservedSupplies,
+            CurrentTick,
+            Math.Max(CurrentTick, expiresTick),
+            summary);
+
+        _raidPreparations.Add(preparation.Id, preparation);
+        AppendEvent(WorldEventKind.RaidPreparationCreated, preparation.Id, $"Raid preparation {preparation.Id} created for {factionId}: {summary}.");
+
+        return preparation;
+    }
+
+    public RaidPreparation ReleaseRaidPreparation(EntityId preparationId)
+    {
+        if (!_raidPreparations.TryGetValue(preparationId, out var preparation))
+        {
+            throw new InvalidOperationException($"Raid preparation {preparationId} does not exist.");
+        }
+
+        if (preparation.Status == RaidPreparationStatus.Released)
+        {
+            return preparation;
+        }
+
+        var released = preparation.Release();
+        _raidPreparations[preparationId] = released;
+        AppendEvent(WorldEventKind.RaidPreparationReleased, released.Id, $"Raid preparation {released.Id} released.");
+
+        return released;
     }
 
     public RaidPawnLink LinkRaidPawn(int pawnThingId, EntityId citizenId, EntityId armyId)
@@ -1953,6 +2102,8 @@ public sealed class WorldState
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(ownerId),
             EntityKind.IntelReport => _intelReports.ContainsKey(ownerId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(ownerId),
+            EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(ownerId),
+            EntityKind.RaidPreparation => _raidPreparations.ContainsKey(ownerId),
             _ => false
         };
     }
@@ -1968,6 +2119,8 @@ public sealed class WorldState
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(assetId),
             EntityKind.IntelReport => _intelReports.ContainsKey(assetId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(assetId),
+            EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(assetId),
+            EntityKind.RaidPreparation => _raidPreparations.ContainsKey(assetId),
             _ => false
         };
     }
