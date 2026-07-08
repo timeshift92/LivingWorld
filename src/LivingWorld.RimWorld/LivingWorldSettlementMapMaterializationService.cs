@@ -169,6 +169,16 @@ public static class LivingWorldSettlementMapMaterializationService
         foreach (var resource in prepared.Resources)
         {
             var spawned = TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity);
+            if (spawned > 0)
+            {
+                ResourceLedgerService.ConsumeResource(
+                    state,
+                    resourceOwnerId,
+                    resource.ResourceKey,
+                    spawned,
+                    "settlement map resource spawned");
+            }
+
             var remainder = resource.Quantity - spawned;
             if (remainder > 0)
             {

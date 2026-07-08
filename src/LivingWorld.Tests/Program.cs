@@ -6658,6 +6658,8 @@ static void TestRimWorldSettlementMapMaterialization()
     AssertContains("identity.SetLedgerId(lease.CitizenId)", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("GenSpawn.Spawn", service);
+    AssertContains("ResourceLedgerService.ConsumeResource", service);
+    AssertContains("settlement map resource spawned", service);
     AssertContains("SettlementMaterializationService.AbortDefense", service);
     AssertContains("IsInitialWorldSeedingActive", service);
 }
