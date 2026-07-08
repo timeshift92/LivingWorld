@@ -264,6 +264,40 @@ public static class WorldStateCodec
                                 new XAttribute("mechanicalCapacity", capability.MechanicalCapacity),
                                 new XAttribute("pollutionHandling", capability.PollutionHandling)))),
                 new XElement(
+                    "SettlementFacilities",
+                    snapshot.SettlementFacilities.Select(facility =>
+                        new XElement(
+                            "SettlementFacility",
+                            IdAttributes(facility.Id),
+                            new XAttribute("settlementKind", facility.SettlementId.Kind),
+                            new XAttribute("settlementId", facility.SettlementId.Value),
+                            new XAttribute("facilityKind", facility.Kind),
+                            new XAttribute("level", facility.Level),
+                            new XAttribute("conditionPercent", facility.ConditionPercent),
+                            new XAttribute("builtTick", facility.BuiltTick)))),
+                new XElement(
+                    "SettlementProjects",
+                    snapshot.SettlementProjects.Select(project =>
+                        new XElement(
+                            "SettlementProject",
+                            IdAttributes(project.Id),
+                            new XAttribute("settlementKind", project.SettlementId.Kind),
+                            new XAttribute("settlementId", project.SettlementId.Value),
+                            new XAttribute("projectKind", project.Kind),
+                            new XAttribute("status", project.Status),
+                            new XAttribute("facilityKind", project.FacilityKind),
+                            project.TargetFacilityId.HasValue
+                                ? new XAttribute("targetFacilityKind", project.TargetFacilityId.Value.Kind)
+                                : null,
+                            project.TargetFacilityId.HasValue
+                                ? new XAttribute("targetFacilityId", project.TargetFacilityId.Value.Value)
+                                : null,
+                            new XAttribute("facilityLevel", project.FacilityLevel),
+                            new XAttribute("startedTick", project.StartedTick),
+                            new XAttribute("completionTick", project.CompletionTick),
+                            new XAttribute("steelCost", project.SteelCost),
+                            new XAttribute("componentCost", project.ComponentCost)))),
+                new XElement(
                     "SpecialistPools",
                     snapshot.SpecialistPools.Select(specialists =>
                             new XElement(
@@ -607,6 +641,31 @@ public static class WorldStateCodec
                     RequiredInt(element, "expiresTick"),
                     RequiredEnum<MaterializationLeaseLifecycle>(element, "lifecycle"),
                     TryOptionalInt(element, "pawnThingId")))
+                .ToList(),
+            SettlementFacilities = OptionalContainer(root, "SettlementFacilities")
+                .Elements("SettlementFacility")
+                .Select(element => new SettlementFacility(
+                    ReadId(element),
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredEnum<SettlementFacilityKind>(element, "facilityKind"),
+                    RequiredInt(element, "level"),
+                    RequiredInt(element, "conditionPercent"),
+                    RequiredInt(element, "builtTick")))
+                .ToList(),
+            SettlementProjects = OptionalContainer(root, "SettlementProjects")
+                .Elements("SettlementProject")
+                .Select(element => new SettlementProject(
+                    ReadId(element),
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredEnum<SettlementProjectKind>(element, "projectKind"),
+                    RequiredEnum<SettlementProjectStatus>(element, "status"),
+                    RequiredEnum<SettlementFacilityKind>(element, "facilityKind"),
+                    TryReadEntityId(element, "targetFacilityKind", "targetFacilityId"),
+                    RequiredInt(element, "facilityLevel"),
+                    RequiredInt(element, "startedTick"),
+                    RequiredInt(element, "completionTick"),
+                    RequiredInt(element, "steelCost"),
+                    RequiredInt(element, "componentCost")))
                 .ToList()
         };
 

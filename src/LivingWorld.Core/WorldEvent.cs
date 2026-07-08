@@ -48,7 +48,12 @@ public enum WorldEventKind
     SettlementDeveloped,
     CaravanLaunched,
     CaravanArrived,
-    CaravanDestroyed
+    CaravanDestroyed,
+    SettlementProjectStarted,
+    SettlementProjectCompleted,
+    SettlementFacilityBuilt,
+    SettlementFacilityDamaged,
+    SettlementFacilityRepaired
 }
 
 public sealed record WorldEvent(

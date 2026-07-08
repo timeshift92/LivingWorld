@@ -29,7 +29,11 @@ var tests = new List<(string Name, Action Test)>
     ("deep production uses archetype labor scale and complexity", TestSettlementProductionUsesDepthModifiers),
     ("virtual trade conserves goods and silver", TestVirtualTradeTransfersGoodsAndSilver),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
+    ("settlement facilities modify production output", TestSettlementFacilitiesModifyProductionOutput),
+    ("settlement projects consume resources and complete facilities", TestSettlementProjectsConsumeResourcesAndCompleteFacilities),
+    ("damaged facilities reduce output and repairs consume resources", TestDamagedFacilitiesReduceOutputAndRepairsConsumeResources),
     ("serializes settlement production profiles", TestSettlementProductionProfileSerialization),
+    ("serializes settlement facilities and projects", TestSettlementFacilityProjectSerialization),
     ("records settlement capabilities and specialist pools", TestSettlementCapabilityAndSpecialistLedger),
     ("develops settlement tier and specialists deliberately", TestSettlementDevelopmentUpgradesTierAndSpecialists),
     ("answers settlement readiness from capabilities and specialists", TestSettlementCapabilityReadiness),
@@ -891,6 +895,141 @@ static void TestSettlementProductionAddsOwnedResources()
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementProductionUpdated));
 }
 
+static void TestSettlementFacilitiesModifyProductionOutput()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("farm-town", "Farm Town", "Outlander");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Farmer {i + 1}", 24 + i, Sex.Female, "farmer", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "TemperateForest",
+            "SmallHills",
+            "Industrial",
+            55,
+            850,
+            21)));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 1),
+        settlement.Id,
+        SettlementFacilityKind.Farm,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 0));
+
+    var result = SettlementProductionService.SimulateDay(
+        state,
+        new SettlementProductionRequest(
+            60_000,
+            "PackagedSurvivalMeal",
+            "Steel",
+            "MedicineIndustrial",
+            "ComponentIndustrial"));
+
+    AssertEqual(16, result.FoodProduced);
+    AssertEqual(6, result.SteelProduced);
+    AssertEqual(16, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+}
+
+static void TestSettlementProjectsConsumeResourcesAndCompleteFacilities()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    state.AddResource(settlement.Id, "Steel", 120);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 8);
+
+    var result = SettlementProjectService.StartBuildFacility(
+        state,
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        level: 1,
+        startTick: 1_000,
+        durationTicks: 60_000,
+        steelCost: 80,
+        componentCost: 4);
+
+    AssertEqual(SettlementProjectStartStatus.Success, result.Status);
+    AssertEqual(40, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(4, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(0, state.GetSettlementFacilities(settlement.Id).Count);
+    AssertEqual(SettlementProjectStatus.Active, state.GetSettlementProject(result.Project!.Id)!.Status);
+
+    var completedEarly = SettlementProjectService.CompleteReadyProjects(state, 30_000);
+    AssertEqual(0, completedEarly.CompletedProjects);
+    AssertEqual(0, state.GetSettlementFacilities(settlement.Id).Count);
+
+    var completed = SettlementProjectService.CompleteReadyProjects(state, 61_000);
+    var facility = state.GetSettlementFacilities(settlement.Id).Single();
+
+    AssertEqual(1, completed.CompletedProjects);
+    AssertEqual(SettlementFacilityKind.Workshop, facility.Kind);
+    AssertEqual(100, facility.ConditionPercent);
+    AssertEqual(SettlementProjectStatus.Completed, state.GetSettlementProject(result.Project.Id)!.Status);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementProjectStarted));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityBuilt));
+}
+
+static void TestDamagedFacilitiesReduceOutputAndRepairsConsumeResources()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("steel-town", "Steel Town", "Outlander");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen($"Worker {i + 1}", 30 + i, Sex.Male, "worker", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "AridShrubland",
+            "LargeHills",
+            "Industrial",
+            20,
+            300,
+            15)));
+    var facility = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 1),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 0));
+    facility = SettlementFacilityService.DamageFacility(state, facility.Id, 50, "test damage");
+
+    var damagedProduction = SettlementProductionService.SimulateDay(
+        state,
+        new SettlementProductionRequest(
+            60_000,
+            "PackagedSurvivalMeal",
+            "Steel",
+            "MedicineIndustrial",
+            "ComponentIndustrial"));
+
+    AssertEqual(14, damagedProduction.SteelProduced);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityDamaged));
+
+    state.AddResource(settlement.Id, "Steel", 50);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 2);
+    var repair = SettlementProjectService.StartRepairFacility(
+        state,
+        facility.Id,
+        startTick: 70_000,
+        durationTicks: 10_000,
+        steelCost: 40,
+        componentCost: 1);
+    SettlementProjectService.CompleteReadyProjects(state, 80_000);
+
+    AssertEqual(SettlementProjectStartStatus.Success, repair.Status);
+    AssertEqual(24, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(5, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(100, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityRepaired));
+}
+
 static void TestSettlementProductionProfileSerialization()
 {
     var state = new WorldState(12345);
@@ -911,6 +1050,35 @@ static void TestSettlementProductionProfileSerialization()
     var restoredProfile = restored.GetSettlementProductionProfile(settlement.Id);
 
     AssertEqual(profile, restoredProfile);
+}
+
+static void TestSettlementFacilityProjectSerialization()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("factory", "Factory", "Outlander");
+    state.AddResource(settlement.Id, "Steel", 200);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 10);
+    var facility = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 10),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 2,
+        ConditionPercent: 40,
+        BuiltTick: 12));
+    var project = SettlementProjectService.StartRepairFacility(
+        state,
+        facility.Id,
+        startTick: 100,
+        durationTicks: 500,
+        steelCost: 30,
+        componentCost: 2).Project!;
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(facility, restored.GetSettlementFacility(facility.Id));
+    AssertEqual(project, restored.GetSettlementProject(project.Id));
+    AssertEqual(170, restored.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(8, restored.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
 }
 
 static void TestSettlementCapabilityAndSpecialistLedger()

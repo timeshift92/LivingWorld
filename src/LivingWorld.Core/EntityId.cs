@@ -15,7 +15,9 @@ public enum EntityKind
     MaterializationLease,
     Drifter,
     Caravan,
-    Mission
+    Mission,
+    SettlementFacility,
+    SettlementProject
 }
 
 public readonly record struct EntityId(EntityKind Kind, long Value)

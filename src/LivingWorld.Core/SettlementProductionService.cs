@@ -296,6 +296,27 @@ public static class SettlementProductionService
             var producedMedicine = profile.EffectiveDailyMedicine(adults);
             var producedComponents = profile.EffectiveDailyComponents(adults);
 
+            producedFood = SettlementFacilityService.ApplyProductionModifier(
+                state,
+                profile.SettlementId,
+                SettlementFacilityKind.Farm,
+                producedFood);
+            producedSteel = SettlementFacilityService.ApplyProductionModifier(
+                state,
+                profile.SettlementId,
+                SettlementFacilityKind.Workshop,
+                producedSteel);
+            producedMedicine = SettlementFacilityService.ApplyProductionModifier(
+                state,
+                profile.SettlementId,
+                SettlementFacilityKind.Clinic,
+                producedMedicine);
+            producedComponents = SettlementFacilityService.ApplyProductionModifier(
+                state,
+                profile.SettlementId,
+                SettlementFacilityKind.Workshop,
+                producedComponents);
+
             AddProducedResource(state, profile.SettlementId, request.FoodResourceKey, producedFood);
             AddProducedResource(state, profile.SettlementId, request.SteelResourceKey, producedSteel);
             AddProducedResource(state, profile.SettlementId, request.MedicineResourceKey, producedMedicine);

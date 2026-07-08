@@ -52,7 +52,7 @@ bounded, expiring faction knowledge record for the new prepared-expedition flow.
 | PRP Task | System | Owner | Status | Note |
 |----------|--------|-------|--------|------|
 | Task 3 | Materialization leases | Codex core + Claude pawn-gen | ◐ | Core foundation landed: `MaterializationLease`, lease lifecycle, fate sync, expiry release, save/load. RW daily tick now calls `MaterializationLeaseService.ReleaseExpiredLeases` so expired leases don't leak. Remaining: the RW pawn-gen **consumer** (NPC settlement-visit materialization via `CreateLeases`/`BindPawn`) — deferred until a second consumer needs it (see slice note), risky-headless, needs in-game testing. |
-| Task 4 | Facilities & settlement projects | Codex core + Claude bands | ▢ | Economy depth beyond population |
+| Task 4 | Facilities & settlement projects | Codex core + Claude bands | ◐ | Core foundation landed: `SettlementFacility`, `SettlementProject`, build/repair projects consume real materials, facilities affect production, save/load covered. RW intel bands/inspection still pending. |
 | Task 5 | Ruins & relocation | Codex core + Claude markers | ▢ | Settlement physical lifecycle |
 | Task 6 | Conflict campaigns (`WorldConflict`) | Codex core + Claude summaries | ▢ | Wars as long-form politics, not isolated battles |
 | Task 9 | Settings reorganization by player intent | RW/Claude | ✅ | **DONE (commit `9ef05bd`)** — Options→Mod Settings grouped into Population / Faction Activity / Development / Baseline / Performance / Compatibility / Debug; ongoing world-war+development knobs exposed; compat section states Rim War/Empire cede; scrolls; EN/RU + 3 tests. (Codex's world-map speed test folded into Performance.) |

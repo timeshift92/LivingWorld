@@ -22,6 +22,8 @@ public sealed class WorldState
     private readonly Dictionary<(string, string), int> _factionRelations = new();
     private readonly HashSet<string> _irreconcilableFactions = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
+    private readonly Dictionary<EntityId, SettlementFacility> _settlementFacilities = new();
+    private readonly Dictionary<EntityId, SettlementProject> _settlementProjects = new();
     private readonly Dictionary<EntityId, SettlementCapability> _settlementCapabilities = new();
     private readonly Dictionary<EntityId, SpecialistPool> _specialistPools = new();
     private readonly Dictionary<EntityId, SettlementWealthSnapshot> _settlementWealth = new();
@@ -90,6 +92,10 @@ public sealed class WorldState
     public int DrifterArrivalReservoir => drifterArrivalReservoir;
 
     public IReadOnlyCollection<SettlementProductionProfile> ProductionProfiles => _productionProfiles.Values;
+
+    public IReadOnlyCollection<SettlementFacility> SettlementFacilities => _settlementFacilities.Values;
+
+    public IReadOnlyCollection<SettlementProject> SettlementProjects => _settlementProjects.Values;
 
     public IReadOnlyCollection<SettlementCapability> SettlementCapabilities => _settlementCapabilities.Values;
 
@@ -212,6 +218,12 @@ public sealed class WorldState
                 .ToList(),
             MaterializationLeases = _materializationLeases.Values
                 .OrderBy(lease => lease.Id.Value)
+                .ToList(),
+            SettlementFacilities = _settlementFacilities.Values
+                .OrderBy(facility => facility.Id.Value)
+                .ToList(),
+            SettlementProjects = _settlementProjects.Values
+                .OrderBy(project => project.Id.Value)
                 .ToList()
         };
     }
@@ -314,6 +326,18 @@ public sealed class WorldState
         foreach (var profile in snapshot.ProductionProfiles)
         {
             state._productionProfiles.Add(profile.SettlementId, profile);
+        }
+
+        foreach (var facility in snapshot.SettlementFacilities)
+        {
+            state._settlementFacilities.Add(facility.Id, Normalize(facility));
+            state.ReserveExistingId(facility.Id);
+        }
+
+        foreach (var project in snapshot.SettlementProjects)
+        {
+            state._settlementProjects.Add(project.Id, Normalize(project));
+            state.ReserveExistingId(project.Id);
         }
 
         foreach (var capability in snapshot.SettlementCapabilities)
@@ -1163,6 +1187,28 @@ public sealed class WorldState
             : null;
     }
 
+    public SettlementFacility? GetSettlementFacility(EntityId facilityId)
+    {
+        return _settlementFacilities.TryGetValue(facilityId, out var facility)
+            ? facility
+            : null;
+    }
+
+    public IReadOnlyList<SettlementFacility> GetSettlementFacilities(EntityId settlementId)
+    {
+        return _settlementFacilities.Values
+            .Where(facility => facility.SettlementId == settlementId)
+            .OrderBy(facility => facility.Id.Value)
+            .ToList();
+    }
+
+    public SettlementProject? GetSettlementProject(EntityId projectId)
+    {
+        return _settlementProjects.TryGetValue(projectId, out var project)
+            ? project
+            : null;
+    }
+
     public SettlementCapability? GetSettlementCapability(EntityId settlementId)
     {
         return _settlementCapabilities.TryGetValue(settlementId, out var capability)
@@ -1297,6 +1343,99 @@ public sealed class WorldState
         }
 
         _productionProfiles[profile.SettlementId] = profile;
+    }
+
+    public SettlementFacility RecordSettlementFacility(SettlementFacility facility)
+    {
+        if (facility == null)
+        {
+            throw new ArgumentNullException(nameof(facility));
+        }
+
+        if (facility.Id.Kind != EntityKind.SettlementFacility)
+        {
+            throw new InvalidOperationException($"Facility id {facility.Id} is not a settlement facility id.");
+        }
+
+        if (!_settlements.ContainsKey(facility.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {facility.SettlementId} does not exist.");
+        }
+
+        var normalized = Normalize(facility);
+        _settlementFacilities[normalized.Id] = normalized;
+        ReserveExistingId(normalized.Id);
+        return normalized;
+    }
+
+    public SettlementProject CreateSettlementProject(
+        EntityId settlementId,
+        SettlementProjectKind kind,
+        SettlementFacilityKind facilityKind,
+        EntityId? targetFacilityId,
+        int facilityLevel,
+        int startedTick,
+        int completionTick,
+        int steelCost,
+        int componentCost)
+    {
+        if (!_settlements.ContainsKey(settlementId))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        if (targetFacilityId.HasValue
+            && !_settlementFacilities.ContainsKey(targetFacilityId.Value))
+        {
+            throw new InvalidOperationException($"Facility {targetFacilityId.Value} does not exist.");
+        }
+
+        var project = Normalize(new SettlementProject(
+            NextId(EntityKind.SettlementProject),
+            settlementId,
+            kind,
+            SettlementProjectStatus.Active,
+            facilityKind,
+            targetFacilityId,
+            facilityLevel,
+            startedTick,
+            completionTick,
+            steelCost,
+            componentCost));
+        _settlementProjects[project.Id] = project;
+        AppendEvent(
+            WorldEventKind.SettlementProjectStarted,
+            settlementId,
+            $"Settlement {settlementId} started {kind} project {project.Id}.");
+
+        return project;
+    }
+
+    public void RecordSettlementProject(SettlementProject project)
+    {
+        if (project == null)
+        {
+            throw new ArgumentNullException(nameof(project));
+        }
+
+        if (project.Id.Kind != EntityKind.SettlementProject)
+        {
+            throw new InvalidOperationException($"Project id {project.Id} is not a settlement project id.");
+        }
+
+        if (!_settlements.ContainsKey(project.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {project.SettlementId} does not exist.");
+        }
+
+        var normalized = Normalize(project);
+        _settlementProjects[normalized.Id] = normalized;
+        ReserveExistingId(normalized.Id);
+    }
+
+    internal EntityId NextFacilityIdForLedger()
+    {
+        return NextId(EntityKind.SettlementFacility);
     }
 
     public void RecordSettlementCapability(SettlementCapability capability)
@@ -2293,6 +2432,8 @@ public sealed class WorldState
             EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(assetId),
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(assetId),
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(assetId),
+            EntityKind.SettlementFacility => _settlementFacilities.ContainsKey(assetId),
+            EntityKind.SettlementProject => _settlementProjects.ContainsKey(assetId),
             _ => false
         };
     }
@@ -2328,6 +2469,29 @@ public sealed class WorldState
             ResearchCapacity = Math.Max(0, capability.ResearchCapacity),
             MechanicalCapacity = Math.Max(0, capability.MechanicalCapacity),
             PollutionHandling = Math.Max(0, capability.PollutionHandling)
+        };
+    }
+
+    private static SettlementFacility Normalize(SettlementFacility facility)
+    {
+        return facility with
+        {
+            Level = Math.Max(1, facility.Level),
+            ConditionPercent = Math.Max(0, Math.Min(100, facility.ConditionPercent)),
+            BuiltTick = Math.Max(0, facility.BuiltTick)
+        };
+    }
+
+    private static SettlementProject Normalize(SettlementProject project)
+    {
+        var started = Math.Max(0, project.StartedTick);
+        return project with
+        {
+            FacilityLevel = Math.Max(1, project.FacilityLevel),
+            StartedTick = started,
+            CompletionTick = Math.Max(started, project.CompletionTick),
+            SteelCost = Math.Max(0, project.SteelCost),
+            ComponentCost = Math.Max(0, project.ComponentCost)
         };
     }
 
