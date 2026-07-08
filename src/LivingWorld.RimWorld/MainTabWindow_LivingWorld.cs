@@ -44,6 +44,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private List<string> cachedFactionCollapseRows = new();
     private List<string> cachedDrifterRows = new();
     private List<string> cachedKnownIntelRows = new();
+    private List<string> cachedConflictRows = new();
     private List<string> cachedEventRows = new();
 
     public override Vector2 InitialSize => new Vector2(760f, 560f);
@@ -123,6 +124,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedFactionEconomyRows.Count * 26f)
             + 30f
             + (cachedWatcherRows.Count * 26f)
+            + 30f
+            + (cachedConflictRows.Count * 24f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -240,6 +243,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         {
             DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text, row.Fill);
             y += 26f;
+        }
+
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_WorldConflictsHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedConflictRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 22f), row);
+            y += 24f;
         }
 
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_EventsHeader".Translate());
@@ -500,6 +512,56 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 return (fact.FactionId, text, Mathf.Clamp01(fact.Confidence / 100f));
             })
             .ToList();
+
+        // World conflicts: ongoing NPC-vs-NPC wars and truces (Task 6). Resolved conflicts drop off;
+        // the rest are shown with a coarse intensity band from cumulative war exhaustion so the tab
+        // never implies false precision about battles the player has not witnessed.
+        cachedConflictRows = state.Conflicts
+            .Where(conflict => conflict.Status != WorldConflictStatus.Resolved)
+            .OrderByDescending(conflict => conflict.WarExhaustionA + conflict.WarExhaustionB)
+            .ThenBy(conflict => conflict.Id.Value)
+            .Take(MaxWarRows)
+            .Select(conflict =>
+            {
+                var days = System.Math.Max(0, (currentTick - conflict.StartedTick) / 60_000);
+                return "LW_WorldConflictLine".Translate(
+                    conflict.FactionA.Named("factionA"),
+                    conflict.FactionB.Named("factionB"),
+                    ConflictStatusLabel(conflict.Status).Named("status"),
+                    days.Named("days"),
+                    ConflictIntensityBand(conflict.WarExhaustionA + conflict.WarExhaustionB).Named("intensity"),
+                    conflict.RefugeesCreated.Named("displaced")).ToString();
+            })
+            .ToList();
+    }
+
+    private static string ConflictStatusLabel(WorldConflictStatus status)
+    {
+        return status switch
+        {
+            WorldConflictStatus.Truce => "LW_ConflictStatus_Truce".Translate(),
+            _ => "LW_ConflictStatus_Active".Translate(),
+        };
+    }
+
+    private static string ConflictIntensityBand(int totalExhaustion)
+    {
+        if (totalExhaustion >= 40)
+        {
+            return "LW_ConflictIntensity_Devastating".Translate();
+        }
+
+        if (totalExhaustion >= 15)
+        {
+            return "LW_ConflictIntensity_Heavy".Translate();
+        }
+
+        if (totalExhaustion >= 1)
+        {
+            return "LW_ConflictIntensity_Skirmish".Translate();
+        }
+
+        return "LW_ConflictIntensity_None".Translate();
     }
 
     private static string IntelBand(RaidIntelValueBand band)

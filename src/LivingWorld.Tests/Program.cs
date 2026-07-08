@@ -182,6 +182,7 @@ var tests = new List<(string Name, Action Test)>
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
+    ("summarizes world conflicts in the main tab", TestRimWorldWorldConflictsSection),
     ("shows factions watching the player in the main tab", TestRimWorldWatchersSection),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
@@ -4902,6 +4903,34 @@ static void TestRimWorldWorldEconomyMainTab()
     AssertContains("<LW_WorldEconomyHeader>", ru);
     AssertContains("<LW_FactionEconomyLine>", en);
     AssertContains("<LW_FactionEconomyLine>", ru);
+}
+
+// Task 6 RW-side: the main tab summarizes ongoing NPC-vs-NPC conflicts (WorldConflict) as banded
+// rows — factions, status, duration, coarse intensity from cumulative war exhaustion, refugees.
+static void TestRimWorldWorldConflictsSection()
+{
+    var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    AssertContains("LW_WorldConflictsHeader", mainTab);
+    AssertContains("cachedConflictRows", mainTab);
+    AssertContains("LW_WorldConflictLine", mainTab);
+    AssertContains("state.Conflicts", mainTab);
+    // Resolved conflicts drop off; intensity is a coarse band, not a raw casualty count.
+    AssertContains("WorldConflictStatus.Resolved", mainTab);
+    AssertContains("ConflictIntensityBand", mainTab);
+    AssertContains("ConflictStatusLabel", mainTab);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_WorldConflictsHeader", "LW_WorldConflictLine",
+        "LW_ConflictStatus_Active", "LW_ConflictStatus_Truce",
+        "LW_ConflictIntensity_Skirmish", "LW_ConflictIntensity_Devastating",
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldMainTabFactionIcons()

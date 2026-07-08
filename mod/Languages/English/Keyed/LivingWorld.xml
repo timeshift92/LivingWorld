@@ -20,6 +20,14 @@
   <LW_DriftersHeader>Drifters</LW_DriftersHeader>
   <LW_KnownIntelFreshnessHeader>Known settlement intel freshness</LW_KnownIntelFreshnessHeader>
   <LW_EventsHeader>Events</LW_EventsHeader>
+  <LW_WorldConflictsHeader>World conflicts</LW_WorldConflictsHeader>
+  <LW_WorldConflictLine>{factionA} vs {factionB} - {status}, {days}d | intensity {intensity} | refugees {displaced}</LW_WorldConflictLine>
+  <LW_ConflictStatus_Active>at war</LW_ConflictStatus_Active>
+  <LW_ConflictStatus_Truce>truce</LW_ConflictStatus_Truce>
+  <LW_ConflictIntensity_None>none</LW_ConflictIntensity_None>
+  <LW_ConflictIntensity_Skirmish>skirmishing</LW_ConflictIntensity_Skirmish>
+  <LW_ConflictIntensity_Heavy>heavy</LW_ConflictIntensity_Heavy>
+  <LW_ConflictIntensity_Devastating>devastating</LW_ConflictIntensity_Devastating>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>
   <LW_FoodStatusShortage>food shortage</LW_FoodStatusShortage>

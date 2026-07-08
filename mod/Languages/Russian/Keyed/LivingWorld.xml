@@ -20,6 +20,14 @@
   <LW_DriftersHeader>Дрифтеры</LW_DriftersHeader>
   <LW_KnownIntelFreshnessHeader>Свежесть сведений о поселениях</LW_KnownIntelFreshnessHeader>
   <LW_EventsHeader>События</LW_EventsHeader>
+  <LW_WorldConflictsHeader>Мировые конфликты</LW_WorldConflictsHeader>
+  <LW_WorldConflictLine>{factionA} против {factionB} - {status}, {days} дн. | интенсивность {intensity} | беженцы {displaced}</LW_WorldConflictLine>
+  <LW_ConflictStatus_Active>война</LW_ConflictStatus_Active>
+  <LW_ConflictStatus_Truce>перемирие</LW_ConflictStatus_Truce>
+  <LW_ConflictIntensity_None>нет</LW_ConflictIntensity_None>
+  <LW_ConflictIntensity_Skirmish>стычки</LW_ConflictIntensity_Skirmish>
+  <LW_ConflictIntensity_Heavy>тяжёлая</LW_ConflictIntensity_Heavy>
+  <LW_ConflictIntensity_Devastating>разрушительная</LW_ConflictIntensity_Devastating>
   <LW_ListLimited>Показано {shown} из {total}. Полный ledger хранится в памяти и сохранении.</LW_ListLimited>
   <LW_FoodStatusOk>стабильно</LW_FoodStatusOk>
   <LW_FoodStatusShortage>нехватка еды</LW_FoodStatusShortage>
