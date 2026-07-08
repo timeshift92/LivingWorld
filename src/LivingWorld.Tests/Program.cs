@@ -201,6 +201,7 @@ var tests = new List<(string Name, Action Test)>
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
     ("announces newly declared NPC wars with a persisted letter", TestRimWorldConflictLetters),
+    ("offers alliances as an accept/decline letter", TestRimWorldAllianceOfferLetter),
     ("sends a raid consequence letter after a raid resolves", TestRimWorldRaidConsequenceLetter),
     ("routes the custom faction raid through a prepared expedition", TestRimWorldRaidRoutesThroughPreparation),
     ("warns the player from player-targeted raid intel", TestRimWorldRaidWarningFromIntel),
@@ -5545,6 +5546,46 @@ static void TestRimWorldConflictLetters()
     AssertContains("<LW_ConflictLetterLabel>", ru);
     AssertContains("<LW_ConflictLetterText>", en);
     AssertContains("<LW_ConflictLetterText>", ru);
+}
+
+// Makes the war arc a felt EVENT, not a buried button: a proactive accept/decline alliance-offer
+// letter, whose Accept bridges to real RimWorld relations (ally + enemy).
+static void TestRimWorldAllianceOfferLetter()
+{
+    var root = FindRepoRoot();
+
+    // The choice letter: extends the real ChoiceLetter, exposes accept/decline, and on accept forms
+    // the alliance and applies real ally + enemy relations.
+    var letterPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "ChoiceLetter_LivingWorldAlliance.cs");
+    AssertFileExists(letterPath);
+    var letter = File.ReadAllText(letterPath);
+    AssertContains("class ChoiceLetter_LivingWorldAlliance : ChoiceLetter", letter);
+    AssertContains("public override IEnumerable<DiaOption> Choices", letter);
+    AssertContains("AllianceService.FormAlliance", letter);
+    AssertContains("LivingWorldFactionRelations.FormRealAlliance", letter);
+    AssertContains("LivingWorldFactionRelations.FormRealEnmity", letter);
+    AssertContains("public override void ExposeData()", letter);
+    AssertRimWorldMethodExists("Verse.ChoiceLetter", "get_Choices");
+
+    // The letter def wires the custom class.
+    var defPath = Path.Combine(root, "mod", "Defs", "LetterDefs", "LivingWorld_AllianceOffer.xml");
+    AssertFileExists(defPath);
+    AssertContains("<letterClass>LivingWorld.RimWorld.ChoiceLetter_LivingWorldAlliance</letterClass>", File.ReadAllText(defPath));
+
+    // The component sends it proactively, once per conflict, gated and persisted.
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("MaybeSendAllianceOffers", component);
+    AssertContains("LivingWorld_AllianceOffer", component);
+    AssertContains("offeredAllianceConflictIds", component);
+    AssertContains("Scribe_Collections.Look(ref offeredAllianceConflictIds", component);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_AllianceOfferLabel", "LW_AllianceOfferText", "LW_AllianceOfferAccept", "LW_AllianceOfferDecline" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldReleasesStaleReservations()

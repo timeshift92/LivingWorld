@@ -37,6 +37,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> notifiedConflictIds = new();
     private List<long> rewardedVictoryConflictIds = new();
     private List<long> ruinSiteIds = new();
+    private List<long> offeredAllianceConflictIds = new();
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -178,9 +179,89 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendRaidConsequenceLetters();
         MaybeSendRaidWarnings();
         MaybeSendConflictLetters();
+        MaybeSendAllianceOffers();
         MaybeGrantVictoryRewards();
 
         LogSimulationDebugSnapshot(simulatedDays, currentTick);
+    }
+
+    // Surfaces the war arc as a felt event: when a war breaks out that the player is not in, a neutral
+    // participant's envoy proposes an alliance against its enemy via an accept/decline letter. One offer
+    // per catch-up, persisted per conflict so it is never re-offered. Accepting bridges to real relations.
+    private void MaybeSendAllianceOffers()
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.worldWarEnabled || RimWarIsActive || State.IsInitialWorldSeedingActive)
+        {
+            return;
+        }
+
+        var playerId = State.PlayerFactionId;
+        if (string.IsNullOrWhiteSpace(playerId))
+        {
+            return;
+        }
+
+        var offerDef = DefDatabase<LetterDef>.GetNamedSilentFail("LivingWorld_AllianceOffer");
+        if (offerDef == null)
+        {
+            return;
+        }
+
+        var offered = new HashSet<long>(offeredAllianceConflictIds);
+        foreach (var conflict in State.Conflicts
+            .Where(conflict => conflict.Status == WorldConflictStatus.Active
+                && !conflict.Involves(playerId!)
+                && !offered.Contains(conflict.Id.Value))
+            .OrderByDescending(conflict => conflict.WarExhaustionA + conflict.WarExhaustionB)
+            .ThenBy(conflict => conflict.Id.Value))
+        {
+            var ally = AlliableParticipant(conflict, playerId!);
+            if (ally == null)
+            {
+                continue;
+            }
+
+            var enemy = string.Equals(ally, conflict.FactionA, StringComparison.Ordinal)
+                ? conflict.FactionB
+                : conflict.FactionA;
+
+            offeredAllianceConflictIds.Add(conflict.Id.Value);
+            SendAllianceOffer(offerDef, ally, enemy);
+            return; // One offer per catch-up, never a flood.
+        }
+    }
+
+    private string? AlliableParticipant(WorldConflict conflict, string playerId)
+    {
+        foreach (var faction in new[] { conflict.FactionA, conflict.FactionB })
+        {
+            if (!string.Equals(faction, playerId, StringComparison.Ordinal)
+                && !AllianceService.IsAlliedWithPlayer(State, faction)
+                && DiplomacyService.GetStance(State, playerId, faction) == RelationStance.Neutral)
+            {
+                return faction;
+            }
+        }
+
+        return null;
+    }
+
+    private void SendAllianceOffer(LetterDef offerDef, string allyFactionId, string enemyFactionId)
+    {
+        var relatedFaction = Find.FactionManager?.AllFactionsListForReading
+            .FirstOrDefault(candidate => candidate?.def?.defName == allyFactionId);
+        var letter = (ChoiceLetter_LivingWorldAlliance)LetterMaker.MakeLetter(
+            "LW_AllianceOfferLabel".Translate(),
+            "LW_AllianceOfferText".Translate(
+                ResolveFactionLabel(allyFactionId).Named("ally"),
+                ResolveFactionLabel(enemyFactionId).Named("enemy")),
+            offerDef,
+            relatedFaction,
+            (Quest?)null);
+        letter.allyFactionId = allyFactionId;
+        letter.enemyFactionId = enemyFactionId;
+        Find.LetterStack?.ReceiveLetter(letter);
     }
 
     // Player war participation Slice 4: when a war the player joined has resolved in the ally's favour,
@@ -1014,6 +1095,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         rewardedVictoryConflictIds ??= new List<long>();
         Scribe_Collections.Look(ref ruinSiteIds, "livingWorld_ruinSiteIds", LookMode.Value);
         ruinSiteIds ??= new List<long>();
+        Scribe_Collections.Look(ref offeredAllianceConflictIds, "livingWorld_offeredAllianceConflictIds", LookMode.Value);
+        offeredAllianceConflictIds ??= new List<long>();
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <LetterDef>
+    <defName>LivingWorld_AllianceOffer</defName>
+    <letterClass>LivingWorld.RimWorld.ChoiceLetter_LivingWorldAlliance</letterClass>
+    <color>(0.4, 0.7, 1.0)</color>
+    <bounce>true</bounce>
+    <flashInterval>0</flashInterval>
+    <disappearParticles>false</disappearParticles>
+  </LetterDef>
+</Defs>

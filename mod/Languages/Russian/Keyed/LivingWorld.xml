@@ -35,6 +35,10 @@
   <LW_AllianceObjectiveLetterText>{ally} просит ударить по {enemy}. Разбивай поселения {enemy}, чтобы заслужить расположение {ally} и помочь выиграть войну.</LW_AllianceObjectiveLetterText>
   <LW_PlayerVictoryLetterLabel>Победа</LW_PlayerVictoryLetterLabel>
   <LW_PlayerVictoryLetterText>{ally} выиграл войну против {enemy}, и ты разделяешь победу. Твоя репутация с {ally} растёт.</LW_PlayerVictoryLetterText>
+  <LW_AllianceOfferLabel>Предложение союза</LW_AllianceOfferLabel>
+  <LW_AllianceOfferText>Прибыл посол от {ally}: они воюют с {enemy} и предлагают тебе союз. Согласишься — {ally} станет настоящим союзником (помогают в бою и торгуют), но {enemy} станет твоим врагом и начнёт рейдить.</LW_AllianceOfferText>
+  <LW_AllianceOfferAccept>Принять союз</LW_AllianceOfferAccept>
+  <LW_AllianceOfferDecline>Отклонить</LW_AllianceOfferDecline>
   <LW_ListLimited>Показано {shown} из {total}. Полный ledger хранится в памяти и сохранении.</LW_ListLimited>
   <LW_FoodStatusOk>стабильно</LW_FoodStatusOk>
   <LW_FoodStatusShortage>нехватка еды</LW_FoodStatusShortage>
