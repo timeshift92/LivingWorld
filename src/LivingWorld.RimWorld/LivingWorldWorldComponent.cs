@@ -23,6 +23,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
     private readonly World rimWorld;
     private bool bootstrapped;
+    private bool migratedDrifterReservoir;
     private string serializedState = string.Empty;
     private int lastSimulatedDay;
     private int cachedWorldPopulation;
@@ -126,6 +127,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     {
         base.FinalizeInit(fromLoad);
         BootstrapFromRimWorldSettlements();
+        MigrateDrifterReservoirForLegacySave();
         RepairMissingProductionProfilesFromRimWorldSettlements();
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
@@ -513,6 +515,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref lastSimulatedDay, "livingWorld_lastSimulatedDay", 0);
         Scribe_Values.Look(ref lastWorldWarLetterTick, "livingWorld_lastWorldWarLetterTick", int.MinValue);
         Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
+        Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {
@@ -580,6 +583,43 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         if (settings.debugLogging)
         {
             Log.Message($"[LivingWorld] Debug ledger created. {GetSummary()}");
+        }
+    }
+
+    // Legacy saves predate the drifter-arrival reservoir: they load already bootstrapped with the
+    // reservoir at 0, bootstrap early-returns, and — with no replenishment path yet — drifter arrivals
+    // would stop permanently and silently. Seed the reservoir once for such saves (matching a fresh
+    // world), guarded by a persisted flag so an intentionally-depleted reservoir is never refilled on
+    // reload.
+    private void MigrateDrifterReservoirForLegacySave()
+    {
+        if (migratedDrifterReservoir || !bootstrapped)
+        {
+            return;
+        }
+
+        migratedDrifterReservoir = true;
+
+        if (State.DrifterArrivalReservoir > 0 || State.Settlements.Count == 0)
+        {
+            return;
+        }
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        var reserve = State.Settlements.Count * Math.Max(0, settings.targetWorldPopulationPerSettlement);
+        if (reserve <= 0)
+        {
+            return;
+        }
+
+        State.RunInitialWorldSeeding(() =>
+        {
+            State.AddDrifterArrivalReservoir(reserve, "legacy save drifter reservoir migration");
+        });
+
+        if (settings.debugLogging)
+        {
+            Log.Message($"[LivingWorld] Migrated legacy save: seeded drifter arrival reservoir to {reserve}.");
         }
     }
 
@@ -684,6 +724,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             {
                 State.AddDrifterArrivalReservoir(initialDrifterReservoir, "initial outside-world population reserve");
             });
+
+            // A freshly-generated world is seeded here, so it never needs the legacy migration.
+            migratedDrifterReservoir = true;
 
             bootstrapped = true;
             LastBootstrapSource = "world-objects";

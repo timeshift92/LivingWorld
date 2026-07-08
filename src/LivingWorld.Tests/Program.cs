@@ -127,6 +127,8 @@ var tests = new List<(string Name, Action Test)>
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
     ("persistent caravan preserves cargo through save load", TestPersistentCaravanSerialization),
     ("destroying a persistent caravan removes its cargo", TestDestroyPersistentCaravanRemovesCargo),
+    ("prunes terminal caravans after the retention window", TestCaravanPruneRemovesTerminalCaravans),
+    ("migrates the drifter reservoir for legacy saves", TestRimWorldDrifterReservoirLegacyMigration),
     ("world war develop action invests in a settlement", TestWorldWarDevelopActionInvestsInSettlement),
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
     ("world war diplomat changes faction goodwill", TestWorldWarDiplomatChangesGoodwill),
@@ -3103,6 +3105,41 @@ static void TestDestroyPersistentCaravanRemovesCargo()
     AssertEqual(30, state.GetOwnedResourceQuantity(source.Id, "Steel"));
     AssertEqual(0, state.GetOwnedResourceQuantity(target.Id, "Steel"));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanDestroyed));
+}
+
+static void TestCaravanPruneRemovesTerminalCaravans()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    state.AddResource(source.Id, "Steel", 50);
+
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000);
+    state.TransferResource(source.Id, caravan.Id, "Steel", 20, "test cargo");
+    state.MarkCaravanArrived(caravan.Id); // delivers 20 Steel to target, status Arrived at tick 60_000
+    AssertEqual(1, state.Caravans.Count);
+
+    // Within the retention window: the arrived caravan is kept.
+    CaravanPruneService.Prune(state, new CaravanPruneRequest(60_000 + (10 * 60_000), 30));
+    AssertEqual(1, state.Caravans.Count);
+
+    // Past retention: pruned with its ownership entry — goods stay delivered, no dangling refs.
+    var result = CaravanPruneService.Prune(state, new CaravanPruneRequest(60_000 + (31 * 60_000), 30));
+    AssertEqual(1, result.Pruned);
+    AssertEqual(0, state.Caravans.Count);
+    AssertEqual(20, state.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestRimWorldDrifterReservoirLegacyMigration()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // Legacy saves (bootstrapped, reservoir 0) get a one-time reseed, guarded by a persisted flag so an
+    // intentionally-depleted reservoir is never refilled on reload; fresh worlds set the flag at bootstrap.
+    AssertContains("MigrateDrifterReservoirForLegacySave", component);
+    AssertContains("Scribe_Values.Look(ref migratedDrifterReservoir", component);
+    AssertContains("State.DrifterArrivalReservoir > 0 || State.Settlements.Count == 0", component);
+    AssertContains("migratedDrifterReservoir = true", component);
 }
 
 static void TestWorldWarDevelopActionInvestsInSettlement()

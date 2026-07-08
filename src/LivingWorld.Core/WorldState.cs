@@ -578,6 +578,14 @@ public sealed class WorldState
         return _armyMovements.Remove(armyId);
     }
 
+    // Removes a terminal (arrived/destroyed) caravan and its asset-ownership entry. A terminal
+    // caravan owns no resources (delivered on arrival, zeroed on destroy), so this leaks nothing.
+    internal bool RemoveCaravanForLedger(EntityId caravanId)
+    {
+        _owners.Remove(caravanId);
+        return _caravans.Remove(caravanId);
+    }
+
     public WorldCitizen MarkCitizenDead(EntityId citizenId, string reason)
     {
         ThrowIfNullOrWhiteSpace(reason, nameof(reason));
