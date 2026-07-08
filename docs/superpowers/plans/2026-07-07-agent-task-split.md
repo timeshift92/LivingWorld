@@ -471,6 +471,42 @@ bands, F-1 table) now reads real value. Deterministic + conservation-safe; test
   ownership and event history with legacy XML fallback. Further binary/chunk storage can wait.
 - **EMP2 (BACKLOG):** real Empire adapter. **O3 (BACKLOG):** tiered/heat-map ticking cadence.
 
+## Review results — Codex optimization/caravan/drifter batch (Claude, 2026-07-08)
+
+Claude reviewed Codex's recent Core batch against the Review Contract (build 0/0, 199 tests green on
+the integrated `main`). Verdicts:
+
+- **`e354c32` compact high-volume save blocks (O2): APPROVED.** Loader branches on `format="compact-v2"`
+  and falls back to legacy per-record XML, so old saves still load; free-text fields (name/profession/
+  event summary) are base64 so `|`/`\n` delimiters never collide; field counts (Citizen 8, Ownership 4,
+  Event 6) round-trip; caches are not persisted. Back-compat solid.
+- **`443ca1d` cache derived population aggregates (O1): APPROVED.** Every population/ownership/settlement
+  mutation path invalidates the cache (13 direct + all indirect through Ownership/Demography/Migration
+  verified); conservation partition and residency filter match the old full scan exactly; deterministic;
+  load rebuilds lazily with no stale persistence. Minor: capture/expansion transitions lack direct
+  invalidation tests (code is correct).
+- **`11a3e27` split world-war action executors: APPROVED.** Faithful mechanical extraction — guards,
+  clamps, ordering, counting, and the battle phase are behaviour-identical to the monolith; one action
+  per faction per day and warband adult-reservation preserved. Minor: the new split test is structural-only.
+- **`ec17eef` persist world caravans: APPROVED with follow-ups.** Goods conserved across create/travel/
+  arrive/destroy; additive optional codec re-owns cargo correctly; deterministic. **Follow-up (Important,
+  Codex): terminal-state caravans are never pruned** — `MarkCaravanArrived`/`DestroyCaravan` only flip
+  status, so `_caravans` + `_owners` + the save grow unbounded (no caravan equivalent of
+  `ArmyMovementPruneService`; ties to O2/C5 save-size goals). Minor: `CaravansCompleted` double-counts
+  (launch + arrival); zero-cargo caravan can launch; add load-then-arrive + post-load `Validate()` tests.
+- **`309b0b6` limit drifter arrivals by reservoir: CHANGES-NEEDED (Important).** New worlds seed the
+  reservoir correctly and are fine. But an **already-bootstrapped save from before this field loads with
+  `bootstrapped=true` and reservoir `0`; bootstrap early-returns, nothing else seeds it, and no
+  replenishment path exists — so drifter arrivals stop permanently and silently** for in-progress games
+  (the exact "silently 0 forever" the contract warns against). Confirmed by Claude. Fix: a one-time
+  legacy migration on load (if `bootstrapped && reservoir == 0 && Settlements.Count > 0`, seed
+  `Settlements.Count * targetWorldPopulationPerSettlement` once) — doable in the RimWorld component
+  (Claude's lane) without touching Core. Also add a legacy-load (no attribute) test.
+
+**Net:** 3 clean APPROVED; 2 Important follow-ups — (a) caravan pruning (Codex/Core), (b) drifter
+reservoir legacy migration (Claude/RimWorld). Everything is already merged and passing tests; these are
+correctness/scale follow-ups, not merge blockers.
+
 ## Review Contract
 
 For every completed task, the other agent reviews from these angles before merge:
