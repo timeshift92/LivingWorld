@@ -110,7 +110,7 @@ inbound-захвата: создаём ledger-запись и тут же ста
 ### 4.1 Базовый механизм RimWorld (нативный)
 
 Сторителлер собирается из `StorytellerComp`, каждый тянет инциденты **по
-категории** (`IncidentCategoryDef`: `ThreatBig`, `AllyArrival`, `Misc`, …) с
+категории** (`IncidentCategoryDef`: `ThreatBig`, `Misc`, …) с
 пейсингом (`CompProperties_...MTB`/`OnDays`). `IncidentDef` объявляет
 `workerClass : IncidentWorker`, `category`, `targetTags`. `IncidentWorker`
 переопределяет `CanFireNowSub(IncidentParms)` (гейт — «есть ли чем наполнить из
@@ -121,7 +121,8 @@ ledger?») и `TryExecuteWorker(IncidentParms)` (материализация и
 
 - **Уровень 1 (рекомендуется первым): свой `IncidentDef` в ванильной категории.**
   Никакого своего сторителлера. Наш `LivingWorld_FactionRaid` (категория
-  `ThreatBig`) и `LivingWorld_DrifterArrival` (`AllyArrival`) кладём в общий пул —
+  `ThreatBig`) и `LivingWorld_DrifterArrival` (`Misc`, потому что vanilla 1.6 не
+  имеет `AllyArrival`) кладём в общий пул —
   **ванильный сторителлер сам планирует их** по своим MTB/весам. Частоту
   регулируем весом инцидента + гейтом `CanFireNowSub` (нет населения/дефицита —
   инцидент не может выстрелить). Максимально совместимо (Cassandra/Randy/любой мод).
@@ -150,7 +151,7 @@ ledger?») и `TryExecuteWorker(IncidentParms)` (материализация и
 | Механика | Сейчас | Нормализовано |
 |---|---|---|
 | Рейд людьми из ledger | patch `TryResolveRaidFaction` + `TryGenerateRaidInfo` | `IncidentDef LivingWorld_FactionRaid` (ThreatBig) + `IncidentWorker_LivingWorldRaid`, тянет армию/пешек из ledger; ваниль-human приглушена |
-| Приток дрифтеров (шаг 5 Part B) | *(план)* patch `WandererJoin` | `IncidentDef LivingWorld_DrifterArrival` (AllyArrival) + worker; gated дефицитом; «всегда записывать» через тот же путь |
+| Приток дрифтеров (шаг 5 Part B) | *(план)* patch `WandererJoin` | `IncidentDef LivingWorld_DrifterArrival` (`Misc`) + worker; gated ledger-пулом; «всегда записывать» через тот же путь |
 | Беженцы/поды (позже) | — | новые `IncidentDef` в тех же категориях, тот же worker-паттерн |
 
 `VanillaRaidInterceptor`/`RaidReconciliationService` (чистая Core-логика) —

@@ -185,7 +185,7 @@ world pawns, которые RuntimeGC потом режет.
 ## 3. Кастомный сторителлер как точка интеграции
 
 RimWorld сторителлеры собираются из `StorytellerComp` (категории событий:
-`ThreatBig`, `AllyArrival`, `Misc`…) и правил вроде `CompProperties_CategoryMTB`
+`ThreatBig`, `Misc`…) и правил вроде `CompProperties_CategoryMTB`
 (mean-time-between). Это **нативная** точка расширения.
 Источники: [AI Storytellers](https://rimworldwiki.com/wiki/AI_Storytellers),
 [Custom Comp Classes](https://rimworldwiki.com/wiki/Modding_Tutorials/Custom_Comp_Classes).

@@ -1,6 +1,9 @@
 # Drifter flow: live simulation + storyteller-driven materialization (design spec)
 
-Status: **approved for planning (revised for storyteller normalization).**
+Status: **implemented; incident category corrected after playtest.**
+Implementation note: early drafts below mentioned `AllyArrival`, but RimWorld
+1.6 does not define that `IncidentCategoryDef`. The shipped
+`LivingWorld_DrifterArrival` uses `Misc`; do not revert it to `AllyArrival`.
 Population-flow spec step 5 (RimWorld adapter), plus wiring the already-built
 drifter Core pipeline into the live world tick.
 
@@ -110,7 +113,7 @@ scales with the world; ceiling is the hard guard. Clamp in the component
 
 New `IncidentDef LivingWorld_DrifterArrival`:
 
-- `category = AllyArrival`, `targetTags = Map_PlayerHome`, sensible
+- `category = Misc`, `targetTags = Map_PlayerHome`, sensible
   `baseChance` / `minRefireDays` so the vanilla storyteller schedules it natively
   (normalization level 1). → verify field names against `Assembly-CSharp.dll`.
 - `workerClass = IncidentWorker_LivingWorldDrifterArrival` (new C# class in
@@ -185,7 +188,7 @@ Core (`LivingWorld.Tests` exe-runner):
 RimWorld-facing (the project's reflection/structure tests in `Program.cs`):
 
 - `IncidentDef LivingWorld_DrifterArrival` exists with `workerClass =
-  IncidentWorker_LivingWorldDrifterArrival` and category `AllyArrival`.
+  IncidentWorker_LivingWorldDrifterArrival` and category `Misc`.
 - The worker derives from `IncidentWorker`, gates via `CanFireNowSub`, and is
   fail-open (no component → cannot fire / returns false).
 - `CompLivingWorldIdentity` exists, is a `ThingComp`, round-trips its `EntityId`

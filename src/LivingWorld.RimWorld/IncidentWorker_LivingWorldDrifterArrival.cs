@@ -8,9 +8,9 @@ namespace LivingWorld.RimWorld;
 
 /// <summary>
 /// Storyteller-scheduled arrival that materializes a ledger drifter as a colony joiner.
-/// Cadence is native (vanilla storyteller picks it from the AllyArrival category) and
-/// gated by the ledger via <see cref="CanFireNowSub"/>. Fail-open throughout: any failure
-/// leaves the game unchanged.
+/// Cadence is native (vanilla storyteller picks it from the safe Misc category) and gated
+/// by the ledger via <see cref="CanFireNowSub"/>. Fail-open throughout: any failure leaves
+/// the game unchanged.
 /// </summary>
 public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
 {

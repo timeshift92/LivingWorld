@@ -4,7 +4,7 @@
 
 **Goal:** Make the committed drifter pipeline + faction extinction actually run in-game (Part A), and materialize ledger drifters as real colonists through a custom storyteller-driven incident (Part B).
 
-**Architecture:** Part A wires four pure Core services into the daily `WorldComponentTick` (a scheduler, not a hot path). Part B adds Core `MaterializeDrifter`/`MaterializeNewArrival` + a `DrifterMaterialized` event, a custom `IncidentDef LivingWorld_DrifterArrival` (category `AllyArrival`) whose `IncidentWorker` gates on the ledger and attaches a `CompLivingWorldIdentity` to the spawned pawn. No Harmony patch on vanilla generation.
+**Architecture:** Part A wires four pure Core services into the daily `WorldComponentTick` (a scheduler, not a hot path). Part B adds Core `MaterializeDrifter`/`MaterializeNewArrival` + a `DrifterMaterialized` event, a custom `IncidentDef LivingWorld_DrifterArrival` (category `Misc`; early drafts used `AllyArrival`, but RimWorld 1.6 does not define it) whose `IncidentWorker` gates on the ledger and attaches a `CompLivingWorldIdentity` to the spawned pawn. No Harmony patch on vanilla generation.
 
 **Tech Stack:** C# (net8.0 Core + net472 RimWorld adapter), RimWorld 1.6 modding API (`WorldComponent`, `IncidentWorker`, `IncidentDef`, `ThingComp`), Harmony (unchanged), custom exe test runner in `LivingWorld.Tests`.
 
@@ -600,7 +600,7 @@ git commit -m "feat(rimworld): CompLivingWorldIdentity carries ledger EntityId o
 - Test: `src/LivingWorld.Tests/Program.cs`
 
 **Interfaces:**
-- Produces: `IncidentDef` `LivingWorld_DrifterArrival` (category `AllyArrival`, `workerClass` = `LivingWorld.RimWorld.IncidentWorker_LivingWorldDrifterArrival`, target `Map_PlayerHome`); keyed strings `LW_DrifterArrivalLetterLabel`, `LW_DrifterArrivalLetterText`.
+- Produces: `IncidentDef` `LivingWorld_DrifterArrival` (category `Misc`, `workerClass` = `LivingWorld.RimWorld.IncidentWorker_LivingWorldDrifterArrival`, target `Map_PlayerHome`); keyed strings `LW_DrifterArrivalLetterLabel`, `LW_DrifterArrivalLetterText`.
 
 - [ ] **Step 1: Register + write the failing test**
 
@@ -620,7 +620,8 @@ static void TestRimWorldDrifterArrivalIncidentDef()
     var xml = File.ReadAllText(path);
 
     AssertContains("<defName>LivingWorld_DrifterArrival</defName>", xml);
-    AssertContains("<category>AllyArrival</category>", xml);
+    AssertContains("<category>Misc</category>", xml);
+    AssertDoesNotContain("AllyArrival", xml);
     AssertContains("<workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldDrifterArrival</workerClass>", xml);
     AssertContains("<targetTags>", xml);
     AssertContains("<li>Map_PlayerHome</li>", xml);
@@ -647,7 +648,7 @@ Expected: `FAIL defines the drifter arrival incident def` (file missing).
   <IncidentDef>
     <defName>LivingWorld_DrifterArrival</defName>
     <label>drifter arrival</label>
-    <category>AllyArrival</category>
+    <category>Misc</category>
     <targetTags>
       <li>Map_PlayerHome</li>
     </targetTags>
@@ -749,9 +750,9 @@ namespace LivingWorld.RimWorld;
 
 /// <summary>
 /// Storyteller-scheduled arrival that materializes a ledger drifter as a colony joiner.
-/// Cadence is native (vanilla storyteller picks it from the AllyArrival category) and
-/// gated by the ledger via <see cref="CanFireNowSub"/>. Fail-open throughout: any failure
-/// leaves the game unchanged.
+/// Cadence is native (vanilla storyteller picks it from the safe Misc category) and gated
+/// by the ledger via <see cref="CanFireNowSub"/>. Fail-open throughout: any failure leaves
+/// the game unchanged.
 /// </summary>
 public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
 {
@@ -858,7 +859,7 @@ git commit -m "feat(rimworld): drifter-arrival incident worker materializes + bi
 
 - [ ] **Step 1: Add a section to `docs/simulation.md`**
 
-Add a "Drifter live flow and materialization" section documenting: the daily tick sequence (arrival→founding→assimilation→collapse), the `LivingWorld_DrifterArrival` incident (AllyArrival, gated by `WantsDrifterArrival`, one-shot materialization, always-record), `CompLivingWorldIdentity` as the durable pawn link, and the explicit non-goals (frequency comp, full identity migration, raid-incident normalization) with a pointer to `docs/design/storyteller-normalization.md`.
+Add a "Drifter live flow and materialization" section documenting: the daily tick sequence (arrival→founding→assimilation→collapse), the `LivingWorld_DrifterArrival` incident (`Misc`, gated by `WantsDrifterArrival`, one-shot materialization, always-record), `CompLivingWorldIdentity` as the durable pawn link, and the explicit non-goals (frequency comp, full identity migration, raid-incident normalization) with a pointer to `docs/design/storyteller-normalization.md`.
 
 - [ ] **Step 2: Run the suite (ensure nothing regressed)**
 

@@ -532,7 +532,11 @@ bootstrap RimWorld layer создаёт стартовый резерв как
 
 **Параметры:**
 
-- **Category:** `AllyArrival` (не враг, не торговец, союзный одиночка).
+- **Category:** `Misc`.
+  Vanilla RimWorld 1.6 does not define `AllyArrival`; `Misc` is the closest
+  safe vanilla bucket for a gated arrival-style custom incident. The worker gate
+  remains authoritative: the incident only fires when Living World already has a
+  ledger drifter ready to materialize.
 - **Worker:** `IncidentWorker_LivingWorldDrifterArrival`.
 - **Gate (CanFireNowSub):** `LivingWorldWorldComponent.WantsDrifterArrival` — истина если:
   - есть дрифтер в пуле захватанных (`State.Drifters.Count > 0`).
@@ -590,6 +594,47 @@ pawn. RimWorld-патчи передают в неё `(EntityId, PawnFateKind, r
 5. **Дополнительные каналы прихода** — беженцы из голодающих поселений, подкрепления из фракционных источников, рожденцы из партнерских поселений. Сейчас только дрифтеры (из пула и новые прибытия) и ассимиляция.
 
 **Ссылка на архитектуру:** см. `docs/design/storyteller-normalization.md` для полной карты частотного компенсирования и идентификационного хребта.
+
+## World-map mission markers
+
+RimWorld-layer mission markers are display-only world objects. They make ledger
+travel visible on the globe, but they do not pathfind, advance missions, own
+resources or decide outcomes.
+
+Current source of truth:
+
+- `WorldArmyMovement` for marching warbands;
+- `WorldCaravan` for goods caravans.
+
+`LivingWorldWorldComponent.SyncArmyWorldObjects` reconciles
+`WorldObject_LivingWorldArmy` markers from those records on load and after daily
+simulation. Each marker stores:
+
+- a stable key (`army:{id}` or `caravan:{id}`) so different Core id spaces do
+  not collide;
+- origin and target world tiles parsed from imported settlement slugs;
+- depart and arrival ticks for visual progress;
+- faction label, target label, translated mission kind and a per-kind texture.
+
+The marker position is derived from the ledger clock with `Vector3.Slerp`
+between origin and target tiles. If a marker is removed or a save reloads, the
+next reconciliation can recreate it from the ledger.
+
+Current visible mission kinds:
+
+- **warband** — `World/LivingWorld_Warband`, backed by `WorldArmyMovement`;
+- **caravan** — `World/LivingWorld_Trader`, backed by `WorldCaravan`.
+
+Scout, settler and diplomat icons already ship with the mod, but those actions
+still resolve instantly in Core. They stay as backlog for now because they need
+real persistent mission records first:
+
+- scout/diplomat missions can be lightweight travel records;
+- settler missions must reserve real adults while in transit.
+
+Markers are disabled when `worldWarEnabled` is off or Rim War is active. This
+prevents double world-map driving: Rim War owns its own visible war objects,
+while Living World keeps its ledger as the source of truth.
 
 ## Real consequence chain
 

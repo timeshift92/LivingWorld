@@ -89,12 +89,18 @@ Research conclusion:
 
 - preferred long-term mode: Living World owns armies, citizens, animals, supplies and history; RimWar Adapter may mirror or consume strategic movement through Living World API.
 - short-term compatibility mode: if Rim War is active, do not build Living World core on its internals; read only stable public/game-facing state where possible.
+- current runtime guard: when `Torann.RimWar` is active, Living World stands down its autonomous world-war loop and removes its display-only mission markers. This avoids double world-map driving because Rim War owns its own war objects while Living World remains ledger-first.
 - если версии несовместимы, adapter не активируется.
 
 Research conclusion:
 
 - use Rim War as source of ideas: warbands, scouts, traders, settlers, battle sites, faction power, player heat, incoming threat warnings.
 - do not depend on Rim War as architecture: its model is point/world-object based and heavily patches world-map behavior.
+
+Playtest note:
+
+- Red errors observed inside Rim War `WarObject.GetInspectString` / FloodFill and Rim War x E&D gizmos are third-party compatibility issues, not Living World ownership errors.
+- Living World must keep those failures isolated: no marker creation and no world-war action execution while Rim War is driving the same world-map layer.
 
 ### Hospitality
 

@@ -192,7 +192,11 @@ Acceptance:
 
 Owner: Claude.
 
-Status: BLOCKED on a live RimWorld run (cannot launch the game in the current agent environment). Static parts verified: `dotnet build LivingWorld.sln` 0/0; world-war enable/disable + Rim War exclusion are surfaced in-game (K1 warning + K3 letters). Remaining acceptance (no startup red errors, install-script DLL freshness, in-game RU UI) needs a human playtest.
+Status: LIVE PLAYTESTED BY USER; Living World issues found in that run were fixed below under
+"In-game playtest fixes" (`LivingWorld_DrifterArrival` category and missing preview assets).
+Static verification remains `dotnet build LivingWorld.sln` 0/0. A separate visual smoke test for
+world-map markers with Rim War disabled is still recommended because headless tests can verify
+structure and API use, but not globe rendering.
 
 ### Codex Task C3: Save/Performance Hardening
 
