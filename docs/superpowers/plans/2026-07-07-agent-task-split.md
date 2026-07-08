@@ -20,6 +20,7 @@ Use these documents as the current source of planning truth:
 - `docs/design/rimwar-absorption-edge-cases.md` - invariants and edge-case matrix for R1-R7.
 - `docs/design/population-flow.md` - drifter, settlement growth, migration, and materialization direction.
 - `docs/design/gap-analysis.md` - known gaps, compatibility pressure, and performance concerns.
+- `docs/superpowers/plans/2026-07-08-livingworld-next-systems-prp.md` - next-systems PRP for the coherent gameplay loop: intel, raid causes, economy depth, materialization, settlement lifecycle, conflicts, ecology, technology and settings.
 - `docs/superpowers/plans/2026-07-07-livingworld-core-loop.md` - implemented core playable loop plan.
 - `docs/superpowers/plans/2026-07-07-drifter-flow-materialization.md` - drifter flow/materialization plan.
 
