@@ -21,6 +21,8 @@ var tests = new List<(string Name, Action Test)>
     ("transfers assets through ownership service", TestOwnershipServiceTransfersAssets),
     ("tracks animal cohorts as owned lightweight records", TestAnimalCohortOwnership),
     ("simulates animal ecology growth and pressure", TestAnimalEcologyGrowthAndPressure),
+    ("seeds animal cohorts from settlement environment", TestAnimalEcologyDriverSeedsFromSettlementEnvironment),
+    ("animal ecology driver is idempotent and feeds domesticated cohorts", TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts),
     ("migrates animal cohorts without duplicating population", TestAnimalCohortMigrationConservesPopulation),
     ("serializes animal cohorts", TestAnimalCohortSerialization),
     ("animal selection projects improve cohorts over time", TestAnimalSelectionProjectsImproveCohorts),
@@ -189,6 +191,7 @@ var tests = new List<(string Name, Action Test)>
     ("warns the player from player-targeted raid intel", TestRimWorldRaidWarningFromIntel),
     ("releases stale raid preparations and materialization leases daily", TestRimWorldReleasesStaleReservations),
     ("drives infrastructure and lifecycle simulation from the daily tick", TestRimWorldDailyTickRunsSimulationDrivers),
+    ("drives animal ecology from the daily tick", TestRimWorldDailyTickRunsAnimalEcologyDriver),
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
@@ -673,6 +676,99 @@ static void TestAnimalEcologyGrowthAndPressure()
     AssertEqual(0, state.GetOwnedResourceQuantity(ranch.Id, "Hay"));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortGrew));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined));
+}
+
+static void TestAnimalEcologyDriverSeedsFromSettlementEnvironment()
+{
+    var state = new WorldState(12345);
+    var desert = state.CreateSettlement("desert-ranch", "Desert Ranch", "Outlander");
+    var boreal = state.CreateSettlement("boreal-camp", "Boreal Camp", "Outlander");
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        desert.Id,
+        new SettlementProductionEnvironment("ExtremeDesert", "Flat", "Industrial", 5, 80, 39)));
+    state.RecordSettlementCapability(new SettlementCapability(
+        desert.Id,
+        HousingCapacity: 20,
+        FoodStorageCapacity: 20,
+        MedicineStorageCapacity: 5,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 12,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        boreal.Id,
+        new SettlementProductionEnvironment("BorealForest", "LargeHills", "Medieval", 25, 700, -8)));
+    state.RecordSettlementCapability(new SettlementCapability(
+        boreal.Id,
+        HousingCapacity: 20,
+        FoodStorageCapacity: 20,
+        MedicineStorageCapacity: 5,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 8,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+
+    var result = AnimalEcologyDriver.SimulateDay(
+        state,
+        new AnimalEcologyDriverRequest(60_000, "Food", FeedPerDomesticatedAnimal: 0));
+
+    var desertCohorts = state.GetAnimalCohorts(desert.Id);
+    var borealCohorts = state.GetAnimalCohorts(boreal.Id);
+
+    AssertEqual(4, result.CohortsSeeded);
+    AssertEqual(true, desertCohorts.Any(cohort => cohort.Type == AnimalCohortType.Domesticated && cohort.AnimalKind == "Dromedary"));
+    AssertEqual(true, desertCohorts.Any(cohort => cohort.Type == AnimalCohortType.Wild && cohort.AnimalKind == "Ibex"));
+    AssertEqual(true, borealCohorts.Any(cohort => cohort.Type == AnimalCohortType.Domesticated && cohort.AnimalKind == "Muffalo"));
+    AssertEqual(true, borealCohorts.Any(cohort => cohort.Type == AnimalCohortType.Wild && cohort.AnimalKind == "Caribou"));
+    AssertEqual(12, desertCohorts.Single(cohort => cohort.Type == AnimalCohortType.Domesticated).CarryingCapacity);
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts()
+{
+    var state = new WorldState(12345);
+    var ranch = state.CreateSettlement("temperate-ranch", "Temperate Ranch", "Outlander");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        ranch.Id,
+        new SettlementProductionEnvironment("TemperateForest", "SmallHills", "Industrial", 55, 850, 21)));
+    state.RecordSettlementCapability(new SettlementCapability(
+        ranch.Id,
+        HousingCapacity: 20,
+        FoodStorageCapacity: 20,
+        MedicineStorageCapacity: 5,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 8,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+    state.AddResource(ranch.Id, "Food", 20);
+
+    var dayOne = AnimalEcologyDriver.SimulateDay(
+        state,
+        new AnimalEcologyDriverRequest(60_000, "Food", FeedPerDomesticatedAnimal: 1));
+    var countAfterDayOne = state.GetAnimalCohorts(ranch.Id).Count;
+    var foodAfterDayOne = state.GetOwnedResourceQuantity(ranch.Id, "Food");
+
+    var dayTwo = AnimalEcologyDriver.SimulateDay(
+        state,
+        new AnimalEcologyDriverRequest(120_000, "Food", FeedPerDomesticatedAnimal: 1));
+
+    AssertEqual(2, dayOne.CohortsSeeded);
+    AssertEqual(0, dayTwo.CohortsSeeded);
+    AssertEqual(countAfterDayOne, state.GetAnimalCohorts(ranch.Id).Count);
+    AssertEqual(true, foodAfterDayOne < 20);
+    AssertEqual(true, state.GetOwnedResourceQuantity(ranch.Id, "Food") < foodAfterDayOne);
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestAnimalCohortMigrationConservesPopulation()
@@ -4946,6 +5042,16 @@ static void TestRimWorldDailyTickRunsSimulationDrivers()
     // The lifecycle driver subsumes the collapse pass, so the bare collapse call must be gone to
     // avoid running faction collapse twice per day.
     AssertDoesNotContain("FactionLifecycleService.SimulateCollapses(", component);
+}
+
+static void TestRimWorldDailyTickRunsAnimalEcologyDriver()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // Animal cohorts are not only a saved Core model: the RimWorld daily loop seeds biome-based
+    // cohorts and runs feed pressure against the same food ledger used by settlements.
+    AssertContains("AnimalEcologyDriver.SimulateDay(", component);
+    AssertContains("new AnimalEcologyDriverRequest(", component);
+    AssertContains("FoodResourceKey", component);
 }
 
 static void TestRimWorldRaidRoutesThroughPreparation()

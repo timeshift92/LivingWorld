@@ -442,6 +442,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 FoodResourceKey,
                 settings.foodPerCitizen > 0 ? 1 : 0,
                 BirthIntervalDays));
+        AnimalEcologyDriver.SimulateDay(
+            State,
+            new AnimalEcologyDriverRequest(
+                day * TicksPerDay,
+                FoodResourceKey,
+                settings.foodPerCitizen > 0 ? 1 : 0));
         DemographyService.SimulateDay(
             State,
             new DemographySimulationRequest(
