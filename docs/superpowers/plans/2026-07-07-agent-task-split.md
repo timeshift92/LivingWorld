@@ -345,6 +345,35 @@ grown by a tick service, and births ignored housing.
   population-flow §8), a `Develop`/`Build` `WarAction` so factions deliberately invest in a base,
   specialist-pool growth, and tying births to housing capacity. Ties to EMP2/E2. Status: BACKLOG.
 
+## Adopted Mod UI / Icons (2026-07-08 — "what UI/icons/functionality can we adopt")
+
+Re-scanned the reference mods (Rim War `Textures/World/*`, E&D `ED_MainTabWindow_Population` +
+`iconPath` main button, Empire's 255 UI PNGs) against our text-only tab. Icons are plentiful; our
+UI was a wall of plain labels. All items below are Claude's lane (RimWorld/UI). Landed directly
+per the user's "just do it" — Codex overloaded.
+
+- **UI-1 (Claude): DONE.** Native faction icon + colour in front of every per-faction war-strength
+  and economy row (`DrawFactionRow`, lookup by `FactionId` = `def.defName`), fall-back to plain
+  label when the faction left the world. No new assets. Test `TestRimWorldMainTabFactionIcons`.
+- **UI-3 (Claude): DONE.** Comparative data bars: each per-faction row draws a translucent
+  faction-coloured bar scaled by its share of the strongest/richest faction, so the two lists read
+  as bar charts. Cached rows carry a normalised `Fill`. Folded into `TestRimWorldMainTabFactionIcons`.
+- **UI-4 (Claude): DONE.** Globe glyph at `Textures/UI/LivingWorld_MainButton.png` wired via
+  `MainButtonDef.iconPath`, so the bottom-bar button shows an icon (and reads when minimised).
+  Test extends `TestRimWorldMainButtonDef` (asserts iconPath + texture file exists).
+- **World-gen simplification (Claude): DONE.** `Page_CreateWorldParams` button moved to the
+  top-right (computed, no magic coords, clear `LW_WorldGenButton` label); the popup now shows only
+  the master on/off toggle + a short blurb (`DrawWorldGenEssentials`) — density is vanilla's
+  population slider, so we stopped duplicating it. All numeric knobs stay in Options → Mod Settings
+  via the full `LivingWorldSettingsDrawer.Draw`. Tests updated (patch + window).
+- **UI-2 (Claude, backlog): World-map objects with icons.** Materialise ledger armies/warbands/
+  settlers as world objects on the globe with Rim-War-style icons (clean-room PNGs). Biggest visual
+  win but needs world-object materialization + new art. Status: BACKLOG.
+- **UI-5 (Claude, backlog): Status glyphs on the settlement inspect** (war/famine/growth, à la
+  Rim War `Exclamation`/`clock_warning`). Status: BACKLOG.
+- **F-1 (Claude UI + Codex data, backlog): Columnar Population/Economy window** (like
+  `ED_MainTabWindow_Population`) instead of the scrolling label list. Status: BACKLOG.
+
 ## Review Contract
 
 For every completed task, the other agent reviews from these angles before merge:
