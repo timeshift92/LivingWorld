@@ -294,10 +294,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncArmyWorldObjects();
     }
 
-    // Reconciles the world-map army markers with the ledger's active army movements: create a
-    // marker for each newly-traveling army, drop markers whose movement has resolved, and clear
-    // everything when the world war is off or Rim War is driving factions. Positions themselves
-    // animate every frame inside the marker's DrawPos, so this only manages membership.
+    // Reconciles the world-map mission markers with the ledger's active travels: a marker per
+    // marching warband and per traveling caravan, each with its own icon, dropping markers whose
+    // travel has resolved and clearing everything when the world war is off or Rim War is driving
+    // factions. Positions animate every frame inside the marker's DrawPos, so this only manages
+    // membership.
     private void SyncArmyWorldObjects()
     {
         var worldObjects = Find.WorldObjects;
@@ -306,22 +307,23 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
-        var existing = new Dictionary<long, WorldObject_LivingWorldArmy>();
+        var existing = new Dictionary<string, WorldObject_LivingWorldArmy>(StringComparer.Ordinal);
         foreach (var worldObject in worldObjects.AllWorldObjects)
         {
-            if (worldObject is WorldObject_LivingWorldArmy marker)
+            if (worldObject is WorldObject_LivingWorldArmy marker && !string.IsNullOrEmpty(marker.MarkerKey))
             {
-                existing[marker.ArmyId] = marker;
+                existing[marker.MarkerKey] = marker;
             }
         }
 
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
         var warVisible = settings.worldWarEnabled && !RimWarIsActive;
 
-        var live = new HashSet<long>();
-        if (warVisible)
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        var markerDef = warVisible ? DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker") : null;
+        if (markerDef != null)
         {
-            var markerDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker");
+            // Warbands marching to battle.
             foreach (var movement in State.ArmyMovements)
             {
                 if (movement.Status != ArmyMovementStatus.Traveling)
@@ -330,51 +332,41 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 }
 
                 var army = State.GetArmy(movement.ArmyId);
-                var target = State.GetSettlement(movement.TargetSettlementId);
-                if (army == null || target == null)
+                if (army == null)
                 {
                     continue;
                 }
 
-                var targetTile = ParseSettlementTile(target.Slug);
-                if (targetTile < 0)
-                {
-                    continue;
-                }
-
-                var idValue = movement.ArmyId.Value;
-                live.Add(idValue);
-                if (existing.ContainsKey(idValue) || markerDef == null)
-                {
-                    continue;
-                }
-
-                var origin = State.GetSettlement(army.SourceSettlementId);
-                var originTile = origin != null ? ParseSettlementTile(origin.Slug) : targetTile;
-                if (originTile < 0)
-                {
-                    originTile = targetTile;
-                }
-
-                var faction = Find.FactionManager?.AllFactionsListForReading
-                    .FirstOrDefault(candidate => candidate.def?.defName == army.FactionId);
-
-                var newMarker = (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
-                newMarker.Tile = targetTile;
-                if (faction != null)
-                {
-                    newMarker.SetFaction(faction);
-                }
-
-                newMarker.Configure(
-                    idValue,
-                    originTile,
-                    targetTile,
+                EnsureMissionMarker(
+                    worldObjects, markerDef, existing, live,
+                    $"army:{movement.ArmyId.Value}",
+                    "World/LivingWorld_Warband",
+                    "LW_MissionKind_Warband".Translate(),
+                    army.FactionId,
+                    army.SourceSettlementId,
+                    movement.TargetSettlementId,
                     movement.DepartTick,
-                    movement.ArrivalTick,
-                    faction?.Name ?? army.FactionId,
-                    target.Name);
-                worldObjects.Add(newMarker);
+                    movement.ArrivalTick);
+            }
+
+            // Caravans hauling goods between settlements (Core's caravan travel system).
+            foreach (var caravan in State.Caravans)
+            {
+                if (caravan.Status != CaravanStatus.Traveling)
+                {
+                    continue;
+                }
+
+                EnsureMissionMarker(
+                    worldObjects, markerDef, existing, live,
+                    $"caravan:{caravan.Id.Value}",
+                    "World/LivingWorld_Trader",
+                    "LW_MissionKind_Trader".Translate(),
+                    caravan.FactionId,
+                    caravan.SourceSettlementId,
+                    caravan.TargetSettlementId,
+                    caravan.DepartTick,
+                    caravan.ArrivalTick);
             }
         }
 
@@ -385,6 +377,68 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 worldObjects.Remove(pair.Value);
             }
         }
+    }
+
+    private void EnsureMissionMarker(
+        WorldObjectsHolder worldObjects,
+        WorldObjectDef markerDef,
+        Dictionary<string, WorldObject_LivingWorldArmy> existing,
+        HashSet<string> live,
+        string key,
+        string texture,
+        string kindNoun,
+        string factionId,
+        EntityId originSettlementId,
+        EntityId targetSettlementId,
+        int departTick,
+        int arrivalTick)
+    {
+        var target = State.GetSettlement(targetSettlementId);
+        if (target == null)
+        {
+            return;
+        }
+
+        var targetTile = ParseSettlementTile(target.Slug);
+        if (targetTile < 0)
+        {
+            return;
+        }
+
+        live.Add(key);
+        if (existing.ContainsKey(key))
+        {
+            return;
+        }
+
+        var origin = State.GetSettlement(originSettlementId);
+        var originTile = origin != null ? ParseSettlementTile(origin.Slug) : targetTile;
+        if (originTile < 0)
+        {
+            originTile = targetTile;
+        }
+
+        var faction = Find.FactionManager?.AllFactionsListForReading
+            .FirstOrDefault(candidate => candidate.def?.defName == factionId);
+
+        var marker = (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+        marker.Tile = targetTile;
+        if (faction != null)
+        {
+            marker.SetFaction(faction);
+        }
+
+        marker.Configure(
+            key,
+            texture,
+            kindNoun,
+            originTile,
+            targetTile,
+            departTick,
+            arrivalTick,
+            faction?.Name ?? factionId,
+            target.Name);
+        worldObjects.Add(marker);
     }
 
     // Ledger settlement slugs are "worldobject:{defName}:{tile}:{factionId}", so the RimWorld world

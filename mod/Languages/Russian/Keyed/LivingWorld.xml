@@ -70,7 +70,12 @@
   <LW_SettingDrifterCeiling>Потолок населения мира</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
   <LW_WorldGenButton>Настройка Живого мира</LW_WorldGenButton>
-  <LW_ArmyMarkerInspect>Варбанд {faction} идёт на {target} - прибытие примерно через {days} дн.</LW_ArmyMarkerInspect>
+  <LW_MissionMarkerInspect>{faction}, {kind}: движется к {target} - прибытие примерно через {days} дн.</LW_MissionMarkerInspect>
+  <LW_MissionKind_Warband>варбанд</LW_MissionKind_Warband>
+  <LW_MissionKind_Trader>караван</LW_MissionKind_Trader>
+  <LW_MissionKind_Scout>разведка</LW_MissionKind_Scout>
+  <LW_MissionKind_Settler>поселенцы</LW_MissionKind_Settler>
+  <LW_MissionKind_Diplomat>дипломаты</LW_MissionKind_Diplomat>
   <LW_InspectThreatLine>Под угрозой: приближается варбанд - прибытие примерно через {days} дн.</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Открыть таблицу населения и экономики</LW_OpenEconomyWindow>
   <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>

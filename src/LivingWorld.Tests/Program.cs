@@ -4300,22 +4300,33 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("MaterialPool.MatFrom", marker);
     AssertContains("WorldOverlayTransparentLit", marker);
     AssertContains("public override void ExposeData()", marker);
-    AssertContains("LW_ArmyMarkerInspect", marker);
+    AssertContains("LW_MissionMarkerInspect", marker);
+    // The marker's icon is per-instance (chosen by kind), not the fixed def texture.
+    AssertContains("texPath: textureName", marker);
 
-    // The world component reconciles markers from the ledger's active movements each day and on
-    // load, and it derives the tile from the settlement slug (Core has no tile geometry).
+    // The world component reconciles markers from the ledger's active travels each day and on
+    // load, and derives the tile from the settlement slug (Core has no tile geometry). Both
+    // marching warbands and traveling caravans get a marker, each with its own icon.
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
     AssertContains("SyncArmyWorldObjects()", component);
     AssertContains("ParseSettlementTile", component);
     AssertContains("WorldObjectMaker.MakeWorldObject", component);
     AssertContains("ArmyMovementStatus.Traveling", component);
+    AssertContains("CaravanStatus.Traveling", component);
+    AssertContains("World/LivingWorld_Warband", component);
+    AssertContains("World/LivingWorld_Trader", component);
     // Off when the war is disabled or Rim War is driving factions.
     AssertContains("settings.worldWarEnabled && !RimWarIsActive", component);
 
+    // Both icons ship with the mod.
+    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Trader.png"));
+
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    AssertContains("<LW_ArmyMarkerInspect>", en);
-    AssertContains("<LW_ArmyMarkerInspect>", ru);
+    AssertContains("<LW_MissionMarkerInspect>", en);
+    AssertContains("<LW_MissionMarkerInspect>", ru);
+    AssertContains("<LW_MissionKind_Trader>", en);
+    AssertContains("<LW_MissionKind_Trader>", ru);
 }
 
 static void TestRimWorldDrifterFlowSettings()

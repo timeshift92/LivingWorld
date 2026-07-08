@@ -70,7 +70,12 @@
   <LW_SettingDrifterCeiling>World population ceiling</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
   <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
-  <LW_ArmyMarkerInspect>{faction} warband marching on {target} - arrives in about {days} day(s).</LW_ArmyMarkerInspect>
+  <LW_MissionMarkerInspect>{faction} {kind}: heading to {target} - arrives in about {days} day(s).</LW_MissionMarkerInspect>
+  <LW_MissionKind_Warband>warband</LW_MissionKind_Warband>
+  <LW_MissionKind_Trader>caravan</LW_MissionKind_Trader>
+  <LW_MissionKind_Scout>scouts</LW_MissionKind_Scout>
+  <LW_MissionKind_Settler>settlers</LW_MissionKind_Settler>
+  <LW_MissionKind_Diplomat>diplomats</LW_MissionKind_Diplomat>
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>

@@ -6,15 +6,18 @@ using Verse;
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// A display-only world-map marker for a Living World army in transit. The simulation lives in the
-/// ledger (Core has no tile geometry); this object never pathfinds or drives anything — it only
-/// visualizes an existing <c>WorldArmyMovement</c> by interpolating between the origin and target
-/// settlement tiles as the ledger's travel clock advances. The world component reconciles these
-/// markers from the ledger each simulated day, so they are safe to recreate at any time.
+/// A display-only world-map marker for a Living World faction mission in transit — a warband,
+/// caravan, or (later) scout/settler/diplomat. The simulation lives in the ledger (Core has no tile
+/// geometry); this object never pathfinds or drives anything. It interpolates along the sphere from
+/// the origin settlement tile to the target tile as the ledger's travel clock advances, tinted by
+/// faction colour, and shows a per-kind icon. The world component reconciles these markers from the
+/// ledger each simulated day, so they are safe to recreate at any time.
 /// </summary>
 public sealed class WorldObject_LivingWorldArmy : WorldObject
 {
-    private long armyId = -1L;
+    private string markerKey = string.Empty;
+    private string textureName = "World/LivingWorld_Warband";
+    private string kindNoun = string.Empty;
     private int originTile = -1;
     private int targetTile = -1;
     private int departTick;
@@ -24,10 +27,12 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
 
     private Material? cachedMaterial;
 
-    public long ArmyId => armyId;
+    public string MarkerKey => markerKey;
 
     public void Configure(
-        long armyId,
+        string markerKey,
+        string textureName,
+        string kindNoun,
         int originTile,
         int targetTile,
         int departTick,
@@ -35,7 +40,9 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
         string factionLabel,
         string targetLabel)
     {
-        this.armyId = armyId;
+        this.markerKey = markerKey ?? string.Empty;
+        this.textureName = string.IsNullOrEmpty(textureName) ? "World/LivingWorld_Warband" : textureName;
+        this.kindNoun = kindNoun ?? string.Empty;
         this.originTile = originTile;
         this.targetTile = targetTile;
         this.departTick = departTick;
@@ -87,7 +94,7 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
             {
                 var color = Faction != null ? Faction.Color : Color.white;
                 cachedMaterial = MaterialPool.MatFrom(
-                    texPath: def.texture,
+                    texPath: textureName,
                     shader: ShaderDatabase.WorldOverlayTransparentLit,
                     color: color,
                     renderQueue: WorldMaterials.DynamicObjectRenderQueue);
@@ -103,8 +110,9 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     {
         var remainingTicks = arrivalTick - (Find.TickManager?.TicksGame ?? arrivalTick);
         var days = Mathf.Max(0, Mathf.RoundToInt(remainingTicks / 60000f));
-        return "LW_ArmyMarkerInspect".Translate(
+        return "LW_MissionMarkerInspect".Translate(
             factionLabel.Named("faction"),
+            kindNoun.Named("kind"),
             targetLabel.Named("target"),
             days.Named("days"));
     }
@@ -112,7 +120,9 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     public override void ExposeData()
     {
         base.ExposeData();
-        Scribe_Values.Look(ref armyId, "lwArmyId", -1L);
+        Scribe_Values.Look(ref markerKey, "lwMarkerKey", string.Empty);
+        Scribe_Values.Look(ref textureName, "lwTextureName", "World/LivingWorld_Warband");
+        Scribe_Values.Look(ref kindNoun, "lwKindNoun", string.Empty);
         Scribe_Values.Look(ref originTile, "lwOriginTile", -1);
         Scribe_Values.Look(ref targetTile, "lwTargetTile", -1);
         Scribe_Values.Look(ref departTick, "lwDepartTick", 0);
