@@ -277,6 +277,10 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 // Slice 3: the new ally names the enemy as your war objective.
                 if (result.Status == AllianceFormStatus.Formed)
                 {
+                    // Bridge to REAL RimWorld relations: the ally actually becomes a friendly/allied
+                    // faction (helps in fights, trades, stops raiding) — not just a ledger number.
+                    LivingWorldFactionRelations.FormRealAlliance(offer.AllyFactionId);
+
                     Find.LetterStack?.ReceiveLetter(
                         "LW_AllianceObjectiveLetterLabel".Translate(),
                         "LW_AllianceObjectiveLetterText".Translate(

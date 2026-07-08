@@ -192,6 +192,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         foreach (var victory in victories)
         {
             rewardedVictoryConflictIds.Add(victory.ConflictId);
+
+            // Bridge to REAL RimWorld relations: the shared victory actually raises the player's
+            // standing with the victorious ally, not just the ledger's own goodwill.
+            LivingWorldFactionRelations.ApplyGoodwill(victory.AllyFactionId, PlayerVictoryService.VictoryGoodwill);
+
             Find.LetterStack?.ReceiveLetter(
                 "LW_PlayerVictoryLetterLabel".Translate(),
                 "LW_PlayerVictoryLetterText".Translate(

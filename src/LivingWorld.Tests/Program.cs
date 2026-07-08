@@ -279,6 +279,7 @@ var tests = new List<(string Name, Action Test)>
     ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
     ("materializes settlement visitors as ledger citizens via leases", TestRimWorldSettlementVisitMaterialization),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
+    ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
     ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
@@ -6555,6 +6556,27 @@ static void TestRimWorldPlayerAttackRegistersConflict()
     // Slice 2: the same defeat credits any player-allied faction at war with the defeated one.
     AssertContains("AllianceService.CreditAlliesOnPlayerAttack", patch);
     AssertDoesNotContain("return false", patch);
+}
+
+// The bridge that makes the war arc mechanically real: alliances and victories apply REAL RimWorld
+// faction goodwill (via the verified Faction API), not just ledger numbers.
+static void TestRimWorldRealFactionRelationsBridge()
+{
+    var root = FindRepoRoot();
+    var bridge = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldFactionRelations.cs"));
+    AssertContains("Faction.OfPlayer", bridge);
+    AssertContains("TryAffectGoodwillWith", bridge);
+    AssertContains("GoodwillWith", bridge);
+    // Never try to befriend permanent-enemy factions.
+    AssertContains("permanentEnemy", bridge);
+    AssertRimWorldMethodExists("RimWorld.Faction", "TryAffectGoodwillWith");
+    AssertRimWorldMethodExists("RimWorld.Faction", "GoodwillWith");
+
+    // Wired into both ends of the arc.
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    AssertContains("LivingWorldFactionRelations.FormRealAlliance", mainTab);
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("LivingWorldFactionRelations.ApplyGoodwill", component);
 }
 
 static void TestRimWorldPawnIdentityService()
