@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef>
+    <defName>LivingWorld_ArmyMarker</defName>
+    <label>warband</label>
+    <description>A Living World faction army marching across the world toward a settlement.</description>
+    <worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldArmy</worldObjectClass>
+    <texture>World/LivingWorld_Warband</texture>
+    <useDynamicDrawer>true</useDynamicDrawer>
+    <expandingIcon>true</expandingIcon>
+    <expandingIconTexture>World/LivingWorld_Warband</expandingIconTexture>
+    <expandingIconPriority>90</expandingIconPriority>
+    <selectable>true</selectable>
+    <canHaveFaction>true</canHaveFaction>
+  </WorldObjectDef>
+</Defs>

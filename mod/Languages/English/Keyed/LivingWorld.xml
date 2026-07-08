@@ -70,6 +70,7 @@
   <LW_SettingDrifterCeiling>World population ceiling</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
   <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
+  <LW_ArmyMarkerInspect>{faction} warband marching on {target} - arrives in about {days} day(s).</LW_ArmyMarkerInspect>
   <LW_WorldGenBlurb>Living World tracks every faction settlement as a living ledger of people and resources - they grow, migrate, trade and wage war even when you never see them. World size and population are set by the vanilla planet options above.</LW_WorldGenBlurb>
   <LW_WorldGenAdvancedHint>Fine-tuning (settlement sizes, economy, drifters) lives in Options - Mod Settings - Living World.</LW_WorldGenAdvancedHint>
   <LW_DrifterArrivalLetterLabel>Drifter arrival</LW_DrifterArrivalLetterLabel>

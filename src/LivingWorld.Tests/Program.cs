@@ -161,6 +161,7 @@ var tests = new List<(string Name, Action Test)>
     ("declares Harmony dependency and reference", TestRimWorldHarmonyDependency),
     ("patches world generation settings page", TestRimWorldWorldGenSettingsPatch),
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
+    ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -3979,6 +3980,54 @@ static void TestRimWorldWorldGenSettingsWindow()
     AssertContains("<LW_WorldGenBlurb>", ru);
     AssertContains("<LW_WorldGenAdvancedHint>", en);
     AssertContains("<LW_WorldGenAdvancedHint>", ru);
+}
+
+static void TestRimWorldWorldArmyMarker()
+{
+    var root = FindRepoRoot();
+
+    // The def wires our display-only world object with a Rim-War-style icon and dynamic drawing.
+    var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_ArmyMarker.xml");
+    AssertFileExists(defPath);
+    var defXml = File.ReadAllText(defPath);
+    AssertContains("<defName>LivingWorld_ArmyMarker</defName>", defXml);
+    AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldArmy</worldObjectClass>", defXml);
+    AssertContains("<texture>World/LivingWorld_Warband</texture>", defXml);
+    AssertContains("<useDynamicDrawer>true</useDynamicDrawer>", defXml);
+    AssertContains("<expandingIcon>true</expandingIcon>", defXml);
+
+    // The icon ships with the mod.
+    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Warband.png"));
+
+    // The world object is a pure visualizer: it interpolates between the origin and target tiles
+    // from the ledger clock (no pathfinding), tints by faction, and round-trips through save data.
+    var markerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldArmy.cs");
+    AssertFileExists(markerPath);
+    var marker = File.ReadAllText(markerPath);
+    AssertContains("class WorldObject_LivingWorldArmy : WorldObject", marker);
+    AssertContains("public override Vector3 DrawPos", marker);
+    AssertContains("Find.WorldGrid", marker);
+    AssertContains("GetTileCenter", marker);
+    AssertContains("Vector3.Slerp", marker);
+    AssertContains("MaterialPool.MatFrom", marker);
+    AssertContains("WorldOverlayTransparentLit", marker);
+    AssertContains("public override void ExposeData()", marker);
+    AssertContains("LW_ArmyMarkerInspect", marker);
+
+    // The world component reconciles markers from the ledger's active movements each day and on
+    // load, and it derives the tile from the settlement slug (Core has no tile geometry).
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("SyncArmyWorldObjects()", component);
+    AssertContains("ParseSettlementTile", component);
+    AssertContains("WorldObjectMaker.MakeWorldObject", component);
+    AssertContains("ArmyMovementStatus.Traveling", component);
+    // Off when the war is disabled or Rim War is driving factions.
+    AssertContains("settings.worldWarEnabled && !RimWarIsActive", component);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_ArmyMarkerInspect>", en);
+    AssertContains("<LW_ArmyMarkerInspect>", ru);
 }
 
 static void TestRimWorldDrifterFlowSettings()

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
 using RimWorld;
@@ -125,6 +126,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         base.FinalizeInit(fromLoad);
         BootstrapFromRimWorldSettlements();
         RepairMissingProductionProfilesFromRimWorldSettlements();
+        // Reconcile world-map army markers with the loaded ledger so stale markers from before the
+        // save are dropped and surviving movements keep their icon.
+        SyncArmyWorldObjects();
     }
 
     public override void WorldComponentTick()
@@ -279,6 +283,116 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         FactionLifecycleService.SimulateCollapses(
             State,
             new FactionLifecycleRequest(day * TicksPerDay));
+
+        // Visualize the day's world-war army movements on the globe (display only — the ledger
+        // remains the source of truth). Cheap: it only touches active traveling movements.
+        SyncArmyWorldObjects();
+    }
+
+    // Reconciles the world-map army markers with the ledger's active army movements: create a
+    // marker for each newly-traveling army, drop markers whose movement has resolved, and clear
+    // everything when the world war is off or Rim War is driving factions. Positions themselves
+    // animate every frame inside the marker's DrawPos, so this only manages membership.
+    private void SyncArmyWorldObjects()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var existing = new Dictionary<long, WorldObject_LivingWorldArmy>();
+        foreach (var worldObject in worldObjects.AllWorldObjects)
+        {
+            if (worldObject is WorldObject_LivingWorldArmy marker)
+            {
+                existing[marker.ArmyId] = marker;
+            }
+        }
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        var warVisible = settings.worldWarEnabled && !RimWarIsActive;
+
+        var live = new HashSet<long>();
+        if (warVisible)
+        {
+            var markerDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker");
+            foreach (var movement in State.ArmyMovements)
+            {
+                if (movement.Status != ArmyMovementStatus.Traveling)
+                {
+                    continue;
+                }
+
+                var army = State.GetArmy(movement.ArmyId);
+                var target = State.GetSettlement(movement.TargetSettlementId);
+                if (army == null || target == null)
+                {
+                    continue;
+                }
+
+                var targetTile = ParseSettlementTile(target.Slug);
+                if (targetTile < 0)
+                {
+                    continue;
+                }
+
+                var idValue = movement.ArmyId.Value;
+                live.Add(idValue);
+                if (existing.ContainsKey(idValue) || markerDef == null)
+                {
+                    continue;
+                }
+
+                var origin = State.GetSettlement(army.SourceSettlementId);
+                var originTile = origin != null ? ParseSettlementTile(origin.Slug) : targetTile;
+                if (originTile < 0)
+                {
+                    originTile = targetTile;
+                }
+
+                var faction = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == army.FactionId);
+
+                var newMarker = (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+                newMarker.Tile = targetTile;
+                if (faction != null)
+                {
+                    newMarker.SetFaction(faction);
+                }
+
+                newMarker.Configure(
+                    idValue,
+                    originTile,
+                    targetTile,
+                    movement.DepartTick,
+                    movement.ArrivalTick,
+                    faction?.Name ?? army.FactionId,
+                    target.Name);
+                worldObjects.Add(newMarker);
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
+        }
+    }
+
+    // Ledger settlement slugs are "worldobject:{defName}:{tile}:{factionId}", so the RimWorld world
+    // tile is embedded even though Core itself has no tile geometry. Returns -1 when unparseable.
+    private static int ParseSettlementTile(string? slug)
+    {
+        if (string.IsNullOrEmpty(slug))
+        {
+            return -1;
+        }
+
+        var parts = slug!.Split(':');
+        return parts.Length >= 3 && int.TryParse(parts[2], out var tile) ? tile : -1;
     }
 
     // Rim War (Torann.RimWar) drives world factions the same way; when it is active Living
