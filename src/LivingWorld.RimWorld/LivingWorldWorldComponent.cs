@@ -221,12 +221,15 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var activeProjects = State.SettlementProjects.Count(project => project.Status == SettlementProjectStatus.Active);
         var activeConflicts = State.Conflicts.Count(conflict => conflict.Status != WorldConflictStatus.Resolved);
         var activeRuins = State.Ruins.Count(ruin => ruin.Status == RuinStatus.Active);
+        var animalCohorts = State.AnimalCohorts.Count;
+        var activeBreedingProjects = State.AnimalBreedingProjects.Count(project => project.Status == AnimalBreedingProjectStatus.Active);
         var playerIntel = State.RaidIntelFacts.Count(fact =>
             fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(currentTick));
 
         Log.Message(
             $"[LivingWorld] day {lastSimulatedDay} (+{simulatedDays}d): settlements {activeSettlements}/{State.Settlements.Count}"
             + $" | pop {pop} | facilities {facilities} | projects {activeProjects} active"
+            + $" | animals {animalCohorts} cohorts | breeding {activeBreedingProjects} active"
             + $" | conflicts {activeConflicts} | ruins {activeRuins} | player-raid-intel {playerIntel}");
 
         var events = State.Events;
@@ -473,6 +476,21 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 day * TicksPerDay,
                 FoodResourceKey,
                 settings.foodPerCitizen > 0 ? 1 : 0));
+        AnimalProductionService.SimulateDay(
+            State,
+            new AnimalProductionRequest(
+                day * TicksPerDay,
+                FoodResourceKey,
+                RanchOutputPerHealthyAnimal: 1,
+                WildHarvestDivisor: 4,
+                MaxWildAnimalsHarvestedPerCohort: 2));
+        AnimalBreedingDriver.SimulateDay(
+            State,
+            new AnimalBreedingDriverRequest(
+                day * TicksPerDay,
+                FoodResourceKey,
+                MedicineResourceKey,
+                ComponentResourceKey));
         DemographyService.SimulateDay(
             State,
             new DemographySimulationRequest(

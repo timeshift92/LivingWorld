@@ -68,6 +68,8 @@ public enum WorldEventKind
     AnimalCohortGrew,
     AnimalCohortDeclined,
     AnimalCohortMigrated,
+    AnimalProductsHarvested,
+    AnimalHunted,
     AnimalBreedingProjectStarted,
     AnimalBreedingProjectCompleted,
     AnimalCohortIncubated

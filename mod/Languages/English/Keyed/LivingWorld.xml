@@ -186,6 +186,12 @@
   <LW_SettlementObserver_Facilities>Facilities</LW_SettlementObserver_Facilities>
   <LW_SettlementObserver_NoFacilities>No facilities built yet.</LW_SettlementObserver_NoFacilities>
   <LW_SettlementObserver_FacilityLine>{kind} lvl {level}, condition {condition}%</LW_SettlementObserver_FacilityLine>
+  <LW_SettlementObserver_Animals>Animals</LW_SettlementObserver_Animals>
+  <LW_SettlementObserver_NoAnimals>No tracked animal cohorts.</LW_SettlementObserver_NoAnimals>
+  <LW_SettlementObserver_AnimalLine>{type}: {kind} x{count}, health {health}%, fertility {fertility}%, capacity {capacity}</LW_SettlementObserver_AnimalLine>
+  <LW_SettlementObserver_Breeding>Breeding and incubation</LW_SettlementObserver_Breeding>
+  <LW_SettlementObserver_NoBreedingProject>No active breeding or incubation project.</LW_SettlementObserver_NoBreedingProject>
+  <LW_SettlementObserver_BreedingProgress>{kind}: {animal}, trait {trait}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_BreedingProgress>
   <LW_SettlementObserver_Resources>Resources</LW_SettlementObserver_Resources>
   <LW_SettlementObserver_NoResources>No stored resources.</LW_SettlementObserver_NoResources>
   <LW_SettlementObserver_ResourceLine>{resource}: {quantity}</LW_SettlementObserver_ResourceLine>

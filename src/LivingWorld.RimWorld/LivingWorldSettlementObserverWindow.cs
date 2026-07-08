@@ -187,6 +187,32 @@ public sealed class LivingWorldSettlementObserverWindow : Window
                 facility.Level.Named("level"),
                 facility.ConditionPercent.Named("condition")).ToString())));
 
+        lines.Add(Header("LW_SettlementObserver_Animals".Translate().ToString()));
+        var animalCohorts = state.GetAnimalCohorts(settlement.Id)
+            .OrderBy(cohort => cohort.Type)
+            .ThenBy(cohort => cohort.AnimalKind, StringComparer.Ordinal)
+            .ThenBy(cohort => cohort.Id.Value)
+            .ToList();
+        lines.AddRange(animalCohorts.Count == 0
+            ? new[] { Line("LW_SettlementObserver_NoAnimals".Translate().ToString()) }
+            : animalCohorts.Select(cohort => Line("LW_SettlementObserver_AnimalLine".Translate(
+                cohort.Type.Named("type"),
+                cohort.AnimalKind.Named("kind"),
+                cohort.Count.Named("count"),
+                cohort.HealthPercent.Named("health"),
+                cohort.FertilityPercent.Named("fertility"),
+                cohort.CarryingCapacity.Named("capacity")).ToString(), 36f)));
+
+        lines.Add(Header("LW_SettlementObserver_Breeding".Translate().ToString()));
+        var breedingProjects = state.AnimalBreedingProjects
+            .Where(project => project.SettlementId == settlement.Id && project.Status == AnimalBreedingProjectStatus.Active)
+            .OrderBy(project => project.CompletionTick)
+            .ThenBy(project => project.Id.Value)
+            .ToList();
+        lines.AddRange(breedingProjects.Count == 0
+            ? new[] { Line("LW_SettlementObserver_NoBreedingProject".Translate().ToString()) }
+            : breedingProjects.Select(project => Line(FormatBreedingProject(state, project, currentTick), 36f)));
+
         lines.Add(Header("LW_SettlementObserver_Resources".Translate().ToString()));
         var resources = state.ResourcesForOwner(settlement.Id)
             .OrderByDescending(resource => resource.Quantity)
@@ -200,8 +226,20 @@ public sealed class LivingWorldSettlementObserverWindow : Window
                 resource.Quantity.Named("quantity")).ToString())));
 
         lines.Add(Header("LW_SettlementObserver_RecentEvents".Translate().ToString()));
+        var relatedSubjectIds = new HashSet<EntityId>(animalCohorts.Select(cohort => cohort.Id))
+        {
+            settlement.Id
+        };
+        foreach (var project in state.AnimalBreedingProjects.Where(project => project.SettlementId == settlement.Id))
+        {
+            relatedSubjectIds.Add(project.Id);
+        }
+
         var recentEvents = state.Events
-            .Where(worldEvent => worldEvent.SubjectId == settlement.Id && IsSettlementProcessEvent(worldEvent.Kind))
+            .Where(worldEvent =>
+                worldEvent.SubjectId.HasValue
+                && relatedSubjectIds.Contains(worldEvent.SubjectId.Value)
+                && IsSettlementProcessEvent(worldEvent.Kind))
             .OrderByDescending(worldEvent => worldEvent.Tick)
             .ThenByDescending(worldEvent => worldEvent.Id.Value)
             .Take(MaxEventRows)
@@ -229,6 +267,22 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             daysLeft.Named("days")).ToString();
     }
 
+    private static string FormatBreedingProject(WorldState state, AnimalBreedingProject project, int currentTick)
+    {
+        var duration = Math.Max(1, project.CompletionTick - project.StartedTick);
+        var elapsed = Math.Max(0, currentTick - project.StartedTick);
+        var progress = Math.Min(100, elapsed * 100 / duration);
+        var daysLeft = Math.Max(0, (int)Math.Ceiling((project.CompletionTick - currentTick) / (double)TicksPerDay));
+        var cohort = state.GetAnimalCohort(project.SourceCohortId);
+        var animalKind = cohort?.AnimalKind ?? project.SourceCohortId.ToString();
+        return "LW_SettlementObserver_BreedingProgress".Translate(
+            project.Kind.Named("kind"),
+            project.Trait.Named("trait"),
+            animalKind.Named("animal"),
+            progress.Named("progress"),
+            daysLeft.Named("days")).ToString();
+    }
+
     private static bool IsSettlementProcessEvent(WorldEventKind kind)
     {
         return kind == WorldEventKind.SettlementProductionUpdated
@@ -241,7 +295,12 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             || kind == WorldEventKind.FoodShortage
             || kind == WorldEventKind.CitizenBorn
             || kind == WorldEventKind.MigrationStarted
-            || kind == WorldEventKind.MigrationCompleted;
+            || kind == WorldEventKind.MigrationCompleted
+            || kind == WorldEventKind.AnimalProductsHarvested
+            || kind == WorldEventKind.AnimalHunted
+            || kind == WorldEventKind.AnimalBreedingProjectStarted
+            || kind == WorldEventKind.AnimalBreedingProjectCompleted
+            || kind == WorldEventKind.AnimalCohortIncubated;
     }
 
     private static DetailLine Header(string text) => new(text, 30f, IsHeader: true);

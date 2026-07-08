@@ -23,11 +23,13 @@ var tests = new List<(string Name, Action Test)>
     ("simulates animal ecology growth and pressure", TestAnimalEcologyGrowthAndPressure),
     ("seeds animal cohorts from settlement environment", TestAnimalEcologyDriverSeedsFromSettlementEnvironment),
     ("animal ecology driver is idempotent and feeds domesticated cohorts", TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts),
+    ("animal production converts herds and hunting into food", TestAnimalProductionConvertsHerdsAndHuntingIntoFood),
     ("migrates animal cohorts without duplicating population", TestAnimalCohortMigrationConservesPopulation),
     ("serializes animal cohorts", TestAnimalCohortSerialization),
     ("animal selection projects improve cohorts over time", TestAnimalSelectionProjectsImproveCohorts),
     ("animal breeding projects require settlement capabilities", TestAnimalBreedingProjectsRequireCapabilities),
     ("animal incubation projects create ledger cohorts", TestAnimalIncubationProjectsCreateLedgerCohorts),
+    ("animal breeding driver starts and completes projects", TestAnimalBreedingDriverStartsAndCompletesProjects),
     ("serializes animal breeding projects", TestAnimalBreedingProjectSerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
@@ -781,6 +783,48 @@ static void TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts()
     AssertEqual(0, state.Validate().Count());
 }
 
+static void TestAnimalProductionConvertsHerdsAndHuntingIntoFood()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 12,
+        healthPercent: 80,
+        fertilityPercent: 70,
+        carryingCapacity: 20,
+        tick: 0);
+    var deer = state.CreateAnimalCohort(
+        settlement.Id,
+        "Deer",
+        AnimalCohortType.Wild,
+        count: 10,
+        healthPercent: 90,
+        fertilityPercent: 70,
+        carryingCapacity: 14,
+        tick: 0);
+
+    var result = AnimalProductionService.SimulateDay(
+        state,
+        new AnimalProductionRequest(
+            Tick: 60_000,
+            FoodResourceKey: "PackagedSurvivalMeal",
+            RanchOutputPerHealthyAnimal: 1,
+            WildHarvestDivisor: 4,
+            MaxWildAnimalsHarvestedPerCohort: 3));
+
+    AssertEqual(2, result.RanchFoodProduced);
+    AssertEqual(3, result.WildAnimalsHarvested);
+    AssertEqual(6, result.HuntingFoodProduced);
+    AssertEqual(8, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+    AssertEqual(7, state.GetAnimalCohort(deer.Id)!.Count);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalProductsHarvested));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalHunted));
+    AssertEqual(0, state.Validate().Count());
+}
+
 static void TestAnimalCohortMigrationConservesPopulation()
 {
     var state = new WorldState(12345);
@@ -950,6 +994,50 @@ static void TestAnimalIncubationProjectsCreateLedgerCohorts()
     AssertEqual(90, incubated.HealthPercent);
     AssertEqual(settlement.Id, state.GetOwner(incubated.Id));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortIncubated));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalBreedingDriverStartsAndCompletesProjects()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    state.RecordSettlementCapability(new SettlementCapability(settlement.Id, 10, 10, 10, 0, 0, 12, 0, 0, 0, 0));
+    state.RecordSpecialistPool(new SpecialistPool(settlement.Id, 0, 2, 0, 0, 0, 0, 0, 0, 0));
+    var herd = state.CreateAnimalCohort(settlement.Id, "Muffalo", AnimalCohortType.Domesticated, 8, 90, 50, 18, 0);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 40);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 4);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 3);
+
+    var started = AnimalBreedingDriver.SimulateDay(
+        state,
+        new AnimalBreedingDriverRequest(
+            Tick: 60_000,
+            FeedResourceKey: "PackagedSurvivalMeal",
+            MedicineResourceKey: "MedicineIndustrial",
+            ComponentResourceKey: "ComponentIndustrial"));
+
+    var early = AnimalBreedingDriver.SimulateDay(
+        state,
+        new AnimalBreedingDriverRequest(
+            Tick: 90_000,
+            FeedResourceKey: "PackagedSurvivalMeal",
+            MedicineResourceKey: "MedicineIndustrial",
+            ComponentResourceKey: "ComponentIndustrial"));
+
+    var completed = AnimalBreedingDriver.SimulateDay(
+        state,
+        new AnimalBreedingDriverRequest(
+            Tick: 120_000,
+            FeedResourceKey: "PackagedSurvivalMeal",
+            MedicineResourceKey: "MedicineIndustrial",
+            ComponentResourceKey: "ComponentIndustrial"));
+
+    AssertEqual(1, started.ProjectsStarted);
+    AssertEqual(0, early.ProjectsStarted);
+    AssertEqual(0, early.ProjectsCompleted);
+    AssertEqual(1, completed.ProjectsCompleted);
+    AssertEqual(60, state.GetAnimalCohort(herd.Id)!.FertilityPercent);
+    AssertEqual(1, state.AnimalBreedingProjects.Count(project => project.Status == AnimalBreedingProjectStatus.Completed));
     AssertEqual(0, state.Validate().Count());
 }
 
@@ -5310,6 +5398,8 @@ static void TestRimWorldDailyTickRunsAnimalEcologyDriver()
     // cohorts and runs feed pressure against the same food ledger used by settlements.
     AssertContains("AnimalEcologyDriver.SimulateDay(", component);
     AssertContains("new AnimalEcologyDriverRequest(", component);
+    AssertContains("AnimalProductionService.SimulateDay(", component);
+    AssertContains("AnimalBreedingDriver.SimulateDay(", component);
     AssertContains("FoodResourceKey", component);
 }
 
@@ -6765,12 +6855,19 @@ static void TestRimWorldSettlementObserverWindow()
     AssertContains("GetSettlementPopulation", window);
     AssertContains("GetSettlementProductionStatus", window);
     AssertContains("GetSettlementFacilities", window);
+    AssertContains("GetAnimalCohorts", window);
+    AssertContains("AnimalBreedingProjects", window);
     AssertContains("SettlementProjectStatus.Active", window);
+    AssertContains("AnimalBreedingProjectStatus.Active", window);
     AssertContains("ResourcesForOwner", window);
     AssertContains("WorldEventKind.SettlementProjectStarted", window);
     AssertContains("WorldEventKind.SettlementFacilityBuilt", window);
     AssertContains("WorldEventKind.SettlementDeveloped", window);
+    AssertContains("WorldEventKind.AnimalProductsHarvested", window);
+    AssertContains("WorldEventKind.AnimalBreedingProjectStarted", window);
     AssertContains("LW_SettlementObserver_ProjectProgress", window);
+    AssertContains("LW_SettlementObserver_AnimalLine", window);
+    AssertContains("LW_SettlementObserver_BreedingProgress", window);
     AssertContains("LW_SettlementObserver_NoActiveProject", window);
 
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
@@ -6787,6 +6884,12 @@ static void TestRimWorldSettlementObserverWindow()
         "LW_SettlementObserver_Overview",
         "LW_SettlementObserver_Projects",
         "LW_SettlementObserver_Facilities",
+        "LW_SettlementObserver_Animals",
+        "LW_SettlementObserver_NoAnimals",
+        "LW_SettlementObserver_AnimalLine",
+        "LW_SettlementObserver_Breeding",
+        "LW_SettlementObserver_NoBreedingProject",
+        "LW_SettlementObserver_BreedingProgress",
         "LW_SettlementObserver_Resources",
         "LW_SettlementObserver_RecentEvents",
         "LW_SettlementObserver_NoActiveProject",

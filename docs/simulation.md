@@ -289,14 +289,33 @@ Core-функция `VanillaRaidInterceptor.TryIntercept(state, request)`. Кл�
 
 События:
 
-- `AnimalBorn`;
-- `AnimalDied`;
-- `AnimalMigration`;
-- `AnimalTamed`;
+- `AnimalCohortCreated`;
+- `AnimalCohortGrew`;
+- `AnimalCohortDeclined`;
+- `AnimalCohortMigrated`;
+- `AnimalProductsHarvested`;
 - `AnimalHunted`;
-- `AnimalStarved`.
+- `AnimalBreedingProjectStarted`;
+- `AnimalBreedingProjectCompleted`;
+- `AnimalCohortIncubated`.
+
+Daily tick сначала обновляет ecology: стада растут, голодают или мигрируют
+через `AnimalEcologyDriver`. Затем `AnimalProductionService` даёт
+ресурсный эффект:
+
+- домашние стада дают небольшой ежедневный food output без уменьшения
+  поголовья;
+- охота даёт больше еды, но уменьшает реальный wild cohort.
+
+`AnimalBreedingDriver` завершает готовые selection/incubation projects и
+детерминированно стартует новые проекты только там, где есть `AnimalCapacity`,
+handlers/lab specialists и реальные feed/medicine/components. Проекты не
+создают pawns: они улучшают ledger cohort или добавляют новый ledger cohort.
 
 Wildlife spawn на карте должен выбирать существующих животных из regional pool.
+Полная materialization животных на временной карте является отдельным слоем:
+карта берёт животных из ledger cohort, а результат охоты/смерти/ухода
+возвращается обратно в ledger.
 
 Если волков стало больше:
 

@@ -186,6 +186,12 @@
   <LW_SettlementObserver_Facilities>Постройки</LW_SettlementObserver_Facilities>
   <LW_SettlementObserver_NoFacilities>Постройки ещё не построены.</LW_SettlementObserver_NoFacilities>
   <LW_SettlementObserver_FacilityLine>{kind} ур. {level}, состояние {condition}%</LW_SettlementObserver_FacilityLine>
+  <LW_SettlementObserver_Animals>Животные</LW_SettlementObserver_Animals>
+  <LW_SettlementObserver_NoAnimals>Учтённых групп животных нет.</LW_SettlementObserver_NoAnimals>
+  <LW_SettlementObserver_AnimalLine>{type}: {kind} x{count}, здоровье {health}%, плодовитость {fertility}%, вместимость {capacity}</LW_SettlementObserver_AnimalLine>
+  <LW_SettlementObserver_Breeding>Селекция и инкубация</LW_SettlementObserver_Breeding>
+  <LW_SettlementObserver_NoBreedingProject>Нет активной селекции или инкубации.</LW_SettlementObserver_NoBreedingProject>
+  <LW_SettlementObserver_BreedingProgress>{kind}: {animal}, признак {trait}, готово {progress}%, осталось около {days} дн.</LW_SettlementObserver_BreedingProgress>
   <LW_SettlementObserver_Resources>Ресурсы</LW_SettlementObserver_Resources>
   <LW_SettlementObserver_NoResources>Нет складских ресурсов.</LW_SettlementObserver_NoResources>
   <LW_SettlementObserver_ResourceLine>{resource}: {quantity}</LW_SettlementObserver_ResourceLine>
