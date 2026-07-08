@@ -507,9 +507,17 @@ the integrated `main`). Verdicts:
   `Settlements.Count * targetWorldPopulationPerSettlement` once) — doable in the RimWorld component
   (Claude's lane) without touching Core. Also add a legacy-load (no attribute) test.
 
-**Net:** 3 clean APPROVED; 2 Important follow-ups — (a) caravan pruning (Codex/Core), (b) drifter
-reservoir legacy migration (Claude/RimWorld). Everything is already merged and passing tests; these are
-correctness/scale follow-ups, not merge blockers.
+**Net:** 3 clean APPROVED; 2 Important follow-ups — both now **FIXED by Claude (commit `0654132`)**:
+- (a) **Caravan pruning — DONE.** `CaravanPruneService` (mirrors `ArmyMovementPruneService`) +
+  `WorldState.RemoveCaravanForLedger`, wired into the daily war tick with the same retention; terminal
+  caravans own no goods so removal is conservation-safe. Test `TestCaravanPruneRemovesTerminalCaravans`.
+- (b) **Drifter reservoir legacy migration — DONE.** The RimWorld component reseeds the reservoir once
+  for legacy saves (bootstrapped, reservoir 0), guarded by a persisted `migratedDrifterReservoir` flag so
+  a legitimately-depleted reservoir is never refilled; fresh worlds set the flag at bootstrap. Test
+  `TestRimWorldDrifterReservoirLegacyMigration`. 201 tests green.
+
+Remaining Minor follow-ups (opportunistic, not done): `CaravansCompleted` double-count, zero-cargo caravan
+launch guard, load-then-arrive + capture/expansion invalidation test coverage.
 
 ## Review Contract
 
