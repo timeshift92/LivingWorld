@@ -32,6 +32,8 @@ var tests = new List<(string Name, Action Test)>
     ("settlement facilities modify production output", TestSettlementFacilitiesModifyProductionOutput),
     ("settlement projects consume resources and complete facilities", TestSettlementProjectsConsumeResourcesAndCompleteFacilities),
     ("damaged facilities reduce output and repairs consume resources", TestDamagedFacilitiesReduceOutputAndRepairsConsumeResources),
+    ("daily infrastructure driver invests in and completes facilities", TestInfrastructureDriverInvestsInAndCompletesFacilities),
+    ("daily infrastructure driver repairs damaged facilities first", TestInfrastructureDriverRepairsDamagedFacilitiesFirst),
     ("serializes settlement production profiles", TestSettlementProductionProfileSerialization),
     ("serializes settlement facilities and projects", TestSettlementFacilityProjectSerialization),
     ("records settlement capabilities and specialist pools", TestSettlementCapabilityAndSpecialistLedger),
@@ -160,6 +162,9 @@ var tests = new List<(string Name, Action Test)>
     ("relocation moves citizens and resources through migration group", TestRelocationMovesCitizensAndResourcesThroughMigrationGroup),
     ("ruin can be reclaimed without duplicating resources", TestRuinCanBeReclaimedWithoutDuplicatingResources),
     ("old inactive ruins can be pruned after history is recorded", TestOldInactiveRuinsCanBePrunedAfterHistoryIsRecorded),
+    ("daily lifecycle driver relocates starving settlements", TestLifecycleDriverRelocatesStarvingSettlements),
+    ("daily lifecycle driver destroys settlements after faction collapse", TestLifecycleDriverDestroysCollapsedFactionSettlements),
+    ("daily lifecycle driver prunes inactive ruins", TestLifecycleDriverPrunesInactiveRuins),
     ("migrates the drifter reservoir for legacy saves", TestRimWorldDrifterReservoirLegacyMigration),
     ("world war develop action invests in a settlement", TestWorldWarDevelopActionInvestsInSettlement),
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
@@ -1037,6 +1042,99 @@ static void TestDamagedFacilitiesReduceOutputAndRepairsConsumeResources()
     AssertEqual(24, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
     AssertEqual(5, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
     AssertEqual(100, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityRepaired));
+}
+
+static void TestInfrastructureDriverInvestsInAndCompletesFacilities()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("farm-town", "Farm Town", "Outlander");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen($"Farmer {i + 1}", 24 + i, Sex.Female, "farmer", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "TemperateForest",
+            "SmallHills",
+            "Industrial",
+            55,
+            850,
+            21)));
+    state.AddResource(settlement.Id, "Steel", 160);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 10);
+
+    var started = SettlementInfrastructureDriver.SimulateDay(
+        state,
+        new SettlementInfrastructureDriverRequest(Tick: 60_000, ProjectDurationTicks: 60_000));
+
+    AssertEqual(1, started.ProjectsStarted);
+    AssertEqual(0, started.ProjectsCompleted);
+    AssertEqual(80, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(6, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(1, state.SettlementProjects.Count(project => project.Status == SettlementProjectStatus.Active));
+    AssertEqual(0, state.GetSettlementFacilities(settlement.Id).Count);
+
+    var completed = SettlementInfrastructureDriver.SimulateDay(
+        state,
+        new SettlementInfrastructureDriverRequest(Tick: 120_000, ProjectDurationTicks: 60_000));
+
+    AssertEqual(1, completed.ProjectsCompleted);
+    AssertEqual(1, completed.ProjectsStarted);
+    AssertEqual(1, state.SettlementProjects.Count(project => project.Status == SettlementProjectStatus.Active));
+    var facility = state.GetSettlementFacilities(settlement.Id).Single();
+    AssertEqual(SettlementFacilityKind.Farm, facility.Kind);
+    AssertEqual(100, facility.ConditionPercent);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityBuilt));
+}
+
+static void TestInfrastructureDriverRepairsDamagedFacilitiesFirst()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    for (var i = 0; i < 5; i++)
+    {
+        state.CreateCitizen($"Worker {i + 1}", 30 + i, Sex.Male, "worker", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "AridShrubland",
+            "LargeHills",
+            "Industrial",
+            20,
+            300,
+            15)));
+    var damaged = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 42),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 2,
+        ConditionPercent: 45,
+        BuiltTick: 0));
+    state.AddResource(settlement.Id, "Steel", 200);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 10);
+
+    var started = SettlementInfrastructureDriver.SimulateDay(
+        state,
+        new SettlementInfrastructureDriverRequest(Tick: 60_000, ProjectDurationTicks: 30_000));
+
+    AssertEqual(1, started.ProjectsStarted);
+    var project = state.SettlementProjects.Single(project => project.Status == SettlementProjectStatus.Active);
+    AssertEqual(SettlementProjectKind.RepairFacility, project.Kind);
+    AssertEqual(damaged.Id, project.TargetFacilityId);
+    AssertEqual(160, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(9, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+
+    SettlementInfrastructureDriver.SimulateDay(
+        state,
+        new SettlementInfrastructureDriverRequest(Tick: 90_000, ProjectDurationTicks: 30_000));
+
+    AssertEqual(100, state.GetSettlementFacility(damaged.Id)!.ConditionPercent);
+    AssertEqual(1, state.GetSettlementFacilities(settlement.Id).Count);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityRepaired));
 }
 
@@ -4167,6 +4265,100 @@ static void TestOldInactiveRuinsCanBePrunedAfterHistoryIsRecorded()
     AssertEqual(eventsBeforePrune + 1, state.Events.Count);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RuinPruned));
     AssertEqual(0, state.GetOwnedResourceQuantity(ruin.Id, "Steel"));
+}
+
+static void TestLifecycleDriverRelocatesStarvingSettlements()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("hungry", "Hungry", "Settlers");
+    var target = state.CreateSettlement("safe", "Safe", "Settlers");
+    var first = state.CreateCitizen("Ada", 31, Sex.Female, "farmer", source.Id);
+    var second = state.CreateCitizen("Bo", 34, Sex.Male, "builder", source.Id);
+    state.CreateCitizen("Cal", 38, Sex.Male, "cook", target.Id);
+    state.AddResource(source.Id, "Steel", 70);
+    state.AddResource(target.Id, "PackagedSurvivalMeal", 120);
+
+    var result = SettlementLifecycleDriver.SimulateDay(
+        state,
+        new SettlementLifecycleDriverRequest(
+            Tick: 60_000,
+            FoodResourceKey: "PackagedSurvivalMeal",
+            FoodPerCitizen: 1,
+            RelocationTravelTicks: 30_000));
+
+    AssertEqual(1, result.RelocationsStarted);
+    AssertEqual(SettlementLifecycleStatus.Abandoned, state.GetSettlement(source.Id)!.Status);
+    AssertEqual(1, state.Ruins.Count(ruin => ruin.OriginalSettlementId == source.Id));
+    var group = state.MigrationGroups.Single(group => group.SourceSettlementId == source.Id);
+    AssertEqual(MigrationGroupStatus.Traveling, group.Status);
+    AssertEqual(target.Id, group.TargetSettlementId);
+    AssertEqual(group.Id, state.GetOwner(first.Id));
+    AssertEqual(group.Id, state.GetOwner(second.Id));
+    AssertEqual(70, state.GetOwnedResourceQuantity(group.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+
+    var completed = MigrationService.SimulateDay(
+        state,
+        new MigrationSimulationRequest(90_000, "PackagedSurvivalMeal", 1, 99, 0));
+
+    AssertEqual(2, completed.MigrationsCompleted);
+    AssertEqual(target.Id, state.GetOwner(first.Id));
+    AssertEqual(target.Id, state.GetOwner(second.Id));
+    AssertEqual(70, state.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestLifecycleDriverDestroysCollapsedFactionSettlements()
+{
+    var state = new WorldState(4242);
+    var empty = state.CreateSettlement("empty", "Empty", "LostFaction");
+    var alive = state.CreateSettlement("alive", "Alive", "LivingFaction");
+    state.CreateCitizen("Ada", 31, Sex.Female, "farmer", alive.Id);
+    state.AddResource(empty.Id, "Steel", 90);
+
+    var result = SettlementLifecycleDriver.SimulateDay(
+        state,
+        new SettlementLifecycleDriverRequest(
+            Tick: 60_000,
+            FoodResourceKey: "PackagedSurvivalMeal",
+            FoodPerCitizen: 1)
+        {
+            ResolveFactionCollapses = true
+        });
+
+    AssertEqual(1, result.CollapsedFactions);
+    AssertEqual(1, result.DestroyedCollapsedSettlements);
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(empty.Id)!.Status);
+    var ruin = state.Ruins.Single(ruin => ruin.OriginalSettlementId == empty.Id);
+    AssertEqual(90, state.GetOwnedResourceQuantity(ruin.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(empty.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDestroyed));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestLifecycleDriverPrunesInactiveRuins()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("old-town", "Old Town", "Settlers");
+    state.AddResource(settlement.Id, "Steel", 100);
+    var ruin = SettlementLifecycleService.DestroySettlement(
+        state,
+        settlement.Id,
+        tick: 60_000,
+        reason: "destroyed").Ruin;
+    SettlementLifecycleService.ReclaimRuin(state, ruin.Id, "Rebuilders", tick: 120_000);
+
+    var result = SettlementLifecycleDriver.SimulateDay(
+        state,
+        new SettlementLifecycleDriverRequest(
+            Tick: 8 * 60_000,
+            FoodResourceKey: "PackagedSurvivalMeal",
+            FoodPerCitizen: 1,
+            RuinRetentionDays: 5));
+
+    AssertEqual(1, result.RuinsPruned);
+    AssertEqual(null, state.GetRuin(ruin.Id));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RuinPruned));
 }
 
 static void TestWorldWarDevelopActionInvestsInSettlement()
