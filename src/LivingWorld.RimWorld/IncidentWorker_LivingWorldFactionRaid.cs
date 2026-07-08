@@ -86,7 +86,11 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
         }
 
         parms.faction = faction;
-        var cappedPoints = Math.Max(MinimumRaidPoints, preparation.ReservedCombatants * PointsPerCombatant);
+        // A wealthier faction (developed settlements, facilities, silver) fields better-equipped
+        // raiders — more points per reserved combatant — a poorer one weaker ones. Still capped by the
+        // storyteller's budget below, so this shifts raid quality within the budget, never past it.
+        var wealthMultiplier = FactionRaidStrengthService.WealthRaidMultiplier(component.State, faction.def.defName);
+        var cappedPoints = Math.Max(MinimumRaidPoints, preparation.ReservedCombatants * PointsPerCombatant * wealthMultiplier);
         if (cappedPoints < parms.points)
         {
             parms.points = cappedPoints;

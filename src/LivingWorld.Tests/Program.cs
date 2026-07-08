@@ -165,6 +165,7 @@ var tests = new List<(string Name, Action Test)>
     ("player settlement defeat destroys ledger settlement", TestPlayerSettlementDefeatDestroysLedgerSettlement),
     ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
     ("a decided war resolves and rewards the player's ally victory", TestWarResolvesAndRewardsPlayerVictory),
+    ("faction wealth scales the strength of its raids", TestFactionWealthScalesRaidStrength),
     ("daily tick drives war resolution and victory rewards", TestRimWorldWarResolutionAndVictoryWiring),
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
@@ -4605,6 +4606,25 @@ static void TestRimWorldWarResolutionAndVictoryWiring()
     }
 }
 
+// Economy -> live raid strength bridge: a faction wealthier than the world average fields tougher
+// raiders (higher points multiplier), a poorer one weaker, self-calibrating against the average.
+static void TestFactionWealthScalesRaidStrength()
+{
+    var state = new WorldState(4242);
+    state.RecordFactionWealth(new FactionWealthSnapshot("Rich", 15000, 5000, 20000));
+    state.RecordFactionWealth(new FactionWealthSnapshot("Poor", 500, 1500, 2000));
+
+    var rich = FactionRaidStrengthService.WealthRaidMultiplier(state, "Rich");
+    var poor = FactionRaidStrengthService.WealthRaidMultiplier(state, "Poor");
+    AssertEqual(true, rich > poor);
+    AssertEqual(true, rich > 1f);   // above the world average -> tougher
+    AssertEqual(true, poor < 1f);   // below -> weaker
+    AssertEqual(true, rich <= FactionRaidStrengthService.MaxWealthMultiplier + 0.001f);
+    AssertEqual(true, poor >= FactionRaidStrengthService.MinWealthMultiplier - 0.001f);
+    // No wealth data for a faction -> neutral 1.0 (never penalised for a missing snapshot).
+    AssertEqual(1f, FactionRaidStrengthService.WealthRaidMultiplier(state, "Unknown"));
+}
+
 static void TestTrucePreventsNewWarbandsUntilExpired()
 {
     var state = new WorldState(4242);
@@ -5457,6 +5477,8 @@ static void TestRimWorldRaidRoutesThroughPreparation()
     AssertContains("preparation.ArmyId", worker);
     AssertContains("LaunchRaidPreparation", worker);
     AssertContains("Math.Max(storytellerCombatants", worker);
+    // Economy bridge: raid points scale with the faction's ledger wealth.
+    AssertContains("FactionRaidStrengthService.WealthRaidMultiplier", worker);
     // No more ad-hoc reservation in the incident itself.
     AssertDoesNotContain("RaidPopulationAllocator.ReserveForRaid", worker);
 }
