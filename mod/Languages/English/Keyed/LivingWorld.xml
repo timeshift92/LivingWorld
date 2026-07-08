@@ -28,6 +28,9 @@
   <LW_ConflictIntensity_Skirmish>skirmishing</LW_ConflictIntensity_Skirmish>
   <LW_ConflictIntensity_Heavy>heavy</LW_ConflictIntensity_Heavy>
   <LW_ConflictIntensity_Devastating>devastating</LW_ConflictIntensity_Devastating>
+  <LW_ProposeAllianceButton>Ally with {faction} against {enemy}</LW_ProposeAllianceButton>
+  <LW_AllianceFormed>Allied with {faction}. Your attacks on their enemies now earn their gratitude.</LW_AllianceFormed>
+  <LW_AllianceFailed>Could not ally with {faction} right now.</LW_AllianceFailed>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>
   <LW_FoodStatusShortage>food shortage</LW_FoodStatusShortage>

@@ -20,15 +20,14 @@ public static class LivingWorldSettlementDefeatPatch
 {
     public static void Prefix(Settlement factionBase)
     {
-        var map = factionBase?.Map;
-        if (map == null || factionBase.Faction == null)
+        if (factionBase?.Faction == null || factionBase.Map == null)
         {
             return;
         }
 
         // CheckDefeated is called speculatively each relevant tick; only record when the settlement is
         // actually defeated (all defenders down), which is what triggers the vanilla destruction.
-        if (!SettlementDefeatUtility.IsDefeated(map, factionBase.Faction))
+        if (!SettlementDefeatUtility.IsDefeated(factionBase.Map, factionBase.Faction))
         {
             return;
         }
@@ -55,16 +54,23 @@ public static class LivingWorldSettlementDefeatPatch
 
         var conflict = PlayerBelligerenceService.RecordPlayerAttack(
             component.State,
-            factionDefName,
+            factionDefName!,
             defenderLosses,
             ledgerSettlement?.Id,
+            currentTick);
+
+        // Slice 2: any player-allied faction at war with the one that just fell is grateful.
+        var alliesCredited = AllianceService.CreditAlliesOnPlayerAttack(
+            component.State,
+            factionDefName!,
+            AllianceService.DefaultAllyGratitude,
             currentTick);
 
         if (conflict != null && (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message(
                 $"[LivingWorld] player defeated {factionDefName} settlement '{factionBase.LabelCap}'"
-                + $" -> conflict {conflict.Id} (defender losses {defenderLosses}).");
+                + $" -> conflict {conflict.Id} (defender losses {defenderLosses}, allies credited {alliesCredited}).");
         }
     }
 

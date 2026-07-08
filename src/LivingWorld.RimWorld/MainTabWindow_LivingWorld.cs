@@ -45,6 +45,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private List<string> cachedDrifterRows = new();
     private List<string> cachedKnownIntelRows = new();
     private List<string> cachedConflictRows = new();
+    private List<(string AllyFactionId, string EnemyFactionId, string Label)> cachedAllianceOffers = new();
     private List<string> cachedEventRows = new();
 
     public override Vector2 InitialSize => new Vector2(760f, 560f);
@@ -126,6 +127,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedWatcherRows.Count * 26f)
             + 30f
             + (cachedConflictRows.Count * 24f)
+            + (cachedAllianceOffers.Count * 26f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -252,6 +254,24 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 22f), row);
             y += 24f;
+        }
+
+        // Player war participation (Slice 2): propose an alliance against a common enemy. The button is
+        // the player's envoy — clicking it sends a diplomatic overture that, if the faction is at war and
+        // reconcilable, forms the alliance (an Ally-stance relation). Offered only for neutral factions.
+        foreach (var offer in cachedAllianceOffers)
+        {
+            if (Widgets.ButtonText(new Rect(0f, y, viewRect.width, 24f), offer.Label))
+            {
+                var result = AllianceService.FormAlliance(
+                    component.State, offer.AllyFactionId, Find.TickManager?.TicksGame ?? 0);
+                lastActionResult = (result.Status == AllianceFormStatus.Formed
+                    ? "LW_AllianceFormed".Translate(ResolveFactionName(offer.AllyFactionId).Named("faction"))
+                    : "LW_AllianceFailed".Translate(ResolveFactionName(offer.AllyFactionId).Named("faction"))).ToString();
+                RefreshCachedRows(state);
+            }
+
+            y += 26f;
         }
 
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_EventsHeader".Translate());
@@ -533,6 +553,54 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     conflict.RefugeesCreated.Named("displaced")).ToString();
             })
             .ToList();
+
+        // Alliance offers (Slice 2): for each ongoing war the player is not part of, offer to ally with a
+        // neutral participant against the other. Deduped per prospective ally, capped like the war rows.
+        cachedAllianceOffers = new List<(string AllyFactionId, string EnemyFactionId, string Label)>();
+        var playerId = state.PlayerFactionId;
+        if (!string.IsNullOrEmpty(playerId))
+        {
+            var offered = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var conflict in state.Conflicts
+                .Where(conflict => conflict.Status == WorldConflictStatus.Active
+                    && !conflict.Involves(playerId!))
+                .OrderByDescending(conflict => conflict.WarExhaustionA + conflict.WarExhaustionB)
+                .ThenBy(conflict => conflict.Id.Value))
+            {
+                TryAddAllianceOffer(state, playerId!, conflict.FactionA, conflict.FactionB, offered);
+                TryAddAllianceOffer(state, playerId!, conflict.FactionB, conflict.FactionA, offered);
+                if (cachedAllianceOffers.Count >= MaxWarRows)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Offer an alliance with a neutral, not-yet-allied faction against its current enemy. Irreconcilable
+    // and hostile factions are Hostile stance and excluded; already-allied factions are excluded too.
+    private void TryAddAllianceOffer(
+        WorldState state,
+        string playerId,
+        string allyFactionId,
+        string enemyFactionId,
+        System.Collections.Generic.HashSet<string> offered)
+    {
+        if (string.Equals(allyFactionId, playerId, System.StringComparison.Ordinal)
+            || offered.Contains(allyFactionId)
+            || AllianceService.IsAlliedWithPlayer(state, allyFactionId)
+            || DiplomacyService.GetStance(state, playerId, allyFactionId) != RelationStance.Neutral)
+        {
+            return;
+        }
+
+        offered.Add(allyFactionId);
+        cachedAllianceOffers.Add((
+            allyFactionId,
+            enemyFactionId,
+            "LW_ProposeAllianceButton".Translate(
+                ResolveFactionName(allyFactionId).Named("faction"),
+                ResolveFactionName(enemyFactionId).Named("enemy")).ToString()));
     }
 
     // Resolve a ledger faction id (a RimWorld faction defName) to its display name so the conflict

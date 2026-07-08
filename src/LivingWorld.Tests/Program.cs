@@ -157,6 +157,7 @@ var tests = new List<(string Name, Action Test)>
     ("repeated losses increase faction war exhaustion", TestRepeatedLossesIncreaseFactionWarExhaustion),
     ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
     ("player attack registers the player as a war belligerent", TestPlayerBelligerenceRecordsPlayerAttack),
+    ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
@@ -4252,6 +4253,35 @@ static void TestPlayerBelligerenceRecordsPlayerAttack()
     AssertEqual(true, PlayerBelligerenceService.RecordPlayerAttack(state, "PlayerFaction", 5, null, 1) is null);
 }
 
+// Slice 2 of player war participation: an alliance (modelled as an Ally-stance goodwill relation,
+// no new save state) forms only when the ally is at war, and defeating the ally's enemy earns
+// the ally's gratitude.
+static void TestAllianceFormsAndCreditsOnPlayerAttack()
+{
+    var state = new WorldState(4242);
+    state.SetPlayerFactionId("Player");
+    state.CreateSettlement("ally-town", "Ally Town", "Settlers");
+    state.CreateSettlement("enemy-town", "Enemy Town", "Raiders");
+
+    // An ally that is not at war cannot be allied with.
+    AssertEqual(AllianceFormStatus.AllyNotAtWar, AllianceService.FormAlliance(state, "Settlers", 100).Status);
+
+    // Put the prospective ally at war with the enemy, then the alliance forms and reaches Ally stance.
+    ConflictService.GetOrCreateConflict(state, "Settlers", "Raiders", 100);
+    AssertEqual(AllianceFormStatus.Formed, AllianceService.FormAlliance(state, "Settlers", 200).Status);
+    AssertEqual(true, AllianceService.IsAlliedWithPlayer(state, "Settlers"));
+    AssertEqual(RelationStance.Ally, DiplomacyService.GetStance(state, "Player", "Settlers"));
+
+    // Defeating the enemy earns the at-war ally's gratitude (goodwill toward the player).
+    var before = DiplomacyService.GetGoodwill(state, "Player", "Settlers");
+    var credited = AllianceService.CreditAlliesOnPlayerAttack(state, "Raiders", AllianceService.DefaultAllyGratitude, 300);
+    AssertEqual(1, credited);
+    AssertEqual(before + AllianceService.DefaultAllyGratitude, DiplomacyService.GetGoodwill(state, "Player", "Settlers"));
+
+    // The player cannot ally with itself.
+    AssertEqual(AllianceFormStatus.AllyIsPlayer, AllianceService.FormAlliance(state, "Player", 400).Status);
+}
+
 static void TestTrucePreventsNewWarbandsUntilExpired()
 {
     var state = new WorldState(4242);
@@ -5388,6 +5418,10 @@ static void TestRimWorldWorldConflictsSection()
     // Faction names are resolved to display labels (not raw defNames), matching the war letter.
     AssertContains("ResolveFactionName(conflict.FactionA)", mainTab);
     AssertContains("ResolveFactionName(conflict.FactionB)", mainTab);
+    // Slice 2: alliance-offer buttons let the player join a war, forming an alliance via AllianceService.
+    AssertContains("cachedAllianceOffers", mainTab);
+    AssertContains("AllianceService.FormAlliance", mainTab);
+    AssertContains("TryAddAllianceOffer", mainTab);
 
     var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -5396,6 +5430,7 @@ static void TestRimWorldWorldConflictsSection()
         "LW_WorldConflictsHeader", "LW_WorldConflictLine",
         "LW_ConflictStatus_Active", "LW_ConflictStatus_Truce",
         "LW_ConflictIntensity_Skirmish", "LW_ConflictIntensity_Devastating",
+        "LW_ProposeAllianceButton", "LW_AllianceFormed", "LW_AllianceFailed",
     })
     {
         AssertContains($"<{key}>", en);
@@ -6201,6 +6236,8 @@ static void TestRimWorldPlayerAttackRegistersConflict()
     // Only records on an actual defeat, resolved to the ledger settlement, and never returns false.
     AssertContains("SettlementDefeatUtility.IsDefeated", patch);
     AssertContains("PlayerBelligerenceService.RecordPlayerAttack", patch);
+    // Slice 2: the same defeat credits any player-allied faction at war with the defeated one.
+    AssertContains("AllianceService.CreditAlliesOnPlayerAttack", patch);
     AssertDoesNotContain("return false", patch);
 }
 
