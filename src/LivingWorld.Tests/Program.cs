@@ -24,6 +24,7 @@ var tests = new List<(string Name, Action Test)>
     ("seeds animal cohorts from settlement environment", TestAnimalEcologyDriverSeedsFromSettlementEnvironment),
     ("animal ecology driver is idempotent and feeds domesticated cohorts", TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts),
     ("animal production converts herds and hunting into food", TestAnimalProductionConvertsHerdsAndHuntingIntoFood),
+    ("animal map materialization withdraws and returns cohort animals", TestAnimalMapMaterializationWithdrawsAndReturnsCohortAnimals),
     ("migrates animal cohorts without duplicating population", TestAnimalCohortMigrationConservesPopulation),
     ("serializes animal cohorts", TestAnimalCohortSerialization),
     ("animal selection projects improve cohorts over time", TestAnimalSelectionProjectsImproveCohorts),
@@ -830,6 +831,46 @@ static void TestAnimalProductionConvertsHerdsAndHuntingIntoFood()
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalProductsHarvested));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalHunted));
     AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalMapMaterializationWithdrawsAndReturnsCohortAnimals()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlanders");
+    var muffalo = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 8,
+        healthPercent: 90,
+        fertilityPercent: 70,
+        carryingCapacity: 16,
+        tick: 0);
+    var deer = state.CreateAnimalCohort(
+        settlement.Id,
+        "Deer",
+        AnimalCohortType.Wild,
+        count: 12,
+        healthPercent: 80,
+        fertilityPercent: 60,
+        carryingCapacity: 20,
+        tick: 0);
+
+    var result = AnimalMapMaterializationService.WithdrawForSettlementMap(
+        state,
+        new AnimalMapMaterializationRequest(settlement.Id, MaxAnimals: 5, Tick: 60_000, PurposeKey: "map:ranch:1"));
+
+    AssertEqual(AnimalMapMaterializationStatus.Success, result.Status);
+    AssertEqual(1, result.Animals.Count);
+    AssertEqual(muffalo.Id, result.Animals[0].CohortId);
+    AssertEqual(5, result.Animals[0].Count);
+    AssertEqual(3, state.GetAnimalCohort(muffalo.Id)!.Count);
+    AssertEqual(12, state.GetAnimalCohort(deer.Id)!.Count);
+
+    var returned = AnimalMapMaterializationService.ReturnToCohorts(state, result.Animals, 61_000, "spawn failed");
+
+    AssertEqual(5, returned);
+    AssertEqual(8, state.GetAnimalCohort(muffalo.Id)!.Count);
 }
 
 static void TestAnimalCohortMigrationConservesPopulation()
@@ -6660,6 +6701,10 @@ static void TestRimWorldSettlementMapMaterialization()
     AssertContains("GenSpawn.Spawn", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
     AssertContains("settlement map resource spawned", service);
+    AssertContains("AnimalMapMaterializationService.WithdrawForSettlementMap", service);
+    AssertContains("PawnKindDef.Named(animalKind)", service);
+    AssertContains("PawnGenerator.GeneratePawn", service);
+    AssertContains("AnimalMapMaterializationService.ReturnToCohorts", service);
     AssertContains("SettlementMaterializationService.AbortDefense", service);
     AssertContains("IsInitialWorldSeedingActive", service);
 }

@@ -146,13 +146,16 @@ first real-map settlement materialization slice after vanilla map generation:
    settlement ledger.
 
 This is deliberately not a full settlement generator yet. It does not build a
-custom town layout, materialize facilities as buildings, spawn animal cohorts,
-or reconcile every individual looted stack back from the map. The important
-contract is already real: defenders are concrete ledger citizens, and spawned
-loot is removed from the settlement ledger before the player can take it. If
-the player later defeats the settlement, the existing defeat bridge destroys
-the matched ledger settlement and only the remaining ledger-owned resources
-move into the ruin.
+custom town layout, materialize facilities as buildings, or reconcile every
+individual looted stack back from the map. The important contract is already
+real: defenders are concrete ledger citizens, spawned loot is removed from the
+settlement ledger before the player can take it, and a small bounded sample of
+settlement animals is withdrawn from ledger cohorts before spawning on the map.
+If an animal pawn cannot be spawned, that count is returned to its cohort.
+Spawned animals are not yet individually identity-tracked; they are treated as
+leaving ledger control when the map materializes. If the player later defeats
+the settlement, the existing defeat bridge destroys the matched ledger
+settlement and only the remaining ledger-owned resources move into the ruin.
 
 ### Dematerialization
 
@@ -340,9 +343,13 @@ handlers/lab specialists и реальные feed/medicine/components. Прое�
 создают pawns: они улучшают ledger cohort или добавляют новый ledger cohort.
 
 Wildlife spawn на карте должен выбирать существующих животных из regional pool.
-Полная materialization животных на временной карте является отдельным слоем:
-карта берёт животных из ledger cohort, а результат охоты/смерти/ухода
-возвращается обратно в ledger.
+Первый слой settlement-map animal materialization уже делает это для атакуемых
+NPC-поселений: `AnimalMapMaterializationService.WithdrawForSettlementMap`
+уменьшает существующие `WorldAnimalCohort`, RimWorld-слой создаёт реальные
+animal pawns через `PawnKindDef`/`PawnGenerator`, а failed spawn возвращается
+через `ReturnToCohorts`. Полная per-animal identity/materialization остаётся
+следующим слоем: тогда смерть, охота, приручение или уход конкретной животной
+пешки будут возвращаться обратно в ledger, а не списываться upfront.
 
 Если волков стало больше:
 

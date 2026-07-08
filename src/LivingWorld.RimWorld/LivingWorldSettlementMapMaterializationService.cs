@@ -11,6 +11,7 @@ namespace LivingWorld.RimWorld;
 public static class LivingWorldSettlementMapMaterializationService
 {
     private const int DefenseLeaseLifetimeTicks = 60_000 * 5;
+    private const int MaxMapAnimals = 6;
 
     public static int MaterializeSettlementMap(Map map, MapParent parent)
     {
@@ -79,12 +80,14 @@ public static class LivingWorldSettlementMapMaterializationService
 
         ReleaseUnboundLeases(component.State, prepared.DefenderLeases);
         SpawnReservedResources(component.State, map, prepared);
+        var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
 
         if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message(
                 $"[LivingWorld] materialized settlement map '{settlement.LabelCap}'"
-                + $" with {bound} ledger defender(s) and {prepared.Resources.Sum(resource => resource.Quantity)} resource unit(s).");
+                + $" with {bound} ledger defender(s), {animalCount} animal(s),"
+                + $" and {prepared.Resources.Sum(resource => resource.Quantity)} resource unit(s).");
         }
 
         return bound;
@@ -222,6 +225,87 @@ public static class LivingWorldSettlementMapMaterializationService
         }
 
         return spawned;
+    }
+
+    private static int SpawnSettlementAnimals(
+        WorldState state,
+        Map map,
+        EntityId settlementId,
+        Faction faction,
+        string purposeKey)
+    {
+        var withdrawn = AnimalMapMaterializationService.WithdrawForSettlementMap(
+            state,
+            new AnimalMapMaterializationRequest(
+                settlementId,
+                MaxMapAnimals,
+                Find.TickManager?.TicksGame ?? state.CurrentTick,
+                purposeKey));
+        if (withdrawn.Status != AnimalMapMaterializationStatus.Success)
+        {
+            return 0;
+        }
+
+        var spawned = 0;
+        var failed = new List<MaterializedAnimalStack>();
+        foreach (var animal in withdrawn.Animals)
+        {
+            var failedCount = 0;
+            for (var i = 0; i < animal.Count; i++)
+            {
+                if (TrySpawnAnimal(map, faction, animal.AnimalKind))
+                {
+                    spawned++;
+                }
+                else
+                {
+                    failedCount++;
+                }
+            }
+
+            if (failedCount > 0)
+            {
+                failed.Add(animal with { Count = failedCount });
+            }
+        }
+
+        if (failed.Count > 0)
+        {
+            AnimalMapMaterializationService.ReturnToCohorts(
+                state,
+                failed,
+                Find.TickManager?.TicksGame ?? state.CurrentTick,
+                "settlement map animal spawn failed");
+        }
+
+        return spawned;
+    }
+
+    private static bool TrySpawnAnimal(Map map, Faction faction, string animalKind)
+    {
+        if (!TryFindSpawnCell(map, out var cell))
+        {
+            return false;
+        }
+
+        PawnKindDef pawnKind;
+        try
+        {
+            pawnKind = PawnKindDef.Named(animalKind);
+        }
+        catch
+        {
+            return false;
+        }
+
+        var request = new PawnGenerationRequest(
+            pawnKind,
+            faction,
+            PawnGenerationContext.NonPlayer,
+            forceGenerateNewPawn: true);
+        var pawn = PawnGenerator.GeneratePawn(request);
+        GenSpawn.Spawn(pawn, cell, map);
+        return true;
     }
 
     private static bool TryFindSpawnCell(Map map, out IntVec3 cell)
