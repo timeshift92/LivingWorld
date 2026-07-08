@@ -62,6 +62,23 @@ public static class WorldStateCodec
                             new XAttribute("arrivalTick", caravan.ArrivalTick),
                             new XAttribute("status", caravan.Status)))),
                 new XElement(
+                    "Missions",
+                    snapshot.Missions.Select(mission =>
+                        new XElement(
+                            "Mission",
+                            IdAttributes(mission.Id),
+                            new XAttribute("missionKind", mission.Kind),
+                            new XAttribute("factionId", mission.FactionId),
+                            new XAttribute("originSettlementKind", mission.OriginSettlementId.Kind),
+                            new XAttribute("originSettlementId", mission.OriginSettlementId.Value),
+                            new XAttribute("targetSettlementKind", mission.TargetSettlementId.Kind),
+                            new XAttribute("targetSettlementId", mission.TargetSettlementId.Value),
+                            new XAttribute("departTick", mission.DepartTick),
+                            new XAttribute("arrivalTick", mission.ArrivalTick),
+                            new XAttribute("status", mission.Status),
+                            new XAttribute("targetFactionId", mission.TargetFactionId),
+                            new XAttribute("amount", mission.Amount)))),
+                new XElement(
                     "MigrationGroups",
                     snapshot.MigrationGroups.Select(group =>
                         new XElement(
@@ -467,6 +484,22 @@ public static class WorldStateCodec
                     RequiredInt(element, "departTick"),
                     RequiredInt(element, "arrivalTick"),
                     RequiredEnum<CaravanStatus>(element, "status")))
+                .ToList(),
+            Missions = OptionalContainer(root, "Missions")
+                .Elements("Mission")
+                .Select(element => new WorldMission(
+                    ReadId(element),
+                    RequiredEnum<WorldMissionKind>(element, "missionKind"),
+                    RequiredString(element, "factionId"),
+                    ReadEntityId(element, "originSettlementKind", "originSettlementId"),
+                    ReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
+                    RequiredInt(element, "departTick"),
+                    RequiredInt(element, "arrivalTick"),
+                    RequiredEnum<WorldMissionStatus>(element, "status"))
+                {
+                    TargetFactionId = OptionalString(element, "targetFactionId") ?? string.Empty,
+                    Amount = OptionalInt(element, "amount", 0),
+                })
                 .ToList()
         };
 

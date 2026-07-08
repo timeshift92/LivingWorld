@@ -37,4 +37,7 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<WorldCaravan> Caravans { get; init; } =
         Array.Empty<WorldCaravan>();
+
+    public IReadOnlyList<WorldMission> Missions { get; init; } =
+        Array.Empty<WorldMission>();
 }

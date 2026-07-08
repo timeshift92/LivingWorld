@@ -6,6 +6,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldSettlement> _settlements = new();
     private readonly Dictionary<EntityId, WorldArmy> _armies = new();
     private readonly Dictionary<EntityId, WorldCaravan> _caravans = new();
+    private readonly Dictionary<EntityId, WorldMission> _missions = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -53,6 +54,7 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldArmy> Armies => _armies.Values;
 
     public IReadOnlyCollection<WorldCaravan> Caravans => _caravans.Values;
+    public IReadOnlyCollection<WorldMission> Missions => _missions.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -189,6 +191,9 @@ public sealed class WorldState
                 .ToList(),
             Caravans = _caravans.Values
                 .OrderBy(caravan => caravan.Id.Value)
+                .ToList(),
+            Missions = _missions.Values
+                .OrderBy(mission => mission.Id.Value)
                 .ToList()
         };
     }
@@ -229,6 +234,12 @@ public sealed class WorldState
         {
             state._caravans.Add(caravan.Id, caravan);
             state.ReserveExistingId(caravan.Id);
+        }
+
+        foreach (var mission in snapshot.Missions)
+        {
+            state._missions.Add(mission.Id, mission);
+            state.ReserveExistingId(mission.Id);
         }
 
         foreach (var group in snapshot.MigrationGroups)
@@ -584,6 +595,68 @@ public sealed class WorldState
     {
         _owners.Remove(caravanId);
         return _caravans.Remove(caravanId);
+    }
+
+    public WorldMission DispatchMission(
+        WorldMissionKind kind,
+        string factionId,
+        EntityId originSettlementId,
+        EntityId targetSettlementId,
+        int departTick,
+        int arrivalTick,
+        string targetFactionId = "",
+        int amount = 0)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+
+        if (!_settlements.ContainsKey(originSettlementId))
+        {
+            throw new InvalidOperationException($"Origin settlement {originSettlementId} does not exist.");
+        }
+
+        if (!_settlements.ContainsKey(targetSettlementId))
+        {
+            throw new InvalidOperationException($"Target settlement {targetSettlementId} does not exist.");
+        }
+
+        var mission = new WorldMission(
+            NextId(EntityKind.Mission),
+            kind,
+            factionId,
+            originSettlementId,
+            targetSettlementId,
+            Math.Max(0, departTick),
+            Math.Max(departTick, arrivalTick),
+            WorldMissionStatus.Traveling)
+        {
+            TargetFactionId = targetFactionId ?? string.Empty,
+            Amount = amount,
+        };
+
+        _missions.Add(mission.Id, mission);
+        return mission;
+    }
+
+    public WorldMission? GetMission(EntityId missionId)
+    {
+        return _missions.TryGetValue(missionId, out var mission) ? mission : null;
+    }
+
+    public WorldMission SetMissionStatus(EntityId missionId, WorldMissionStatus status)
+    {
+        if (!_missions.TryGetValue(missionId, out var mission))
+        {
+            throw new InvalidOperationException($"Mission {missionId} does not exist.");
+        }
+
+        var updated = mission with { Status = status };
+        _missions[missionId] = updated;
+        return updated;
+    }
+
+    internal bool RemoveMissionForLedger(EntityId missionId)
+    {
+        return _missions.Remove(missionId);
     }
 
     public WorldCitizen MarkCitizenDead(EntityId citizenId, string reason)

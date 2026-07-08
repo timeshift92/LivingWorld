@@ -128,6 +128,7 @@ var tests = new List<(string Name, Action Test)>
     ("persistent caravan preserves cargo through save load", TestPersistentCaravanSerialization),
     ("destroying a persistent caravan removes its cargo", TestDestroyPersistentCaravanRemovesCargo),
     ("prunes terminal caravans after the retention window", TestCaravanPruneRemovesTerminalCaravans),
+    ("world mission survives save load and arrives", TestWorldMissionSurvivesSaveLoadAndArrives),
     ("persistent caravan still delivers after load", TestPersistentCaravanArrivesAfterLoad),
     ("derived aggregates track capture and expansion", TestDerivedAggregatesTrackCaptureAndExpansion),
     ("migrates the drifter reservoir for legacy saves", TestRimWorldDrifterReservoirLegacyMigration),
@@ -3144,6 +3145,28 @@ static void TestRimWorldDrifterReservoirLegacyMigration()
     AssertContains("migratedDrifterReservoir = true", component);
 }
 
+static void TestWorldMissionSurvivesSaveLoadAndArrives()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("a", "A", "Scouts");
+    var target = state.CreateSettlement("b", "B", "Settlers");
+    var mission = state.DispatchMission(WorldMissionKind.Scout, "Scouts", scouts.Id, target.Id, 0, 60_000, amount: 100);
+
+    // An in-flight mission round-trips through save/load...
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredMission = restored.GetMission(mission.Id)!;
+    AssertEqual(WorldMissionKind.Scout, restoredMission.Kind);
+    AssertEqual(WorldMissionStatus.Traveling, restoredMission.Status);
+    AssertEqual(scouts.Id, restoredMission.OriginSettlementId);
+    AssertEqual(target.Id, restoredMission.TargetSettlementId);
+    AssertEqual(100, restoredMission.Amount);
+
+    // ...and still arrives and applies its effect (and is removed) after load.
+    WorldMissionService.SimulateDay(restored, new WorldMissionRequest(60_000));
+    AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(target.Id)!.SourceKind);
+    AssertEqual(0, restored.Missions.Count);
+}
+
 static void TestPersistentCaravanArrivesAfterLoad()
 {
     var state = new WorldState(4242);
@@ -3247,7 +3270,13 @@ static void TestWorldWarScoutingRecordsIntel()
 
     state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
 
+    // Day 1: the scouting party is dispatched and travels — no intel yet, a scout mission is in flight.
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(0, state.IntelReports.Count(report => report.SourceKind == IntelSourceKind.Scout));
+    AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Scout));
+
+    // Day 2: the party arrives and records intel about the target.
+    WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
 
     var known = state.GetKnownSettlementInfo(village.Id)!;
     AssertEqual(IntelSourceKind.Scout, known.SourceKind);
@@ -3268,8 +3297,13 @@ static void TestWorldWarDiplomatChangesGoodwill()
     state.CreateSettlement("neighbor", "Neighbor", "Neighbors");
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
 
+    // Day 1: the diplomatic mission is dispatched and travels — goodwill unchanged in transit.
     WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(0, DiplomacyService.GetGoodwill(state, "Envoys", "Neighbors"));
+    AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Diplomat));
 
+    // Day 2: the mission arrives and improves relations.
+    WorldWarService.SimulateDay(state, new WorldWarRequest(5 * 60_000, TravelDays: 1, RaidCombatants: 3));
     AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", "Neighbors"));
 }
 
@@ -3311,6 +3345,10 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
     WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
+
+    // Let the in-flight scout and diplomat missions arrive before saving (they apply on arrival now).
+    state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(6 * 60_000, TravelDays: 1, RaidCombatants: 3));
 
     var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
 
@@ -4445,11 +4483,18 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("CaravanStatus.Traveling", component);
     AssertContains("World/LivingWorld_Warband", component);
     AssertContains("World/LivingWorld_Trader", component);
+    // Scout and diplomat missions are rendered too, each with its own icon.
+    AssertContains("State.Missions", component);
+    AssertContains("WorldMissionStatus.Traveling", component);
+    AssertContains("World/LivingWorld_Scout", component);
+    AssertContains("World/LivingWorld_Diplomat", component);
     // Off when the war is disabled or Rim War is driving factions.
     AssertContains("settings.worldWarEnabled && !RimWarIsActive", component);
 
-    // Both icons ship with the mod.
+    // All action icons ship with the mod.
     AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Trader.png"));
+    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Scout.png"));
+    AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Diplomat.png"));
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));

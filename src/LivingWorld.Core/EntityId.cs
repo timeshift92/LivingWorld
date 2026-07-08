@@ -11,7 +11,8 @@ public enum EntityKind
     IntelReport,
     RaidOpportunity,
     Drifter,
-    Caravan
+    Caravan,
+    Mission
 }
 
 public readonly record struct EntityId(EntityKind Kind, long Value)

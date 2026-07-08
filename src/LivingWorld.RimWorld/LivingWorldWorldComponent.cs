@@ -371,6 +371,33 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     caravan.DepartTick,
                     caravan.ArrivalTick);
             }
+
+            // Scout / diplomat missions travelling to a target settlement.
+            foreach (var mission in State.Missions)
+            {
+                if (mission.Status != WorldMissionStatus.Traveling)
+                {
+                    continue;
+                }
+
+                var texture = mission.Kind == WorldMissionKind.Scout
+                    ? "World/LivingWorld_Scout"
+                    : "World/LivingWorld_Diplomat";
+                var kindKey = mission.Kind == WorldMissionKind.Scout
+                    ? "LW_MissionKind_Scout"
+                    : "LW_MissionKind_Diplomat";
+
+                EnsureMissionMarker(
+                    worldObjects, markerDef, existing, live,
+                    $"mission:{mission.Id.Value}",
+                    texture,
+                    kindKey.Translate(),
+                    mission.FactionId,
+                    mission.OriginSettlementId,
+                    mission.TargetSettlementId,
+                    mission.DepartTick,
+                    mission.ArrivalTick);
+            }
         }
 
         foreach (var pair in existing)

@@ -1,8 +1,13 @@
+using System;
+using System.Linq;
+
 namespace LivingWorld.Core;
 
 internal static class ScoutingActionExecutor
 {
-    public static bool Execute(WorldState state, string factionId)
+    private const int ScoutIntelValue = 100;
+
+    public static bool Execute(WorldState state, string factionId, WorldWarRequest request)
     {
         var source = WorldWarTargetSelector.FindReadySourceSettlement(state, factionId);
         var target = WorldWarTargetSelector.FindScoutingTarget(state, factionId);
@@ -11,9 +16,24 @@ internal static class ScoutingActionExecutor
             return false;
         }
 
-        var summary = $"Scouts from {source.Id} surveyed {target.Id}.";
-        state.RecordIntelReport(IntelSourceKind.Scout, factionId, valueScore: 100, summary);
-        PlayerKnowledgeService.RecordScoutSettlementInfo(state, target.Id, summary);
+        // One scouting party per faction in transit at a time — do not stack new ones each day.
+        if (state.Missions.Any(mission =>
+            mission.Status == WorldMissionStatus.Traveling
+            && mission.Kind == WorldMissionKind.Scout
+            && string.Equals(mission.FactionId, factionId, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
+        state.DispatchMission(
+            WorldMissionKind.Scout,
+            factionId,
+            source.Id,
+            target.Id,
+            request.Tick,
+            arrivalTick,
+            amount: ScoutIntelValue);
         return true;
     }
 }

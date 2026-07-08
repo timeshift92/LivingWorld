@@ -45,13 +45,13 @@ internal static class WorldWarActionDispatcher
                     }
                     break;
                 case WarAction.ScoutingParty:
-                    if (ScoutingActionExecutor.Execute(state, plan.FactionId))
+                    if (ScoutingActionExecutor.Execute(state, plan.FactionId, request))
                     {
                         scoutingReports++;
                     }
                     break;
                 case WarAction.Diplomat:
-                    if (DiplomacyActionExecutor.Execute(state, plan.FactionId, request.DiplomatGoodwill))
+                    if (DiplomacyActionExecutor.Execute(state, plan.FactionId, request))
                     {
                         diplomaticMissions++;
                     }
