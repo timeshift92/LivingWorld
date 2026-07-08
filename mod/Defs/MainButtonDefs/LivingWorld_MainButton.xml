@@ -5,6 +5,7 @@
     <label>Living World</label>
     <description>Inspect the global Living World ledger.</description>
     <tabWindowClass>LivingWorld.RimWorld.MainTabWindow_LivingWorld</tabWindowClass>
+    <iconPath>UI/LivingWorld_MainButton</iconPath>
     <order>72</order>
   </MainButtonDef>
 </Defs>

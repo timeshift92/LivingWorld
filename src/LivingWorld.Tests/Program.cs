@@ -3615,6 +3615,10 @@ static void TestRimWorldMainButtonDef()
     AssertContains("<defName>LivingWorld_Main</defName>", defXml);
     AssertContains("<label>Living World</label>", defXml);
     AssertContains("<tabWindowClass>LivingWorld.RimWorld.MainTabWindow_LivingWorld</tabWindowClass>", defXml);
+    // The button carries a globe icon; the referenced texture must ship with the mod.
+    AssertContains("<iconPath>UI/LivingWorld_MainButton</iconPath>", defXml);
+    AssertFileExists(Path.Combine(
+        FindRepoRoot(), "mod", "Textures", "UI", "LivingWorld_MainButton.png"));
 }
 
 static void TestRimWorldHarmonyDependency()
