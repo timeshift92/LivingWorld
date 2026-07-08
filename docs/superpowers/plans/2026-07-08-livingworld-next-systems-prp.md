@@ -8,6 +8,10 @@
 
 **Tech Stack:** C#/.NET, RimWorld 1.6, Verse/RimWorld APIs, Harmony only for thin adapters, XML Defs, keyed EN/RU localization, deterministic Core services, custom test runner in `src/LivingWorld.Tests/Program.cs`.
 
+> **Status tracking:** this PRP is the *strategy*. Per-task ownership and live status are tracked on
+> the [Task Board](2026-07-08-next-systems-task-board.md). Recommended start: the "Why did this raid
+> happen to me?" milestone slice on the board (player-first vertical), not all ten systems at once.
+
 ---
 
 ## Current Baseline

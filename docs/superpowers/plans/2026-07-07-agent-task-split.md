@@ -8,6 +8,13 @@
 
 **Tech Stack:** C#/.NET, RimWorld 1.6, Harmony, Verse/RimWorld APIs, XML Defs, RimWorld keyed localization, custom test runner in `src/LivingWorld.Tests/Program.cs`.
 
+> **Scope note:** this file is the *previous* milestone's coordination + review record (its task
+> statuses below remain the source of truth for shipped work). The **next** milestone — the
+> cause→effect world loop — is planned in
+> [`2026-07-08-livingworld-next-systems-prp.md`](2026-07-08-livingworld-next-systems-prp.md)
+> (strategy) and tracked on [`2026-07-08-next-systems-task-board.md`](2026-07-08-next-systems-task-board.md)
+> (per-task ownership + status). Backlog items here (settlement depth, EMP2, scale) fold into that PRP's systems.
+
 ---
 
 ## Existing Plans
