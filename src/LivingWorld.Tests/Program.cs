@@ -224,6 +224,7 @@ var tests = new List<(string Name, Action Test)>
     ("reports detailed world object bootstrap diagnostics", TestRimWorldDetailedBootstrapDiagnostics),
     ("wires Living World state into RimWorld saves", TestRimWorldWorldComponentPersistsLedger),
     ("defines English and Russian keyed translations", TestRimWorldKeyedTranslations),
+    ("keeps English and Russian keyed translations in parity", TestKeyedLanguageParity),
     ("keeps Odyssey Russian faction namer grammar valid", TestRimWorldRussianOdysseyRulePackOverride),
     ("uses translations in RimWorld UI", TestRimWorldUiUsesTranslations),
     ("defines the drifter arrival incident def", TestRimWorldDrifterArrivalIncidentDef),
@@ -4366,6 +4367,66 @@ static void TestRimWorldWatchersSection()
     AssertContains("<LW_IntelBand_Extreme>", ru);
 }
 
+// P1-R4: lock the whole EN/RU keyed set in parity so a key added to one language (or a key
+// referenced by RimWorld code with no translation) fails the build instead of silently rendering
+// the raw key to the player. Spot-check tests above cover specific keys; this covers the rest.
+static void TestKeyedLanguageParity()
+{
+    var root = FindRepoRoot();
+    var enXml = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ruXml = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+
+    var en = ExtractKeyedElementNames(enXml);
+    var ru = ExtractKeyedElementNames(ruXml);
+
+    var missingInRu = en.Except(ru).OrderBy(k => k, StringComparer.Ordinal).ToList();
+    var missingInEn = ru.Except(en).OrderBy(k => k, StringComparer.Ordinal).ToList();
+    if (missingInRu.Count > 0 || missingInEn.Count > 0)
+    {
+        throw new InvalidOperationException(
+            "EN/RU keyed translations are out of parity. "
+            + $"Missing in Russian: [{string.Join(", ", missingInRu)}]. "
+            + $"Missing in English: [{string.Join(", ", missingInEn)}].");
+    }
+
+    // Sanity floor: the P1 raid cause-chain keys the milestone slice depends on must exist so this
+    // test fails if the whole warning/consequence/watchers block is ever dropped from both files.
+    foreach (var key in new[]
+    {
+        "LW_RaidWarningLetterLabel", "LW_RaidWarningLetterText",
+        "LW_RaidWarningSource_Scout", "LW_RaidWarningSource_Trade",
+        "LW_RaidWarningSource_Rumor", "LW_RaidWarningSource_Prisoner",
+        "LW_RaidWarningSource_Survivor", "LW_RaidWarningSource_Refugee",
+        "LW_RaidWarningSource_DirectVisit", "LW_RaidWarningSource_Public",
+        "LW_RaidConsequenceLetterLabel", "LW_RaidConsequenceLetterText",
+        "LW_WatchersHeader", "LW_WatcherLine",
+        "LW_IntelBand_Extreme", "LW_IntelBand_High", "LW_IntelBand_Moderate", "LW_IntelBand_Low",
+    })
+    {
+        if (!en.Contains(key))
+        {
+            throw new InvalidOperationException($"Expected English keyed translation '<{key}>' to exist.");
+        }
+    }
+
+    // Every LW_ key referenced by a whole string literal in the RimWorld source must have a
+    // translation; otherwise RimWorld renders the raw key. Concatenation prefixes (a literal ending
+    // in '_', joined with a computed suffix) are skipped — they are not complete keys.
+    var sourceDir = Path.Combine(root, "src", "LivingWorld.RimWorld");
+    foreach (var file in Directory.GetFiles(sourceDir, "*.cs"))
+    {
+        var text = File.ReadAllText(file);
+        foreach (var key in ExtractSourceKeyLiterals(text))
+        {
+            if (!en.Contains(key))
+            {
+                throw new InvalidOperationException(
+                    $"Source '{Path.GetFileName(file)}' references key '{key}' with no keyed translation.");
+            }
+        }
+    }
+}
+
 static void TestRimWorldWorldEconomyMainTab()
 {
     var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
@@ -6124,6 +6185,71 @@ static void AssertContains(string expected, string actual)
     {
         throw new InvalidOperationException($"Expected content to contain '{expected}'.");
     }
+}
+
+// Collect the opening-tag names of every <LW_...> element in a Keyed XML file. Closing tags
+// ("</LW_...") never match because the search prefix is "<LW_". No regex: implicit usings do not
+// import System.Text.RegularExpressions.
+static HashSet<string> ExtractKeyedElementNames(string xml)
+{
+    var names = new HashSet<string>(StringComparer.Ordinal);
+    var i = 0;
+    while (true)
+    {
+        var open = xml.IndexOf("<LW_", i, StringComparison.Ordinal);
+        if (open < 0)
+        {
+            break;
+        }
+
+        var close = xml.IndexOf('>', open);
+        if (close < 0)
+        {
+            break;
+        }
+
+        var tag = xml.Substring(open + 1, close - open - 1);
+        i = close + 1;
+        if (tag.IndexOf(' ') < 0 && tag.IndexOf('/') < 0)
+        {
+            names.Add(tag);
+        }
+    }
+
+    return names;
+}
+
+// Collect the LW_ keys that appear as whole "LW_..." string literals in a C# source file. A literal
+// that ends in '_' is a concatenation prefix (joined with a computed suffix at runtime), not a
+// complete key, and is skipped.
+static HashSet<string> ExtractSourceKeyLiterals(string source)
+{
+    var keys = new HashSet<string>(StringComparer.Ordinal);
+    var i = 0;
+    while (true)
+    {
+        var quote = source.IndexOf("\"LW_", i, StringComparison.Ordinal);
+        if (quote < 0)
+        {
+            break;
+        }
+
+        var start = quote + 1;
+        var j = start;
+        while (j < source.Length && (char.IsLetterOrDigit(source[j]) || source[j] == '_'))
+        {
+            j++;
+        }
+
+        if (j < source.Length && source[j] == '"' && source[j - 1] != '_')
+        {
+            keys.Add(source.Substring(start, j - start));
+        }
+
+        i = j + 1;
+    }
+
+    return keys;
 }
 
 static void AssertDoesNotContain(string unexpected, string actual)
