@@ -163,6 +163,8 @@
   <LW_EconomyCol_Settlements>Поселения</LW_EconomyCol_Settlements>
   <LW_EconomyCol_Population>Население</LW_EconomyCol_Population>
   <LW_EconomyCol_Tier>Макс. уровень</LW_EconomyCol_Tier>
+  <LW_EconomyCol_Output>Выпуск/день</LW_EconomyCol_Output>
+  <LW_EconomyCol_Change>Изм./день</LW_EconomyCol_Change>
   <LW_EconomyCol_Wealth>Богатство</LW_EconomyCol_Wealth>
   <LW_Tier_Camp>Лагерь</LW_Tier_Camp>
   <LW_Tier_Village>Деревня</LW_Tier_Village>

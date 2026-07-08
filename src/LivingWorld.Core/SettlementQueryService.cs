@@ -108,10 +108,26 @@ public static class SettlementQueryService
 
         return new SettlementProductionStatus(
             population.Adults,
-            population.Adults * profile.FoodPerAdult,
-            population.Adults * profile.SteelPerAdult,
-            population.Adults * profile.MedicinePerAdult,
-            population.Adults * profile.ComponentPerAdult,
+            SettlementFacilityService.ApplyProductionModifier(
+                state,
+                settlementId,
+                SettlementFacilityKind.Farm,
+                profile.EffectiveDailyFood(population.Adults)),
+            SettlementFacilityService.ApplyProductionModifier(
+                state,
+                settlementId,
+                SettlementFacilityKind.Workshop,
+                profile.EffectiveDailySteel(population.Adults)),
+            SettlementFacilityService.ApplyProductionModifier(
+                state,
+                settlementId,
+                SettlementFacilityKind.Clinic,
+                profile.EffectiveDailyMedicine(population.Adults)),
+            SettlementFacilityService.ApplyProductionModifier(
+                state,
+                settlementId,
+                SettlementFacilityKind.Workshop,
+                profile.EffectiveDailyComponents(population.Adults)),
             profile.Biome,
             profile.Hilliness,
             profile.TechLevel);

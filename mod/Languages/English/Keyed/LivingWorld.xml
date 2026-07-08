@@ -163,6 +163,8 @@
   <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>
   <LW_EconomyCol_Population>Population</LW_EconomyCol_Population>
   <LW_EconomyCol_Tier>Top tier</LW_EconomyCol_Tier>
+  <LW_EconomyCol_Output>Output/day</LW_EconomyCol_Output>
+  <LW_EconomyCol_Change>Change/day</LW_EconomyCol_Change>
   <LW_EconomyCol_Wealth>Wealth</LW_EconomyCol_Wealth>
   <LW_Tier_Camp>Camp</LW_Tier_Camp>
   <LW_Tier_Village>Village</LW_Tier_Village>

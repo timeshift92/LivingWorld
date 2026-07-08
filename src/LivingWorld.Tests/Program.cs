@@ -40,6 +40,7 @@ var tests = new List<(string Name, Action Test)>
     ("virtual trade conserves goods and silver", TestVirtualTradeTransfersGoodsAndSilver),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
     ("settlement facilities modify production output", TestSettlementFacilitiesModifyProductionOutput),
+    ("settlement production status reports effective daily output", TestSettlementProductionStatusUsesEffectiveOutput),
     ("settlement projects consume resources and complete facilities", TestSettlementProjectsConsumeResourcesAndCompleteFacilities),
     ("damaged facilities reduce output and repairs consume resources", TestDamagedFacilitiesReduceOutputAndRepairsConsumeResources),
     ("daily infrastructure driver invests in and completes facilities", TestInfrastructureDriverInvestsInAndCompletesFacilities),
@@ -1319,6 +1320,41 @@ static void TestSettlementFacilitiesModifyProductionOutput()
     AssertEqual(16, result.FoodProduced);
     AssertEqual(6, result.SteelProduced);
     AssertEqual(16, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+}
+
+static void TestSettlementProductionStatusUsesEffectiveOutput()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("farm-status", "Farm Status", "Outlander");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen($"Farmer {i + 1}", 24 + i, Sex.Female, "farmer", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "TemperateForest",
+            "SmallHills",
+            "Industrial",
+            55,
+            850,
+            21)));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 1),
+        settlement.Id,
+        SettlementFacilityKind.Farm,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 0));
+
+    var status = state.GetSettlementProductionStatus(settlement.Id);
+
+    AssertEqual(3, status.AdultWorkers);
+    AssertEqual(16, status.FoodPerDay);
+    AssertEqual(6, status.SteelPerDay);
+    AssertEqual(3, status.MedicinePerDay);
+    AssertEqual(3, status.ComponentsPerDay);
 }
 
 static void TestSettlementProjectsConsumeResourcesAndCompleteFacilities()
@@ -6654,6 +6690,11 @@ static void TestRimWorldEconomyWindow()
     AssertContains("LW_EconomyCol_Faction", window);
     AssertContains("LW_EconomyCol_Population", window);
     AssertContains("LW_EconomyCol_Wealth", window);
+    // It must show economic motion, not only identical starting stockpiles.
+    AssertContains("LW_EconomyCol_Output", window);
+    AssertContains("LW_EconomyCol_Change", window);
+    AssertContains("DailyOutputValue", window);
+    AssertContains("DailyWealthChange", window);
     // Reuses the native faction icon + comparative wealth bar treatment.
     AssertContains("FactionIcon", window);
     AssertContains("BaseContent.WhiteTex", window);
@@ -6665,7 +6706,7 @@ static void TestRimWorldEconomyWindow()
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    foreach (var key in new[] { "LW_EconomyWindowTitle", "LW_EconomyCol_Settlements", "LW_EconomyCol_Tier", "LW_Tier_City", "LW_OpenEconomyWindow" })
+    foreach (var key in new[] { "LW_EconomyWindowTitle", "LW_EconomyCol_Settlements", "LW_EconomyCol_Tier", "LW_EconomyCol_Output", "LW_EconomyCol_Change", "LW_Tier_City", "LW_OpenEconomyWindow" })
     {
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);

@@ -29,8 +29,10 @@ public sealed class LivingWorldEconomyWindow : Window
     // Column left edges as a fraction of the table width, plus the wealth column that fills the rest.
     private const float ColSettlementsPct = 0.34f;
     private const float ColPopulationPct = 0.46f;
-    private const float ColTierPct = 0.60f;
-    private const float ColWealthPct = 0.74f;
+    private const float ColTierPct = 0.56f;
+    private const float ColOutputPct = 0.67f;
+    private const float ColChangePct = 0.78f;
+    private const float ColWealthPct = 0.89f;
 
     private readonly List<EconomyRow> cachedRows = new();
     private Vector2 scrollPosition;
@@ -41,12 +43,22 @@ public sealed class LivingWorldEconomyWindow : Window
 
     private readonly struct EconomyRow
     {
-        public EconomyRow(string factionId, int settlements, int population, SettlementTier topTier, int wealth, float fill)
+        public EconomyRow(
+            string factionId,
+            int settlements,
+            int population,
+            SettlementTier topTier,
+            int dailyOutputValue,
+            int dailyWealthChange,
+            int wealth,
+            float fill)
         {
             FactionId = factionId;
             Settlements = settlements;
             Population = population;
             TopTier = topTier;
+            DailyOutputValue = dailyOutputValue;
+            DailyWealthChange = dailyWealthChange;
             Wealth = wealth;
             Fill = fill;
         }
@@ -55,6 +67,8 @@ public sealed class LivingWorldEconomyWindow : Window
         public int Settlements { get; }
         public int Population { get; }
         public SettlementTier TopTier { get; }
+        public int DailyOutputValue { get; }
+        public int DailyWealthChange { get; }
         public int Wealth { get; }
         public float Fill { get; }
     }
@@ -104,6 +118,8 @@ public sealed class LivingWorldEconomyWindow : Window
         var xSettlements = rect.x + (rect.width * ColSettlementsPct);
         var xPopulation = rect.x + (rect.width * ColPopulationPct);
         var xTier = rect.x + (rect.width * ColTierPct);
+        var xOutput = rect.x + (rect.width * ColOutputPct);
+        var xChange = rect.x + (rect.width * ColChangePct);
         var xWealth = rect.x + (rect.width * ColWealthPct);
 
         if (isHeader)
@@ -111,7 +127,9 @@ public sealed class LivingWorldEconomyWindow : Window
             Widgets.Label(new Rect(rect.x, rect.y, xSettlements - rect.x, rect.height), "LW_EconomyCol_Faction".Translate());
             Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), "LW_EconomyCol_Settlements".Translate());
             Widgets.Label(new Rect(xPopulation, rect.y, xTier - xPopulation, rect.height), "LW_EconomyCol_Population".Translate());
-            Widgets.Label(new Rect(xTier, rect.y, xWealth - xTier, rect.height), "LW_EconomyCol_Tier".Translate());
+            Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), "LW_EconomyCol_Tier".Translate());
+            Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height), "LW_EconomyCol_Output".Translate());
+            Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), "LW_EconomyCol_Change".Translate());
             Widgets.Label(new Rect(xWealth, rect.y, rect.xMax - xWealth, rect.height), "LW_EconomyCol_Wealth".Translate());
             return;
         }
@@ -141,7 +159,9 @@ public sealed class LivingWorldEconomyWindow : Window
 
         Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), data.Settlements.ToString());
         Widgets.Label(new Rect(xPopulation, rect.y, xTier - xPopulation, rect.height), population);
-        Widgets.Label(new Rect(xTier, rect.y, xWealth - xTier, rect.height), TierLabel(data.TopTier));
+        Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), TierLabel(data.TopTier));
+        Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height), FormatSigned(data.DailyOutputValue));
+        Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), FormatSigned(data.DailyWealthChange));
 
         // Wealth cell: comparative faction-coloured bar (share of the richest faction) + value.
         var wealthRect = new Rect(xWealth, rect.y, rect.xMax - xWealth, rect.height);
@@ -181,8 +201,17 @@ public sealed class LivingWorldEconomyWindow : Window
                     .Select(settlement => SettlementDevelopmentService.GetTier(state, settlement.Id))
                     .DefaultIfEmpty(SettlementTier.Camp)
                     .Max();
+                var dailyOutputValue = settlements.Sum(settlement => DailyOutputValue(state.GetSettlementProductionStatus(settlement.Id)));
+                var dailyFoodCost = DailyFoodCost(state, settlements);
                 var wealth = FactionWealth(state, group.Key, settlements);
-                return (FactionId: group.Key, Settlements: settlements.Count, Population: population, TopTier: topTier, Wealth: wealth);
+                return (
+                    FactionId: group.Key,
+                    Settlements: settlements.Count,
+                    Population: population,
+                    TopTier: topTier,
+                    DailyOutputValue: dailyOutputValue,
+                    DailyWealthChange: dailyOutputValue - dailyFoodCost,
+                    Wealth: wealth);
             })
             .OrderByDescending(row => row.Wealth)
             .ThenByDescending(row => row.Population)
@@ -193,8 +222,37 @@ public sealed class LivingWorldEconomyWindow : Window
         foreach (var row in rows)
         {
             var fill = maxWealth > 0 ? (float)row.Wealth / maxWealth : 0f;
-            cachedRows.Add(new EconomyRow(row.FactionId, row.Settlements, row.Population, row.TopTier, row.Wealth, fill));
+            cachedRows.Add(new EconomyRow(
+                row.FactionId,
+                row.Settlements,
+                row.Population,
+                row.TopTier,
+                row.DailyOutputValue,
+                row.DailyWealthChange,
+                row.Wealth,
+                fill));
         }
+    }
+
+    private static int DailyOutputValue(SettlementProductionStatus production)
+    {
+        var prices = SettlementWealthService.DefaultPriceBook;
+        return (production.FoodPerDay * prices.PriceOf("PackagedSurvivalMeal"))
+            + (production.SteelPerDay * prices.PriceOf("Steel"))
+            + (production.MedicinePerDay * prices.PriceOf("MedicineIndustrial"))
+            + (production.ComponentsPerDay * prices.PriceOf("ComponentIndustrial"));
+    }
+
+    private static int DailyFoodCost(WorldState state, List<WorldSettlement> settlements)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (settings.foodPerCitizen <= 0)
+        {
+            return 0;
+        }
+
+        var mealPrice = SettlementWealthService.DefaultPriceBook.PriceOf("PackagedSurvivalMeal");
+        return settlements.Sum(settlement => state.GetSettlementPopulation(settlement.Id).Total) * mealPrice;
     }
 
     // Prefer the Core wealth snapshot when the economy sim has recorded one; fall back to a live
@@ -244,6 +302,16 @@ public sealed class LivingWorldEconomyWindow : Window
         return wealth < 8000
             ? "LW_WealthBandModest".Translate()
             : "LW_WealthBandWealthy".Translate();
+    }
+
+    private static string FormatSigned(int value)
+    {
+        return value switch
+        {
+            > 0 => "+" + value,
+            < 0 => value.ToString(),
+            _ => "0",
+        };
     }
 
     private static string TierLabel(SettlementTier tier)
