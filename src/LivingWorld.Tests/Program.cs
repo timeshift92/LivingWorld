@@ -6653,6 +6653,8 @@ static void TestRimWorldPlayerAttackRegistersConflict()
     // Dedup guard so a repeated CheckDefeated call never records the same defeat twice.
     AssertContains("RecordedDefeats", patch);
     AssertContains("factionBase.ID", patch);
+    // Never process the player's own colony (invariant): guard on the player faction.
+    AssertContains("factionBase.Faction.IsPlayer", patch);
     // Slice 2: the same defeat credits any player-allied faction at war with the defeated one.
     AssertContains("AllianceService.CreditAlliesOnPlayerAttack", patch);
     AssertDoesNotContain("return false", patch);

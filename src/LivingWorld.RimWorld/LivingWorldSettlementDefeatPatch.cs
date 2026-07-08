@@ -32,6 +32,13 @@ public static class LivingWorldSettlementDefeatPatch
             return;
         }
 
+        // Never treat the player's own colony as a ledger object: when the player's base is overrun,
+        // IsDefeated(map, player) is true too, but this hook is only for the player defeating NPCs.
+        if (factionBase.Faction.IsPlayer)
+        {
+            return;
+        }
+
         // Only record an actual defeat (all defenders down), which is what triggers the vanilla removal.
         if (!SettlementDefeatUtility.IsDefeated(factionBase.Map, factionBase.Faction))
         {
