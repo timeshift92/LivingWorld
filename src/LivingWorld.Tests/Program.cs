@@ -81,6 +81,7 @@ var tests = new List<(string Name, Action Test)>
     ("materialization lease reconciles pawn fate into ledger", TestMaterializationLeaseReconcilesPawnFate),
     ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
+    ("settlement defense materialization reserves defenders and resources", TestSettlementDefenseMaterializationReservesDefendersAndResources),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -282,6 +283,7 @@ var tests = new List<(string Name, Action Test)>
     ("disables the faction raid incident while Rim War is active", TestRimWorldFactionRaidHonorsRimWarGuard),
     ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
     ("materializes settlement visitors as ledger citizens via leases", TestRimWorldSettlementVisitMaterialization),
+    ("materializes attacked settlement maps from ledger defense", TestRimWorldSettlementMapMaterialization),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -2521,6 +2523,49 @@ static void TestMaterializationLeaseSurvivesSaveLoad()
     AssertEqual(777, restoredLease.PawnThingId);
     AssertEqual(MaterializationLeaseLifecycle.Materialized, restoredLease.Lifecycle);
     AssertEqual(MaterializationPurpose.SettlementVisit, restoredLease.Purpose);
+}
+
+static void TestSettlementDefenseMaterializationReservesDefendersAndResources()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("target", "Target", "Raiders");
+    state.CreateCitizen("Fighter A", 30, Sex.Male, "soldier", settlement.Id);
+    state.CreateCitizen("Fighter B", 34, Sex.Female, "guard", settlement.Id);
+    state.CreateCitizen("Child", 12, Sex.Male, "child", settlement.Id);
+    state.AddResource(settlement.Id, "Steel", 100);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 25);
+
+    var result = SettlementMaterializationService.PrepareDefense(
+        state,
+        new SettlementDefenseMaterializationRequest(
+            settlement.Id,
+            RequestedDefenders: 5,
+            LifetimeTicks: 2_500,
+            RequestedResources: new Dictionary<string, int>
+            {
+                ["Steel"] = 40,
+                ["PackagedSurvivalMeal"] = 50
+            },
+            PurposeKey: "attack-map:target:1"));
+
+    AssertEqual(SettlementDefenseMaterializationStatus.Success, result.Status);
+    AssertEqual(2, result.DefenderLeases.Count);
+    if (!result.DefenderLeases.All(lease => lease.Purpose == MaterializationPurpose.SettlementDefense))
+    {
+        throw new InvalidOperationException("All defender leases should use the settlement defense purpose.");
+    }
+    AssertEqual(60, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+    AssertEqual(40, state.GetOwnedResourceQuantity(result.ResourceOwnerId!.Value, "Steel"));
+    AssertEqual(25, state.GetOwnedResourceQuantity(result.ResourceOwnerId!.Value, "PackagedSurvivalMeal"));
+
+    var aborted = SettlementMaterializationService.AbortDefense(state, "attack-map:target:1", "map generation failed");
+
+    AssertEqual(2, aborted.ReleasedDefenders);
+    AssertEqual(2, aborted.ReturnedResources.Count);
+    AssertEqual(100, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(25, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+    AssertEqual(0, state.MaterializationLeases.Count(lease => lease.IsActive));
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()
@@ -6591,6 +6636,30 @@ static void TestRimWorldSettlementVisitMaterialization()
     var syncService = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.Core", "LivingWorldPawnSyncService.cs"));
     AssertContains("state.MaterializationLeases", syncService);
     AssertContains("MaterializationLeaseService.Resolve", syncService);
+}
+
+static void TestRimWorldSettlementMapMaterialization()
+{
+    var root = FindRepoRoot();
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    AssertContains("[HarmonyPatch(typeof(MapGenerator), \"GenerateMap\")]", patch);
+    AssertRimWorldMethodExists("Verse.MapGenerator", "GenerateMap");
+    AssertContains("public static void Postfix(Map __result, MapParent parent)", patch);
+    AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap", patch);
+
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+    AssertContains("SettlementMaterializationService.PrepareDefense", service);
+    AssertContains("MaterializationLeaseService.BindPawn", service);
+    AssertContains("identity.SetLedgerId(lease.CitizenId)", service);
+    AssertContains("ThingDef.Named(resourceKey)", service);
+    AssertContains("GenSpawn.Spawn", service);
+    AssertContains("SettlementMaterializationService.AbortDefense", service);
+    AssertContains("IsInitialWorldSeedingActive", service);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a

@@ -3,6 +3,7 @@ namespace LivingWorld.Core;
 public enum MaterializationPurpose
 {
     Raid,
+    SettlementDefense,
     SettlementVisit,
     TradeCaravan,
     ScoutingParty,

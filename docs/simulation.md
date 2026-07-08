@@ -127,6 +127,33 @@ still allowing first-run world seeding.
 - quest;
 - active settlement map.
 
+### Attacked settlement map materialization (current implementation)
+
+When the player opens an NPC settlement map, Living World now performs the
+first real-map settlement materialization slice after vanilla map generation:
+
+1. resolve the vanilla `Settlement` to the ledger settlement by faction and
+   imported world tile;
+2. select living adult defenders from that settlement, excluding citizens that
+   already have an active materialization lease;
+3. create `SettlementDefense` leases and stamp matching vanilla-generated
+   defender pawns with `CompLivingWorldIdentity`;
+4. move a bounded resource payload (`Steel`, meals, medicine, components,
+   silver) from the settlement ledger to the materialization lease owner;
+5. spawn that payload as real map things through RimWorld's normal `ThingDef`
+   and `GenSpawn` APIs;
+6. if binding fails, abort the preparation and return the payload to the
+   settlement ledger.
+
+This is deliberately not a full settlement generator yet. It does not build a
+custom town layout, materialize facilities as buildings, spawn animal cohorts,
+or reconcile every individual looted stack back from the map. The important
+contract is already real: defenders are concrete ledger citizens, and spawned
+loot is removed from the settlement ledger before the player can take it. If
+the player later defeats the settlement, the existing defeat bridge destroys
+the matched ledger settlement and only the remaining ledger-owned resources
+move into the ruin.
+
 ### Dematerialization
 
 Когда pawn уходит из активного контекста:
