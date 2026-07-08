@@ -178,6 +178,7 @@ var tests = new List<(string Name, Action Test)>
     ("routes the custom faction raid through a prepared expedition", TestRimWorldRaidRoutesThroughPreparation),
     ("warns the player from player-targeted raid intel", TestRimWorldRaidWarningFromIntel),
     ("releases stale raid preparations and materialization leases daily", TestRimWorldReleasesStaleReservations),
+    ("drives infrastructure and lifecycle simulation from the daily tick", TestRimWorldDailyTickRunsSimulationDrivers),
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
@@ -4606,6 +4607,20 @@ static void TestRimWorldReleasesStaleReservations()
     AssertContains("MaterializationLeaseService.ReleaseExpiredLeases(State", component);
 }
 
+// The daily tick drives the Core simulation drivers so facilities and ruins actually appear
+// in-game: infrastructure builds/repairs facilities (gated with settlement development), and the
+// lifecycle driver folds in faction collapse (ResolveFactionCollapses) plus ruins/relocation.
+static void TestRimWorldDailyTickRunsSimulationDrivers()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("SettlementInfrastructureDriver.SimulateDay(", component);
+    AssertContains("SettlementLifecycleDriver.SimulateDay(", component);
+    AssertContains("ResolveFactionCollapses = true", component);
+    // The lifecycle driver subsumes the collapse pass, so the bare collapse call must be gone to
+    // avoid running faction collapse twice per day.
+    AssertDoesNotContain("FactionLifecycleService.SimulateCollapses(", component);
+}
+
 static void TestRimWorldRaidRoutesThroughPreparation()
 {
     var worker = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldFactionRaid.cs"));
@@ -5264,7 +5279,9 @@ static void TestRimWorldWorldComponent()
     AssertContains("AddDrifterArrivalReservoir", source);
     AssertContains("DrifterFoundingService.SimulateFounding", source);
     AssertContains("DrifterAssimilationService.SimulateAssimilation", source);
-    AssertContains("FactionLifecycleService.SimulateCollapses", source);
+    // Faction collapse now runs through the lifecycle driver (ResolveFactionCollapses), which also
+    // turns collapsed settlements into ruins and relocates starving ones.
+    AssertContains("SettlementLifecycleDriver.SimulateDay", source);
     AssertContains("public bool WantsDrifterArrival", source);
     AssertContains("PlayerKnowledgeService.RecordPublicSettlementInfo", source);
     AssertContains("lastSimulatedDay", source);

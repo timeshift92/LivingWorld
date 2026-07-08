@@ -368,6 +368,15 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     settings.settlementHousingHeadroom,
                     settings.settlementDevelopmentStep,
                     settings.maxSettlementAdults));
+
+            // Settlements invest their surplus materials into facilities: complete ready projects,
+            // repair damaged facilities, then start building the ones they lack. This is what makes
+            // the Task 4 facilities UI light up in-game; it consumes real Steel/Components so the
+            // ledger stays conservative. Gated with development so disabling that setting also stops
+            // facility churn.
+            SettlementInfrastructureDriver.SimulateDay(
+                State,
+                new SettlementInfrastructureDriverRequest(day * TicksPerDay));
         }
 
         if (settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive)
@@ -406,9 +415,19 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     settings.worldWarWarbandCooldownDays));
         }
 
-        FactionLifecycleService.SimulateCollapses(
+        // Faction extinction, then its physical consequences: collapsed non-player settlements
+        // become ruins, starving non-player settlements relocate to a stable sibling, and stale
+        // ruins are pruned. ResolveFactionCollapses folds the collapse pass into the driver (same
+        // reason and daily timing as the previous bare call) so collapse still runs exactly once.
+        SettlementLifecycleDriver.SimulateDay(
             State,
-            new FactionLifecycleRequest(day * TicksPerDay));
+            new SettlementLifecycleDriverRequest(
+                day * TicksPerDay,
+                FoodResourceKey,
+                settings.foodPerCitizen > 0 ? 1 : 0)
+            {
+                ResolveFactionCollapses = true,
+            });
 
         // Refresh the economy wealth snapshots from end-of-day stock so the economy UI (main tab
         // bands, the population/economy table) reads real silver + material value instead of a
