@@ -35,6 +35,9 @@ public sealed record WorldStateSnapshot(
     public IReadOnlyList<FactionWealthSnapshot> FactionWealth { get; init; } =
         Array.Empty<FactionWealthSnapshot>();
 
+    public IReadOnlyList<FactionSettlementIntel> FactionSettlementIntel { get; init; } =
+        Array.Empty<FactionSettlementIntel>();
+
     public IReadOnlyList<WorldCaravan> Caravans { get; init; } =
         Array.Empty<WorldCaravan>();
 

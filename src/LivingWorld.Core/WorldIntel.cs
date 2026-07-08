@@ -26,6 +26,13 @@ public sealed record WorldIntelReport(
     int ValueScore,
     string Summary);
 
+public sealed record FactionSettlementIntel(
+    string FactionId,
+    EntityId SettlementId,
+    IntelSourceKind SourceKind,
+    int Tick,
+    int Confidence);
+
 public sealed record RaidOpportunity(
     EntityId Id,
     string FactionId,

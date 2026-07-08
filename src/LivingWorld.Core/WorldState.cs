@@ -15,6 +15,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
+    private readonly Dictionary<(string FactionId, EntityId SettlementId), FactionSettlementIntel> _factionSettlementIntel = new();
     private readonly Dictionary<EntityId, RaidOpportunity> _raidOpportunities = new();
     private readonly Dictionary<EntityId, RaidIntelFact> _raidIntelFacts = new();
     private readonly Dictionary<EntityId, RaidPreparation> _raidPreparations = new();
@@ -89,6 +90,8 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldIntelReport> IntelReports => _intelReports.Values;
 
     public IReadOnlyCollection<KnownSettlementInfo> KnownSettlementInfos => _knownSettlementInfos.Values;
+
+    public IReadOnlyCollection<FactionSettlementIntel> FactionSettlementIntel => _factionSettlementIntel.Values;
 
     public IReadOnlyCollection<RaidOpportunity> RaidOpportunities => _raidOpportunities.Values;
 
@@ -204,6 +207,11 @@ public sealed class WorldState
         {
             PlayerFactionId = playerFactionId,
             DrifterArrivalReservoir = drifterArrivalReservoir,
+            FactionSettlementIntel = _factionSettlementIntel.Values
+                .OrderBy(intel => intel.FactionId, StringComparer.Ordinal)
+                .ThenBy(intel => intel.SettlementId.Kind)
+                .ThenBy(intel => intel.SettlementId.Value)
+                .ToList(),
             SettlementCapabilities = _settlementCapabilities.Values
                 .OrderBy(capability => capability.SettlementId.Kind)
                 .ThenBy(capability => capability.SettlementId.Value)
@@ -335,6 +343,12 @@ public sealed class WorldState
         foreach (var info in snapshot.KnownSettlementInfos)
         {
             state._knownSettlementInfos.Add(info.SettlementId, info);
+        }
+
+        foreach (var intel in snapshot.FactionSettlementIntel)
+        {
+            var normalized = Normalize(intel);
+            state._factionSettlementIntel[(normalized.FactionId, normalized.SettlementId)] = normalized;
         }
 
         foreach (var opportunity in snapshot.RaidOpportunities)
@@ -1692,6 +1706,60 @@ public sealed class WorldState
             $"Known settlement info updated from {info.SourceKind}: {info.Summary}.");
     }
 
+    public FactionSettlementIntel RecordFactionSettlementIntel(
+        string factionId,
+        EntityId settlementId,
+        IntelSourceKind sourceKind,
+        int tick,
+        int confidence)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        if (!_settlements.ContainsKey(settlementId))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        var intel = Normalize(new FactionSettlementIntel(
+            factionId,
+            settlementId,
+            sourceKind,
+            tick,
+            confidence));
+        var key = (intel.FactionId, intel.SettlementId);
+        if (_factionSettlementIntel.TryGetValue(key, out var existing)
+            && existing.Confidence >= intel.Confidence
+            && existing.Tick >= intel.Tick)
+        {
+            return existing;
+        }
+
+        _factionSettlementIntel[key] = intel;
+        AppendEvent(
+            WorldEventKind.SettlementIntelUpdated,
+            settlementId,
+            $"Faction {intel.FactionId} learned about settlement {settlementId} from {sourceKind}.");
+        return intel;
+    }
+
+    public bool HasFactionSettlementIntel(string factionId, EntityId settlementId)
+    {
+        if (string.IsNullOrWhiteSpace(factionId))
+        {
+            return false;
+        }
+
+        return _factionSettlementIntel.ContainsKey((factionId.Trim(), settlementId));
+    }
+
+    public FactionSettlementIntel? GetFactionSettlementIntel(string factionId, EntityId settlementId)
+    {
+        return string.IsNullOrWhiteSpace(factionId)
+            ? null
+            : _factionSettlementIntel.TryGetValue((factionId.Trim(), settlementId), out var intel)
+                ? intel
+                : null;
+    }
+
     public void RecordSettlementProductionProfile(SettlementProductionProfile profile)
     {
         if (profile == null)
@@ -2686,6 +2754,16 @@ public sealed class WorldState
             }
         }
 
+        foreach (var intel in _factionSettlementIntel.Values
+            .OrderBy(intel => intel.FactionId, StringComparer.Ordinal)
+            .ThenBy(intel => intel.SettlementId.Value))
+        {
+            if (!_settlements.ContainsKey(intel.SettlementId))
+            {
+                yield return $"Faction settlement intel for {intel.FactionId} references missing settlement {intel.SettlementId}.";
+            }
+        }
+
         foreach (var resource in _resources
             .OrderBy(pair => pair.Key.OwnerId.Kind)
             .ThenBy(pair => pair.Key.OwnerId.Value)
@@ -2996,6 +3074,16 @@ public sealed class WorldState
         {
             ClaimantFactionId = string.IsNullOrWhiteSpace(claim.ClaimantFactionId) ? "Unknown" : claim.ClaimantFactionId.Trim(),
             Tick = Math.Max(0, claim.Tick)
+        };
+    }
+
+    private static FactionSettlementIntel Normalize(FactionSettlementIntel intel)
+    {
+        return intel with
+        {
+            FactionId = string.IsNullOrWhiteSpace(intel.FactionId) ? "Unknown" : intel.FactionId.Trim(),
+            Tick = Math.Max(0, intel.Tick),
+            Confidence = Math.Max(0, Math.Min(100, intel.Confidence))
         };
     }
 

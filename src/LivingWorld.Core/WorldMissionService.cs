@@ -41,6 +41,12 @@ public static class WorldMissionService
                 case WorldMissionKind.Scout:
                     var summary = $"Scouts from {mission.OriginSettlementId} surveyed {mission.TargetSettlementId}.";
                     state.RecordIntelReport(IntelSourceKind.Scout, mission.FactionId, Math.Max(1, mission.Amount), summary);
+                    state.RecordFactionSettlementIntel(
+                        mission.FactionId,
+                        mission.TargetSettlementId,
+                        IntelSourceKind.Scout,
+                        request.Tick,
+                        Math.Max(1, Math.Min(100, mission.Amount)));
                     PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId, summary);
                     scouting++;
                     break;

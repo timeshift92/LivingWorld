@@ -142,8 +142,10 @@ var tests = new List<(string Name, Action Test)>
     ("attacker survivors return home after failed attack", TestBattleAttackerSurvivorsReturnHomeAfterDefeat),
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
+    ("opposing armies intercept each other in transit", TestOpposingArmiesInterceptInTransit),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
+    ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
@@ -3847,6 +3849,40 @@ static void TestBattleAgainstPlayerFactionIsBlocked()
     AssertEqual(0, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead));
 }
 
+static void TestOpposingArmiesInterceptInTransit()
+{
+    var state = new WorldState(4242);
+    var redHome = state.CreateSettlement("red-home", "Red Home", "Red");
+    var blueHome = state.CreateSettlement("blue-home", "Blue Home", "Blue");
+    for (var i = 0; i < 10; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "fighter", redHome.Id);
+        state.CreateCitizen("B" + i, 30, Sex.Male, "fighter", blueHome.Id);
+    }
+
+    var redReserve = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Red", "Red warband", 6, FoodPerCitizen: 0));
+    var blueReserve = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Blue", "Blue warband", 6, FoodPerCitizen: 0));
+    var redArmy = redReserve.Army!;
+    var blueArmy = blueReserve.Army!;
+
+    state.DispatchArmy(redArmy.Id, blueHome.Id, arrivalTick: 5 * 60_000);
+    state.DispatchArmy(blueArmy.Id, redHome.Id, arrivalTick: 5 * 60_000);
+
+    var result = ArmyInterceptionService.SimulateDay(state, new ArmyInterceptionRequest(2 * 60_000));
+
+    AssertEqual(1, result.Interceptions);
+    AssertEqual(0, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Arrived));
+    AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Traveling));
+    AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Recalled));
+    AssertEqual(true, state.Conflicts.Any(conflict => conflict.Involves("Red") && conflict.Involves("Blue")));
+    AssertEqual(true, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead) > 0);
+    AssertEqual(0, state.Validate().Count());
+}
+
 static void TestFactionBehaviorPersists()
 {
     var state = new WorldState(4242);
@@ -3871,11 +3907,40 @@ static void TestFactionActionPlannerWarband()
 
     var victim = state.CreateSettlement("village", "Village", "Settlers");
     state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.RecordFactionSettlementIntel("Raiders", victim.Id, IntelSourceKind.Scout, 0, confidence: 80);
 
     var plan = FactionActionPlanner.Plan(state, "Raiders", 60_000);
 
     AssertEqual(WarAction.Warband, plan.Action);
     AssertEqual(victim.Id, plan.TargetSettlementId);
+}
+
+static void TestFactionActionPlannerScoutsBeforeUnknownWarTarget()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var victim = state.CreateSettlement("village", "Village", "Settlers");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+
+    var unknown = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+    AssertEqual(WarAction.ScoutingParty, unknown.Action);
+    AssertEqual(null, unknown.TargetSettlementId);
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(0, state.ArmyMovements.Count);
+    AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Scout));
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(true, state.HasFactionSettlementIntel("Raiders", victim.Id));
+
+    var known = FactionActionPlanner.Plan(state, "Raiders", 180_000);
+    AssertEqual(WarAction.Warband, known.Action);
+    AssertEqual(victim.Id, known.TargetSettlementId);
 }
 
 static void TestFactionActionPlannerSpreadsEnemyTargets()
@@ -3907,6 +3972,13 @@ static void TestFactionActionPlannerSpreadsEnemyTargets()
     var targetTwo = state.CreateSettlement("target-two", "Target Two", "TargetTwoFaction");
     var targetThree = state.CreateSettlement("target-three", "Target Three", "TargetThreeFaction");
     var targetIds = new[] { targetOne.Id, targetTwo.Id, targetThree.Id };
+    foreach (var faction in attackers)
+    {
+        foreach (var targetId in targetIds)
+        {
+            state.RecordFactionSettlementIntel(faction, targetId, IntelSourceKind.Scout, 0, confidence: 80);
+        }
+    }
 
     var chosenTargets = attackers
         .Select(faction => FactionActionPlanner.Plan(state, faction, 60_000).TargetSettlementId)
@@ -4066,7 +4138,7 @@ static void TestFactionActionPlannerFiltersPassive()
     // Only the warmonger acts; the player-controlled faction is excluded.
     AssertEqual(1, plans.Count);
     AssertEqual("Raiders", plans[0].FactionId);
-    AssertEqual(WarAction.Warband, plans[0].Action);
+    AssertEqual(WarAction.ScoutingParty, plans[0].Action);
 }
 
 static void TestDiplomacyIrreconcilableStaysHostile()
@@ -4127,6 +4199,7 @@ static void TestWorldWarLaunchesAndResolvesWarband()
 
     state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
     state.AssignFactionBehavior("Settlers", FactionBehavior.Cautious);
+    state.RecordFactionSettlementIntel("Raiders", village.Id, IntelSourceKind.Scout, 0, confidence: 80);
 
     var totalCitizens = state.Citizens.Count;
 
@@ -4293,6 +4366,7 @@ static void TestTrucePreventsNewWarbandsUntilExpired()
 
     var target = state.CreateSettlement("village", "Village", "Settlers");
     state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.RecordFactionSettlementIntel("Raiders", target.Id, IntelSourceKind.Scout, 0, confidence: 80);
     ConflictService.StartTruce(state, "Raiders", "Settlers", startTick: 60_000, expiresTick: 180_000);
 
     var blocked = FactionActionPlanner.Plan(state, "Raiders", 120_000);
@@ -4346,6 +4420,8 @@ static void TestWorldWarWarbandCooldownThrottlesLaunches()
 
     state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
     state.AssignFactionBehavior("Settlers", FactionBehavior.Cautious);
+    state.RecordFactionSettlementIntel("Raiders", villageOne.Id, IntelSourceKind.Scout, 0, confidence: 80);
+    state.RecordFactionSettlementIntel("Raiders", villageTwo.Id, IntelSourceKind.Scout, 0, confidence: 80);
 
     var totalLaunched = 0;
     for (var day = 1; day <= 6; day++)
@@ -4896,6 +4972,7 @@ static void TestWorldWarScoutingRecordsIntel()
     AssertEqual(IntelSourceKind.Scout, known.SourceKind);
     AssertEqual(KnowledgeConfidence.High, known.Confidence);
     AssertEqual(SettlementPopulationBand.Small, known.PopulationBand);
+    AssertEqual(true, state.HasFactionSettlementIntel("Scouts", village.Id));
     AssertEqual(1, state.IntelReports.Count(report => report.SourceKind == IntelSourceKind.Scout));
 }
 
@@ -4968,6 +5045,7 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
 
     AssertEqual(10, restored.GetOwnedResourceQuantity(village.Id, "Steel"));
     AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(village.Id)!.SourceKind);
+    AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", village.Id));
     AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", "Villagers"));
 }
 

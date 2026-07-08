@@ -105,6 +105,7 @@ public static class FactionActionPlanner
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !ConflictService.IsTruceActive(state, factionId, settlement.FactionId, tick))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
+            .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
             .OrderBy(settlement => StableTargetScore("enemy", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
@@ -164,7 +165,7 @@ public static class FactionActionPlanner
         // without breaking reproducibility.
         var options = hasTarget
             ? new[] { WarAction.Warband, WarAction.Settler, WarAction.Caravan, WarAction.ScoutingParty, WarAction.Diplomat }
-            : new[] { WarAction.Settler, WarAction.Caravan, WarAction.ScoutingParty, WarAction.Diplomat };
+            : new[] { WarAction.Settler, WarAction.Caravan, WarAction.ScoutingParty, WarAction.ScoutingParty, WarAction.Diplomat };
 
         var day = Math.Max(0, tick) / 60_000;
         return options[day % options.Length];

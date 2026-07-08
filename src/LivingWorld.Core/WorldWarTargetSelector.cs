@@ -37,6 +37,7 @@ internal static class WorldWarTargetSelector
         return state.Settlements
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
+            .Where(settlement => !state.HasFactionSettlementIntel(factionId, settlement.Id))
             .OrderBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }

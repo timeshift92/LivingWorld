@@ -57,6 +57,7 @@ public static class WorldWarService
 
         state.AdvanceToTick(request.Tick);
 
+        ArmyInterceptionService.SimulateDay(state, new ArmyInterceptionRequest(request.Tick));
         ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(request.Tick));
         var caravanMovement = CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(request.Tick));
         var missionResult = WorldMissionService.SimulateDay(state, new WorldMissionRequest(request.Tick));

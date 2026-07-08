@@ -175,6 +175,17 @@ public static class WorldStateCodec
                             new XAttribute("exactValuesVisible", info.ExactValuesVisible),
                             new XAttribute("summary", info.Summary)))),
                 new XElement(
+                    "FactionSettlementIntel",
+                    snapshot.FactionSettlementIntel.Select(intel =>
+                        new XElement(
+                            "Intel",
+                            new XAttribute("factionId", intel.FactionId),
+                            new XAttribute("settlementKind", intel.SettlementId.Kind),
+                            new XAttribute("settlementId", intel.SettlementId.Value),
+                            new XAttribute("sourceKind", intel.SourceKind),
+                            new XAttribute("tick", intel.Tick),
+                            new XAttribute("confidence", intel.Confidence)))),
+                new XElement(
                     "RaidOpportunities",
                     snapshot.RaidOpportunities.Select(opportunity =>
                         new XElement(
@@ -655,6 +666,15 @@ public static class WorldStateCodec
         {
             PlayerFactionId = OptionalString(root, "playerFactionId"),
             DrifterArrivalReservoir = OptionalInt(root, "drifterArrivalReservoir", 0),
+            FactionSettlementIntel = OptionalContainer(root, "FactionSettlementIntel")
+                .Elements("Intel")
+                .Select(element => new FactionSettlementIntel(
+                    RequiredString(element, "factionId"),
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredEnum<IntelSourceKind>(element, "sourceKind"),
+                    RequiredInt(element, "tick"),
+                    RequiredInt(element, "confidence")))
+                .ToList(),
             Caravans = OptionalContainer(root, "Caravans")
                 .Elements("Caravan")
                 .Select(element => new WorldCaravan(
