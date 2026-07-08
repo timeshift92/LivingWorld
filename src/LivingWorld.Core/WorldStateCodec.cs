@@ -1,3 +1,4 @@
+using System.Text;
 using System.Xml.Linq;
 
 namespace LivingWorld.Core;
@@ -32,17 +33,8 @@ public static class WorldStateCodec
                             new XAttribute("factionId", settlement.FactionId)))),
                 new XElement(
                     "Citizens",
-                    snapshot.Citizens.Select(citizen =>
-                        new XElement(
-                            "Citizen",
-                            IdAttributes(citizen.Id),
-                            new XAttribute("name", citizen.Name),
-                            new XAttribute("age", citizen.Age),
-                            new XAttribute("sex", citizen.Sex),
-                            new XAttribute("profession", citizen.Profession),
-                            new XAttribute("settlementKind", citizen.SettlementId.Kind),
-                            new XAttribute("settlementId", citizen.SettlementId.Value),
-                            new XAttribute("status", citizen.Status)))),
+                    new XAttribute("format", "compact-v2"),
+                    EncodeCitizens(snapshot.Citizens)),
                 new XElement(
                     "Armies",
                     snapshot.Armies.Select(army =>
@@ -224,13 +216,8 @@ public static class WorldStateCodec
                             new XAttribute("reason", record.Reason)))),
                 new XElement(
                     "Ownership",
-                    snapshot.Ownership.Select(ownership =>
-                        new XElement(
-                            "Owner",
-                            new XAttribute("assetKind", ownership.AssetId.Kind),
-                            new XAttribute("assetId", ownership.AssetId.Value),
-                            new XAttribute("ownerKind", ownership.OwnerId.Kind),
-                            new XAttribute("ownerId", ownership.OwnerId.Value)))),
+                    new XAttribute("format", "compact-v2"),
+                    EncodeOwnership(snapshot.Ownership)),
                 new XElement(
                     "Resources",
                     snapshot.Resources.Select(resource =>
@@ -242,19 +229,8 @@ public static class WorldStateCodec
                             new XAttribute("quantity", resource.Quantity)))),
                 new XElement(
                     "Events",
-                    snapshot.Events.Select(worldEvent =>
-                        new XElement(
-                            "Event",
-                            IdAttributes(worldEvent.Id),
-                            new XAttribute("eventKind", worldEvent.Kind),
-                            new XAttribute("tick", worldEvent.Tick),
-                            worldEvent.SubjectId.HasValue
-                                ? new XAttribute("subjectKind", worldEvent.SubjectId.Value.Kind)
-                                : null,
-                            worldEvent.SubjectId.HasValue
-                                ? new XAttribute("subjectId", worldEvent.SubjectId.Value.Value)
-                                : null,
-                            new XAttribute("summary", worldEvent.Summary)))),
+                    new XAttribute("format", "compact-v2"),
+                    EncodeEvents(snapshot.Events)),
                 new XElement(
                     "Drifters",
                     snapshot.Drifters.Select(drifter =>
@@ -335,17 +311,7 @@ public static class WorldStateCodec
                     RequiredString(element, "name"),
                     RequiredString(element, "factionId")))
                 .ToList(),
-            RequiredContainer(root, "Citizens")
-                .Elements("Citizen")
-                .Select(element => new WorldCitizen(
-                    ReadId(element),
-                    RequiredString(element, "name"),
-                    RequiredInt(element, "age"),
-                    RequiredEnum<Sex>(element, "sex"),
-                    RequiredString(element, "profession"),
-                    ReadEntityId(element, "settlementKind", "settlementId"),
-                    RequiredEnum<CitizenStatus>(element, "status")))
-                .ToList(),
+            DecodeCitizens(RequiredContainer(root, "Citizens")),
             RequiredContainer(root, "Armies")
                 .Elements("Army")
                 .Select(element => new WorldArmy(
@@ -451,12 +417,7 @@ public static class WorldStateCodec
                     RequiredInt(element, "tick"),
                     RequiredString(element, "reason")))
                 .ToList(),
-            RequiredContainer(root, "Ownership")
-                .Elements("Owner")
-                .Select(element => new OwnershipRecord(
-                    ReadEntityId(element, "assetKind", "assetId"),
-                    ReadEntityId(element, "ownerKind", "ownerId")))
-                .ToList(),
+            DecodeOwnership(RequiredContainer(root, "Ownership")),
             RequiredContainer(root, "Resources")
                 .Elements("Resource")
                 .Select(element => new ResourceStack(
@@ -464,15 +425,7 @@ public static class WorldStateCodec
                     RequiredString(element, "resourceKey"),
                     RequiredInt(element, "quantity")))
                 .ToList(),
-            RequiredContainer(root, "Events")
-                .Elements("Event")
-                .Select(element => new WorldEvent(
-                    ReadId(element),
-                    RequiredEnum<WorldEventKind>(element, "eventKind"),
-                    RequiredInt(element, "tick"),
-                    TryReadEntityId(element, "subjectKind", "subjectId"),
-                    RequiredString(element, "summary")))
-                .ToList(),
+            DecodeEvents(RequiredContainer(root, "Events")),
             OptionalContainer(root, "Drifters")
                 .Elements("Drifter")
                 .Select(element => new Drifter(
@@ -583,6 +536,188 @@ public static class WorldStateCodec
             new XAttribute("kind", id.Kind),
             new XAttribute("id", id.Value)
         };
+    }
+
+    private static string EncodeCitizens(IEnumerable<WorldCitizen> citizens)
+    {
+        return string.Join(
+            "\n",
+            citizens.Select(citizen => string.Join(
+                "|",
+                citizen.Id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                EncodeString(citizen.Name),
+                citizen.Age.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                citizen.Sex,
+                EncodeString(citizen.Profession),
+                citizen.SettlementId.Kind,
+                citizen.SettlementId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                citizen.Status)));
+    }
+
+    private static IReadOnlyList<WorldCitizen> DecodeCitizens(XElement element)
+    {
+        var format = OptionalString(element, "format");
+        if (string.Equals(format, "compact-v2", StringComparison.Ordinal))
+        {
+            return element.Value
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(DecodeCompactCitizen)
+                .ToList();
+        }
+
+        return element
+            .Elements("Citizen")
+            .Select(citizenElement => new WorldCitizen(
+                ReadId(citizenElement),
+                RequiredString(citizenElement, "name"),
+                RequiredInt(citizenElement, "age"),
+                RequiredEnum<Sex>(citizenElement, "sex"),
+                RequiredString(citizenElement, "profession"),
+                ReadEntityId(citizenElement, "settlementKind", "settlementId"),
+                RequiredEnum<CitizenStatus>(citizenElement, "status")))
+            .ToList();
+    }
+
+    private static string EncodeOwnership(IEnumerable<OwnershipRecord> ownership)
+    {
+        return string.Join(
+            "\n",
+            ownership.Select(record => string.Join(
+                "|",
+                record.AssetId.Kind,
+                record.AssetId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                record.OwnerId.Kind,
+                record.OwnerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+    }
+
+    private static IReadOnlyList<OwnershipRecord> DecodeOwnership(XElement element)
+    {
+        var format = OptionalString(element, "format");
+        if (string.Equals(format, "compact-v2", StringComparison.Ordinal))
+        {
+            return element.Value
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(DecodeCompactOwnership)
+                .ToList();
+        }
+
+        return element
+            .Elements("Owner")
+            .Select(ownerElement => new OwnershipRecord(
+                ReadEntityId(ownerElement, "assetKind", "assetId"),
+                ReadEntityId(ownerElement, "ownerKind", "ownerId")))
+            .ToList();
+    }
+
+    private static OwnershipRecord DecodeCompactOwnership(string row)
+    {
+        var fields = row.Split('|');
+        if (fields.Length != 4)
+        {
+            throw new InvalidOperationException("Compact ownership row has an invalid field count.");
+        }
+
+        return new OwnershipRecord(
+            EntityId.Create(
+                ParseEnum<EntityKind>(fields[0]),
+                long.Parse(fields[1], System.Globalization.CultureInfo.InvariantCulture)),
+            EntityId.Create(
+                ParseEnum<EntityKind>(fields[2]),
+                long.Parse(fields[3], System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    private static string EncodeEvents(IEnumerable<WorldEvent> events)
+    {
+        return string.Join(
+            "\n",
+            events.Select(worldEvent => string.Join(
+                "|",
+                worldEvent.Id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                worldEvent.Kind,
+                worldEvent.Tick.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                worldEvent.SubjectId.HasValue ? worldEvent.SubjectId.Value.Kind.ToString() : string.Empty,
+                worldEvent.SubjectId.HasValue ? worldEvent.SubjectId.Value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
+                EncodeString(worldEvent.Summary))));
+    }
+
+    private static IReadOnlyList<WorldEvent> DecodeEvents(XElement element)
+    {
+        var format = OptionalString(element, "format");
+        if (string.Equals(format, "compact-v2", StringComparison.Ordinal))
+        {
+            return element.Value
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(DecodeCompactEvent)
+                .ToList();
+        }
+
+        return element
+            .Elements("Event")
+            .Select(eventElement => new WorldEvent(
+                ReadId(eventElement),
+                RequiredEnum<WorldEventKind>(eventElement, "eventKind"),
+                RequiredInt(eventElement, "tick"),
+                TryReadEntityId(eventElement, "subjectKind", "subjectId"),
+                RequiredString(eventElement, "summary")))
+            .ToList();
+    }
+
+    private static WorldEvent DecodeCompactEvent(string row)
+    {
+        var fields = row.Split('|');
+        if (fields.Length != 6)
+        {
+            throw new InvalidOperationException("Compact event row has an invalid field count.");
+        }
+
+        var subjectId = string.IsNullOrWhiteSpace(fields[3])
+            ? (EntityId?)null
+            : EntityId.Create(
+                ParseEnum<EntityKind>(fields[3]),
+                long.Parse(fields[4], System.Globalization.CultureInfo.InvariantCulture));
+
+        return new WorldEvent(
+            EntityId.Create(EntityKind.Event, long.Parse(fields[0], System.Globalization.CultureInfo.InvariantCulture)),
+            ParseEnum<WorldEventKind>(fields[1]),
+            int.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture),
+            subjectId,
+            DecodeString(fields[5]));
+    }
+
+    private static WorldCitizen DecodeCompactCitizen(string row)
+    {
+        var fields = row.Split('|');
+        if (fields.Length != 8)
+        {
+            throw new InvalidOperationException("Compact citizen row has an invalid field count.");
+        }
+
+        return new WorldCitizen(
+            EntityId.Create(EntityKind.Citizen, long.Parse(fields[0], System.Globalization.CultureInfo.InvariantCulture)),
+            DecodeString(fields[1]),
+            int.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture),
+            ParseEnum<Sex>(fields[3]),
+            DecodeString(fields[4]),
+            EntityId.Create(
+                ParseEnum<EntityKind>(fields[5]),
+                long.Parse(fields[6], System.Globalization.CultureInfo.InvariantCulture)),
+            ParseEnum<CitizenStatus>(fields[7]));
+    }
+
+    private static T ParseEnum<T>(string value)
+        where T : struct
+    {
+        return (T)Enum.Parse(typeof(T), value);
+    }
+
+    private static string EncodeString(string value)
+    {
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+    }
+
+    private static string DecodeString(string value)
+    {
+        return Encoding.UTF8.GetString(Convert.FromBase64String(value));
     }
 
     private static EntityId ReadId(XElement element)

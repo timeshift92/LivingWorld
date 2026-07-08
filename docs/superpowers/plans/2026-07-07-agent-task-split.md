@@ -331,9 +331,12 @@ coarse model.
   resolution, expansion, settlement capture, and simulation citizen replacement. Tests compare
   the cache with a full citizens/ownership scan after death, migration, raid reserve, return,
   missing and prisoner transitions.
-- **O2 (Codex): Compact serialization / cohorts.** Replace the per-entity XML codec (40
-  per-element writers, one per citizen) with a compact/cohort format for the global layer,
-  back-compat load. This is the 20k–100k save/load blocker. Status: NOT STARTED.
+- **O2 (Codex): Compact serialization / cohorts.** Status: DONE for the current high-volume
+  save blocker — `WorldStateCodec` now writes `Citizens`, `Ownership`, and `Events` as
+  deterministic `format="compact-v2"` row blocks instead of one XML element per record, while
+  still reading legacy `<Citizen>`, `<Owner>`, and `<Event>` payloads. Full binary/chunked
+  storage remains optional future work, but the 20k-100k citizen XML element explosion is
+  removed.
 - **O3 (Codex, later): Time-dilation / adaptive tick.** Tick cohorts/regions at variable
   frequency by relevance (quiet regions rarely, active wars often), per RocketMan/Missile
   Girl. Today: every settlement/faction ticks daily uniformly. Status: BACKLOG.
@@ -426,8 +429,8 @@ bands, F-1 table) now reads real value. Deterministic + conservation-safe; test
 - **O1 (DONE by Codex, `11a3e27+`):** cache per-faction/per-settlement resident population and
   combat power instead of re-LINQ-ing citizens each call; this closes G3's first war-loop scale
   issue. Wealth snapshots already have their own daily cache from Claude's `01a1d3d`.
-- **O2 (NOT STARTED):** save/load throughput for 20k–100k-entity ledgers (the serialization
-  blocker). Touches `WorldStateCodec` — higher risk.
+- **O2 (DONE by Codex):** high-volume save blocks use compact-v2 rows for citizens,
+  ownership and event history with legacy XML fallback. Further binary/chunk storage can wait.
 - **EMP2 (BACKLOG):** real Empire adapter. **O3 (BACKLOG):** tiered/heat-map ticking cadence.
 
 ## Review Contract

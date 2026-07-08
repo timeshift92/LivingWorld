@@ -135,6 +135,9 @@ var tests = new List<(string Name, Action Test)>
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
+    ("serializes citizens in compact save block", TestWorldStateSerializesCitizensCompactly),
+    ("serializes ownership and events in compact save blocks", TestWorldStateSerializesOwnershipAndEventsCompactly),
+    ("loads legacy per-citizen save blocks", TestWorldStateLoadsLegacyCitizenElements),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
     ("defines RimWorld 1.6 load folders", TestRimWorldLoadFolders),
@@ -3454,6 +3457,65 @@ static void TestWorldStateSerializationRoundTrip()
 
     AssertEqual("Citizen:6", nextCitizen.Id.ToString());
     AssertEqual("Army:2", nextArmy.Id.ToString());
+}
+
+static void TestWorldStateSerializesCitizensCompactly()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "Pirate");
+    for (var i = 0; i < 25; i++)
+    {
+        state.CreateCitizen($"Raider {i + 1}", 20 + i, i % 2 == 0 ? Sex.Male : Sex.Female, "soldier", settlement.Id);
+    }
+
+    var payload = WorldStateCodec.Serialize(state);
+    var restored = WorldStateCodec.Deserialize(payload);
+
+    AssertContains("<Citizens format=\"compact-v2\">", payload);
+    AssertDoesNotContain("<Citizen ", payload);
+    AssertEqual(25, restored.Citizens.Count);
+    AssertEqual(state.GetSettlementPopulation(settlement.Id), restored.GetSettlementPopulation(settlement.Id));
+}
+
+static void TestWorldStateSerializesOwnershipAndEventsCompactly()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("north-camp", "Northern Camp", "Pirate");
+    for (var i = 0; i < 10; i++)
+    {
+        state.CreateCitizen($"Raider {i + 1}", 20 + i, Sex.Male, "soldier", settlement.Id);
+    }
+
+    var payload = WorldStateCodec.Serialize(state);
+    var restored = WorldStateCodec.Deserialize(payload);
+
+    AssertContains("<Ownership format=\"compact-v2\">", payload);
+    AssertContains("<Events format=\"compact-v2\">", payload);
+    AssertDoesNotContain("<Owner ", payload);
+    AssertDoesNotContain("<Event ", payload);
+    AssertEqual(state.Citizens.Count, restored.Citizens.Count);
+    AssertEqual(state.Events.Count, restored.Events.Count);
+    AssertEqual(state.GetOwner(state.Citizens.First().Id), restored.GetOwner(state.Citizens.First().Id));
+}
+
+static void TestWorldStateLoadsLegacyCitizenElements()
+{
+    var payload =
+        "<LivingWorldState version=\"1\" worldSeed=\"123\" currentTick=\"0\">" +
+        "<Settlements><Settlement kind=\"Settlement\" id=\"1\" slug=\"legacy\" name=\"Legacy\" factionId=\"Pirate\" /></Settlements>" +
+        "<Citizens><Citizen kind=\"Citizen\" id=\"1\" name=\"Legacy Raider\" age=\"31\" sex=\"Female\" profession=\"soldier\" settlementKind=\"Settlement\" settlementId=\"1\" status=\"Alive\" /></Citizens>" +
+        "<Armies />" +
+        "<Ownership><Owner assetKind=\"Citizen\" assetId=\"1\" ownerKind=\"Settlement\" ownerId=\"1\" /></Ownership>" +
+        "<Resources />" +
+        "<Events />" +
+        "</LivingWorldState>";
+
+    var restored = WorldStateCodec.Deserialize(payload);
+    var citizen = restored.Citizens.Single();
+
+    AssertEqual("Legacy Raider", citizen.Name);
+    AssertEqual(Sex.Female, citizen.Sex);
+    AssertEqual(new SettlementPopulation(1, 0, 1, 0), restored.GetSettlementPopulation(EntityId.Create(EntityKind.Settlement, 1)));
 }
 
 static void TestRimWorldSourceModMetadata()

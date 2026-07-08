@@ -112,4 +112,5 @@ not allied with — intended trade, not a bug.
 
 1. **Codex — G3/O1 — DONE.** Cached settlement/faction resident population and
    combat power aggregates now back the war-loop power reads.
-2. **Codex — O2** compact/cohort serialization for large saves.
+2. **Codex — O2 — DONE.** `Citizens`, `Ownership`, and `Events` now save as
+   compact v2 rows with legacy XML fallback.

@@ -855,7 +855,7 @@ Turn caravan from instant transfer into real entity.
 | War-loop scans citizens daily | Medium later | Closed by C7/O1 | Keep aggregate/full-scan tests around citizen and ownership transitions |
 | Caravan is instant transfer | Low now / High later | Accepted abstraction | Design WorldCaravan |
 | Drifters may feel like magic spawn | Medium | Needs framing | Add finite reservoir |
-| Save format may grow too large | Medium later | Not urgent | Chunk/compress/migrate later |
+| Save format may grow too large | Medium later | Main XML element explosion closed by O2 | Consider binary/chunk storage only after profiling real large saves |
 | UI remains debug-heavy | Low | Acceptable for now | Split player UI/dev UI later |
 
 ---
@@ -877,6 +877,7 @@ C4 — Player faction defense-in-depth (done)
 C5 — Army movement pruning (done)
 C6 — WorldWarService split (done)
 C7 — Population/faction aggregates foundation (done)
+O2 — Compact high-volume save blocks (done)
 ```
 
 After that, the project will be ready for the next real feature layer:

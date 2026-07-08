@@ -89,6 +89,36 @@ CacheChunks
 Текущая RimWorld-реализация сериализует `WorldState` в XML внутри
 `LivingWorldWorldComponent`.
 
+High-volume ledger containers use compact v2 text rows instead of one XML
+element per record:
+
+```xml
+<Citizens format="compact-v2">...</Citizens>
+<Ownership format="compact-v2">...</Ownership>
+<Events format="compact-v2">...</Events>
+```
+
+The compact rows are deterministic and are rebuilt into normal ledger records
+on load. String fields are UTF-8/base64 encoded inside the row so names,
+professions and event summaries can contain punctuation without changing the
+delimiter contract. The loader remains backward-compatible with legacy
+per-record XML:
+
+```xml
+<Citizens>
+  <Citizen ... />
+</Citizens>
+<Ownership>
+  <Owner ... />
+</Ownership>
+<Events>
+  <Event ... />
+</Events>
+```
+
+Derived aggregate caches are not saved. They are rebuilt lazily from citizens
+and ownership after load.
+
 Текущие обязательные инварианты после загрузки:
 
 - `worldSeed` приходит из seed RimWorld world и round-trip'ится через XML;
