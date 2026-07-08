@@ -19,6 +19,8 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, SettlementProductionProfile> _productionProfiles = new();
     private readonly Dictionary<EntityId, SettlementCapability> _settlementCapabilities = new();
     private readonly Dictionary<EntityId, SpecialistPool> _specialistPools = new();
+    private readonly Dictionary<EntityId, SettlementWealthSnapshot> _settlementWealth = new();
+    private readonly Dictionary<string, FactionWealthSnapshot> _factionWealth = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
@@ -72,6 +74,10 @@ public sealed class WorldState
     public IReadOnlyCollection<SettlementCapability> SettlementCapabilities => _settlementCapabilities.Values;
 
     public IReadOnlyCollection<SpecialistPool> SpecialistPools => _specialistPools.Values;
+
+    public IReadOnlyCollection<SettlementWealthSnapshot> SettlementWealth => _settlementWealth.Values;
+
+    public IReadOnlyCollection<FactionWealthSnapshot> FactionWealth => _factionWealth.Values;
 
     public IReadOnlyCollection<WorldFactionRecord> FactionRecords => _factionRecords.Values;
 
@@ -163,6 +169,13 @@ public sealed class WorldState
             SpecialistPools = _specialistPools.Values
                 .OrderBy(specialists => specialists.SettlementId.Kind)
                 .ThenBy(specialists => specialists.SettlementId.Value)
+                .ToList(),
+            SettlementWealth = _settlementWealth.Values
+                .OrderBy(wealth => wealth.SettlementId.Kind)
+                .ThenBy(wealth => wealth.SettlementId.Value)
+                .ToList(),
+            FactionWealth = _factionWealth.Values
+                .OrderBy(wealth => wealth.FactionId, StringComparer.Ordinal)
                 .ToList()
         };
     }
@@ -244,6 +257,16 @@ public sealed class WorldState
         foreach (var specialists in snapshot.SpecialistPools)
         {
             state._specialistPools[specialists.SettlementId] = Normalize(specialists);
+        }
+
+        foreach (var wealth in snapshot.SettlementWealth)
+        {
+            state._settlementWealth[wealth.SettlementId] = wealth;
+        }
+
+        foreach (var wealth in snapshot.FactionWealth)
+        {
+            state._factionWealth[wealth.FactionId] = wealth;
         }
 
         foreach (var factionRecord in snapshot.FactionRecords)
@@ -854,6 +877,22 @@ public sealed class WorldState
             : null;
     }
 
+    public SettlementWealthSnapshot? GetSettlementWealth(EntityId settlementId)
+    {
+        return _settlementWealth.TryGetValue(settlementId, out var wealth)
+            ? wealth
+            : null;
+    }
+
+    public FactionWealthSnapshot? GetFactionWealth(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+
+        return _factionWealth.TryGetValue(factionId, out var wealth)
+            ? wealth
+            : null;
+    }
+
     public WorldFactionRecord? GetFactionRecord(string factionId)
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
@@ -883,6 +922,15 @@ public sealed class WorldState
     public int GetOwnedResourceQuantity(EntityId ownerId, string resourceKey)
     {
         return ResourceLedgerService.GetQuantity(this, ownerId, resourceKey);
+    }
+
+    public IReadOnlyList<ResourceStack> ResourcesForOwner(EntityId ownerId)
+    {
+        return _resources
+            .Where(pair => pair.Key.OwnerId == ownerId)
+            .OrderBy(pair => pair.Key.ResourceKey, StringComparer.Ordinal)
+            .Select(pair => new ResourceStack(pair.Key.OwnerId, pair.Key.ResourceKey, pair.Value))
+            .ToList();
     }
 
     public int ConsumeResource(EntityId ownerId, string resourceKey, int requestedQuantity, string reason)
@@ -979,6 +1027,42 @@ public sealed class WorldState
         }
 
         _specialistPools[specialists.SettlementId] = Normalize(specialists);
+    }
+
+    public void RecordSettlementWealth(SettlementWealthSnapshot wealth)
+    {
+        if (wealth == null)
+        {
+            throw new ArgumentNullException(nameof(wealth));
+        }
+
+        if (!_settlements.ContainsKey(wealth.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {wealth.SettlementId} does not exist.");
+        }
+
+        _settlementWealth[wealth.SettlementId] = wealth with
+        {
+            Silver = Math.Max(0, wealth.Silver),
+            MaterialWealth = Math.Max(0, wealth.MaterialWealth),
+            TotalWealth = Math.Max(0, wealth.TotalWealth)
+        };
+    }
+
+    public void RecordFactionWealth(FactionWealthSnapshot wealth)
+    {
+        if (wealth == null)
+        {
+            throw new ArgumentNullException(nameof(wealth));
+        }
+
+        ThrowIfNullOrWhiteSpace(wealth.FactionId, nameof(wealth));
+        _factionWealth[wealth.FactionId] = wealth with
+        {
+            Silver = Math.Max(0, wealth.Silver),
+            MaterialWealth = Math.Max(0, wealth.MaterialWealth),
+            TotalWealth = Math.Max(0, wealth.TotalWealth)
+        };
     }
 
     internal WorldFactionRecord MarkFactionCollapsedForLifecycle(string factionId, int tick, string reason)

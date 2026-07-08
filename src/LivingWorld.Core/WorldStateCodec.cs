@@ -155,7 +155,11 @@ public static class WorldStateCodec
                             new XAttribute("foodPerAdult", profile.FoodPerAdult),
                             new XAttribute("steelPerAdult", profile.SteelPerAdult),
                             new XAttribute("medicinePerAdult", profile.MedicinePerAdult),
-                            new XAttribute("componentPerAdult", profile.ComponentPerAdult)))),
+                            new XAttribute("componentPerAdult", profile.ComponentPerAdult),
+                            new XAttribute("archetype", profile.Archetype),
+                            new XAttribute("laborEfficiencyPercent", profile.LaborEfficiencyPercent),
+                            new XAttribute("economyScalePercent", profile.EconomyScalePercent),
+                            new XAttribute("complexityPenaltyPercent", profile.ComplexityPenaltyPercent)))),
                 new XElement(
                     "SettlementCapabilities",
                     snapshot.SettlementCapabilities.Select(capability =>
@@ -189,6 +193,26 @@ public static class WorldStateCodec
                                 new XAttribute("mechanitors", specialists.Mechanitors),
                                 new XAttribute("soldiers", specialists.Soldiers),
                                 new XAttribute("diplomats", specialists.Diplomats)))),
+                new XElement(
+                    "SettlementWealth",
+                    snapshot.SettlementWealth.Select(wealth =>
+                        new XElement(
+                            "Wealth",
+                            new XAttribute("settlementKind", wealth.SettlementId.Kind),
+                            new XAttribute("settlementId", wealth.SettlementId.Value),
+                            new XAttribute("factionId", wealth.FactionId),
+                            new XAttribute("silver", wealth.Silver),
+                            new XAttribute("materialWealth", wealth.MaterialWealth),
+                            new XAttribute("totalWealth", wealth.TotalWealth)))),
+                new XElement(
+                    "FactionWealth",
+                    snapshot.FactionWealth.Select(wealth =>
+                        new XElement(
+                            "Wealth",
+                            new XAttribute("factionId", wealth.FactionId),
+                            new XAttribute("silver", wealth.Silver),
+                            new XAttribute("materialWealth", wealth.MaterialWealth),
+                            new XAttribute("totalWealth", wealth.TotalWealth)))),
                 new XElement(
                     "FactionRecords",
                     snapshot.FactionRecords.Select(record =>
@@ -411,7 +435,13 @@ public static class WorldStateCodec
                     RequiredInt(element, "foodPerAdult"),
                     RequiredInt(element, "steelPerAdult"),
                     RequiredInt(element, "medicinePerAdult"),
-                    RequiredInt(element, "componentPerAdult")))
+                    RequiredInt(element, "componentPerAdult"))
+                {
+                    Archetype = OptionalEnum(element, "archetype", ProductionArchetype.Balanced),
+                    LaborEfficiencyPercent = OptionalInt(element, "laborEfficiencyPercent", 100),
+                    EconomyScalePercent = OptionalInt(element, "economyScalePercent", 100),
+                    ComplexityPenaltyPercent = OptionalInt(element, "complexityPenaltyPercent", 100),
+                })
                 .ToList(),
             OptionalContainer(root, "FactionRecords")
                 .Elements("FactionRecord")
@@ -489,6 +519,25 @@ public static class WorldStateCodec
                 RequiredInt(element, "mechanitors"),
                 RequiredInt(element, "soldiers"),
                 RequiredInt(element, "diplomats")));
+        }
+
+        foreach (var element in OptionalContainer(root, "SettlementWealth").Elements("Wealth"))
+        {
+            state.RecordSettlementWealth(new SettlementWealthSnapshot(
+                ReadEntityId(element, "settlementKind", "settlementId"),
+                RequiredString(element, "factionId"),
+                RequiredInt(element, "silver"),
+                RequiredInt(element, "materialWealth"),
+                RequiredInt(element, "totalWealth")));
+        }
+
+        foreach (var element in OptionalContainer(root, "FactionWealth").Elements("Wealth"))
+        {
+            state.RecordFactionWealth(new FactionWealthSnapshot(
+                RequiredString(element, "factionId"),
+                RequiredInt(element, "silver"),
+                RequiredInt(element, "materialWealth"),
+                RequiredInt(element, "totalWealth")));
         }
 
         foreach (var element in OptionalContainer(root, "ArmyMovements").Elements("Movement"))

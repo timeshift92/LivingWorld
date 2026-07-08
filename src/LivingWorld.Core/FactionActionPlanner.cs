@@ -17,6 +17,7 @@ public enum WarAction
     Caravan,
     ScoutingParty,
     Diplomat,
+    Develop,
 }
 
 /// <summary>A faction's intended action for a day, with a target where the action needs one.</summary>
@@ -46,21 +47,26 @@ public static class FactionActionPlanner
             return new FactionActionPlan(factionId, WarAction.None, null);
         }
 
+        var developmentTarget = FindDevelopmentTarget(state, factionId);
         var target = FindEnemyTarget(state, factionId);
 
         var action = profile.Behavior switch
         {
             FactionBehavior.Warmonger => target.HasValue ? WarAction.Warband : WarAction.ScoutingParty,
             FactionBehavior.Aggressive => target.HasValue ? WarAction.Warband : WarAction.ScoutingParty,
-            FactionBehavior.Expansionist => WarAction.Settler,
-            FactionBehavior.Merchant => WarAction.Caravan,
-            FactionBehavior.Cautious => WarAction.ScoutingParty,
+            FactionBehavior.Expansionist => developmentTarget.HasValue ? WarAction.Develop : WarAction.Settler,
+            FactionBehavior.Merchant => developmentTarget.HasValue ? WarAction.Develop : WarAction.Caravan,
+            FactionBehavior.Cautious => developmentTarget.HasValue ? WarAction.Develop : WarAction.ScoutingParty,
             FactionBehavior.Random => DeterministicRandomAction(tick, target.HasValue),
             _ => WarAction.None,
         };
 
         // Only a warband spends itself against a specific enemy settlement; the rest act at home.
-        var planTarget = action == WarAction.Warband ? target : null;
+        var planTarget = action == WarAction.Warband
+            ? target
+            : action == WarAction.Develop
+                ? developmentTarget
+                : null;
         return new FactionActionPlan(factionId, action, planTarget);
     }
 
@@ -102,6 +108,22 @@ public static class FactionActionPlanner
             .FirstOrDefault();
 
         return enemy?.Id;
+    }
+
+    private static EntityId? FindDevelopmentTarget(WorldState state, string factionId)
+    {
+        var settlement = state.Settlements
+            .Where(candidate => string.Equals(candidate.FactionId, factionId, StringComparison.Ordinal))
+            .Where(candidate => state.GetOwnedResourceQuantity(candidate.Id, "Silver") >= 100)
+            .Where(candidate =>
+            {
+                var population = state.GetSettlementPopulation(candidate.Id).Total;
+                var housing = state.GetSettlementCapability(candidate.Id)?.HousingCapacity ?? 0;
+                return population > 0 && housing <= population;
+            })
+            .OrderBy(candidate => candidate.Id.Value)
+            .FirstOrDefault();
+        return settlement?.Id;
     }
 
     private static WarAction DeterministicRandomAction(int tick, bool hasTarget)

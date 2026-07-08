@@ -696,6 +696,24 @@ Then the daily loop becomes easier to audit.
 
 ## Recommended next tasks
 
+## Update after E1-E3 / SD2 Core slice
+
+Core economy foundation is now present:
+
+- `SettlementWealthService` caches settlement/faction wealth from owned silver and
+  priced owned resources.
+- `SettlementProductionProfile` supports production archetype, labor efficiency,
+  economy scale and complexity penalty with optional save-load fallbacks.
+- `VirtualTradeService` quotes and executes conservation-safe goods/silver trades.
+- Settlement births respect housing capacity.
+- `WarAction.Develop` lets cautious/merchant/expansionist factions invest in an
+  underbuilt settlement; `WorldWarService` executes the target settlement
+  development without touching unrelated settlements.
+
+This makes Claude's E4b trader materialization feasible from Core-owned resources
+and prices. Remaining economy work is deeper market policy/UI/materialization, not
+the foundational ledger path.
+
 ## Task 1 — C4: Core player-faction defense-in-depth (done)
 
 ### Goal

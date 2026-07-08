@@ -281,14 +281,19 @@ coarse model.
 
 ### Economy (mostly not adopted; we have biome+tech output + resource ledger + simple transfer)
 
-- **E1 (Codex): Ledger money/wealth.** Silver as an owned resource + a cached faction/
-  settlement wealth aggregate + earn/consume. Today: no money at all. Status: NOT STARTED.
+- **E1 (Codex): Ledger money/wealth.** Silver as an owned resource + cached faction/
+  settlement wealth aggregates + earn/consume through normal ledger resource APIs.
+  Status: DONE — `ResourcePriceBook` + `SettlementWealthService` calculate settlement and
+  faction wealth snapshots from owned resources and cache them in `WorldState`.
 - **E2 (Codex): Production depth (extends C2).** Terrain factors (hilliness/rainfall/temp/
-  animal density) + production archetypes (Miner/Farmer/Medical/Warrior/…) + labor force,
-  economy-of-scale, complexity penalty. Today: flat output = f(biome, tech). Status: NOT STARTED.
+  animal density) + production archetypes (Miner/Farmer/Medical/Warrior/...) + labor force,
+  economy-of-scale, complexity penalty. Status: DONE — `SettlementProductionProfile` now
+  carries archetype/labor/scale/complexity modifiers with optional save-load fallbacks, and
+  `SettlementProductionService` uses effective outputs instead of flat per-adult output.
 - **E3 (Codex): Faction-to-faction virtual trade + prices.** Exports/barter/silver transfer
-  between factions, dynamic prices/inflation from stock/assets/tech demand. Today: only a
-  direct resource transfer caravan. Status: NOT STARTED.
+  between factions, dynamic prices/inflation from stock/assets/tech demand. Status: DONE —
+  `VirtualTradeService` quotes deterministic stock/wealth-sensitive prices and executes
+  conservation-safe goods/silver transfers between ledger settlements.
 - **E4 (Claude): Materialize trade from ledger + economy UI.** Draw arriving vanilla trader
   stock from the nearest ledger settlement's owned resources; show wealth/price bands in the
   main tab; EN/RU.
@@ -296,9 +301,9 @@ coarse model.
     wealth as bands (poor/modest/wealthy, exact only under debug), capped and cached in
     `RefreshCachedRows` (no per-frame full-scan); EN/RU. Test `TestRimWorldWorldEconomyMainTab`.
     Uses a resource-stock proxy until E1 wealth lands. Build 0/0.
-  - **E4b (trader materialization): DEFERRED.** Harmony hook on `IncidentWorker_TraderCaravan
-    Arrival` to draw trader stock from ledger owned resources; pairs better after Codex E1–E3
-    (money/prices) give trade real value. Status: NOT STARTED.
+  - **E4b (trader materialization): READY FOR CLAUDE.** Harmony hook on
+    `IncidentWorker_TraderCaravanArrival` can now draw trader stock from owned resources and
+    use `SettlementWealthService`/`VirtualTradeService` for value and prices. Status: NOT STARTED.
 
 ### Empire compatibility (no adapter today)
 
@@ -341,9 +346,11 @@ grown by a tick service, and births ignored housing.
   infrastructure, not people — conservation-safe). Wired into the daily tick behind
   `settlementDevelopmentEnabled` (+ `settlementDevelopmentStep`, `settlementHousingHeadroom`).
   Tests `TestSettlementDevelopmentGrowsHousing` + `TestRimWorldSettlementDevelopmentWiring`.
-- **SD2 (Codex, backlog): Deeper development.** Settlement tiers/levels (village→town→city,
-  population-flow §8), a `Develop`/`Build` `WarAction` so factions deliberately invest in a base,
-  specialist-pool growth, and tying births to housing capacity. Ties to EMP2/E2. Status: BACKLOG.
+- **SD2 (Codex): Deeper development.** Settlement tiers/levels (camp/village/town/city),
+  population-flow §8, a `Develop` `WarAction` so factions deliberately invest in a base,
+  specialist-pool growth, and tying births to housing capacity. Status: DONE — births are
+  blocked when housing is full, `SettlementDevelopmentService` exposes tier calculation and
+  specialist growth, and `WorldWarService` executes `Develop` plans against the target settlement.
 
 ## Adopted Mod UI / Icons (2026-07-08 — "what UI/icons/functionality can we adopt")
 

@@ -360,6 +360,26 @@ Daily tick запускает `SettlementProductionService` до потребл�
 караваны. Производство намеренно зависит от местности и технологии, а не только
 от числа жителей.
 
+Production depth adds deterministic modifiers:
+
+- `ProductionArchetype` (`Balanced`, `Farmer`, `Miner`, `Medical`, `Warrior`);
+- labor efficiency;
+- economy-of-scale;
+- complexity penalty.
+
+The service multiplies these factors into effective daily output and still writes
+only owned ledger resources. Virtual trade uses `VirtualTradeService`: it quotes a
+deterministic price from stock pressure and silver/wealth pressure, then transfers
+real goods and silver between settlement owners. No trade path creates resources.
+
+Settlement development now has a deeper Core layer:
+
+- births are blocked when housing is full;
+- `SettlementDevelopmentService.GetTier` derives camp/village/town/city from
+  population and housing;
+- `WarAction.Develop` lets a faction deliberately invest in an underbuilt base;
+- development can consume owned silver and grow specialist pools.
+
 ### Settlement knowledge visibility (current implementation)
 
 Player-facing settlement UI не должен показывать глобальный ledger напрямую.

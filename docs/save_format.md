@@ -126,13 +126,19 @@ CacheChunks
     foodPerAdult="4"
     steelPerAdult="2"
     medicinePerAdult="1"
-    componentPerAdult="1" />
+    componentPerAdult="1"
+    archetype="Balanced"
+    laborEfficiencyPercent="100"
+    economyScalePercent="100"
+    complexityPenaltyPercent="100" />
 </ProductionProfiles>
 ```
 
 Чтение контейнера optional: старые сейвы без `ProductionProfiles` загружаются
 с пустым списком профилей, после чего профиль может быть восстановлен новым
-bootstrap/repair-проходом.
+bootstrap/repair-проходом. Production-depth атрибуты optional: старые профили
+без `archetype`, `laborEfficiencyPercent`, `economyScalePercent` и
+`complexityPenaltyPercent` читаются как balanced 100/100/100.
 
 Settlement infrastructure and specialists are stored as compact aggregates:
 
@@ -172,6 +178,31 @@ Settlement infrastructure and specialists are stored as compact aggregates:
 Both containers are optional on load. Missing values mean the settlement has no
 recorded advanced capacity yet; they do not create hidden buildings, pawns or
 workers. Negative input values are normalized to zero by the ledger.
+
+Economy wealth snapshots are cache chunks. They speed UI and downstream trade
+selection, but can be rebuilt from owned resources and price books:
+
+```xml
+<SettlementWealth>
+  <Wealth
+    settlementKind="Settlement"
+    settlementId="1"
+    factionId="Outlander"
+    silver="120"
+    materialWealth="32"
+    totalWealth="152" />
+</SettlementWealth>
+
+<FactionWealth>
+  <Wealth
+    factionId="Outlander"
+    silver="150"
+    materialWealth="42"
+    totalWealth="192" />
+</FactionWealth>
+```
+
+Both containers are optional on load.
 
 Ledger-level faction lifecycle is stored separately from RimWorld `Faction`
 objects:

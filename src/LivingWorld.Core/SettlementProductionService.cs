@@ -8,6 +8,15 @@ public sealed record SettlementProductionEnvironment(
     int Rainfall,
     int AverageTemperature);
 
+public enum ProductionArchetype
+{
+    Balanced,
+    Farmer,
+    Miner,
+    Medical,
+    Warrior,
+}
+
 public sealed record SettlementProductionProfile(
     EntityId SettlementId,
     string Biome,
@@ -21,6 +30,14 @@ public sealed record SettlementProductionProfile(
     int MedicinePerAdult,
     int ComponentPerAdult)
 {
+    public ProductionArchetype Archetype { get; init; } = ProductionArchetype.Balanced;
+
+    public int LaborEfficiencyPercent { get; init; } = 100;
+
+    public int EconomyScalePercent { get; init; } = 100;
+
+    public int ComplexityPenaltyPercent { get; init; } = 100;
+
     public static SettlementProductionProfile FromEnvironment(
         EntityId settlementId,
         SettlementProductionEnvironment environment)
@@ -82,6 +99,71 @@ public sealed record SettlementProductionProfile(
 
     public int TotalDailyOutputPerAdult =>
         FoodPerAdult + SteelPerAdult + MedicinePerAdult + ComponentPerAdult;
+
+    public int EffectiveDailyFood(int adults) =>
+        EffectiveOutput(adults, FoodPerAdult, ArchetypeFoodPercent(Archetype));
+
+    public int EffectiveDailySteel(int adults) =>
+        EffectiveOutput(adults, SteelPerAdult, ArchetypeSteelPercent(Archetype));
+
+    public int EffectiveDailyMedicine(int adults) =>
+        EffectiveOutput(adults, MedicinePerAdult, ArchetypeMedicinePercent(Archetype));
+
+    public int EffectiveDailyComponents(int adults) =>
+        EffectiveOutput(adults, ComponentPerAdult, ArchetypeComponentPercent(Archetype));
+
+    private int EffectiveOutput(int adults, int perAdult, int archetypePercent)
+    {
+        if (adults <= 0 || perAdult <= 0)
+        {
+            return 0;
+        }
+
+        var value = (long)adults
+            * perAdult
+            * Math.Max(0, archetypePercent)
+            * Math.Max(0, LaborEfficiencyPercent)
+            * Math.Max(0, EconomyScalePercent)
+            * Math.Max(0, ComplexityPenaltyPercent);
+        return (int)(value / 100_000_000L);
+    }
+
+    private static int ArchetypeFoodPercent(ProductionArchetype archetype) =>
+        archetype switch
+        {
+            ProductionArchetype.Farmer => 150,
+            ProductionArchetype.Miner => 75,
+            ProductionArchetype.Medical => 90,
+            ProductionArchetype.Warrior => 80,
+            _ => 100,
+        };
+
+    private static int ArchetypeSteelPercent(ProductionArchetype archetype) =>
+        archetype switch
+        {
+            ProductionArchetype.Miner => 150,
+            ProductionArchetype.Warrior => 120,
+            ProductionArchetype.Farmer => 80,
+            _ => 100,
+        };
+
+    private static int ArchetypeMedicinePercent(ProductionArchetype archetype) =>
+        archetype switch
+        {
+            ProductionArchetype.Medical => 160,
+            ProductionArchetype.Miner => 80,
+            ProductionArchetype.Warrior => 80,
+            _ => 100,
+        };
+
+    private static int ArchetypeComponentPercent(ProductionArchetype archetype) =>
+        archetype switch
+        {
+            ProductionArchetype.Miner => 120,
+            ProductionArchetype.Medical => 110,
+            ProductionArchetype.Warrior => 90,
+            _ => 100,
+        };
 
     private static int HillinessFoodPenalty(string hilliness)
     {
@@ -209,10 +291,10 @@ public static class SettlementProductionService
                 continue;
             }
 
-            var producedFood = adults * profile.FoodPerAdult;
-            var producedSteel = adults * profile.SteelPerAdult;
-            var producedMedicine = adults * profile.MedicinePerAdult;
-            var producedComponents = adults * profile.ComponentPerAdult;
+            var producedFood = profile.EffectiveDailyFood(adults);
+            var producedSteel = profile.EffectiveDailySteel(adults);
+            var producedMedicine = profile.EffectiveDailyMedicine(adults);
+            var producedComponents = profile.EffectiveDailyComponents(adults);
 
             AddProducedResource(state, profile.SettlementId, request.FoodResourceKey, producedFood);
             AddProducedResource(state, profile.SettlementId, request.SteelResourceKey, producedSteel);

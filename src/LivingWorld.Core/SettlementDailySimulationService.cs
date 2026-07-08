@@ -73,6 +73,7 @@ public static class SettlementDailySimulationService
 
             if (day % birthIntervalDays == 0
                 && population.Adults >= 2
+                && HasHousingForBirth(state, settlement.Id, population.Total)
                 && state.GetOwnedResourceQuantity(settlement.Id, request.FoodResourceKey) >= population.Total)
             {
                 var childIndex = state.Citizens.Count(citizen => citizen.SettlementId == settlement.Id) + 1;
@@ -95,5 +96,11 @@ public static class SettlementDailySimulationService
     {
         var value = unchecked(worldSeed + ((int)settlementId * 397) + (day * 17) + childIndex);
         return value % 2 == 0 ? Sex.Female : Sex.Male;
+    }
+
+    private static bool HasHousingForBirth(WorldState state, EntityId settlementId, int population)
+    {
+        var capability = state.GetSettlementCapability(settlementId);
+        return capability == null || capability.HousingCapacity <= 0 || capability.HousingCapacity > population;
     }
 }

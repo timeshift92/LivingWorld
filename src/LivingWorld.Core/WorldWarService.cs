@@ -12,7 +12,22 @@ public sealed record WorldWarRequest(
     string CaravanResourceKey = "Steel",
     int CaravanQuantity = 10,
     int DiplomatGoodwill = 5,
-    int ResolvedMovementRetentionDays = 30);
+    int ResolvedMovementRetentionDays = 30)
+{
+    public string DevelopmentFoodResourceKey { get; init; } = "PackagedSurvivalMeal";
+
+    public string DevelopmentSilverResourceKey { get; init; } = "Silver";
+
+    public int DevelopmentHousingHeadroom { get; init; } = 12;
+
+    public int DevelopmentStep { get; init; } = 5;
+
+    public int DevelopmentMaxHousing { get; init; } = 120;
+
+    public int DevelopmentSilverCost { get; init; } = 0;
+
+    public int DevelopmentSpecialistGrowthStep { get; init; } = 0;
+}
 
 public sealed record WorldWarResult(
     int PlansConsidered,
@@ -22,7 +37,10 @@ public sealed record WorldWarResult(
     int ColoniesFounded,
     int CaravansCompleted = 0,
     int ScoutingReports = 0,
-    int DiplomaticMissions = 0);
+    int DiplomaticMissions = 0)
+{
+    public int DevelopmentsCompleted { get; init; }
+}
 
 /// <summary>
 /// Runs one day of the ledger world war by orchestrating the phase services in order: advance
@@ -90,6 +108,7 @@ public static class WorldWarService
         var caravans = 0;
         var scoutingReports = 0;
         var diplomaticMissions = 0;
+        var developments = 0;
         var plans = FactionActionPlanner.PlanDay(state, request.Tick);
         foreach (var plan in plans)
         {
@@ -128,6 +147,13 @@ public static class WorldWarService
                     diplomaticMissions++;
                 }
             }
+            else if (plan.Action == WarAction.Develop && plan.TargetSettlementId.HasValue)
+            {
+                if (TryDevelopSettlement(state, plan.TargetSettlementId.Value, request))
+                {
+                    developments++;
+                }
+            }
         }
 
         ArmyMovementPruneService.Prune(
@@ -142,7 +168,10 @@ public static class WorldWarService
             founded,
             caravans,
             scoutingReports,
-            diplomaticMissions);
+            diplomaticMissions)
+        {
+            DevelopmentsCompleted = developments
+        };
     }
 
     private static bool TryLaunchWarband(WorldState state, FactionActionPlan plan, WorldWarRequest request)
@@ -279,6 +308,26 @@ public static class WorldWarService
             source.Id,
             $"Diplomats from {source.Id} improved relations between {factionId} and {targetFaction} to {after}.");
         return true;
+    }
+
+    private static bool TryDevelopSettlement(WorldState state, EntityId settlementId, WorldWarRequest request)
+    {
+        var result = SettlementDevelopmentService.DevelopSettlement(
+            state,
+            settlementId,
+            new SettlementDevelopmentRequest(
+                request.Tick,
+                request.DevelopmentFoodResourceKey,
+                request.DevelopmentHousingHeadroom,
+                request.DevelopmentStep,
+                request.DevelopmentMaxHousing)
+            {
+                SilverResourceKey = request.DevelopmentSilverResourceKey,
+                DevelopmentSilverCost = request.DevelopmentSilverCost,
+                SpecialistGrowthStep = request.DevelopmentSpecialistGrowthStep,
+            });
+
+        return result.SettlementsDeveloped > 0;
     }
 
     private static WorldSettlement? FindReadySourceSettlement(WorldState state, string factionId)

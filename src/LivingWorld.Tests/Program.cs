@@ -21,11 +21,16 @@ var tests = new List<(string Name, Action Test)>
     ("transfers assets through ownership service", TestOwnershipServiceTransfersAssets),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
+    ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
     ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
     ("builds settlement production profile from terrain and technology", TestSettlementProductionProfileUsesTerrainAndTechnology),
+    ("calculates and caches settlement and faction wealth", TestSettlementWealthServiceCachesWealth),
+    ("deep production uses archetype labor scale and complexity", TestSettlementProductionUsesDepthModifiers),
+    ("virtual trade conserves goods and silver", TestVirtualTradeTransfersGoodsAndSilver),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
     ("serializes settlement production profiles", TestSettlementProductionProfileSerialization),
     ("records settlement capabilities and specialist pools", TestSettlementCapabilityAndSpecialistLedger),
+    ("develops settlement tier and specialists deliberately", TestSettlementDevelopmentUpgradesTierAndSpecialists),
     ("answers settlement readiness from capabilities and specialists", TestSettlementCapabilityReadiness),
     ("serializes settlement capabilities and specialist pools", TestSettlementCapabilitySerialization),
     ("prevents starving settlements from launching raids", TestStarvingSettlementCannotLaunchRaid),
@@ -104,6 +109,7 @@ var tests = new List<(string Name, Action Test)>
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
+    ("cautious faction can choose deliberate development", TestFactionActionPlannerChoosesDevelop),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
     ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
@@ -114,6 +120,7 @@ var tests = new List<(string Name, Action Test)>
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
     ("expansion creates unique colony slugs", TestWorldWarExpansionUsesUniqueColonySlugs),
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
+    ("world war develop action invests in a settlement", TestWorldWarDevelopActionInvestsInSettlement),
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
     ("world war diplomat changes faction goodwill", TestWorldWarDiplomatChangesGoodwill),
     ("world war non-warband effects survive save load", TestWorldWarNonWarbandEffectsPersistThroughSaveLoad),
@@ -580,6 +587,35 @@ static void TestSettlementDailySimulationRecordsFoodShortage()
     AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
 }
 
+static void TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("full-house", "Full House", "Settlers");
+    state.CreateCitizen("Parent 1", 28, Sex.Female, "settler", settlement.Id);
+    state.CreateCitizen("Parent 2", 30, Sex.Male, "settler", settlement.Id);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 20);
+    state.RecordSettlementCapability(new SettlementCapability(
+        settlement.Id,
+        HousingCapacity: 2,
+        FoodStorageCapacity: 100,
+        MedicineStorageCapacity: 0,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 0,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+
+    var result = SettlementDailySimulationService.SimulateDay(
+        state,
+        new SettlementDailySimulationRequest(180_000, "PackagedSurvivalMeal", 1, 3));
+
+    AssertEqual(0, result.Births);
+    AssertEqual(2, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
+}
+
 static void TestDemographyServiceAgesAndKillsElders()
 {
     var state = new WorldState(12345);
@@ -634,6 +670,111 @@ static void TestSettlementProductionProfileUsesTerrainAndTechnology()
     AssertEqual(1, fertileIndustrial.ComponentPerAdult);
     AssertEqual(0, desertNeolithic.FoodPerAdult);
     AssertEqual(0, desertNeolithic.ComponentPerAdult);
+}
+
+static void TestSettlementWealthServiceCachesWealth()
+{
+    var state = new WorldState(12345);
+    var market = state.CreateSettlement("market", "Market", "Traders");
+    var mine = state.CreateSettlement("mine", "Mine", "Traders");
+    state.AddResource(market.Id, "Silver", 120);
+    state.AddResource(market.Id, "Steel", 10);
+    state.AddResource(market.Id, "ComponentIndustrial", 1);
+    state.AddResource(mine.Id, "Silver", 30);
+    state.AddResource(mine.Id, "Steel", 5);
+
+    var prices = ResourcePriceBook.FromSilver(
+        "Silver",
+        new Dictionary<string, int>
+        {
+            ["Steel"] = 2,
+            ["ComponentIndustrial"] = 12,
+        });
+
+    var settlement = SettlementWealthService.RefreshSettlement(state, market.Id, prices);
+    var faction = SettlementWealthService.RefreshFaction(state, "Traders", prices);
+
+    AssertEqual(152, settlement.TotalWealth);
+    AssertEqual(120, settlement.Silver);
+    AssertEqual(32, settlement.MaterialWealth);
+    AssertEqual(settlement, state.GetSettlementWealth(market.Id));
+    AssertEqual(192, faction.TotalWealth);
+    AssertEqual(150, faction.Silver);
+    AssertEqual(42, faction.MaterialWealth);
+    AssertEqual(faction, state.GetFactionWealth("Traders"));
+}
+
+static void TestSettlementProductionUsesDepthModifiers()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("deep-mine", "Deep Mine", "Miners");
+    for (var i = 0; i < 4; i++)
+    {
+        state.CreateCitizen($"Miner {i + 1}", 30 + i, Sex.Male, "miner", settlement.Id);
+    }
+
+    var profile = SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "AridShrubland",
+            "LargeHills",
+            "Industrial",
+            20,
+            300,
+            15)) with
+    {
+        Archetype = ProductionArchetype.Miner,
+        LaborEfficiencyPercent = 150,
+        EconomyScalePercent = 125,
+        ComplexityPenaltyPercent = 80,
+    };
+    state.RecordSettlementProductionProfile(profile);
+
+    var result = SettlementProductionService.SimulateDay(
+        state,
+        new SettlementProductionRequest(
+            60_000,
+            "PackagedSurvivalMeal",
+            "Steel",
+            "MedicineIndustrial",
+            "ComponentIndustrial"));
+
+    AssertEqual(4, result.FoodProduced);
+    AssertEqual(27, result.SteelProduced);
+    AssertEqual(0, result.MedicineProduced);
+    AssertEqual(7, result.ComponentsProduced);
+    AssertEqual(27, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(7, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+}
+
+static void TestVirtualTradeTransfersGoodsAndSilver()
+{
+    var state = new WorldState(12345);
+    var seller = state.CreateSettlement("steelworks", "Steelworks", "Miners");
+    var buyer = state.CreateSettlement("city", "City", "Traders");
+    state.AddResource(seller.Id, "Steel", 100);
+    state.AddResource(buyer.Id, "Silver", 500);
+
+    var request = new VirtualTradeRequest(
+        seller.Id,
+        buyer.Id,
+        "Steel",
+        RequestedQuantity: 20,
+        SilverResourceKey: "Silver",
+        BaseUnitPrice: 4);
+    var quote = VirtualTradeService.GetQuote(state, request);
+    var result = VirtualTradeService.Execute(state, request);
+
+    AssertEqual(5, quote.UnitPrice);
+    AssertEqual(20, result.QuantityTransferred);
+    AssertEqual(100, result.SilverTransferred);
+    AssertEqual(80, state.GetOwnedResourceQuantity(seller.Id, "Steel"));
+    AssertEqual(100, state.GetOwnedResourceQuantity(seller.Id, "Silver"));
+    AssertEqual(20, state.GetOwnedResourceQuantity(buyer.Id, "Steel"));
+    AssertEqual(400, state.GetOwnedResourceQuantity(buyer.Id, "Silver"));
+    AssertEqual(100, state.GetOwnedResourceQuantity(seller.Id, "Steel") + state.GetOwnedResourceQuantity(buyer.Id, "Steel"));
+    AssertEqual(500, state.GetOwnedResourceQuantity(seller.Id, "Silver") + state.GetOwnedResourceQuantity(buyer.Id, "Silver"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
 }
 
 static void TestSettlementProductionAddsOwnedResources()
@@ -1955,6 +2096,64 @@ static void TestSettlementDevelopmentGrowsHousing()
     AssertEqual(3, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDeveloped));
 }
 
+static void TestSettlementDevelopmentUpgradesTierAndSpecialists()
+{
+    var state = new WorldState(4242);
+    var town = state.CreateSettlement("builders", "Builders", "Settlers");
+    for (var i = 0; i < 12; i++)
+    {
+        state.CreateCitizen("Builder " + i, 30, Sex.Male, "builder", town.Id);
+    }
+
+    state.AddResource(town.Id, "PackagedSurvivalMeal", 100);
+    state.AddResource(town.Id, "Silver", 500);
+    state.RecordSettlementCapability(new SettlementCapability(
+        town.Id,
+        HousingCapacity: 28,
+        FoodStorageCapacity: 28,
+        MedicineStorageCapacity: 0,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 0,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+    state.RecordSpecialistPool(new SpecialistPool(
+        town.Id,
+        Farmers: 1,
+        Handlers: 0,
+        Doctors: 0,
+        Researchers: 0,
+        Engineers: 0,
+        Geneticists: 0,
+        Mechanitors: 0,
+        Soldiers: 1,
+        Diplomats: 0));
+
+    var before = SettlementDevelopmentService.GetTier(state, town.Id);
+    var result = SettlementDevelopmentService.SimulateDay(
+        state,
+        new SettlementDevelopmentRequest(60_000, "PackagedSurvivalMeal", 20, 8, 120)
+        {
+            SilverResourceKey = "Silver",
+            DevelopmentSilverCost = 120,
+            SpecialistGrowthStep = 2,
+        });
+
+    var after = SettlementDevelopmentService.GetTier(state, town.Id);
+    var specialists = state.GetSpecialistPool(town.Id)!;
+
+    AssertEqual(SettlementTier.Village, before);
+    AssertEqual(SettlementTier.Town, after);
+    AssertEqual(1, result.SettlementsDeveloped);
+    AssertEqual(1, result.TierUpgrades);
+    AssertEqual(380, state.GetOwnedResourceQuantity(town.Id, "Silver"));
+    AssertEqual(3, specialists.Farmers);
+    AssertEqual(2, specialists.Engineers);
+    AssertEqual(3, specialists.Soldiers);
+}
+
 static void TestRimWorldSettlementDevelopmentWiring()
 {
     var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
@@ -2440,6 +2639,36 @@ static void TestFactionActionPlannerSkipsPlayerFactionTarget()
     AssertEqual(null, plan.TargetSettlementId);
 }
 
+static void TestFactionActionPlannerChoosesDevelop()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("builders", "Builders", "Builders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("B" + i, 30, Sex.Male, "builder", home.Id);
+    }
+
+    state.AddResource(home.Id, "Silver", 300);
+    state.RecordSettlementCapability(new SettlementCapability(
+        home.Id,
+        HousingCapacity: 5,
+        FoodStorageCapacity: 5,
+        MedicineStorageCapacity: 0,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 0,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+    state.AssignFactionBehavior("Builders", FactionBehavior.Cautious);
+
+    var plan = FactionActionPlanner.Plan(state, "Builders", 60_000);
+
+    AssertEqual(WarAction.Develop, plan.Action);
+    AssertEqual(home.Id, plan.TargetSettlementId);
+}
+
 static void TestFactionActionPlannerFiltersPassive()
 {
     var state = new WorldState(4242);
@@ -2672,6 +2901,47 @@ static void TestWorldWarCaravanTransfersRealGoods()
     AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+}
+
+static void TestWorldWarDevelopActionInvestsInSettlement()
+{
+    var state = new WorldState(4242);
+    var builders = state.CreateSettlement("builders", "Builders", "Builders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("Builder " + i, 30, Sex.Male, "builder", builders.Id);
+    }
+
+    state.AddResource(builders.Id, "PackagedSurvivalMeal", 80);
+    state.AddResource(builders.Id, "Silver", 300);
+    state.RecordSettlementCapability(new SettlementCapability(
+        builders.Id,
+        HousingCapacity: 5,
+        FoodStorageCapacity: 5,
+        MedicineStorageCapacity: 0,
+        PowerCapacity: 0,
+        LaboratoryCapacity: 0,
+        AnimalCapacity: 0,
+        CropCapacity: 0,
+        ResearchCapacity: 0,
+        MechanicalCapacity: 0,
+        PollutionHandling: 0));
+    state.AssignFactionBehavior("Builders", FactionBehavior.Cautious);
+
+    var result = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3)
+        {
+            DevelopmentSilverCost = 100,
+            DevelopmentStep = 6,
+            DevelopmentHousingHeadroom = 10,
+            DevelopmentSpecialistGrowthStep = 1,
+        });
+
+    AssertEqual(1, result.DevelopmentsCompleted);
+    AssertEqual(11, state.GetSettlementCapability(builders.Id)!.HousingCapacity);
+    AssertEqual(200, state.GetOwnedResourceQuantity(builders.Id, "Silver"));
+    AssertEqual(1, state.GetSpecialistPool(builders.Id)!.Engineers);
 }
 
 static void TestWorldWarScoutingRecordsIntel()

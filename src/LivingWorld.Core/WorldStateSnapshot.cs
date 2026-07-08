@@ -26,4 +26,10 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<SpecialistPool> SpecialistPools { get; init; } =
         Array.Empty<SpecialistPool>();
+
+    public IReadOnlyList<SettlementWealthSnapshot> SettlementWealth { get; init; } =
+        Array.Empty<SettlementWealthSnapshot>();
+
+    public IReadOnlyList<FactionWealthSnapshot> FactionWealth { get; init; } =
+        Array.Empty<FactionWealthSnapshot>();
 }
