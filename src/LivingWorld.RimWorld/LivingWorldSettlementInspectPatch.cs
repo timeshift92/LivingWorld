@@ -101,7 +101,41 @@ public static class LivingWorldSettlementInspectPatch
             ? FormatProductionLine(state.GetSettlementProductionStatus(settlement.Id))
             : "LW_ProductionHiddenLine".Translate().ToString();
         inspectLine = $"{inspectLine}\n{productionLine}";
+
+        // Threat header: if a world-war army is marching on this settlement it is already visible
+        // on the map (the warband marker), so surfacing it here is consistent with fog-of-war and
+        // ties the map object to the settlement. Famine/growth stay inside the knowledge line so we
+        // never leak exact ledger state the player has not scouted.
+        var threatLine = BuildThreatLine(state, settlement.Id);
+        if (threatLine != null)
+        {
+            inspectLine = $"{threatLine}\n{inspectLine}";
+        }
+
         return AppendVisiblePawnsLine(inspectLine, visiblePawns);
+    }
+
+    private static string? BuildThreatLine(WorldState state, EntityId settlementId)
+    {
+        var currentTick = Find.TickManager?.TicksGame ?? 0;
+        var soonestArrival = int.MaxValue;
+        foreach (var movement in state.ArmyMovements)
+        {
+            if (movement.Status == ArmyMovementStatus.Traveling
+                && movement.TargetSettlementId == settlementId
+                && movement.ArrivalTick < soonestArrival)
+            {
+                soonestArrival = movement.ArrivalTick;
+            }
+        }
+
+        if (soonestArrival == int.MaxValue)
+        {
+            return null;
+        }
+
+        var days = Math.Max(0, (int)Math.Round((soonestArrival - currentTick) / 60000f));
+        return "LW_InspectThreatLine".Translate(days.Named("days")).ToString();
     }
 
     private static string AppendVisiblePawnsLine(string inspectLine, int visiblePawns)

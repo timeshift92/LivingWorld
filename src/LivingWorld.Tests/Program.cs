@@ -3627,6 +3627,16 @@ static void TestRimWorldSettlementInspectPatch()
     AssertContains("source", russianXml);
     AssertContains("<LW_InspectPopulationMissingLine>", englishXml);
     AssertContains("<LW_InspectPopulationMissingLine>", russianXml);
+
+    // UI-5: a threat header appears when a world-war army is marching on the settlement (public
+    // info, consistent with the on-map warband marker). It reads only army movements, never the
+    // fog-gated ledger population/food, so it cannot leak unscouted state.
+    AssertContains("BuildThreatLine", source);
+    AssertContains("state.ArmyMovements", source);
+    AssertContains("ArmyMovementStatus.Traveling", source);
+    AssertContains("LW_InspectThreatLine", source);
+    AssertContains("<LW_InspectThreatLine>", englishXml);
+    AssertContains("<LW_InspectThreatLine>", russianXml);
 }
 
 static void TestRimWorldRaidIncidentPatch()
