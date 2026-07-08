@@ -37,7 +37,10 @@ public enum WorldEventKind
     WarbandLaunched,
     SettlementCaptured,
     DiplomaticMissionSent,
-    SettlementDeveloped
+    SettlementDeveloped,
+    CaravanLaunched,
+    CaravanArrived,
+    CaravanDestroyed
 }
 
 public sealed record WorldEvent(

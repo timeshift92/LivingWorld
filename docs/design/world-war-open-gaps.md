@@ -114,3 +114,7 @@ not allied with — intended trade, not a bug.
    combat power aggregates now back the war-loop power reads.
 2. **Codex — O2 — DONE.** `Citizens`, `Ownership`, and `Events` now save as
    compact v2 rows with legacy XML fallback.
+3. **Codex — persistent WorldCaravan — DONE.** Caravan actions now create a
+   `WorldCaravan`, load goods into caravan-owned ledger inventory, resolve
+   arrival through `CaravanMovementService`, unload cargo at the target, and
+   preserve/destroy cargo through save/load and destruction paths.

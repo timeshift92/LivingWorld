@@ -123,6 +123,8 @@ var tests = new List<(string Name, Action Test)>
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
     ("expansion creates unique colony slugs", TestWorldWarExpansionUsesUniqueColonySlugs),
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
+    ("persistent caravan preserves cargo through save load", TestPersistentCaravanSerialization),
+    ("destroying a persistent caravan removes its cargo", TestDestroyPersistentCaravanRemovesCargo),
     ("world war develop action invests in a settlement", TestWorldWarDevelopActionInvestsInSettlement),
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
     ("world war diplomat changes faction goodwill", TestWorldWarDiplomatChangesGoodwill),
@@ -3006,9 +3008,57 @@ static void TestWorldWarCaravanTransfersRealGoods()
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
 
     AssertEqual(30, state.GetOwnedResourceQuantity(market.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(village.Id, "Steel"));
+    var caravan = state.Caravans.Single();
+    AssertEqual(CaravanStatus.Traveling, caravan.Status);
+    AssertEqual(10, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+
+    state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+
+    AssertEqual(CaravanStatus.Arrived, state.GetCaravan(caravan.Id)!.Status);
     AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
-    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementTradeRecorded));
-    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+    AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanArrived));
+    AssertEqual(2, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+}
+
+static void TestPersistentCaravanSerialization()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    state.AddResource(source.Id, "Steel", 50);
+
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000);
+    state.TransferResource(source.Id, caravan.Id, "Steel", 20, "test cargo");
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredCaravan = restored.GetCaravan(caravan.Id)!;
+
+    AssertEqual(CaravanStatus.Traveling, restoredCaravan.Status);
+    AssertEqual(source.Id, restoredCaravan.SourceSettlementId);
+    AssertEqual(target.Id, restoredCaravan.TargetSettlementId);
+    AssertEqual(20, restored.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+}
+
+static void TestDestroyPersistentCaravanRemovesCargo()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    state.AddResource(source.Id, "Steel", 50);
+
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000);
+    state.TransferResource(source.Id, caravan.Id, "Steel", 20, "test cargo");
+
+    var destroyed = state.DestroyCaravan(caravan.Id, "ambushed");
+
+    AssertEqual(CaravanStatus.Destroyed, destroyed.Status);
+    AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+    AssertEqual(30, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanDestroyed));
 }
 
 static void TestWorldWarDevelopActionInvestsInSettlement()

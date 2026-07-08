@@ -5,6 +5,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldCitizen> _citizens = new();
     private readonly Dictionary<EntityId, WorldSettlement> _settlements = new();
     private readonly Dictionary<EntityId, WorldArmy> _armies = new();
+    private readonly Dictionary<EntityId, WorldCaravan> _caravans = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -49,6 +50,8 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldSettlement> Settlements => _settlements.Values;
 
     public IReadOnlyCollection<WorldArmy> Armies => _armies.Values;
+
+    public IReadOnlyCollection<WorldCaravan> Caravans => _caravans.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -179,6 +182,9 @@ public sealed class WorldState
                 .ToList(),
             FactionWealth = _factionWealth.Values
                 .OrderBy(wealth => wealth.FactionId, StringComparer.Ordinal)
+                .ToList(),
+            Caravans = _caravans.Values
+                .OrderBy(caravan => caravan.Id.Value)
                 .ToList()
         };
     }
@@ -212,6 +218,12 @@ public sealed class WorldState
         {
             state._armies.Add(army.Id, army);
             state.ReserveExistingId(army.Id);
+        }
+
+        foreach (var caravan in snapshot.Caravans)
+        {
+            state._caravans.Add(caravan.Id, caravan);
+            state.ReserveExistingId(caravan.Id);
         }
 
         foreach (var group in snapshot.MigrationGroups)
@@ -395,6 +407,114 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.OwnershipAssigned, army.Id, $"Army {army.Id} assigned to {sourceSettlementId}.");
 
         return army;
+    }
+
+    public WorldCaravan CreateCaravan(
+        string name,
+        string factionId,
+        EntityId sourceSettlementId,
+        EntityId targetSettlementId,
+        int departTick,
+        int arrivalTick)
+    {
+        ThrowIfNullOrWhiteSpace(name, nameof(name));
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+
+        if (!_settlements.ContainsKey(sourceSettlementId))
+        {
+            throw new InvalidOperationException($"Source settlement {sourceSettlementId} does not exist.");
+        }
+
+        if (!_settlements.ContainsKey(targetSettlementId))
+        {
+            throw new InvalidOperationException($"Target settlement {targetSettlementId} does not exist.");
+        }
+
+        var caravan = new WorldCaravan(
+            NextId(EntityKind.Caravan),
+            name,
+            factionId,
+            sourceSettlementId,
+            targetSettlementId,
+            Math.Max(0, departTick),
+            Math.Max(departTick, arrivalTick),
+            CaravanStatus.Traveling);
+
+        _caravans.Add(caravan.Id, caravan);
+        _owners[caravan.Id] = sourceSettlementId;
+        AppendEvent(WorldEventKind.CaravanLaunched, caravan.Id, $"Caravan {caravan.Id} departed {sourceSettlementId} for {targetSettlementId}.");
+        AppendEvent(WorldEventKind.OwnershipAssigned, caravan.Id, $"Caravan {caravan.Id} assigned to {sourceSettlementId}.");
+
+        return caravan;
+    }
+
+    public WorldCaravan? GetCaravan(EntityId caravanId)
+    {
+        return _caravans.TryGetValue(caravanId, out var caravan)
+            ? caravan
+            : null;
+    }
+
+    public WorldCaravan MarkCaravanArrived(EntityId caravanId)
+    {
+        if (!_caravans.TryGetValue(caravanId, out var caravan))
+        {
+            throw new InvalidOperationException($"Caravan {caravanId} does not exist.");
+        }
+
+        if (caravan.Status == CaravanStatus.Arrived)
+        {
+            return caravan;
+        }
+
+        if (caravan.Status == CaravanStatus.Destroyed)
+        {
+            throw new InvalidOperationException($"Destroyed caravan {caravanId} cannot arrive.");
+        }
+
+        foreach (var resource in ResourcesForOwner(caravanId))
+        {
+            var transfer = TransferResource(
+                caravanId,
+                caravan.TargetSettlementId,
+                resource.ResourceKey,
+                resource.Quantity,
+                "caravan arrived");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+        }
+
+        var arrived = caravan with { Status = CaravanStatus.Arrived };
+        _caravans[caravanId] = arrived;
+        AppendEvent(WorldEventKind.CaravanArrived, caravanId, $"Caravan {caravanId} arrived at {caravan.TargetSettlementId}.");
+        return arrived;
+    }
+
+    public WorldCaravan DestroyCaravan(EntityId caravanId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (!_caravans.TryGetValue(caravanId, out var caravan))
+        {
+            throw new InvalidOperationException($"Caravan {caravanId} does not exist.");
+        }
+
+        if (caravan.Status == CaravanStatus.Destroyed)
+        {
+            return caravan;
+        }
+
+        foreach (var resource in ResourcesForOwner(caravanId))
+        {
+            SetResourceQuantityForLedger(caravanId, resource.ResourceKey, 0);
+        }
+
+        var destroyed = caravan with { Status = CaravanStatus.Destroyed };
+        _caravans[caravanId] = destroyed;
+        AppendEvent(WorldEventKind.CaravanDestroyed, caravanId, $"Caravan {caravanId} destroyed: {reason}.");
+        return destroyed;
     }
 
     public WorldArmyMovement DispatchArmy(EntityId armyId, EntityId targetSettlementId, int arrivalTick)
@@ -1509,6 +1629,19 @@ public sealed class WorldState
             }
         }
 
+        foreach (var caravan in _caravans.Values.OrderBy(caravan => caravan.Id.Value))
+        {
+            if (!_settlements.ContainsKey(caravan.SourceSettlementId))
+            {
+                yield return $"Caravan {caravan.Id} references missing source settlement {caravan.SourceSettlementId}.";
+            }
+
+            if (!_settlements.ContainsKey(caravan.TargetSettlementId))
+            {
+                yield return $"Caravan {caravan.Id} references missing target settlement {caravan.TargetSettlementId}.";
+            }
+        }
+
         foreach (var group in _migrationGroups.Values.OrderBy(group => group.Id.Value))
         {
             if (!_settlements.ContainsKey(group.SourceSettlementId))
@@ -1702,6 +1835,7 @@ public sealed class WorldState
             EntityKind.Citizen => _citizens.ContainsKey(ownerId),
             EntityKind.Settlement => _settlements.ContainsKey(ownerId),
             EntityKind.Army => _armies.ContainsKey(ownerId),
+            EntityKind.Caravan => _caravans.ContainsKey(ownerId),
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(ownerId),
             EntityKind.IntelReport => _intelReports.ContainsKey(ownerId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(ownerId),
@@ -1716,6 +1850,7 @@ public sealed class WorldState
             EntityKind.Citizen => _citizens.ContainsKey(assetId),
             EntityKind.Settlement => _settlements.ContainsKey(assetId),
             EntityKind.Army => _armies.ContainsKey(assetId),
+            EntityKind.Caravan => _caravans.ContainsKey(assetId),
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(assetId),
             EntityKind.IntelReport => _intelReports.ContainsKey(assetId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(assetId),

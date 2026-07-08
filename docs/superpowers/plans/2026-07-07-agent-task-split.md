@@ -337,6 +337,11 @@ coarse model.
   still reading legacy `<Citizen>`, `<Owner>`, and `<Event>` payloads. Full binary/chunked
   storage remains optional future work, but the 20k-100k citizen XML element explosion is
   removed.
+- **P1 (Codex): Persistent WorldCaravan.** Status: DONE — caravan actions now create a
+  `WorldCaravan` entity, load resources into caravan-owned inventory, resolve arrival through
+  movement timing, unload into the target settlement, and preserve/destroy cargo correctly
+  through save/load. This closes the instant-transfer abstraction for goods; future work is
+  caravan members, animals, route risk, ambushes and loot.
 - **O3 (Codex, later): Time-dilation / adaptive tick.** Tick cohorts/regions at variable
   frequency by relevance (quiet regions rarely, active wars often), per RocketMan/Missile
   Girl. Today: every settlement/faction ticks daily uniformly. Status: BACKLOG.

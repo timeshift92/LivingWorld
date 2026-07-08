@@ -501,47 +501,46 @@ state.Aggregates.GetFactionPower(factionId)
 
 Important: aggregates must be validated against full scans in tests/debug mode.
 
-## 6. Caravan is still not a persistent entity
+## 6. Caravan is now a persistent entity
 
-Current caravan action is conservation-safe because it transfers resources from source to target. But it is not yet a real persistent caravan.
+Current caravan action no longer teleports resources from source to target.
+It creates a `WorldCaravan`, moves cargo into caravan-owned inventory, lets
+`CaravanMovementService` resolve arrival after travel time, then unloads cargo
+into the target settlement.
 
 Current model:
 
 ```text
-source settlement resource -> target settlement resource
-```
-
-Future Living World model should be:
-
-```text
 source settlement resource -> WorldCaravan inventory
-source settlement citizens/animals -> WorldCaravan members
 WorldCaravan travels
 arrival: WorldCaravan inventory -> target settlement
-if destroyed: members/goods lost or looted
+if destroyed: goods are removed from the ledger
 ```
 
-This is important because the project philosophy says caravans should exist, travel and be vulnerable.
+This is important because the project philosophy says caravans should exist,
+travel and be vulnerable. The current implementation covers persistent cargo,
+arrival and destruction. Caravan members, animals, ambushes and loot remain
+future gameplay layers.
 
-### Recommended future entity
+### Current entity
 
 ```csharp
 public sealed record WorldCaravan(
     EntityId Id,
+    string Name,
     string FactionId,
     EntityId SourceSettlementId,
     EntityId TargetSettlementId,
-    CaravanStatus Status,
     int DepartTick,
-    int ArrivalTick);
+    int ArrivalTick,
+    CaravanStatus Status);
 ```
 
-It should own:
+It can own:
 
-- citizens;
-- animals later;
-- resources;
-- route/movement data.
+- resources today;
+- citizens/animals later;
+- route/movement data later.
 
 ## 7. Scouting and diplomacy currently do not reserve people
 
@@ -822,7 +821,9 @@ raid outcomes, expansion, capture and simulation replacement.
 - aggregate matches after army reservation;
 - aggregate matches after return/missing/prisoner.
 
-## Task 5 — Design persistent WorldCaravan
+## Task 5 — Implement persistent WorldCaravan
+
+Status: DONE.
 
 ### Goal
 
@@ -834,7 +835,8 @@ Turn caravan from instant transfer into real entity.
 - Add caravan inventory ownership.
 - Add caravan movement.
 - Add arrival resolution.
-- Later: caravan attack/loss/loot.
+- Add destruction path for lost cargo.
+- Later: caravan attack/loot/members/animals.
 
 ### Acceptance tests
 
@@ -853,7 +855,7 @@ Turn caravan from instant transfer into real entity.
 | `_armyMovements` grows forever | Medium | Closed by C5 | Monitor retention value during long-play saves |
 | WorldWarService grows too broad | Medium | Closed by C6 | Keep dispatcher/executor boundary tested |
 | War-loop scans citizens daily | Medium later | Closed by C7/O1 | Keep aggregate/full-scan tests around citizen and ownership transitions |
-| Caravan is instant transfer | Low now / High later | Accepted abstraction | Design WorldCaravan |
+| Caravan is instant transfer | Low now / High later | Closed by persistent WorldCaravan | Add ambush/loot/member gameplay later |
 | Drifters may feel like magic spawn | Medium | Needs framing | Add finite reservoir |
 | Save format may grow too large | Medium later | Main XML element explosion closed by O2 | Consider binary/chunk storage only after profiling real large saves |
 | UI remains debug-heavy | Low | Acceptable for now | Split player UI/dev UI later |

@@ -19,21 +19,27 @@ internal static class CaravanActionExecutor
         var quantity = Math.Min(
             request.CaravanQuantity,
             state.GetOwnedResourceQuantity(source.Id, request.CaravanResourceKey));
-        var transfer = state.TransferResource(
+        var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
+        var caravan = state.CreateCaravan(
+            $"{factionId} caravan",
+            source.FactionId,
             source.Id,
             target.Id,
+            request.Tick,
+            arrivalTick);
+
+        var transfer = state.TransferResource(
+            source.Id,
+            caravan.Id,
             request.CaravanResourceKey,
             quantity,
-            $"world-war caravan from {source.Id} to {target.Id}");
+            $"world-war caravan loaded from {source.Id} to {target.Id}");
         if (transfer.Status != OwnershipTransferStatus.Success)
         {
+            state.DestroyCaravan(caravan.Id, transfer.Reason);
             return false;
         }
 
-        state.RecordEvent(
-            WorldEventKind.SettlementTradeRecorded,
-            source.Id,
-            $"Caravan from {source.Id} delivered {quantity} {request.CaravanResourceKey} to {target.Id}.");
         return true;
     }
 }

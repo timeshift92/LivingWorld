@@ -42,6 +42,7 @@ Snapshot хранит актуальное состояние:
 - settlements;
 - factions;
 - armies;
+- caravans;
 - migration groups;
 - settlement production profiles;
 - settlement capabilities;
@@ -72,6 +73,7 @@ AnimalChunks
 SettlementChunks
 FactionChunks
 ArmyChunks
+CaravanChunks
 EconomyChunks
 EcologyChunks
 DiplomacyChunks
@@ -119,6 +121,22 @@ per-record XML:
 Derived aggregate caches are not saved. They are rebuilt lazily from citizens
 and ownership after load.
 
+`Caravans` are saved as their own optional container. Cargo remains in the
+resource ledger and is owned by `EntityKind.Caravan`, so the save format keeps
+the entity separate from the inventory:
+
+```xml
+<Caravans>
+  <Caravan kind="Caravan" id="1" name="Traders caravan" factionId="Traders"
+           sourceSettlementKind="Settlement" sourceSettlementId="1"
+           targetSettlementKind="Settlement" targetSettlementId="2"
+           departTick="60000" arrivalTick="120000" status="Traveling" />
+</Caravans>
+```
+
+The `Caravans` container is optional for backward compatibility with saves from
+before persistent caravans.
+
 Текущие обязательные инварианты после загрузки:
 
 - `worldSeed` приходит из seed RimWorld world и round-trip'ится через XML;
@@ -126,12 +144,14 @@ and ownership after load.
 - `FactionRecords` читается как optional container для обратной совместимости со старыми сейвами;
 - `SettlementCapabilities` читается как optional container для обратной совместимости со старыми сейвами;
 - `SpecialistPools` читается как optional container для обратной совместимости со старыми сейвами;
+- `Caravans` читается как optional container для обратной совместимости со старыми сейвами;
 - `playerFactionId` читается как optional root attribute: старые сейвы без него
   считаются не имеющими Core-защиты игрока, пока RimWorld layer не передаст id;
 - каждый `Alive` citizen должен иметь owner;
 - ownership asset и owner должны ссылаться на существующие entities;
 - settlement population считается только из `Alive` citizens, которыми владеет settlement;
 - resource quantity не может быть отрицательным;
+- caravan source and target settlement ids must reference existing settlements;
 - stable settlement slug не должен дублироваться;
 - raid outcome должен балансироваться: `Sent == Active + Dead + Returned + Prisoner + Missing`.
 

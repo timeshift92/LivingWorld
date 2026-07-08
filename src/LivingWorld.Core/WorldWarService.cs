@@ -58,6 +58,7 @@ public static class WorldWarService
         state.AdvanceToTick(request.Tick);
 
         ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(request.Tick));
+        var caravanMovement = CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(request.Tick));
         var battleResult = ResolveArrivedBattles(state);
         var plans = FactionActionPlanner.PlanDay(state, request.Tick);
         var actionResult = WorldWarActionDispatcher.Execute(state, request, plans);
@@ -72,7 +73,7 @@ public static class WorldWarService
             battleResult.BattlesResolved,
             battleResult.SettlementsCaptured,
             actionResult.ColoniesFounded,
-            actionResult.CaravansCompleted,
+            actionResult.CaravansCompleted + caravanMovement.Arrived,
             actionResult.ScoutingReports,
             actionResult.DiplomaticMissions)
         {

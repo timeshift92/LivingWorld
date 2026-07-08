@@ -46,6 +46,21 @@ public static class WorldStateCodec
                             new XAttribute("sourceSettlementKind", army.SourceSettlementId.Kind),
                             new XAttribute("sourceSettlementId", army.SourceSettlementId.Value)))),
                 new XElement(
+                    "Caravans",
+                    snapshot.Caravans.Select(caravan =>
+                        new XElement(
+                            "Caravan",
+                            IdAttributes(caravan.Id),
+                            new XAttribute("name", caravan.Name),
+                            new XAttribute("factionId", caravan.FactionId),
+                            new XAttribute("sourceSettlementKind", caravan.SourceSettlementId.Kind),
+                            new XAttribute("sourceSettlementId", caravan.SourceSettlementId.Value),
+                            new XAttribute("targetSettlementKind", caravan.TargetSettlementId.Kind),
+                            new XAttribute("targetSettlementId", caravan.TargetSettlementId.Value),
+                            new XAttribute("departTick", caravan.DepartTick),
+                            new XAttribute("arrivalTick", caravan.ArrivalTick),
+                            new XAttribute("status", caravan.Status)))),
+                new XElement(
                     "MigrationGroups",
                     snapshot.MigrationGroups.Select(group =>
                         new XElement(
@@ -438,7 +453,19 @@ public static class WorldStateCodec
                     OptionalInt(element, "organizationAptitude", 0)))
                 .ToList())
         {
-            PlayerFactionId = OptionalString(root, "playerFactionId")
+            PlayerFactionId = OptionalString(root, "playerFactionId"),
+            Caravans = OptionalContainer(root, "Caravans")
+                .Elements("Caravan")
+                .Select(element => new WorldCaravan(
+                    ReadId(element),
+                    RequiredString(element, "name"),
+                    RequiredString(element, "factionId"),
+                    ReadEntityId(element, "sourceSettlementKind", "sourceSettlementId"),
+                    ReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
+                    RequiredInt(element, "departTick"),
+                    RequiredInt(element, "arrivalTick"),
+                    RequiredEnum<CaravanStatus>(element, "status")))
+                .ToList()
         };
 
         var state = WorldState.FromSnapshot(snapshot);
