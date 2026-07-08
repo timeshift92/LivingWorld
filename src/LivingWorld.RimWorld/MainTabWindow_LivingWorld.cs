@@ -525,14 +525,29 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             {
                 var days = System.Math.Max(0, (currentTick - conflict.StartedTick) / 60_000);
                 return "LW_WorldConflictLine".Translate(
-                    conflict.FactionA.Named("factionA"),
-                    conflict.FactionB.Named("factionB"),
+                    ResolveFactionName(conflict.FactionA).Named("factionA"),
+                    ResolveFactionName(conflict.FactionB).Named("factionB"),
                     ConflictStatusLabel(conflict.Status).Named("status"),
                     days.Named("days"),
                     ConflictIntensityBand(conflict.WarExhaustionA + conflict.WarExhaustionB).Named("intensity"),
                     conflict.RefugeesCreated.Named("displaced")).ToString();
             })
             .ToList();
+    }
+
+    // Resolve a ledger faction id (a RimWorld faction defName) to its display name so the conflict
+    // rows read "The Black Hand vs New Arrivals", not the raw "Pirate vs OutlanderRough" — matching
+    // the war-declaration letter, which resolves the same way.
+    private static string ResolveFactionName(string factionId)
+    {
+        if (string.IsNullOrEmpty(factionId))
+        {
+            return factionId ?? string.Empty;
+        }
+
+        var faction = Find.FactionManager?.AllFactionsListForReading
+            .FirstOrDefault(candidate => candidate.def?.defName == factionId);
+        return faction?.Name ?? factionId;
     }
 
     private static string ConflictStatusLabel(WorldConflictStatus status)

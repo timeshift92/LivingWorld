@@ -5243,6 +5243,9 @@ static void TestRimWorldWorldConflictsSection()
     AssertContains("WorldConflictStatus.Resolved", mainTab);
     AssertContains("ConflictIntensityBand", mainTab);
     AssertContains("ConflictStatusLabel", mainTab);
+    // Faction names are resolved to display labels (not raw defNames), matching the war letter.
+    AssertContains("ResolveFactionName(conflict.FactionA)", mainTab);
+    AssertContains("ResolveFactionName(conflict.FactionB)", mainTab);
 
     var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
