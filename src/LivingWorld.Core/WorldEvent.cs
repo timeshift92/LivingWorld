@@ -67,7 +67,10 @@ public enum WorldEventKind
     AnimalCohortCreated,
     AnimalCohortGrew,
     AnimalCohortDeclined,
-    AnimalCohortMigrated
+    AnimalCohortMigrated,
+    AnimalBreedingProjectStarted,
+    AnimalBreedingProjectCompleted,
+    AnimalCohortIncubated
 }
 
 public sealed record WorldEvent(

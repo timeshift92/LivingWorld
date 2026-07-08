@@ -11,6 +11,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldConflict> _conflicts = new();
     private readonly Dictionary<(EntityId ConflictId, EntityId SettlementId), ConflictClaim> _conflictClaims = new();
     private readonly Dictionary<EntityId, WorldAnimalCohort> _animalCohorts = new();
+    private readonly Dictionary<EntityId, AnimalBreedingProject> _animalBreedingProjects = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -72,6 +73,8 @@ public sealed class WorldState
     public IReadOnlyCollection<ConflictClaim> ConflictClaims => _conflictClaims.Values;
 
     public IReadOnlyCollection<WorldAnimalCohort> AnimalCohorts => _animalCohorts.Values;
+
+    public IReadOnlyCollection<AnimalBreedingProject> AnimalBreedingProjects => _animalBreedingProjects.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -249,6 +252,9 @@ public sealed class WorldState
                 .ToList(),
             AnimalCohorts = _animalCohorts.Values
                 .OrderBy(cohort => cohort.Id.Value)
+                .ToList(),
+            AnimalBreedingProjects = _animalBreedingProjects.Values
+                .OrderBy(project => project.Id.Value)
                 .ToList()
         };
     }
@@ -386,6 +392,12 @@ public sealed class WorldState
         {
             state._animalCohorts.Add(cohort.Id, Normalize(cohort));
             state.ReserveExistingId(cohort.Id);
+        }
+
+        foreach (var project in snapshot.AnimalBreedingProjects)
+        {
+            state._animalBreedingProjects.Add(project.Id, Normalize(project));
+            state.ReserveExistingId(project.Id);
         }
 
         foreach (var capability in snapshot.SettlementCapabilities)
@@ -1588,6 +1600,78 @@ public sealed class WorldState
         return normalized;
     }
 
+    public AnimalBreedingProject? GetAnimalBreedingProject(EntityId projectId)
+    {
+        return _animalBreedingProjects.TryGetValue(projectId, out var project)
+            ? project
+            : null;
+    }
+
+    internal AnimalBreedingProject CreateAnimalBreedingProject(
+        EntityId settlementId,
+        EntityId sourceCohortId,
+        AnimalBreedingProjectKind kind,
+        AnimalBreedingTrait trait,
+        int startedTick,
+        int completionTick,
+        string feedResourceKey,
+        int feedCost,
+        string medicineResourceKey,
+        int medicineCost,
+        string componentResourceKey,
+        int componentCost)
+    {
+        if (!_settlements.ContainsKey(settlementId))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        if (!_animalCohorts.ContainsKey(sourceCohortId))
+        {
+            throw new InvalidOperationException($"Animal cohort {sourceCohortId} does not exist.");
+        }
+
+        var project = Normalize(new AnimalBreedingProject(
+            NextId(EntityKind.AnimalBreedingProject),
+            settlementId,
+            sourceCohortId,
+            kind,
+            trait,
+            AnimalBreedingProjectStatus.Active,
+            startedTick,
+            completionTick,
+            feedResourceKey,
+            feedCost,
+            medicineResourceKey,
+            medicineCost,
+            componentResourceKey,
+            componentCost));
+        _animalBreedingProjects[project.Id] = project;
+        AppendEvent(
+            WorldEventKind.AnimalBreedingProjectStarted,
+            project.Id,
+            $"Animal breeding project {project.Id} started for {sourceCohortId}.");
+
+        return project;
+    }
+
+    internal AnimalBreedingProject RecordAnimalBreedingProjectForSimulation(AnimalBreedingProject project)
+    {
+        if (project == null)
+        {
+            throw new ArgumentNullException(nameof(project));
+        }
+
+        if (!_animalBreedingProjects.ContainsKey(project.Id))
+        {
+            throw new InvalidOperationException($"Animal breeding project {project.Id} does not exist.");
+        }
+
+        var normalized = Normalize(project);
+        _animalBreedingProjects[normalized.Id] = normalized;
+        return normalized;
+    }
+
     public void RecordKnownSettlementInfo(KnownSettlementInfo info)
     {
         if (!_settlements.ContainsKey(info.SettlementId))
@@ -2584,6 +2668,24 @@ public sealed class WorldState
             }
         }
 
+        foreach (var project in _animalBreedingProjects.Values.OrderBy(project => project.Id.Value))
+        {
+            if (!_settlements.ContainsKey(project.SettlementId))
+            {
+                yield return $"Animal breeding project {project.Id} references missing settlement {project.SettlementId}.";
+            }
+
+            if (!_animalCohorts.ContainsKey(project.SourceCohortId))
+            {
+                yield return $"Animal breeding project {project.Id} references missing cohort {project.SourceCohortId}.";
+            }
+
+            if (project.CompletionTick < project.StartedTick)
+            {
+                yield return $"Animal breeding project {project.Id} completes before it starts.";
+            }
+        }
+
         foreach (var resource in _resources
             .OrderBy(pair => pair.Key.OwnerId.Kind)
             .ThenBy(pair => pair.Key.OwnerId.Value)
@@ -2769,6 +2871,7 @@ public sealed class WorldState
             EntityKind.SettlementProject => _settlementProjects.ContainsKey(assetId),
             EntityKind.Ruin => _ruins.ContainsKey(assetId),
             EntityKind.Conflict => _conflicts.ContainsKey(assetId),
+            EntityKind.AnimalBreedingProject => _animalBreedingProjects.ContainsKey(assetId),
             _ => false
         };
     }
@@ -2840,6 +2943,22 @@ public sealed class WorldState
             FertilityPercent = Math.Max(0, Math.Min(100, cohort.FertilityPercent)),
             CarryingCapacity = Math.Max(0, cohort.CarryingCapacity),
             LastUpdatedTick = Math.Max(0, cohort.LastUpdatedTick)
+        };
+    }
+
+    private static AnimalBreedingProject Normalize(AnimalBreedingProject project)
+    {
+        var started = Math.Max(0, project.StartedTick);
+        return project with
+        {
+            StartedTick = started,
+            CompletionTick = Math.Max(started, project.CompletionTick),
+            FeedResourceKey = string.IsNullOrWhiteSpace(project.FeedResourceKey) ? "Hay" : project.FeedResourceKey.Trim(),
+            FeedCost = Math.Max(0, project.FeedCost),
+            MedicineResourceKey = string.IsNullOrWhiteSpace(project.MedicineResourceKey) ? "MedicineIndustrial" : project.MedicineResourceKey.Trim(),
+            MedicineCost = Math.Max(0, project.MedicineCost),
+            ComponentResourceKey = string.IsNullOrWhiteSpace(project.ComponentResourceKey) ? "ComponentIndustrial" : project.ComponentResourceKey.Trim(),
+            ComponentCost = Math.Max(0, project.ComponentCost)
         };
     }
 

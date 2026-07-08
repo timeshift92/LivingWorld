@@ -23,6 +23,10 @@ var tests = new List<(string Name, Action Test)>
     ("simulates animal ecology growth and pressure", TestAnimalEcologyGrowthAndPressure),
     ("migrates animal cohorts without duplicating population", TestAnimalCohortMigrationConservesPopulation),
     ("serializes animal cohorts", TestAnimalCohortSerialization),
+    ("animal selection projects improve cohorts over time", TestAnimalSelectionProjectsImproveCohorts),
+    ("animal breeding projects require settlement capabilities", TestAnimalBreedingProjectsRequireCapabilities),
+    ("animal incubation projects create ledger cohorts", TestAnimalIncubationProjectsCreateLedgerCohorts),
+    ("serializes animal breeding projects", TestAnimalBreedingProjectSerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
@@ -726,6 +730,140 @@ static void TestAnimalCohortSerialization()
 
     AssertEqual(herd, restoredHerd);
     AssertEqual(settlement.Id, restored.GetOwner(herd.Id));
+    AssertEqual(0, restored.Validate().Count());
+}
+
+static void TestAnimalSelectionProjectsImproveCohorts()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    state.RecordSettlementCapability(new SettlementCapability(settlement.Id, 10, 10, 10, 0, 0, 12, 0, 0, 0, 0));
+    state.RecordSpecialistPool(new SpecialistPool(settlement.Id, 0, 2, 0, 0, 0, 0, 0, 0, 0));
+    var herd = state.CreateAnimalCohort(settlement.Id, "Muffalo", AnimalCohortType.Domesticated, 8, 70, 60, 18, 0);
+    state.AddResource(settlement.Id, "Hay", 40);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 4);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 3);
+
+    var started = AnimalBreedingService.StartSelectionProject(
+        state,
+        new AnimalBreedingStartRequest(
+            Tick: 60_000,
+            SettlementId: settlement.Id,
+            SourceCohortId: herd.Id,
+            Trait: AnimalBreedingTrait.Fertility,
+            DurationTicks: 60_000,
+            FeedResourceKey: "Hay",
+            FeedCost: 12,
+            MedicineResourceKey: "MedicineIndustrial",
+            MedicineCost: 1,
+            ComponentResourceKey: "ComponentIndustrial",
+            ComponentCost: 1));
+
+    AssertEqual(AnimalBreedingStartStatus.Success, started.Status);
+    AssertEqual(28, state.GetOwnedResourceQuantity(settlement.Id, "Hay"));
+    AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial"));
+    AssertEqual(2, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(AnimalBreedingProjectStatus.Active, state.GetAnimalBreedingProject(started.Project!.Id)!.Status);
+
+    var early = AnimalBreedingService.CompleteReadyProjects(state, 90_000);
+    AssertEqual(0, early.CompletedProjects);
+    AssertEqual(60, state.GetAnimalCohort(herd.Id)!.FertilityPercent);
+
+    var completed = AnimalBreedingService.CompleteReadyProjects(state, 120_000);
+    AssertEqual(1, completed.CompletedProjects);
+    AssertEqual(70, state.GetAnimalCohort(herd.Id)!.FertilityPercent);
+    AssertEqual(AnimalBreedingProjectStatus.Completed, state.GetAnimalBreedingProject(started.Project.Id)!.Status);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalBreedingProjectStarted));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalBreedingProjectCompleted));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalBreedingProjectsRequireCapabilities()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    var herd = state.CreateAnimalCohort(settlement.Id, "Muffalo", AnimalCohortType.Domesticated, 8, 70, 60, 18, 0);
+    state.AddResource(settlement.Id, "Hay", 40);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 4);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 3);
+
+    var result = AnimalBreedingService.StartSelectionProject(
+        state,
+        new AnimalBreedingStartRequest(
+            60_000,
+            settlement.Id,
+            herd.Id,
+            AnimalBreedingTrait.Health,
+            60_000,
+            "Hay",
+            12,
+            "MedicineIndustrial",
+            1,
+            "ComponentIndustrial",
+            1));
+
+    AssertEqual(AnimalBreedingStartStatus.InsufficientCapability, result.Status);
+    AssertEqual(40, state.GetOwnedResourceQuantity(settlement.Id, "Hay"));
+    AssertEqual(0, state.AnimalBreedingProjects.Count);
+}
+
+static void TestAnimalIncubationProjectsCreateLedgerCohorts()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("lab-ranch", "Lab Ranch", "Outlander");
+    state.RecordSettlementCapability(new SettlementCapability(settlement.Id, 10, 10, 10, 5, 2, 12, 0, 2, 0, 0));
+    state.RecordSpecialistPool(new SpecialistPool(settlement.Id, 0, 2, 0, 1, 0, 1, 0, 0, 0));
+    var herd = state.CreateAnimalCohort(settlement.Id, "Muffalo", AnimalCohortType.Domesticated, 8, 80, 80, 18, 0);
+    state.AddResource(settlement.Id, "Hay", 40);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 4);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 3);
+
+    var started = AnimalBreedingService.StartIncubationProject(
+        state,
+        new AnimalBreedingStartRequest(
+            60_000,
+            settlement.Id,
+            herd.Id,
+            AnimalBreedingTrait.Health,
+            60_000,
+            "Hay",
+            10,
+            "MedicineIndustrial",
+            2,
+            "ComponentIndustrial",
+            2));
+
+    AnimalBreedingService.CompleteReadyProjects(state, 120_000);
+
+    AssertEqual(AnimalBreedingStartStatus.Success, started.Status);
+    AssertEqual(2, state.GetAnimalCohorts(settlement.Id).Count);
+    var incubated = state.GetAnimalCohorts(settlement.Id).OrderByDescending(cohort => cohort.Id.Value).First();
+    AssertEqual("Muffalo", incubated.AnimalKind);
+    AssertEqual(1, incubated.Count);
+    AssertEqual(90, incubated.HealthPercent);
+    AssertEqual(settlement.Id, state.GetOwner(incubated.Id));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortIncubated));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestAnimalBreedingProjectSerialization()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    state.RecordSettlementCapability(new SettlementCapability(settlement.Id, 10, 10, 10, 0, 0, 12, 0, 0, 0, 0));
+    state.RecordSpecialistPool(new SpecialistPool(settlement.Id, 0, 2, 0, 0, 0, 0, 0, 0, 0));
+    var herd = state.CreateAnimalCohort(settlement.Id, "Muffalo", AnimalCohortType.Domesticated, 8, 70, 60, 18, 0);
+    state.AddResource(settlement.Id, "Hay", 40);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 4);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 3);
+
+    var started = AnimalBreedingService.StartSelectionProject(
+        state,
+        new AnimalBreedingStartRequest(60_000, settlement.Id, herd.Id, AnimalBreedingTrait.Capacity, 60_000, "Hay", 12, "MedicineIndustrial", 1, "ComponentIndustrial", 1));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(started.Project, restored.GetAnimalBreedingProject(started.Project!.Id));
     AssertEqual(0, restored.Validate().Count());
 }
 

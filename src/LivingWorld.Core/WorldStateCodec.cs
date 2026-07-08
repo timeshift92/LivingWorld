@@ -363,6 +363,27 @@ public static class WorldStateCodec
                             new XAttribute("carryingCapacity", cohort.CarryingCapacity),
                             new XAttribute("lastUpdatedTick", cohort.LastUpdatedTick)))),
                 new XElement(
+                    "AnimalBreedingProjects",
+                    snapshot.AnimalBreedingProjects.Select(project =>
+                        new XElement(
+                            "AnimalBreedingProject",
+                            IdAttributes(project.Id),
+                            new XAttribute("settlementKind", project.SettlementId.Kind),
+                            new XAttribute("settlementId", project.SettlementId.Value),
+                            new XAttribute("sourceCohortKind", project.SourceCohortId.Kind),
+                            new XAttribute("sourceCohortId", project.SourceCohortId.Value),
+                            new XAttribute("projectKind", project.Kind),
+                            new XAttribute("trait", project.Trait),
+                            new XAttribute("status", project.Status),
+                            new XAttribute("startedTick", project.StartedTick),
+                            new XAttribute("completionTick", project.CompletionTick),
+                            new XAttribute("feedResourceKey", project.FeedResourceKey),
+                            new XAttribute("feedCost", project.FeedCost),
+                            new XAttribute("medicineResourceKey", project.MedicineResourceKey),
+                            new XAttribute("medicineCost", project.MedicineCost),
+                            new XAttribute("componentResourceKey", project.ComponentResourceKey),
+                            new XAttribute("componentCost", project.ComponentCost)))),
+                new XElement(
                     "SpecialistPools",
                     snapshot.SpecialistPools.Select(specialists =>
                             new XElement(
@@ -783,6 +804,24 @@ public static class WorldStateCodec
                     RequiredInt(element, "fertilityPercent"),
                     RequiredInt(element, "carryingCapacity"),
                     RequiredInt(element, "lastUpdatedTick")))
+                .ToList(),
+            AnimalBreedingProjects = OptionalContainer(root, "AnimalBreedingProjects")
+                .Elements("AnimalBreedingProject")
+                .Select(element => new AnimalBreedingProject(
+                    ReadId(element),
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    ReadEntityId(element, "sourceCohortKind", "sourceCohortId"),
+                    RequiredEnum<AnimalBreedingProjectKind>(element, "projectKind"),
+                    RequiredEnum<AnimalBreedingTrait>(element, "trait"),
+                    RequiredEnum<AnimalBreedingProjectStatus>(element, "status"),
+                    RequiredInt(element, "startedTick"),
+                    RequiredInt(element, "completionTick"),
+                    RequiredString(element, "feedResourceKey"),
+                    RequiredInt(element, "feedCost"),
+                    RequiredString(element, "medicineResourceKey"),
+                    RequiredInt(element, "medicineCost"),
+                    RequiredString(element, "componentResourceKey"),
+                    RequiredInt(element, "componentCost")))
                 .ToList()
         };
 
