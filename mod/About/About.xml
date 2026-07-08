@@ -16,7 +16,15 @@
   <loadAfter>
     <li>brrainz.harmony</li>
   </loadAfter>
-  <description>
-    Ledger-first global world simulation foundation for RimWorld. Current build provides the loadable core shell for future population, ownership, economy, ecology, war, and compatibility adapters.
-  </description>
+  <description>Living World turns RimWorld's dead world map into a living, self-running simulation of every NPC faction - cheaply.
+
+Settlements grow, trade, develop (Camp - Village - Town - City), wage war and fall on their own while you focus on your colony. The whole world runs on a lightweight ledger instead of thousands of spawned pawns, so the planet stays alive without tanking performance.
+
+Founding rule: nothing from thin air. People and goods move and transfer, they are never magically created. A raid draws real adults from a real faction settlement (and is only as strong as that settlement can afford); a caravan physically carries goods; a faction that loses a war actually loses population and settlements to the victor.
+
+You watch it happen. A Living World tab shows settlements, faction strength and wealth, and a population/economy table. Warbands, caravans, scouts and diplomats travel the world map, each with its own icon, in faction colours. Intel comes with fog of war - you only know what you have scouted or traded for. Letters announce major world events. Enemy raids against you use real people reserved from a real settlement, never spawned from nothing.
+
+Compatibility: Living World stands its world war down when Rim War is driving factions, and coexists with Empire (Empire runs your own empire, Living World runs the NPC world). Your own settlements are never swept into the simulation.
+
+Requires Harmony. Deterministic and fully save/load safe.</description>
 </ModMetaData>
