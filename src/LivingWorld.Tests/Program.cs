@@ -6672,9 +6672,14 @@ static void TestRimWorldRealFactionRelationsBridge()
     AssertRimWorldMethodExists("RimWorld.Faction", "TryAffectGoodwillWith");
     AssertRimWorldMethodExists("RimWorld.Faction", "GoodwillWith");
 
+    // Both sides of picking a side: the ally becomes a real ally, the enemy a real enemy.
+    AssertContains("FormRealEnmity", bridge);
+    AssertContains("EnemyGoodwillTarget", bridge);
+
     // Wired into both ends of the arc.
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     AssertContains("LivingWorldFactionRelations.FormRealAlliance", mainTab);
+    AssertContains("LivingWorldFactionRelations.FormRealEnmity", mainTab);
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
     AssertContains("LivingWorldFactionRelations.ApplyGoodwill", component);
 }

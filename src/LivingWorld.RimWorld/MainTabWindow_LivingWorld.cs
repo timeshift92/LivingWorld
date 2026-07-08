@@ -281,6 +281,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     // faction (helps in fights, trades, stops raiding) — not just a ledger number.
                     LivingWorldFactionRelations.FormRealAlliance(offer.AllyFactionId);
 
+                    // ...and picking a side has a real cost: the enemy becomes hostile and will raid you.
+                    LivingWorldFactionRelations.FormRealEnmity(offer.EnemyFactionId);
+
                     Find.LetterStack?.ReceiveLetter(
                         "LW_AllianceObjectiveLetterLabel".Translate(),
                         "LW_AllianceObjectiveLetterText".Translate(
