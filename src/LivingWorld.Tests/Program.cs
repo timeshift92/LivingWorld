@@ -125,6 +125,7 @@ var tests = new List<(string Name, Action Test)>
     ("world war scouting records settlement intel", TestWorldWarScoutingRecordsIntel),
     ("world war diplomat changes faction goodwill", TestWorldWarDiplomatChangesGoodwill),
     ("world war non-warband effects survive save load", TestWorldWarNonWarbandEffectsPersistThroughSaveLoad),
+    ("world war service is split into action executors", TestWorldWarServiceSplitExecutors),
     ("wires world war into the daily tick behind the rim war flag", TestRimWorldWorldWarIntegration),
     ("shows world war consequences in the main tab", TestRimWorldWorldWarMainTab),
     ("sends rate-limited world war letters behind the flag", TestRimWorldWorldWarNotifications),
@@ -3064,6 +3065,30 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     AssertEqual(10, restored.GetOwnedResourceQuantity(village.Id, "Steel"));
     AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(village.Id)!.SourceKind);
     AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", "Villagers"));
+}
+
+static void TestWorldWarServiceSplitExecutors()
+{
+    var root = FindRepoRoot();
+    var core = Path.Combine(root, "src", "LivingWorld.Core");
+    var service = File.ReadAllText(Path.Combine(core, "WorldWarService.cs"));
+
+    AssertFileExists(Path.Combine(core, "WorldWarActionDispatcher.cs"));
+    AssertFileExists(Path.Combine(core, "WarbandActionExecutor.cs"));
+    AssertFileExists(Path.Combine(core, "SettlementExpansionExecutor.cs"));
+    AssertFileExists(Path.Combine(core, "CaravanActionExecutor.cs"));
+    AssertFileExists(Path.Combine(core, "ScoutingActionExecutor.cs"));
+    AssertFileExists(Path.Combine(core, "DiplomacyActionExecutor.cs"));
+    AssertFileExists(Path.Combine(core, "SettlementDevelopmentActionExecutor.cs"));
+    AssertFileExists(Path.Combine(core, "WorldWarTargetSelector.cs"));
+
+    AssertContains("WorldWarActionDispatcher.Execute", service);
+    AssertDoesNotContain("TryLaunchWarband", service);
+    AssertDoesNotContain("TryFoundColony", service);
+    AssertDoesNotContain("TryRunCaravan", service);
+    AssertDoesNotContain("TryRunScoutingParty", service);
+    AssertDoesNotContain("TryRunDiplomat", service);
+    AssertDoesNotContain("TryDevelopSettlement", service);
 }
 
 static void TestRimWorldWorldWarIntegration()

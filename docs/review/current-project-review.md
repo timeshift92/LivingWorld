@@ -777,9 +777,22 @@ WorldWarTargetSelector
 
 `WorldWarService` should orchestrate only.
 
+Status: done. `WorldWarService` now advances movement, resolves arrived battles,
+dispatches faction plans through `WorldWarActionDispatcher`, and runs cleanup. Action details
+live in focused executors:
+
+- `WarbandActionExecutor`
+- `SettlementExpansionExecutor`
+- `CaravanActionExecutor`
+- `ScoutingActionExecutor`
+- `DiplomacyActionExecutor`
+- `SettlementDevelopmentActionExecutor`
+- `WorldWarTargetSelector`
+
 ### Acceptance tests
 
-Existing world-war tests should pass unchanged.
+Existing world-war tests pass unchanged, and `TestWorldWarServiceSplitExecutors` prevents
+action details from drifting back into `WorldWarService`.
 
 ## Task 4 — Add settlement/faction aggregates
 
@@ -832,7 +845,7 @@ Turn caravan from instant transfer into real entity.
 |---|---:|---|---|
 | Core can still target/collapse player if imported by non-vanilla path | Medium | Closed by C4 | Keep tests around planner/lifecycle/battle guard |
 | `_armyMovements` grows forever | Medium | Closed by C5 | Monitor retention value during long-play saves |
-| WorldWarService grows too broad | Medium | Emerging | Split executors |
+| WorldWarService grows too broad | Medium | Closed by C6 | Keep dispatcher/executor boundary tested |
 | War-loop scans citizens daily | Medium later | Open | Add aggregates |
 | Caravan is instant transfer | Low now / High later | Accepted abstraction | Design WorldCaravan |
 | Drifters may feel like magic spawn | Medium | Needs framing | Add finite reservoir |
@@ -856,7 +869,7 @@ It should complete:
 ```text
 C4 — Player faction defense-in-depth (done)
 C5 — Army movement pruning (done)
-C6 — WorldWarService split
+C6 — WorldWarService split (done)
 C7 — Population/faction aggregates foundation
 ```
 

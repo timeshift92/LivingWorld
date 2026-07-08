@@ -319,6 +319,11 @@ coarse model.
 
 ### Optimizations (scale blockers, gap-analysis §C — the biggest miss)
 
+- **C6 (Codex): WorldWarService split.** Status: DONE — world-war action execution is now
+  separated into `WorldWarActionDispatcher`, focused action executors, and
+  `WorldWarTargetSelector`; `WorldWarService` is back to phase orchestration. Test
+  `TestWorldWarServiceSplitExecutors` guards the boundary.
+
 - **O1 (Codex): Cached derived aggregates.** Cache settlement power / faction strength /
   population totals, invalidate on change, so the daily war/economy loops stop recomputing
   LINQ over citizens per faction. Also fixes war-loop scale (G3). Status: NOT STARTED.
