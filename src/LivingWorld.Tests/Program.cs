@@ -2877,10 +2877,15 @@ static void TestRimWorldMainTabFactionIcons()
     AssertContains("faction.Color", mainTab);
     // Both per-faction lists route through the icon renderer, and the cached rows carry the
     // FactionId so the icon can be resolved at draw time.
-    AssertContains("DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text)", mainTab);
-    // Cached rows carry the FactionId so the icon can be resolved at draw time.
-    AssertContains("List<(string FactionId, string Text)> cachedFactionStrengthRows", mainTab);
-    AssertContains("List<(string FactionId, string Text)> cachedFactionEconomyRows", mainTab);
+    AssertContains("DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text, row.Fill)", mainTab);
+    // Cached rows carry the FactionId (icon lookup) and a normalised Fill (comparative data bar).
+    AssertContains("List<(string FactionId, string Text, float Fill)> cachedFactionStrengthRows", mainTab);
+    AssertContains("List<(string FactionId, string Text, float Fill)> cachedFactionEconomyRows", mainTab);
+    // Each per-faction row draws a translucent faction-coloured bar scaled by its share of the
+    // strongest/richest faction.
+    AssertContains("Mathf.Clamp01(fill)", mainTab);
+    AssertContains("rect.width * clampedFill", mainTab);
+    AssertContains("BaseContent.WhiteTex", mainTab);
 }
 
 static void TestFactionLifecycleSerializationRoundTrip()

@@ -34,9 +34,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedProductionProfileCount = -1;
     private int cachedArmyMovementCount = -1;
     private List<string> cachedActiveWarbandRows = new();
-    private List<(string FactionId, string Text)> cachedFactionStrengthRows = new();
+    private List<(string FactionId, string Text, float Fill)> cachedFactionStrengthRows = new();
     private List<string> cachedWarHistoryRows = new();
-    private List<(string FactionId, string Text)> cachedFactionEconomyRows = new();
+    private List<(string FactionId, string Text, float Fill)> cachedFactionEconomyRows = new();
     private List<string> cachedSettlementRows = new();
     private List<string> cachedArmyRows = new();
     private List<string> cachedOutcomeRows = new();
@@ -202,7 +202,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         foreach (var row in cachedFactionStrengthRows)
         {
-            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text);
+            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text, row.Fill);
             y += 26f;
         }
 
@@ -217,7 +217,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         foreach (var row in cachedFactionEconomyRows)
         {
-            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text);
+            DrawFactionRow(new Rect(0f, y, viewRect.width, 24f), row.FactionId, row.Text, row.Fill);
             y += 26f;
         }
 
@@ -394,7 +394,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .ToList();
 
         var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
-        cachedFactionStrengthRows = state.Settlements
+        var strengthRaw = state.Settlements
             .Select(settlement => settlement.FactionId)
             .Distinct(System.StringComparer.Ordinal)
             .OrderBy(factionId => factionId, System.StringComparer.Ordinal)
@@ -405,10 +405,14 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
                     .Sum(settlement => SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower);
                 var strength = debugExact ? power.ToString() : StrengthBand(power);
-                return (factionId, "LW_FactionStrengthLine".Translate(
+                return (FactionId: factionId, Text: "LW_FactionStrengthLine".Translate(
                     factionId.Named("faction"),
-                    strength.Named("strength")).ToString());
+                    strength.Named("strength")).ToString(), Value: power);
             })
+            .ToList();
+        var maxStrength = strengthRaw.Count > 0 ? strengthRaw.Max(row => row.Value) : 0;
+        cachedFactionStrengthRows = strengthRaw
+            .Select(row => (row.FactionId, row.Text, maxStrength > 0 ? (float)row.Value / maxStrength : 0f))
             .ToList();
 
         cachedWarHistoryRows = state.Events
@@ -426,7 +430,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     worldEvent.Summary.Named("summary")).ToString())
             .ToList();
 
-        cachedFactionEconomyRows = state.Settlements
+        var economyRaw = state.Settlements
             .Select(settlement => settlement.FactionId)
             .Distinct(System.StringComparer.Ordinal)
             .OrderBy(factionId => factionId, System.StringComparer.Ordinal)
@@ -437,10 +441,14 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
                     .Sum(settlement => FactionMaterialStock(state, settlement.Id));
                 var wealth = debugExact ? stock.ToString() : WealthBand(stock);
-                return (factionId, "LW_FactionEconomyLine".Translate(
+                return (FactionId: factionId, Text: "LW_FactionEconomyLine".Translate(
                     factionId.Named("faction"),
-                    wealth.Named("wealth")).ToString());
+                    wealth.Named("wealth")).ToString(), Value: stock);
             })
+            .ToList();
+        var maxStock = economyRaw.Count > 0 ? economyRaw.Max(row => row.Value) : 0;
+        cachedFactionEconomyRows = economyRaw
+            .Select(row => (row.FactionId, row.Text, maxStock > 0 ? (float)row.Value / maxStock : 0f))
             .ToList();
     }
 
@@ -483,13 +491,27 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     // Draws a per-faction ledger row with the faction's native icon and colour in front of the
     // text, so the world-war/economy lists read like a real RimWorld faction list instead of a
     // wall of plain labels. Falls back to a plain label when the faction has left the world.
-    private static void DrawFactionRow(Rect rect, string factionId, string text)
+    private static void DrawFactionRow(Rect rect, string factionId, string text, float fill)
     {
         const float IconSize = 22f;
         var faction = Find.FactionManager?.AllFactionsListForReading
             .FirstOrDefault(candidate =>
                 candidate.def != null
                 && string.Equals(candidate.def.defName, factionId, System.StringComparison.Ordinal));
+
+        // Relative data bar behind the row: a translucent faction-coloured fill scaled by this
+        // faction's share of the strongest/richest faction, so the list reads as a comparative
+        // bar chart at a glance instead of just words.
+        var clampedFill = Mathf.Clamp01(fill);
+        if (clampedFill > 0f)
+        {
+            var barColor = faction != null ? faction.Color : new Color(0.5f, 0.5f, 0.55f);
+            barColor.a = 0.3f;
+            var previousBarColor = GUI.color;
+            GUI.color = barColor;
+            GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width * clampedFill, rect.height), BaseContent.WhiteTex);
+            GUI.color = previousBarColor;
+        }
 
         var labelX = rect.x;
         if (faction?.def?.FactionIcon != null)
