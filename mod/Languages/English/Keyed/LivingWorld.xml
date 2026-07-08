@@ -69,6 +69,9 @@
   <LW_SettingDrifterArrivals>Max drifter arrivals per day</LW_SettingDrifterArrivals>
   <LW_SettingDrifterCeiling>World population ceiling</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Living World - World Generation</LW_WorldGenTitle>
+  <LW_WorldGenButton>Living World setup</LW_WorldGenButton>
+  <LW_WorldGenBlurb>Living World tracks every faction settlement as a living ledger of people and resources - they grow, migrate, trade and wage war even when you never see them. World size and population are set by the vanilla planet options above.</LW_WorldGenBlurb>
+  <LW_WorldGenAdvancedHint>Fine-tuning (settlement sizes, economy, drifters) lives in Options - Mod Settings - Living World.</LW_WorldGenAdvancedHint>
   <LW_DrifterArrivalLetterLabel>Drifter arrival</LW_DrifterArrivalLetterLabel>
   <LW_DrifterArrivalLetterText>{0}, a drifter from beyond the world, has arrived and wishes to join your colony.</LW_DrifterArrivalLetterText>
   <LW_FactionRaidLetterLabel>Living World raid</LW_FactionRaidLetterLabel>

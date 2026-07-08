@@ -69,6 +69,9 @@
   <LW_SettingDrifterArrivals>Макс. приходов дрифтеров в день</LW_SettingDrifterArrivals>
   <LW_SettingDrifterCeiling>Потолок населения мира</LW_SettingDrifterCeiling>
   <LW_WorldGenTitle>Живой мир - генерация мира</LW_WorldGenTitle>
+  <LW_WorldGenButton>Настройка Живого мира</LW_WorldGenButton>
+  <LW_WorldGenBlurb>Живой мир ведёт по каждому поселению фракций живой учёт людей и ресурсов - они растут, мигрируют, торгуют и воюют, даже когда вы их не видите. Размер планеты и населённость задаются ванильными настройками мира выше.</LW_WorldGenBlurb>
+  <LW_WorldGenAdvancedHint>Тонкая настройка (размеры поселений, экономика, дрифтеры) - в Настройки - Настройки модов - Живой мир.</LW_WorldGenAdvancedHint>
   <LW_DrifterArrivalLetterLabel>Приход дрифтера</LW_DrifterArrivalLetterLabel>
   <LW_DrifterArrivalLetterText>{0} — дрифтер из-за края мира — прибыл и хочет вступить в вашу колонию.</LW_DrifterArrivalLetterText>
   <LW_FactionRaidLetterLabel>Рейд Living World</LW_FactionRaidLetterLabel>

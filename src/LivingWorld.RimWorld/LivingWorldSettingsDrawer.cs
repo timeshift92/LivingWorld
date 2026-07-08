@@ -7,6 +7,31 @@ public static class LivingWorldSettingsDrawer
 {
     public const float PreferredHeight = 390f;
 
+    // The world-generation screen only needs the one decision a player makes before the world
+    // exists - whether Living World is active. Planet size and population are the vanilla planet
+    // options; every numeric knob lives in Options - Mod Settings, so world creation stays clean.
+    public static void DrawWorldGenEssentials(Rect inRect, LivingWorldSettings settings)
+    {
+        var listing = new Listing_Standard();
+        listing.Begin(inRect);
+
+        listing.CheckboxLabeled(
+            "LW_Settings_BootstrapLedger".Translate(),
+            ref settings.bootstrapLedgerDuringWorldGeneration,
+            "LW_Settings_BootstrapLedgerTip".Translate());
+
+        listing.Gap(8f);
+
+        var previousColor = GUI.color;
+        GUI.color = new Color(0.72f, 0.72f, 0.72f);
+        listing.Label("LW_WorldGenBlurb".Translate());
+        listing.Gap(6f);
+        listing.Label("LW_WorldGenAdvancedHint".Translate());
+        GUI.color = previousColor;
+
+        listing.End();
+    }
+
     public static void Draw(Rect inRect, LivingWorldSettings settings)
     {
         var listing = new Listing_Standard();

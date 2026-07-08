@@ -3640,7 +3640,10 @@ static void TestRimWorldWorldGenSettingsPatch()
     var source = File.ReadAllText(patchPath);
 
     AssertContains("[HarmonyPatch(typeof(Page_CreateWorldParams), \"DoWindowContents\")]", source);
-    AssertContains("LW_MainTitle", source);
+    // Clear, dedicated button label anchored to the top-right corner so it never overlaps the
+    // vanilla planet sliders or bottom navigation.
+    AssertContains("LW_WorldGenButton", source);
+    AssertContains("rect.xMax - ButtonWidth", source);
     AssertContains("LivingWorldWorldGenSettingsWindow", source);
 }
 
@@ -3677,13 +3680,26 @@ static void TestRimWorldWorldGenSettingsWindow()
     AssertContains("sealed class LivingWorldWorldGenSettingsWindow : Window", windowSource);
     AssertContains("doCloseButton = false", windowSource);
     AssertContains("FooterHeight", windowSource);
-    AssertContains("Widgets.BeginScrollView", windowSource);
-    AssertContains("Widgets.EndScrollView", windowSource);
     AssertContains("\"CloseButton\".Translate()", windowSource);
+    // World generation shows only the master toggle plus short guidance - the numeric knobs are
+    // deferred to Options - Mod Settings so world creation stays simple and logical.
+    AssertContains("DrawWorldGenEssentials", windowSource);
+    AssertContains("LW_WorldGenBlurb", windowSource);
+    AssertContains("LW_WorldGenAdvancedHint", windowSource);
+    // The advanced tuning still lives in the full drawer used by the mod settings page.
     AssertContains("PreferredHeight", windowSource);
     AssertContains("LW_Settings_HumanAdults", windowSource);
     AssertContains("LW_Settings_FoodPerCitizen", windowSource);
     AssertContains("LW_Settings_SteelPerCitizen", windowSource);
+
+    var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    AssertContains("<LW_WorldGenButton>", en);
+    AssertContains("<LW_WorldGenButton>", ru);
+    AssertContains("<LW_WorldGenBlurb>", en);
+    AssertContains("<LW_WorldGenBlurb>", ru);
+    AssertContains("<LW_WorldGenAdvancedHint>", en);
+    AssertContains("<LW_WorldGenAdvancedHint>", ru);
 }
 
 static void TestRimWorldDrifterFlowSettings()
