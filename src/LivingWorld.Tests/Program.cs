@@ -4628,7 +4628,10 @@ static void TestRimWorldDrifterArrivalIncidentDef()
     var xml = File.ReadAllText(path);
 
     AssertContains("<defName>LivingWorld_DrifterArrival</defName>", xml);
-    AssertContains("<category>AllyArrival</category>", xml);
+    // Must be a real vanilla IncidentCategoryDef or RimWorld logs a red cross-reference error at
+    // load (WandererJoin, our closest analog, uses Misc). "AllyArrival" does not exist in 1.6.
+    AssertContains("<category>Misc</category>", xml);
+    AssertDoesNotContain("AllyArrival", xml);
     AssertContains("<workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldDrifterArrival</workerClass>", xml);
     AssertContains("<targetTags>", xml);
     AssertContains("<li>Map_PlayerHome</li>", xml);

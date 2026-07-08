@@ -3,7 +3,7 @@
   <IncidentDef>
     <defName>LivingWorld_DrifterArrival</defName>
     <label>drifter arrival</label>
-    <category>AllyArrival</category>
+    <category>Misc</category>
     <targetTags>
       <li>Map_PlayerHome</li>
     </targetTags>
