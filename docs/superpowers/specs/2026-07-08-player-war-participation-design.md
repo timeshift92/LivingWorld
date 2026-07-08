@@ -8,8 +8,11 @@
 
 - **Slice 1 — DONE** (merged `051834e`): player attacks register in the war ledger (third party). Core `PlayerBelligerenceService` + RW `LivingWorldSettlementDefeatPatch` (reflection-verified hook). Unit + structural tests.
 - **Slice 2 — DONE** (merged `2df4a85`): diplomat-gated alliances. Core `AllianceService` (alliance = Ally-stance goodwill, **no new save state**) + main-tab "Ally with X against Y" buttons + defeat-hook ally credit. EN/RU + tests.
-- **Slice 3 — DEFERRED (needs live iteration):** war objectives from an ally. Heavy RimWorld quest-system integration that cannot be verified headless; build with the user available to test.
-- **Slice 4 — BLOCKED (needs a Core prerequisite):** victory & spoils. **Nothing in Core currently sets `WorldConflictStatus.Resolved` — wars never end**, so there is no victory trigger to hook. Requires a Core war-resolution mechanism (when/how a war concludes), which overlaps Codex's war-balance work and must be coordinated, not built solo. Building victory rewards before it exists would be dead code that never fires.
+- **War resolution (Slice 4 prerequisite) — DONE** (merged with slices 3-4): `ConflictResolutionService` ends a war when one side is decisively broken (war-exhaustion gap >= 30, or a side loses all active settlements); wired into the daily tick. This was the missing piece — previously no war ever concluded.
+- **Slice 3 — DONE:** forming an alliance sends a "war objective" letter naming the enemy to strike. (Kept letter-driven rather than a full RimWorld QuestScriptDef, which is unverifiable headless; the objective's reward is the existing ally-credit + victory windfall.)
+- **Slice 4 — DONE:** `PlayerVictoryService` grants a goodwill windfall when a war the player allied in resolves in the ally's favour; a persisted (once-per-war) victory letter announces it.
+
+All four slices built, tested, and deployed. Live-test pending: the in-game defeat->record loop (Slice 1 hook) and the full alliance->objective->victory arc, which need the game running to confirm end to end.
 
 ## Goal
 
