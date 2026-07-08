@@ -48,7 +48,7 @@ settlement → UI explains with bands & source labels (no omniscient exact value
 | Task 4 | Facilities & settlement projects | Codex core + Claude bands | ▢ | Economy depth beyond population |
 | Task 5 | Ruins & relocation | Codex core + Claude markers | ▢ | Settlement physical lifecycle |
 | Task 6 | Conflict campaigns (`WorldConflict`) | Codex core + Claude summaries | ▢ | Wars as long-form politics, not isolated battles |
-| Task 9 | Settings reorganization by player intent | RW/Claude + Codex defaults | ▢ | Low risk; do when the knob count grows |
+| Task 9 | Settings reorganization by player intent | RW/Claude | ✅ | **DONE (commit `9ef05bd`)** — Options→Mod Settings grouped into Population / Faction Activity / Development / Baseline / Performance / Compatibility / Debug; ongoing world-war+development knobs exposed; compat section states Rim War/Empire cede; scrolls; EN/RU + 3 tests. (Codex's world-map speed test folded into Performance.) |
 | Sys 1 | Central materialization-intent policy | Codex core + Claude consume | ⏸ | **Defer the central engine** — extract it from concrete cases (raid, drifter) once 2–3 real consumers exist |
 | Task 7 | Animal cohorts & ecology | Codex core | ⏸ | **Deferred** — far from player-felt value until an interaction hook exists |
 | Task 8 | Technology, selection & incubation | Codex core + Claude gates | ⏸ | **Deferred** — same reason; needs facilities + ecology first |
