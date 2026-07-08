@@ -12,6 +12,9 @@ public sealed class WorldState
     private readonly Dictionary<(EntityId ConflictId, EntityId SettlementId), ConflictClaim> _conflictClaims = new();
     private readonly Dictionary<EntityId, WorldAnimalCohort> _animalCohorts = new();
     private readonly Dictionary<EntityId, AnimalBreedingProject> _animalBreedingProjects = new();
+    private readonly Dictionary<(EntityId SettlementId, string CropKind), CropStrain> _cropStrains = new();
+    private readonly Dictionary<EntityId, CropStrainProject> _cropStrainProjects = new();
+    private readonly Dictionary<(EntityId SettlementId, TechnologyDomain Domain), SettlementTechnology> _settlementTechnologies = new();
     private readonly Dictionary<EntityId, WorldMigrationGroup> _migrationGroups = new();
     private readonly Dictionary<EntityId, WorldIntelReport> _intelReports = new();
     private readonly Dictionary<EntityId, KnownSettlementInfo> _knownSettlementInfos = new();
@@ -76,6 +79,12 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldAnimalCohort> AnimalCohorts => _animalCohorts.Values;
 
     public IReadOnlyCollection<AnimalBreedingProject> AnimalBreedingProjects => _animalBreedingProjects.Values;
+
+    public IReadOnlyCollection<CropStrain> CropStrains => _cropStrains.Values;
+
+    public IReadOnlyCollection<CropStrainProject> CropStrainProjects => _cropStrainProjects.Values;
+
+    public IReadOnlyCollection<SettlementTechnology> SettlementTechnologies => _settlementTechnologies.Values;
 
     public IReadOnlyCollection<WorldArmyMovement> ArmyMovements => _armyMovements.Values;
 
@@ -263,6 +272,17 @@ public sealed class WorldState
                 .ToList(),
             AnimalBreedingProjects = _animalBreedingProjects.Values
                 .OrderBy(project => project.Id.Value)
+                .ToList(),
+            CropStrains = _cropStrains.Values
+                .OrderBy(strain => strain.SettlementId.Value)
+                .ThenBy(strain => strain.CropKind, StringComparer.Ordinal)
+                .ToList(),
+            CropStrainProjects = _cropStrainProjects.Values
+                .OrderBy(project => project.Id.Value)
+                .ToList(),
+            SettlementTechnologies = _settlementTechnologies.Values
+                .OrderBy(technology => technology.SettlementId.Value)
+                .ThenBy(technology => technology.Domain)
                 .ToList()
         };
     }
@@ -388,6 +408,7 @@ public sealed class WorldState
         foreach (var profile in snapshot.ProductionProfiles)
         {
             state._productionProfiles.Add(profile.SettlementId, profile);
+            state.SeedTechnologyFromProductionProfile(profile);
         }
 
         foreach (var facility in snapshot.SettlementFacilities)
@@ -412,6 +433,25 @@ public sealed class WorldState
         {
             state._animalBreedingProjects.Add(project.Id, Normalize(project));
             state.ReserveExistingId(project.Id);
+        }
+
+        foreach (var strain in snapshot.CropStrains)
+        {
+            var normalized = Normalize(strain);
+            state._cropStrains[(normalized.SettlementId, normalized.CropKind)] = normalized;
+        }
+
+        foreach (var project in snapshot.CropStrainProjects)
+        {
+            var normalized = Normalize(project);
+            state._cropStrainProjects.Add(normalized.Id, normalized);
+            state.ReserveExistingId(normalized.Id);
+        }
+
+        foreach (var technology in snapshot.SettlementTechnologies)
+        {
+            var normalized = Normalize(technology);
+            state._settlementTechnologies[(normalized.SettlementId, normalized.Domain)] = normalized;
         }
 
         foreach (var capability in snapshot.SettlementCapabilities)
@@ -1686,6 +1726,124 @@ public sealed class WorldState
         return normalized;
     }
 
+    public CropStrain? GetCropStrain(EntityId settlementId, string cropKind)
+    {
+        ThrowIfNullOrWhiteSpace(cropKind, nameof(cropKind));
+        return _cropStrains.TryGetValue((settlementId, cropKind.Trim()), out var strain)
+            ? strain
+            : null;
+    }
+
+    public IReadOnlyList<CropStrain> GetCropStrains(EntityId settlementId)
+    {
+        return _cropStrains.Values
+            .Where(strain => strain.SettlementId == settlementId)
+            .OrderBy(strain => strain.CropKind, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public CropStrain RecordCropStrain(CropStrain strain)
+    {
+        if (strain == null)
+        {
+            throw new ArgumentNullException(nameof(strain));
+        }
+
+        if (!_settlements.ContainsKey(strain.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {strain.SettlementId} does not exist.");
+        }
+
+        var normalized = Normalize(strain);
+        _cropStrains[(normalized.SettlementId, normalized.CropKind)] = normalized;
+        return normalized;
+    }
+
+    public CropStrainProject? GetCropStrainProject(EntityId projectId)
+    {
+        return _cropStrainProjects.TryGetValue(projectId, out var project)
+            ? project
+            : null;
+    }
+
+    internal CropStrainProject CreateCropStrainProject(
+        EntityId settlementId,
+        string cropKind,
+        CropStrainTrait trait,
+        int startedTick,
+        int completionTick,
+        string foodResourceKey,
+        int foodCost,
+        string medicineResourceKey,
+        int medicineCost)
+    {
+        if (!_settlements.ContainsKey(settlementId))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        var project = Normalize(new CropStrainProject(
+            NextId(EntityKind.CropStrainProject),
+            settlementId,
+            cropKind,
+            trait,
+            CropStrainProjectStatus.Active,
+            startedTick,
+            completionTick,
+            foodResourceKey,
+            foodCost,
+            medicineResourceKey,
+            medicineCost));
+        _cropStrainProjects[project.Id] = project;
+        AppendEvent(
+            WorldEventKind.CropStrainProjectStarted,
+            project.Id,
+            $"Crop strain project {project.Id} started for {project.CropKind}.");
+
+        return project;
+    }
+
+    public CropStrainProject RecordCropStrainProjectForSimulation(CropStrainProject project)
+    {
+        if (project == null)
+        {
+            throw new ArgumentNullException(nameof(project));
+        }
+
+        var normalized = Normalize(project);
+        if (!_cropStrainProjects.ContainsKey(normalized.Id))
+        {
+            ReserveExistingId(normalized.Id);
+        }
+
+        _cropStrainProjects[normalized.Id] = normalized;
+        return normalized;
+    }
+
+    public SettlementTechnology? GetSettlementTechnology(EntityId settlementId, TechnologyDomain domain)
+    {
+        return _settlementTechnologies.TryGetValue((settlementId, domain), out var technology)
+            ? technology
+            : null;
+    }
+
+    public SettlementTechnology RecordSettlementTechnology(SettlementTechnology technology)
+    {
+        if (technology == null)
+        {
+            throw new ArgumentNullException(nameof(technology));
+        }
+
+        if (!_settlements.ContainsKey(technology.SettlementId))
+        {
+            throw new InvalidOperationException($"Settlement {technology.SettlementId} does not exist.");
+        }
+
+        var normalized = Normalize(technology);
+        _settlementTechnologies[(normalized.SettlementId, normalized.Domain)] = normalized;
+        return normalized;
+    }
+
     public void RecordKnownSettlementInfo(KnownSettlementInfo info)
     {
         if (!_settlements.ContainsKey(info.SettlementId))
@@ -1773,6 +1931,7 @@ public sealed class WorldState
         }
 
         _productionProfiles[profile.SettlementId] = profile;
+        SeedTechnologyFromProductionProfile(profile);
     }
 
     public SettlementFacility RecordSettlementFacility(SettlementFacility facility)
@@ -3038,6 +3197,84 @@ public sealed class WorldState
             ComponentResourceKey = string.IsNullOrWhiteSpace(project.ComponentResourceKey) ? "ComponentIndustrial" : project.ComponentResourceKey.Trim(),
             ComponentCost = Math.Max(0, project.ComponentCost)
         };
+    }
+
+    private static CropStrain Normalize(CropStrain strain)
+    {
+        return strain with
+        {
+            CropKind = string.IsNullOrWhiteSpace(strain.CropKind) ? "UnknownCrop" : strain.CropKind.Trim(),
+            YieldPercent = Math.Max(50, Math.Min(200, strain.YieldPercent)),
+            HardinessPercent = Math.Max(50, Math.Min(200, strain.HardinessPercent)),
+            GrowthSpeedPercent = Math.Max(50, Math.Min(200, strain.GrowthSpeedPercent)),
+            LastUpdatedTick = Math.Max(0, strain.LastUpdatedTick)
+        };
+    }
+
+    private static CropStrainProject Normalize(CropStrainProject project)
+    {
+        var started = Math.Max(0, project.StartedTick);
+        return project with
+        {
+            CropKind = string.IsNullOrWhiteSpace(project.CropKind) ? "UnknownCrop" : project.CropKind.Trim(),
+            StartedTick = started,
+            CompletionTick = Math.Max(started, project.CompletionTick),
+            FoodResourceKey = string.IsNullOrWhiteSpace(project.FoodResourceKey) ? "Food" : project.FoodResourceKey.Trim(),
+            FoodCost = Math.Max(0, project.FoodCost),
+            MedicineResourceKey = string.IsNullOrWhiteSpace(project.MedicineResourceKey) ? "MedicineIndustrial" : project.MedicineResourceKey.Trim(),
+            MedicineCost = Math.Max(0, project.MedicineCost)
+        };
+    }
+
+    private static SettlementTechnology Normalize(SettlementTechnology technology)
+    {
+        return technology with
+        {
+            LastUpdatedTick = Math.Max(0, technology.LastUpdatedTick),
+            Source = string.IsNullOrWhiteSpace(technology.Source) ? "unknown" : technology.Source.Trim()
+        };
+    }
+
+    private void SeedTechnologyFromProductionProfile(SettlementProductionProfile profile)
+    {
+        var tier = TechnologyTierFromProfile(profile.TechLevel);
+        foreach (var domain in new[] { TechnologyDomain.Agriculture, TechnologyDomain.Medicine, TechnologyDomain.Industry })
+        {
+            var key = (profile.SettlementId, domain);
+            if (!_settlementTechnologies.ContainsKey(key))
+            {
+                _settlementTechnologies[key] = new SettlementTechnology(
+                    profile.SettlementId,
+                    domain,
+                    tier,
+                    CurrentTick,
+                    "production-profile");
+            }
+        }
+    }
+
+    private static TechnologyTier TechnologyTierFromProfile(string techLevel)
+    {
+        if (string.IsNullOrWhiteSpace(techLevel))
+        {
+            return TechnologyTier.Neolithic;
+        }
+
+        if (techLevel.IndexOf("Spacer", StringComparison.OrdinalIgnoreCase) >= 0
+            || techLevel.IndexOf("Ultra", StringComparison.OrdinalIgnoreCase) >= 0
+            || techLevel.IndexOf("Archotech", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return TechnologyTier.Spacer;
+        }
+
+        if (techLevel.IndexOf("Industrial", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return TechnologyTier.Industrial;
+        }
+
+        return techLevel.IndexOf("Medieval", StringComparison.OrdinalIgnoreCase) >= 0
+            ? TechnologyTier.Medieval
+            : TechnologyTier.Neolithic;
     }
 
     private static WorldRuin Normalize(WorldRuin ruin)

@@ -342,6 +342,21 @@ Daily tick сначала обновляет ecology: стада растут, �
 handlers/lab specialists и реальные feed/medicine/components. Проекты не
 создают pawns: они улучшают ledger cohort или добавляют новый ledger cohort.
 
+`CropStrainDriver` mirrors that pattern for crops. It completes active crop
+selection projects and starts a bounded new project only where the settlement
+has crop capacity, farmers, researchers and real food/medicine to spend. A
+completed crop strain improves the ledger crop record and raises the settlement
+production scale for future days. No crop strain appears from nowhere: the
+project pays from the settlement resource ledger and records
+`CropStrainProjectStarted` / `CropStrainProjectCompleted`.
+
+`TechnologyDiffusionService` runs daily after crop/animal project drivers.
+Production profiles seed a baseline technology tier from the RimWorld tech
+level, and higher-tier same-faction settlements can diffuse one domain at a
+time to lower-tier settlements. Diffusion is deterministic and stepwise: a
+Neolithic settlement learns Medieval before it can learn Industrial, and every
+upgrade records `TechnologyDiffused`.
+
 Wildlife spawn на карте должен выбирать существующих животных из regional pool.
 Первый слой settlement-map animal materialization уже делает это для атакуемых
 NPC-поселений: `AnimalMapMaterializationService.WithdrawForSettlementMap`
@@ -562,6 +577,20 @@ the ledger while it is traveling and for a short post-resolution window, then
 delete resources: arrival already moved cargo to the target settlement, and
 destruction already removed caravan-owned cargo. Durable caravan history remains
 in `WorldEvent`.
+
+Traveling objects can now interact before arrival. `ArmyInterceptionService`
+handles warband-vs-warband encounters, and `TransitEncounterService` handles
+the conservative non-combat cases:
+
+- a hostile traveling army moving opposite a caravan between the same two
+  settlement endpoints destroys the caravan and its cargo;
+- a hostile traveling army moving opposite a scout/diplomat mission between
+  the same endpoints marks the mission failed before it can apply intel or
+  goodwill.
+
+This is intentionally route-exact rather than radius-based. It prevents obvious
+"markers pass through each other" cases while keeping Core independent from
+RimWorld world-tile geometry.
 
 The service is idempotent. Once `WorldFactionRecord.Status == Collapsed`, later
 daily passes do not emit duplicate collapse events. This keeps history readable

@@ -199,6 +199,12 @@
   <LW_SettlementObserver_Breeding>Селекция и инкубация</LW_SettlementObserver_Breeding>
   <LW_SettlementObserver_NoBreedingProject>Нет активной селекции или инкубации.</LW_SettlementObserver_NoBreedingProject>
   <LW_SettlementObserver_BreedingProgress>{kind}: {animal}, признак {trait}, готово {progress}%, осталось около {days} дн.</LW_SettlementObserver_BreedingProgress>
+  <LW_SettlementObserver_CropTech>Культуры и технологии</LW_SettlementObserver_CropTech>
+  <LW_SettlementObserver_NoCropStrain>Учтённых сортов культур нет.</LW_SettlementObserver_NoCropStrain>
+  <LW_SettlementObserver_CropLine>{crop}: урожайность {yield}%, устойчивость {hardiness}%, рост {growth}%</LW_SettlementObserver_CropLine>
+  <LW_SettlementObserver_NoCropProject>Нет активной селекции культур.</LW_SettlementObserver_NoCropProject>
+  <LW_SettlementObserver_CropProgress>{crop}: признак {trait}, готово {progress}%, осталось около {days} дн.</LW_SettlementObserver_CropProgress>
+  <LW_SettlementObserver_TechLine>{domain}: {tier} ({source})</LW_SettlementObserver_TechLine>
   <LW_SettlementObserver_Resources>Ресурсы</LW_SettlementObserver_Resources>
   <LW_SettlementObserver_NoResources>Нет складских ресурсов.</LW_SettlementObserver_NoResources>
   <LW_SettlementObserver_ResourceLine>{resource}: {quantity}</LW_SettlementObserver_ResourceLine>

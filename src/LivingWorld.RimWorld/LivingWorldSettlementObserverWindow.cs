@@ -213,6 +213,36 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             ? new[] { Line("LW_SettlementObserver_NoBreedingProject".Translate().ToString()) }
             : breedingProjects.Select(project => Line(FormatBreedingProject(state, project, currentTick), 36f)));
 
+        lines.Add(Header("LW_SettlementObserver_CropTech".Translate().ToString()));
+        var cropStrains = state.GetCropStrains(settlement.Id)
+            .OrderBy(strain => strain.CropKind, StringComparer.Ordinal)
+            .ToList();
+        lines.AddRange(cropStrains.Count == 0
+            ? new[] { Line("LW_SettlementObserver_NoCropStrain".Translate().ToString()) }
+            : cropStrains.Select(strain => Line("LW_SettlementObserver_CropLine".Translate(
+                strain.CropKind.Named("crop"),
+                strain.YieldPercent.Named("yield"),
+                strain.HardinessPercent.Named("hardiness"),
+                strain.GrowthSpeedPercent.Named("growth")).ToString(), 36f)));
+
+        var cropProjects = state.CropStrainProjects
+            .Where(project => project.SettlementId == settlement.Id && project.Status == CropStrainProjectStatus.Active)
+            .OrderBy(project => project.CompletionTick)
+            .ThenBy(project => project.Id.Value)
+            .ToList();
+        lines.AddRange(cropProjects.Count == 0
+            ? new[] { Line("LW_SettlementObserver_NoCropProject".Translate().ToString()) }
+            : cropProjects.Select(project => Line(FormatCropProject(project, currentTick), 36f)));
+
+        var technologies = state.SettlementTechnologies
+            .Where(technology => technology.SettlementId == settlement.Id)
+            .OrderBy(technology => technology.Domain)
+            .ToList();
+        lines.AddRange(technologies.Select(technology => Line("LW_SettlementObserver_TechLine".Translate(
+            technology.Domain.Named("domain"),
+            technology.Tier.Named("tier"),
+            technology.Source.Named("source")).ToString())));
+
         lines.Add(Header("LW_SettlementObserver_Resources".Translate().ToString()));
         var resources = state.ResourcesForOwner(settlement.Id)
             .OrderByDescending(resource => resource.Quantity)
@@ -231,6 +261,10 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             settlement.Id
         };
         foreach (var project in state.AnimalBreedingProjects.Where(project => project.SettlementId == settlement.Id))
+        {
+            relatedSubjectIds.Add(project.Id);
+        }
+        foreach (var project in state.CropStrainProjects.Where(project => project.SettlementId == settlement.Id))
         {
             relatedSubjectIds.Add(project.Id);
         }
@@ -283,6 +317,19 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             daysLeft.Named("days")).ToString();
     }
 
+    private static string FormatCropProject(CropStrainProject project, int currentTick)
+    {
+        var duration = Math.Max(1, project.CompletionTick - project.StartedTick);
+        var elapsed = Math.Max(0, currentTick - project.StartedTick);
+        var progress = Math.Min(100, elapsed * 100 / duration);
+        var daysLeft = Math.Max(0, (int)Math.Ceiling((project.CompletionTick - currentTick) / (double)TicksPerDay));
+        return "LW_SettlementObserver_CropProgress".Translate(
+            project.CropKind.Named("crop"),
+            project.Trait.Named("trait"),
+            progress.Named("progress"),
+            daysLeft.Named("days")).ToString();
+    }
+
     private static bool IsSettlementProcessEvent(WorldEventKind kind)
     {
         return kind == WorldEventKind.SettlementProductionUpdated
@@ -300,7 +347,10 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             || kind == WorldEventKind.AnimalHunted
             || kind == WorldEventKind.AnimalBreedingProjectStarted
             || kind == WorldEventKind.AnimalBreedingProjectCompleted
-            || kind == WorldEventKind.AnimalCohortIncubated;
+            || kind == WorldEventKind.AnimalCohortIncubated
+            || kind == WorldEventKind.CropStrainProjectStarted
+            || kind == WorldEventKind.CropStrainProjectCompleted
+            || kind == WorldEventKind.TechnologyDiffused;
     }
 
     private static DetailLine Header(string text) => new(text, 30f, IsHeader: true);

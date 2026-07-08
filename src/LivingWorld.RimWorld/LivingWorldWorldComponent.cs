@@ -314,6 +314,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var activeRuins = State.Ruins.Count(ruin => ruin.Status == RuinStatus.Active);
         var animalCohorts = State.AnimalCohorts.Count;
         var activeBreedingProjects = State.AnimalBreedingProjects.Count(project => project.Status == AnimalBreedingProjectStatus.Active);
+        var activeCropProjects = State.CropStrainProjects.Count(project => project.Status == CropStrainProjectStatus.Active);
+        var technologyRecords = State.SettlementTechnologies.Count;
         var playerIntel = State.RaidIntelFacts.Count(fact =>
             fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(currentTick));
 
@@ -321,6 +323,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             $"[LivingWorld] day {lastSimulatedDay} (+{simulatedDays}d): settlements {activeSettlements}/{State.Settlements.Count}"
             + $" | pop {pop} | facilities {facilities} | projects {activeProjects} active"
             + $" | animals {animalCohorts} cohorts | breeding {activeBreedingProjects} active"
+            + $" | crops {activeCropProjects} active | tech {technologyRecords} records"
             + $" | conflicts {activeConflicts} | ruins {activeRuins} | player-raid-intel {playerIntel}");
 
         var events = State.Events;
@@ -590,6 +593,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 FoodResourceKey,
                 MedicineResourceKey,
                 ComponentResourceKey));
+        CropStrainDriver.SimulateDay(
+            State,
+            new CropStrainDriverRequest(
+                day * TicksPerDay,
+                FoodResourceKey,
+                MedicineResourceKey));
+        TechnologyDiffusionService.SimulateDay(
+            State,
+            new TechnologyDiffusionRequest(
+                day * TicksPerDay));
         DemographyService.SimulateDay(
             State,
             new DemographySimulationRequest(

@@ -72,7 +72,11 @@ public enum WorldEventKind
     AnimalHunted,
     AnimalBreedingProjectStarted,
     AnimalBreedingProjectCompleted,
-    AnimalCohortIncubated
+    AnimalCohortIncubated,
+    CropStrainProjectStarted,
+    CropStrainProjectCompleted,
+    TechnologyDiffused,
+    WorldMissionDisrupted
 }
 
 public sealed record WorldEvent(

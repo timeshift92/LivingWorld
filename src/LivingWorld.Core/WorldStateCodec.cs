@@ -395,6 +395,46 @@ public static class WorldStateCodec
                             new XAttribute("componentResourceKey", project.ComponentResourceKey),
                             new XAttribute("componentCost", project.ComponentCost)))),
                 new XElement(
+                    "CropStrains",
+                    snapshot.CropStrains.Select(strain =>
+                        new XElement(
+                            "CropStrain",
+                            new XAttribute("settlementKind", strain.SettlementId.Kind),
+                            new XAttribute("settlementId", strain.SettlementId.Value),
+                            new XAttribute("cropKind", strain.CropKind),
+                            new XAttribute("yieldPercent", strain.YieldPercent),
+                            new XAttribute("hardinessPercent", strain.HardinessPercent),
+                            new XAttribute("growthSpeedPercent", strain.GrowthSpeedPercent),
+                            new XAttribute("lastUpdatedTick", strain.LastUpdatedTick)))),
+                new XElement(
+                    "CropStrainProjects",
+                    snapshot.CropStrainProjects.Select(project =>
+                        new XElement(
+                            "CropStrainProject",
+                            IdAttributes(project.Id),
+                            new XAttribute("settlementKind", project.SettlementId.Kind),
+                            new XAttribute("settlementId", project.SettlementId.Value),
+                            new XAttribute("cropKind", project.CropKind),
+                            new XAttribute("trait", project.Trait),
+                            new XAttribute("status", project.Status),
+                            new XAttribute("startedTick", project.StartedTick),
+                            new XAttribute("completionTick", project.CompletionTick),
+                            new XAttribute("foodResourceKey", project.FoodResourceKey),
+                            new XAttribute("foodCost", project.FoodCost),
+                            new XAttribute("medicineResourceKey", project.MedicineResourceKey),
+                            new XAttribute("medicineCost", project.MedicineCost)))),
+                new XElement(
+                    "SettlementTechnologies",
+                    snapshot.SettlementTechnologies.Select(technology =>
+                        new XElement(
+                            "Technology",
+                            new XAttribute("settlementKind", technology.SettlementId.Kind),
+                            new XAttribute("settlementId", technology.SettlementId.Value),
+                            new XAttribute("domain", technology.Domain),
+                            new XAttribute("tier", technology.Tier),
+                            new XAttribute("lastUpdatedTick", technology.LastUpdatedTick),
+                            new XAttribute("source", technology.Source)))),
+                new XElement(
                     "SpecialistPools",
                     snapshot.SpecialistPools.Select(specialists =>
                             new XElement(
@@ -842,6 +882,40 @@ public static class WorldStateCodec
                     RequiredInt(element, "medicineCost"),
                     RequiredString(element, "componentResourceKey"),
                     RequiredInt(element, "componentCost")))
+                .ToList(),
+            CropStrains = OptionalContainer(root, "CropStrains")
+                .Elements("CropStrain")
+                .Select(element => new CropStrain(
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredString(element, "cropKind"),
+                    RequiredInt(element, "yieldPercent"),
+                    RequiredInt(element, "hardinessPercent"),
+                    RequiredInt(element, "growthSpeedPercent"),
+                    RequiredInt(element, "lastUpdatedTick")))
+                .ToList(),
+            CropStrainProjects = OptionalContainer(root, "CropStrainProjects")
+                .Elements("CropStrainProject")
+                .Select(element => new CropStrainProject(
+                    ReadId(element),
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredString(element, "cropKind"),
+                    RequiredEnum<CropStrainTrait>(element, "trait"),
+                    RequiredEnum<CropStrainProjectStatus>(element, "status"),
+                    RequiredInt(element, "startedTick"),
+                    RequiredInt(element, "completionTick"),
+                    RequiredString(element, "foodResourceKey"),
+                    RequiredInt(element, "foodCost"),
+                    RequiredString(element, "medicineResourceKey"),
+                    RequiredInt(element, "medicineCost")))
+                .ToList(),
+            SettlementTechnologies = OptionalContainer(root, "SettlementTechnologies")
+                .Elements("Technology")
+                .Select(element => new SettlementTechnology(
+                    ReadEntityId(element, "settlementKind", "settlementId"),
+                    RequiredEnum<TechnologyDomain>(element, "domain"),
+                    RequiredEnum<TechnologyTier>(element, "tier"),
+                    RequiredInt(element, "lastUpdatedTick"),
+                    RequiredString(element, "source")))
                 .ToList()
         };
 

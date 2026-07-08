@@ -32,6 +32,9 @@ var tests = new List<(string Name, Action Test)>
     ("animal incubation projects create ledger cohorts", TestAnimalIncubationProjectsCreateLedgerCohorts),
     ("animal breeding driver starts and completes projects", TestAnimalBreedingDriverStartsAndCompletesProjects),
     ("serializes animal breeding projects", TestAnimalBreedingProjectSerialization),
+    ("crop strain projects improve settlement production", TestCropStrainProjectsImproveSettlementProduction),
+    ("technology diffusion upgrades lower tier settlements", TestTechnologyDiffusionUpgradesLowerTierSettlements),
+    ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
@@ -148,6 +151,8 @@ var tests = new List<(string Name, Action Test)>
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
     ("opposing armies intercept each other in transit", TestOpposingArmiesInterceptInTransit),
+    ("hostile armies can intercept caravans in transit", TestHostileArmiesInterceptCaravansInTransit),
+    ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
@@ -208,6 +213,7 @@ var tests = new List<(string Name, Action Test)>
     ("releases stale raid preparations and materialization leases daily", TestRimWorldReleasesStaleReservations),
     ("drives infrastructure and lifecycle simulation from the daily tick", TestRimWorldDailyTickRunsSimulationDrivers),
     ("drives animal ecology from the daily tick", TestRimWorldDailyTickRunsAnimalEcologyDriver),
+    ("drives crop strains and technology diffusion from the daily tick", TestRimWorldDailyTickRunsCropAndTechnologyDrivers),
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
@@ -1109,6 +1115,107 @@ static void TestAnimalBreedingProjectSerialization()
 
     AssertEqual(started.Project, restored.GetAnimalBreedingProject(started.Project!.Id));
     AssertEqual(0, restored.Validate().Count());
+}
+
+static void TestCropStrainProjectsImproveSettlementProduction()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("green-valley", "Green Valley", "Outlander");
+    for (var i = 0; i < 10; i++)
+    {
+        state.CreateCitizen($"Farmer {i + 1}", 24 + i, Sex.Female, "farmer", settlement.Id);
+    }
+
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment("TemperateForest", "Flat", "Industrial", 55, 850, 21)));
+    state.RecordSettlementCapability(new SettlementCapability(settlement.Id, 30, 500, 40, 800, 1, 10, 40, 2, 0, 0));
+    state.RecordSpecialistPool(new SpecialistPool(settlement.Id, 6, 1, 1, 2, 1, 0, 0, 2, 1));
+    state.AddResource(settlement.Id, "Food", 100);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 5);
+
+    var started = CropStrainService.StartSelectionProject(
+        state,
+        new CropStrainStartRequest(
+            Tick: 60_000,
+            SettlementId: settlement.Id,
+            CropKind: "Rice",
+            Trait: CropStrainTrait.Yield,
+            DurationTicks: 60_000,
+            FoodResourceKey: "Food",
+            FoodCost: 20,
+            MedicineResourceKey: "MedicineIndustrial",
+            MedicineCost: 1));
+
+    AssertEqual(CropStrainStartStatus.Success, started.Status);
+    AssertEqual(80, state.GetOwnedResourceQuantity(settlement.Id, "Food"));
+    AssertEqual(4, state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial"));
+
+    var completed = CropStrainService.CompleteReadyProjects(state, 120_000);
+    var profile = state.GetSettlementProductionProfile(settlement.Id)!;
+    var strain = state.GetCropStrains(settlement.Id).Single();
+
+    AssertEqual(1, completed.CompletedProjects);
+    AssertEqual(CropStrainProjectStatus.Completed, state.GetCropStrainProject(started.Project!.Id)!.Status);
+    AssertEqual("Rice", strain.CropKind);
+    AssertEqual(110, strain.YieldPercent);
+    AssertEqual(110, profile.EconomyScalePercent);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CropStrainProjectStarted));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CropStrainProjectCompleted));
+}
+
+static void TestTechnologyDiffusionUpgradesLowerTierSettlements()
+{
+    var state = new WorldState(12345);
+    var lab = state.CreateSettlement("lab-city", "Lab City", "Outlander");
+    var village = state.CreateSettlement("farm-village", "Farm Village", "Outlander");
+
+    state.RecordSettlementTechnology(new SettlementTechnology(lab.Id, TechnologyDomain.Agriculture, TechnologyTier.Industrial, 120_000, "direct"));
+    state.RecordSettlementTechnology(new SettlementTechnology(village.Id, TechnologyDomain.Agriculture, TechnologyTier.Neolithic, 60_000, "initial"));
+    state.RecordSettlementTechnology(new SettlementTechnology(village.Id, TechnologyDomain.Medicine, TechnologyTier.Neolithic, 60_000, "initial"));
+
+    var result = TechnologyDiffusionService.SimulateDay(
+        state,
+        new TechnologyDiffusionRequest(Tick: 180_000, MaxDiffusionsPerDay: 2));
+    var agriculture = state.GetSettlementTechnology(village.Id, TechnologyDomain.Agriculture)!;
+    var medicine = state.GetSettlementTechnology(village.Id, TechnologyDomain.Medicine)!;
+
+    AssertEqual(1, result.Diffusions);
+    AssertEqual(TechnologyTier.Medieval, agriculture.Tier);
+    AssertEqual("diffused:lab-city", agriculture.Source);
+    AssertEqual(TechnologyTier.Neolithic, medicine.Tier);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.TechnologyDiffused));
+}
+
+static void TestCropStrainAndTechnologySerialization()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("archive-farm", "Archive Farm", "Outlander");
+    var strain = state.RecordCropStrain(new CropStrain(settlement.Id, "Corn", 115, 105, 100, 90_000));
+    state.RecordSettlementTechnology(new SettlementTechnology(
+        settlement.Id,
+        TechnologyDomain.Agriculture,
+        TechnologyTier.Industrial,
+        LastUpdatedTick: 90_000,
+        Source: "test"));
+    var project = state.RecordCropStrainProjectForSimulation(new CropStrainProject(
+        EntityId.Create(EntityKind.CropStrainProject, 10),
+        settlement.Id,
+        "Corn",
+        CropStrainTrait.Hardiness,
+        CropStrainProjectStatus.Active,
+        StartedTick: 90_000,
+        CompletionTick: 150_000,
+        FoodResourceKey: "Food",
+        FoodCost: 10,
+        MedicineResourceKey: "MedicineIndustrial",
+        MedicineCost: 1));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(strain, restored.GetCropStrains(settlement.Id).Single());
+    AssertEqual(TechnologyTier.Industrial, restored.GetSettlementTechnology(settlement.Id, TechnologyDomain.Agriculture)!.Tier);
+    AssertEqual(project, restored.GetCropStrainProject(project.Id));
 }
 
 static void TestSettlementDailySimulationConsumesFoodAndBirths()
@@ -4103,6 +4210,59 @@ static void TestOpposingArmiesInterceptInTransit()
     AssertEqual(0, state.Validate().Count());
 }
 
+static void TestHostileArmiesInterceptCaravansInTransit()
+{
+    var state = new WorldState(4242);
+    var traderHome = state.CreateSettlement("trader-home", "Trader Home", "Traders");
+    var raiderHome = state.CreateSettlement("raider-home", "Raider Home", "Raiders");
+    state.AddResource(traderHome.Id, "Steel", 50);
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", raiderHome.Id);
+    }
+
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", traderHome.Id, raiderHome.Id, 0, 5 * 60_000);
+    state.TransferResource(traderHome.Id, caravan.Id, "Steel", 20, "cargo");
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Raiders", "Road patrol", 4, FoodPerCitizen: 0));
+    state.DispatchArmy(reservation.Army!.Id, traderHome.Id, 5 * 60_000);
+
+    var result = TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(2 * 60_000));
+
+    AssertEqual(1, result.CaravansDestroyed);
+    AssertEqual(CaravanStatus.Destroyed, state.GetCaravan(caravan.Id)!.Status);
+    AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+    AssertEqual(30, state.GetOwnedResourceQuantity(traderHome.Id, "Steel"));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanDestroyed));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestHostileArmiesDisruptMissionsInTransit()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("scouts", "Scouts", "Scouts");
+    var raiders = state.CreateSettlement("raiders", "Raiders", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", raiders.Id);
+    }
+
+    var mission = state.DispatchMission(WorldMissionKind.Scout, "Scouts", scouts.Id, raiders.Id, 0, 5 * 60_000, amount: 80);
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Raiders", "Road patrol", 4, FoodPerCitizen: 0));
+    state.DispatchArmy(reservation.Army!.Id, scouts.Id, 5 * 60_000);
+
+    var result = TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(2 * 60_000));
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(5 * 60_000));
+
+    AssertEqual(1, result.MissionsDisrupted);
+    AssertEqual(WorldMissionStatus.Failed, state.GetMission(mission.Id)!.Status);
+    AssertEqual(null, state.GetKnownSettlementInfo(raiders.Id));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
+}
+
 static void TestFactionBehaviorPersists()
 {
     var state = new WorldState(4242);
@@ -5621,6 +5781,15 @@ static void TestRimWorldDailyTickRunsAnimalEcologyDriver()
     AssertContains("AnimalProductionService.SimulateDay(", component);
     AssertContains("AnimalBreedingDriver.SimulateDay(", component);
     AssertContains("FoodResourceKey", component);
+}
+
+static void TestRimWorldDailyTickRunsCropAndTechnologyDrivers()
+{
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("CropStrainDriver.SimulateDay(", component);
+    AssertContains("new CropStrainDriverRequest(", component);
+    AssertContains("TechnologyDiffusionService.SimulateDay(", component);
+    AssertContains("new TechnologyDiffusionRequest(", component);
 }
 
 static void TestRimWorldRaidRoutesThroughPreparation()
@@ -7143,17 +7312,27 @@ static void TestRimWorldSettlementObserverWindow()
     AssertContains("GetSettlementFacilities", window);
     AssertContains("GetAnimalCohorts", window);
     AssertContains("AnimalBreedingProjects", window);
+    AssertContains("CropStrainProjects", window);
+    AssertContains("GetCropStrains", window);
+    AssertContains("SettlementTechnologies", window);
     AssertContains("SettlementProjectStatus.Active", window);
     AssertContains("AnimalBreedingProjectStatus.Active", window);
+    AssertContains("CropStrainProjectStatus.Active", window);
     AssertContains("ResourcesForOwner", window);
     AssertContains("WorldEventKind.SettlementProjectStarted", window);
     AssertContains("WorldEventKind.SettlementFacilityBuilt", window);
     AssertContains("WorldEventKind.SettlementDeveloped", window);
     AssertContains("WorldEventKind.AnimalProductsHarvested", window);
     AssertContains("WorldEventKind.AnimalBreedingProjectStarted", window);
+    AssertContains("WorldEventKind.CropStrainProjectStarted", window);
+    AssertContains("WorldEventKind.TechnologyDiffused", window);
     AssertContains("LW_SettlementObserver_ProjectProgress", window);
     AssertContains("LW_SettlementObserver_AnimalLine", window);
     AssertContains("LW_SettlementObserver_BreedingProgress", window);
+    AssertContains("LW_SettlementObserver_CropTech", window);
+    AssertContains("LW_SettlementObserver_CropLine", window);
+    AssertContains("LW_SettlementObserver_TechLine", window);
+    AssertContains("LW_SettlementObserver_CropProgress", window);
     AssertContains("LW_SettlementObserver_NoActiveProject", window);
 
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
@@ -7176,6 +7355,12 @@ static void TestRimWorldSettlementObserverWindow()
         "LW_SettlementObserver_Breeding",
         "LW_SettlementObserver_NoBreedingProject",
         "LW_SettlementObserver_BreedingProgress",
+        "LW_SettlementObserver_CropTech",
+        "LW_SettlementObserver_NoCropStrain",
+        "LW_SettlementObserver_CropLine",
+        "LW_SettlementObserver_NoCropProject",
+        "LW_SettlementObserver_CropProgress",
+        "LW_SettlementObserver_TechLine",
         "LW_SettlementObserver_Resources",
         "LW_SettlementObserver_RecentEvents",
         "LW_SettlementObserver_NoActiveProject",

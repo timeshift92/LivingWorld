@@ -20,7 +20,8 @@ public enum EntityKind
     SettlementProject,
     Ruin,
     Conflict,
-    AnimalBreedingProject
+    AnimalBreedingProject,
+    CropStrainProject
 }
 
 public readonly record struct EntityId(EntityKind Kind, long Value)

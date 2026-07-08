@@ -17,6 +17,7 @@ public enum WorldMissionStatus
 {
     Traveling,
     Arrived,
+    Failed,
 }
 
 public sealed record WorldMission(

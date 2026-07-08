@@ -199,6 +199,12 @@
   <LW_SettlementObserver_Breeding>Breeding and incubation</LW_SettlementObserver_Breeding>
   <LW_SettlementObserver_NoBreedingProject>No active breeding or incubation project.</LW_SettlementObserver_NoBreedingProject>
   <LW_SettlementObserver_BreedingProgress>{kind}: {animal}, trait {trait}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_BreedingProgress>
+  <LW_SettlementObserver_CropTech>Crops and technology</LW_SettlementObserver_CropTech>
+  <LW_SettlementObserver_NoCropStrain>No tracked crop strains.</LW_SettlementObserver_NoCropStrain>
+  <LW_SettlementObserver_CropLine>{crop}: yield {yield}%, hardiness {hardiness}%, growth {growth}%</LW_SettlementObserver_CropLine>
+  <LW_SettlementObserver_NoCropProject>No active crop selection project.</LW_SettlementObserver_NoCropProject>
+  <LW_SettlementObserver_CropProgress>{crop}: trait {trait}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_CropProgress>
+  <LW_SettlementObserver_TechLine>{domain}: {tier} ({source})</LW_SettlementObserver_TechLine>
   <LW_SettlementObserver_Resources>Resources</LW_SettlementObserver_Resources>
   <LW_SettlementObserver_NoResources>No stored resources.</LW_SettlementObserver_NoResources>
   <LW_SettlementObserver_ResourceLine>{resource}: {quantity}</LW_SettlementObserver_ResourceLine>

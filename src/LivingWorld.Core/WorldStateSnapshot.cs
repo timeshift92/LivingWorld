@@ -73,4 +73,13 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<AnimalBreedingProject> AnimalBreedingProjects { get; init; } =
         Array.Empty<AnimalBreedingProject>();
+
+    public IReadOnlyList<CropStrain> CropStrains { get; init; } =
+        Array.Empty<CropStrain>();
+
+    public IReadOnlyList<CropStrainProject> CropStrainProjects { get; init; } =
+        Array.Empty<CropStrainProject>();
+
+    public IReadOnlyList<SettlementTechnology> SettlementTechnologies { get; init; } =
+        Array.Empty<SettlementTechnology>();
 }
