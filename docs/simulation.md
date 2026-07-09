@@ -145,24 +145,35 @@ first real-map settlement materialization slice after vanilla map generation:
    technology level;
 6. materialize facility rooms as real RimWorld walls, doors and floor terrain,
    then spawn facility props inside those rooms;
-7. spawn the resource payload as real map things through RimWorld's normal
+7. add a bounded city layer from the same ledger blueprint: population-scaled
+   beds/barracks spots, defensive positions, power props, work props and
+   storage markers;
+8. spawn the resource payload as real map things through RimWorld's normal
    `ThingDef` and `GenSpawn` APIs, preferring stockpile cells inside the
    materialized storage room;
-8. if binding fails, abort the preparation and return the payload to the
+9. track spawned walls, doors and facility-bound props by facility id;
+10. on `MapDeiniter.Deinit`, compare tracked facility structures/props against
+   the things still spawned on the map and translate missing/destroyed objects
+   into `SettlementFacility.ConditionPercent` damage;
+11. if binding fails, abort the preparation and return the payload to the
    settlement ledger.
 
 This is still a bounded settlement materialization layer, not a full NPC-city
 AI simulation. It now builds a visible ledger-driven shell (rooms, doors,
-floors, facility props and stockpile stacks), but does not yet generate full
-bedroom/work schedules, power networks, pawn jobs, or per-thing damage state.
-The important contract is real: defenders are concrete ledger citizens, spawned
-loot is removed from the settlement ledger before the player can take it, and a
+floors, facility props, basic housing, defenses, power/work props and stockpile
+stacks), but does not yet generate complete pawn job schedules, fully styled
+district layouts, or a vanilla-quality base plan for every faction/biome. The
+important contract is real: defenders are concrete ledger citizens, spawned
+loot is removed from the settlement ledger before the player can take it, a
 small bounded sample of settlement animals is withdrawn from ledger cohorts
-before spawning on the map. If an animal pawn cannot be spawned, that count is
+before spawning on the map, and destroyed facility structures degrade the
+facility that produced them. If an animal pawn cannot be spawned, that count is
 returned to its cohort. Spawned animal pawns are cohort-tracked until they die
 or safely leave the map. If the player later defeats the settlement, the
 existing defeat bridge destroys the matched ledger settlement and only the
-remaining ledger-owned resources move into the ruin.
+remaining ledger-owned resources move into the ruin. Map-end facility
+reconciliation lowers damaged facilities, so the next visit sees damaged
+workshops/storage/power plants instead of recreating pristine buildings.
 
 The remaining hard part is **map-end loot reconciliation**: currently a
 successfully spawned resource stack has left the settlement ledger. That avoids

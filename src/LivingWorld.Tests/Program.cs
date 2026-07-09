@@ -88,6 +88,8 @@ var tests = new List<(string Name, Action Test)>
     ("settlement defense materialization reserves defenders and resources", TestSettlementDefenseMaterializationReservesDefendersAndResources),
     ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
     ("settlement map layout builds rooms and stockpile slots from ledger facilities", TestSettlementMapLayoutBuildsRoomsAndStockpiles),
+    ("settlement map layout builds city housing defense power and work features", TestSettlementMapLayoutBuildsCityInfrastructure),
+    ("settlement map damage lowers facility condition", TestSettlementMapDamageLowersFacilityCondition),
     ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
@@ -309,6 +311,7 @@ var tests = new List<(string Name, Action Test)>
     ("materializes attacked settlement maps from ledger defense", TestRimWorldSettlementMapMaterialization),
     ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
     ("materializes settlement rooms and stockpiles on attacked maps", TestRimWorldSettlementRoomsAndStockpilesMaterialization),
+    ("tracks settlement map structures and reconciles facility damage", TestRimWorldSettlementMapFacilityDamageReconciliation),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -2839,6 +2842,96 @@ static void TestSettlementMapLayoutBuildsRoomsAndStockpiles()
     }
 
     AssertEqual(workshop.Id, layout.Rooms[1].FacilityId);
+}
+
+static void TestSettlementMapLayoutBuildsCityInfrastructure()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("city-town", "City Town", "Outlander");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            Biome: "BorealForest",
+            Hilliness: "LargeHills",
+            TechLevel: "Industrial",
+            GrowingDays: 35,
+            Rainfall: 650,
+            AverageTemperature: 8)));
+    for (var i = 0; i < 18; i++)
+    {
+        state.CreateCitizen($"Citizen {i}", 18 + i, i % 2 == 0 ? Sex.Male : Sex.Female, "worker", settlement.Id);
+    }
+
+    var storage = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 20),
+        settlement.Id,
+        SettlementFacilityKind.Storage,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 21),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 22),
+        settlement.Id,
+        SettlementFacilityKind.PowerPlant,
+        Level: 1,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+
+    var layout = SettlementMapLayoutService.BuildFacilityLayout(
+        state,
+        new SettlementMapLayoutRequest(
+            settlement.Id,
+            CenterX: 80,
+            CenterZ: 80,
+            MaxFacilities: 6));
+
+    AssertEqual(SettlementMapLayoutStatus.Success, layout.Status);
+    if (layout.CityFeatures.Count(feature => feature.Kind == SettlementMapCityFeatureKind.Bed) < 9)
+    {
+        throw new InvalidOperationException("Settlement map layout should add enough beds or barracks spots for the population slice.");
+    }
+
+    AssertEqual(storage.Id, layout.CityFeatures.First(feature => feature.Kind == SettlementMapCityFeatureKind.StockpileMarker).FacilityId);
+    if (layout.CityFeatures.Count(feature => feature.Kind == SettlementMapCityFeatureKind.Defense) < 4)
+    {
+        throw new InvalidOperationException("Settlement map layout should add defensive positions around the settlement shell.");
+    }
+
+    AssertContains("Battery", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
+    AssertContains("Table", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
+}
+
+static void TestSettlementMapDamageLowersFacilityCondition()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("damage-town", "Damage Town", "Outlander");
+    var facility = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 30),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+
+    var result = SettlementMapDamageService.ReconcileFacilityDamage(
+        state,
+        new SettlementMapDamageRequest(
+            facility.Id,
+            TrackedThings: 10,
+            SurvivingThings: 4,
+            Reason: "attacked settlement map deinit"));
+
+    AssertEqual(SettlementMapDamageStatus.Success, result.Status);
+    AssertEqual(60, result.DamagePercent);
+    AssertEqual(40, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityDamaged));
 }
 
 static void TestAnimalMapFateSyncReturnsOnlyLiveDepartures()
@@ -7413,6 +7506,29 @@ static void TestRimWorldSettlementRoomsAndStockpilesMaterialization()
     AssertContains("TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
+}
+
+static void TestRimWorldSettlementMapFacilityDamageReconciliation()
+{
+    var root = FindRepoRoot();
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapFacilityTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("public static void Track", tracker);
+    AssertContains("public static int ReconcileMap", tracker);
+    AssertContains("SettlementMapDamageService.ReconcileFacilityDamage", tracker);
+    AssertContains("thing.Spawned", tracker);
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("LivingWorldSettlementMapFacilityTracker.ReconcileMap", patch);
+
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+    AssertContains("SpawnCityFeatures", service);
+    AssertContains("layout.CityFeatures", service);
+    AssertContains("LivingWorldSettlementMapFacilityTracker.Track", service);
+    AssertContains("TrySpawnStructure(", service);
+    AssertContains("new IntVec3", service);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a

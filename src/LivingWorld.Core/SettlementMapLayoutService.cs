@@ -41,12 +41,31 @@ public sealed record SettlementMapStockpileCell(
     int Z,
     int Order);
 
+public enum SettlementMapCityFeatureKind
+{
+    Bed,
+    Defense,
+    Power,
+    Work,
+    StockpileMarker
+}
+
+public sealed record SettlementMapCityFeature(
+    SettlementMapCityFeatureKind Kind,
+    string ThingDefName,
+    string StuffDefName,
+    EntityId? FacilityId,
+    int X,
+    int Z,
+    int Order);
+
 public sealed record SettlementMapLayoutResult(
     SettlementMapLayoutStatus Status,
     string Reason,
     IReadOnlyList<SettlementMapFacilityFeature> Facilities,
     IReadOnlyList<SettlementMapRoom> Rooms,
-    IReadOnlyList<SettlementMapStockpileCell> StockpileCells);
+    IReadOnlyList<SettlementMapStockpileCell> StockpileCells,
+    IReadOnlyList<SettlementMapCityFeature> CityFeatures);
 
 public static class SettlementMapLayoutService
 {
@@ -66,7 +85,8 @@ public static class SettlementMapLayoutService
                 "Settlement map layout requires a positive facility cap.",
                 Array.Empty<SettlementMapFacilityFeature>(),
                 Array.Empty<SettlementMapRoom>(),
-                Array.Empty<SettlementMapStockpileCell>());
+                Array.Empty<SettlementMapStockpileCell>(),
+                Array.Empty<SettlementMapCityFeature>());
         }
 
         var settlement = state.GetSettlement(request.SettlementId);
@@ -77,7 +97,8 @@ public static class SettlementMapLayoutService
                 $"Settlement {request.SettlementId} does not exist or is inactive.",
                 Array.Empty<SettlementMapFacilityFeature>(),
                 Array.Empty<SettlementMapRoom>(),
-                Array.Empty<SettlementMapStockpileCell>());
+                Array.Empty<SettlementMapStockpileCell>(),
+                Array.Empty<SettlementMapCityFeature>());
         }
 
         var profile = state.GetSettlementProductionProfile(request.SettlementId);
@@ -98,7 +119,8 @@ public static class SettlementMapLayoutService
                 $"Settlement {request.SettlementId} has no active facilities to materialize.",
                 Array.Empty<SettlementMapFacilityFeature>(),
                 Array.Empty<SettlementMapRoom>(),
-                Array.Empty<SettlementMapStockpileCell>());
+                Array.Empty<SettlementMapStockpileCell>(),
+                Array.Empty<SettlementMapCityFeature>());
         }
 
         var rooms = facilities
@@ -107,13 +129,15 @@ public static class SettlementMapLayoutService
         var stockpileRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Storage)
             ?? rooms.First();
         var stockpileCells = ToStockpileCells(stockpileRoom).ToList();
+        var cityFeatures = BuildCityFeatures(state, request.SettlementId, rooms, stockpileCells, techScore).ToList();
 
         return new SettlementMapLayoutResult(
             SettlementMapLayoutStatus.Success,
             $"Prepared {facilities.Count} settlement facility feature(s).",
             facilities,
             rooms,
-            stockpileCells);
+            stockpileCells,
+            cityFeatures);
     }
 
     private static SettlementMapFacilityFeature ToFeature(
@@ -202,6 +226,134 @@ public static class SettlementMapLayoutService
             {
                 yield return new SettlementMapStockpileCell(x, z, order++);
             }
+        }
+    }
+
+    private static IEnumerable<SettlementMapCityFeature> BuildCityFeatures(
+        WorldState state,
+        EntityId settlementId,
+        IReadOnlyList<SettlementMapRoom> rooms,
+        IReadOnlyList<SettlementMapStockpileCell> stockpileCells,
+        int techScore)
+    {
+        var order = 0;
+        var population = state.GetSettlementPopulation(settlementId);
+        var housingRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Clinic)
+            ?? rooms.First();
+        var bedCount = Math.Max(2, Math.Min(16, (population.Total + 1) / 2));
+        var bedDef = techScore >= 3 ? "Bed" : "Bedroll";
+        var bedStuff = techScore >= 3 ? "Steel" : "WoodLog";
+        foreach (var cell in InteriorGrid(housingRoom, margin: 2).Take(bedCount))
+        {
+            yield return new SettlementMapCityFeature(
+                SettlementMapCityFeatureKind.Bed,
+                bedDef,
+                bedStuff,
+                null,
+                cell.X,
+                cell.Z,
+                order++);
+        }
+
+        var defenseRoom = rooms
+            .OrderBy(room => room.MinX)
+            .ThenBy(room => room.MinZ)
+            .First();
+        var defenseCount = Math.Max(4, Math.Min(18, population.Adults / 2 + rooms.Count));
+        foreach (var cell in DefenseRing(defenseRoom).Take(defenseCount))
+        {
+            yield return new SettlementMapCityFeature(
+                SettlementMapCityFeatureKind.Defense,
+                techScore >= 3 ? "Barricade" : "Sandbags",
+                techScore >= 3 ? "Steel" : "WoodLog",
+                null,
+                cell.X,
+                cell.Z,
+                order++);
+        }
+
+        var storageRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Storage);
+        if (storageRoom != null)
+        {
+            var storageFacilityId = storageRoom.FacilityId;
+            foreach (var slot in stockpileCells.Take(4))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.StockpileMarker,
+                    "Shelf",
+                    techScore >= 3 ? "Steel" : "WoodLog",
+                    storageFacilityId,
+                    slot.X,
+                    slot.Z,
+                    order++);
+            }
+        }
+
+        var workshopRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Workshop);
+        if (workshopRoom != null)
+        {
+            var workDef = techScore >= 3 ? "TableMachining" : "FueledSmithy";
+            foreach (var cell in InteriorGrid(workshopRoom, margin: 3).Take(2))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.Work,
+                    workDef,
+                    techScore >= 3 ? "Steel" : "WoodLog",
+                    workshopRoom.FacilityId,
+                    cell.X,
+                    cell.Z,
+                    order++);
+            }
+        }
+
+        var powerRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.PowerPlant);
+        if (powerRoom != null)
+        {
+            foreach (var cell in InteriorGrid(powerRoom, margin: 3).Take(2))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.Power,
+                    cell == InteriorGrid(powerRoom, margin: 3).First() ? "Battery" : "StandingLamp",
+                    "Steel",
+                    powerRoom.FacilityId,
+                    cell.X,
+                    cell.Z,
+                    order++);
+            }
+        }
+    }
+
+    private static IEnumerable<(int X, int Z)> InteriorGrid(SettlementMapRoom room, int margin)
+    {
+        var minX = room.MinX + Math.Max(1, margin);
+        var maxX = room.MinX + room.Width - Math.Max(1, margin);
+        var minZ = room.MinZ + Math.Max(1, margin);
+        var maxZ = room.MinZ + room.Height - Math.Max(1, margin);
+        for (var z = minZ; z < maxZ; z += 2)
+        {
+            for (var x = minX; x < maxX; x += 2)
+            {
+                yield return (x, z);
+            }
+        }
+    }
+
+    private static IEnumerable<(int X, int Z)> DefenseRing(SettlementMapRoom room)
+    {
+        var minX = room.MinX - 2;
+        var maxX = room.MinX + room.Width + 1;
+        var minZ = room.MinZ - 2;
+        var maxZ = room.MinZ + room.Height + 1;
+        for (var x = minX; x <= maxX; x += 2)
+        {
+            yield return (x, minZ);
+            yield return (x, maxZ);
+        }
+
+        for (var z = minZ + 2; z <= maxZ - 2; z += 2)
+        {
+            yield return (minX, z);
+            yield return (maxX, z);
         }
     }
 

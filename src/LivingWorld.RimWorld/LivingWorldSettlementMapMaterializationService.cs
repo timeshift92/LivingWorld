@@ -90,6 +90,7 @@ public static class LivingWorldSettlementMapMaterializationService
         SpawnReservedResources(component.State, map, prepared, layout);
         var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
         var facilityCount = SpawnFacilityLayout(map, settlement.Faction, layout);
+        var cityFeatureCount = SpawnCityFeatures(map, settlement.Faction, layout);
 
         if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
@@ -97,6 +98,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 $"[LivingWorld] materialized settlement map '{settlement.LabelCap}'"
                 + $" with {bound} ledger defender(s), {animalCount} animal(s),"
                 + $" {facilityCount} facility feature(s), {roomCount} room shell(s),"
+                + $" {cityFeatureCount} city feature(s),"
                 + $" and {prepared.Resources.Sum(resource => resource.Quantity)} resource unit(s).");
         }
 
@@ -372,8 +374,15 @@ public static class LivingWorldSettlementMapMaterializationService
                 }
 
                 var isDoor = x == doorX && z == doorZ;
-                if (TrySpawnStructure(map, faction, new IntVec3(x, 0, z), isDoor ? room.DoorThingDefName : room.WallThingDefName, room.WallStuffDefName))
+                if (TrySpawnStructure(
+                    map,
+                    faction,
+                    new IntVec3(x, 0, z),
+                    isDoor ? room.DoorThingDefName : room.WallThingDefName,
+                    room.WallStuffDefName,
+                    out var structure))
                 {
+                    LivingWorldSettlementMapFacilityTracker.Track(structure, room.FacilityId);
                     anyPlaced = true;
                 }
             }
@@ -403,8 +412,15 @@ public static class LivingWorldSettlementMapMaterializationService
         }
     }
 
-    private static bool TrySpawnStructure(Map map, Faction faction, IntVec3 cell, string thingDefName, string stuffDefName)
+    private static bool TrySpawnStructure(
+        Map map,
+        Faction faction,
+        IntVec3 cell,
+        string thingDefName,
+        string stuffDefName,
+        out Thing? spawnedThing)
     {
+        spawnedThing = null;
         if (!cell.InBounds(map) || cell.Fogged(map) || cell.GetEdifice(map) != null)
         {
             return false;
@@ -435,6 +451,7 @@ public static class LivingWorldSettlementMapMaterializationService
             }
 
             GenSpawn.Spawn(thing, cell, map);
+            spawnedThing = thing;
             return true;
         }
         catch
@@ -488,6 +505,7 @@ public static class LivingWorldSettlementMapMaterializationService
             }
 
             GenSpawn.Spawn(thing, cell, map);
+            LivingWorldSettlementMapFacilityTracker.Track(thing, feature.FacilityId);
             return true;
         }
         catch
@@ -517,6 +535,75 @@ public static class LivingWorldSettlementMapMaterializationService
 
         cell = IntVec3.Invalid;
         return false;
+    }
+
+    private static int SpawnCityFeatures(Map map, Faction faction, SettlementMapLayoutResult layout)
+    {
+        if (layout.Status != SettlementMapLayoutStatus.Success)
+        {
+            return 0;
+        }
+
+        var spawned = 0;
+        foreach (var feature in layout.CityFeatures.OrderBy(feature => feature.Order))
+        {
+            if (TrySpawnCityFeatureThing(map, faction, feature))
+            {
+                spawned++;
+            }
+        }
+
+        return spawned;
+    }
+
+    private static bool TrySpawnCityFeatureThing(Map map, Faction faction, SettlementMapCityFeature feature)
+    {
+        var cell = new IntVec3(feature.X, 0, feature.Z);
+        if (!cell.InBounds(map)
+            || cell.Fogged(map)
+            || !cell.Standable(map)
+            || cell.GetEdifice(map) != null
+            || cell.GetFirstItem(map) != null)
+        {
+            return false;
+        }
+
+        var def = DefDatabase<ThingDef>.GetNamedSilentFail(feature.ThingDefName);
+        if (def == null)
+        {
+            return false;
+        }
+
+        ThingDef? stuff = null;
+        if (def.MadeFromStuff)
+        {
+            stuff = DefDatabase<ThingDef>.GetNamedSilentFail(feature.StuffDefName);
+            if (stuff == null)
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            var thing = ThingMaker.MakeThing(def, stuff);
+            if (thing is Building building && faction != null)
+            {
+                building.SetFactionDirect(faction);
+            }
+
+            GenSpawn.Spawn(thing, cell, map);
+            if (feature.FacilityId.HasValue)
+            {
+                LivingWorldSettlementMapFacilityTracker.Track(thing, feature.FacilityId.Value);
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryFindResourceCell(
