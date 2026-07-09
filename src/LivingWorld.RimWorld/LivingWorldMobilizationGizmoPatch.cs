@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using HarmonyLib;
 using RimWorld;
-using UnityEngine;
 using Verse;
 
 namespace LivingWorld.RimWorld;
@@ -35,7 +34,7 @@ public static class LivingWorldMobilizationGizmoPatch
                     {
                         defaultLabel = "LW_MobilizeToggle".Translate(),
                         defaultDesc = "LW_MobilizeTooltip".Translate(),
-                        icon = ContentFinder<Texture2D>.Get("UI/Commands/DraftMode", false),
+                        icon = TexCommand.Draft,
                         isActive = () => component.ManualMobilized,
                         toggleAction = () => component.ToggleManual(),
                     });
@@ -48,7 +47,7 @@ public static class LivingWorldMobilizationGizmoPatch
                         {
                             defaultLabel = "LW_AssignKit".Translate(),
                             defaultDesc = "LW_AssignKitTooltip".Translate(),
-                            icon = ContentFinder<Texture2D>.Get("UI/Commands/DraftMode", false),
+                            icon = TexCommand.Draft,
                             action = () => assignments.AssignFromCurrent(pawn),
                         });
                         if (assignments.HasAssignment(pawn))
@@ -57,7 +56,7 @@ public static class LivingWorldMobilizationGizmoPatch
                             {
                                 defaultLabel = "LW_ClearKit".Translate(),
                                 defaultDesc = "LW_ClearKitTooltip".Translate(),
-                                icon = ContentFinder<Texture2D>.Get("UI/Commands/DraftMode", false),
+                                icon = TexCommand.Draft,
                                 action = () => assignments.Clear(pawn),
                             });
                         }
