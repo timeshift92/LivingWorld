@@ -9225,6 +9225,9 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("mobilizedByUs", component);
     AssertContains("var weaponAvailable", component);
     AssertContains("Scribe_Collections.Look(ref mobilizedByUs", component);
+    // Mobilization reacts at once: a sleeping colonist is explicitly woken before the forced armory job.
+    AssertContains("RestUtility.WakeUp(pawn", component);
+    AssertRimWorldMethodExists("RimWorld.RestUtility", "WakeUp");
 
     // Hybrid: per-colonist assigned kit stored in a GameComponent, captured from current gear, and used by
     // the adapter (assigned wins over the skill pick).

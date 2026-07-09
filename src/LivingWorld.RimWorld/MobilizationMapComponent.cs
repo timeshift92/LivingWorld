@@ -142,9 +142,7 @@ public sealed class MobilizationMapComponent : MapComponent
                             mobilizedByUs.Add(pawn);
                         }
 
-                        pawn.jobs?.TryTakeOrderedJob(
-                            JobMaker.MakeJob(LivingWorldArmoryJobDefOf.LivingWorld_FetchKit, rack),
-                            JobTag.Misc);
+                        PushArmoryJob(pawn, LivingWorldArmoryJobDefOf.LivingWorld_FetchKit, rack);
                     }
                 }
                 else
@@ -161,9 +159,7 @@ public sealed class MobilizationMapComponent : MapComponent
                     var rack = NearestRack(pawn, racks, ArmoryRackKind.Weapon) ?? racks[0];
                     if (rack != null)
                     {
-                        pawn.jobs?.TryTakeOrderedJob(
-                            JobMaker.MakeJob(LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit, rack),
-                            JobTag.Misc);
+                        PushArmoryJob(pawn, LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit, rack);
                     }
                 }
             }
@@ -172,6 +168,23 @@ public sealed class MobilizationMapComponent : MapComponent
         {
             Log.Warning($"[LivingWorld] Mobilization job push failed safely: {ex.Message}");
         }
+    }
+
+    // Push a forced armory job. Mobilization is meant to be reacted to at once, so a sleeping colonist is
+    // woken first (the forced order alone would interrupt sleep, but we make it explicit and certain).
+    private static void PushArmoryJob(Pawn pawn, JobDef jobDef, Building_ArmoryRack rack)
+    {
+        if (pawn?.jobs == null)
+        {
+            return;
+        }
+
+        if (!RestUtility.Awake(pawn))
+        {
+            RestUtility.WakeUp(pawn, startNewJob: false);
+        }
+
+        pawn.jobs.TryTakeOrderedJob(JobMaker.MakeJob(jobDef, rack), JobTag.Misc);
     }
 
     private static Building_ArmoryRack? NearestRack(Pawn pawn, List<Building_ArmoryRack> racks, ArmoryRackKind kind)
