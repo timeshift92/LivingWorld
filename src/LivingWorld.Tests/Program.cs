@@ -8803,13 +8803,18 @@ static void TestRimWorldCaravanMeetingGate()
 
     var patch = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanMeetingPatch.cs"));
-    // Postfix the vanilla caravan-meeting gate; only fire when the player caravan is near a settlement.
+    // Meeting, ambush and demand caravan encounters share one gate: only fire near a settlement.
     AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanMeeting), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_Ambush_EnemyFaction), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanDemand), \"CanFireNowSub\")", patch);
+    AssertContains("GateByNearbySettlement", patch);
     AssertContains("parms?.target is not Caravan caravan", patch);
     AssertContains("ApproxDistanceInTiles", patch);
     AssertContains("worldObjects.Settlements", patch);
     // Gated by the arrivals setting; fail-open.
     AssertContains("settings.arrivalsTravelEnabled", patch);
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_Ambush_EnemyFaction", "CanFireNowSub");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanDemand", "CanFireNowSub");
 
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanMeeting", "CanFireNowSub");
 }

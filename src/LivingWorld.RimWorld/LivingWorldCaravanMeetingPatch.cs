@@ -8,20 +8,21 @@ using Verse;
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// Stops caravans being met "from nowhere" in the empty wilderness. Vanilla's caravan-meeting incident
-/// conjures a random faction caravan next to the player's caravan wherever it happens to be. We gate it so
-/// it only fires when the player's caravan is close to a plausible source of a passing caravan — a non-player
-/// settlement — so a met caravan believably came from somewhere nearby instead of materializing in the
-/// middle of nowhere. Far from any settlement, no meeting. Fail-open and gated by the arrivals setting.
+/// Stops caravan-trip encounters happening "from nowhere" in the empty wilderness. Vanilla can meet a
+/// caravan, spring a faction ambush, or field a demand party right next to the player's caravan wherever it
+/// happens to be. We gate these so they only fire when the player's caravan is close to a plausible source
+/// — a non-player settlement — so the other party believably came from somewhere nearby instead of the void.
+/// Far from any settlement, no encounter. Fail-open and gated by the arrivals setting.
 /// </summary>
-[HarmonyPatch(typeof(IncidentWorker_CaravanMeeting), "CanFireNowSub")]
-public static class LivingWorldCaravanMeetingGatePatch
+internal static class LivingWorldCaravanEncounterGate
 {
-    private const int MaxMeetingDistanceTiles = 6;
+    private const int MaxEncounterDistanceTiles = 6;
 
-    public static void Postfix(IncidentParms parms, ref bool __result)
+    // Sets result to false when the encounter has no plausible nearby source. Leaves it untouched when we
+    // can't reason about it (not a caravan target, no world data, feature off).
+    public static void GateByNearbySettlement(IncidentParms parms, ref bool result)
     {
-        if (!__result)
+        if (!result)
         {
             return;
         }
@@ -57,18 +58,44 @@ public static class LivingWorldCaravanMeetingGatePatch
 
                 int tile = settlement!.Tile;
                 return tile >= 0
-                    && grid.ApproxDistanceInTiles(tile, caravanTile) <= MaxMeetingDistanceTiles;
+                    && grid.ApproxDistanceInTiles(tile, caravanTile) <= MaxEncounterDistanceTiles;
             });
 
             if (!nearSource)
             {
-                // No plausible nearby source — do not conjure a caravan from the empty wilderness.
-                __result = false;
+                result = false;
             }
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Caravan-meeting gate skipped safely: {ex.Message}");
+            Log.Warning($"[LivingWorld] Caravan-encounter gate skipped safely: {ex.Message}");
         }
+    }
+}
+
+[HarmonyPatch(typeof(IncidentWorker_CaravanMeeting), "CanFireNowSub")]
+public static class LivingWorldCaravanMeetingGatePatch
+{
+    public static void Postfix(IncidentParms parms, ref bool __result)
+    {
+        LivingWorldCaravanEncounterGate.GateByNearbySettlement(parms, ref __result);
+    }
+}
+
+[HarmonyPatch(typeof(IncidentWorker_Ambush_EnemyFaction), "CanFireNowSub")]
+public static class LivingWorldCaravanAmbushGatePatch
+{
+    public static void Postfix(IncidentParms parms, ref bool __result)
+    {
+        LivingWorldCaravanEncounterGate.GateByNearbySettlement(parms, ref __result);
+    }
+}
+
+[HarmonyPatch(typeof(IncidentWorker_CaravanDemand), "CanFireNowSub")]
+public static class LivingWorldCaravanDemandGatePatch
+{
+    public static void Postfix(IncidentParms parms, ref bool __result)
+    {
+        LivingWorldCaravanEncounterGate.GateByNearbySettlement(parms, ref __result);
     }
 }
