@@ -124,6 +124,14 @@ public sealed class MobilizationMapComponent : MapComponent
                     mobilizedByUs.Remove(pawn);
                 }
 
+                // Never drag a colonist out of bed. Arming/standing down is a forced job that would
+                // interrupt sleep; let sleeping pawns rest and act on it once they wake on their own. A
+                // real night assault is still handled the vanilla way — the player drafts them.
+                if (!RestUtility.Awake(pawn))
+                {
+                    continue;
+                }
+
                 if (mobilized)
                 {
                     if (!LoadoutAdapter.IsMobilizationCandidate(pawn)
