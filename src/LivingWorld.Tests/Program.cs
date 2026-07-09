@@ -164,6 +164,7 @@ var tests = new List<(string Name, Action Test)>
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
+    ("war planner keeps scouts and diplomats visible even after attacks unlock", TestFactionActionPlannerDiversifiesVisibleActions),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("war planner avoids targets already under pressure", TestFactionActionPlannerAvoidsPressuredEnemyTargets),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
@@ -274,6 +275,7 @@ var tests = new List<(string Name, Action Test)>
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
+    ("world action markers start at their origin tile", TestRimWorldWorldActionMarkersStartAtOrigin),
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
@@ -4622,6 +4624,32 @@ static void TestFactionActionPlannerScoutsBeforeUnknownWarTarget()
     AssertEqual(victim.Id, known.TargetSettlementId);
 }
 
+static void TestFactionActionPlannerDiversifiesVisibleActions()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var knownVictim = state.CreateSettlement("known-village", "Known Village", "KnownVictims");
+    state.CreateSettlement("unknown-village", "Unknown Village", "UnknownVictims");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.RecordFactionSettlementIntel("Raiders", knownVictim.Id, IntelSourceKind.Scout, 0, confidence: 80);
+
+    var attack = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+    var scout = FactionActionPlanner.Plan(state, "Raiders", 7 * 60_000);
+    var diplomat = FactionActionPlanner.Plan(state, "Raiders", 11 * 60_000);
+
+    AssertEqual(WarAction.Warband, attack.Action);
+    AssertEqual(knownVictim.Id, attack.TargetSettlementId);
+    AssertEqual(WarAction.ScoutingParty, scout.Action);
+    AssertEqual(null, scout.TargetSettlementId);
+    AssertEqual(WarAction.Diplomat, diplomat.Action);
+    AssertEqual(null, diplomat.TargetSettlementId);
+}
+
 static void TestFactionActionPlannerSpreadsEnemyTargets()
 {
     var state = new WorldState(4242);
@@ -7975,6 +8003,20 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_MissionMarkerReasonLine>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
+}
+
+static void TestRimWorldWorldActionMarkersStartAtOrigin()
+{
+    var root = FindRepoRoot();
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+
+    // The world object interpolates its draw position, but RimWorld still selects and lists it by
+    // Tile. Put new actions at their origin instead of immediately stacking them on the target
+    // settlement, otherwise scouts/caravans/diplomats can look absent until they are nearly done.
+    AssertContains("marker.Tile = originTile;", component);
+    AssertContains("marker.Tile = raid.OriginTile;", component);
+    AssertDoesNotContain("marker.Tile = targetTile;", component);
+    AssertDoesNotContain("marker.Tile = raid.TargetTile;", component);
 }
 
 // Task 5 RW-side, made live: destroyed settlements become REAL, lootable RimWorld sites (abandoned

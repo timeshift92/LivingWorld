@@ -886,7 +886,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         var isNew = !existing.TryGetValue(key, out var marker);
         marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
-        marker.Tile = targetTile;
+        marker.Tile = originTile;
         if (faction != null)
         {
             marker.SetFaction(faction);
@@ -1116,7 +1116,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
                 var isNew = !existing.TryGetValue(raid.MarkerKey, out var marker);
                 marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
-                marker.Tile = raid.TargetTile;
+                marker.Tile = raid.OriginTile;
                 if (faction != null)
                 {
                     marker.SetFaction(faction);
