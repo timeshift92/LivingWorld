@@ -133,6 +133,11 @@ public static class FactionActionPlanner
             .Where(settlement => !ConflictService.IsTruceActive(state, factionId, settlement.FactionId, tick))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
             .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
+            // Do not pile onto a settlement already saturated with attackers: excess factions fall through
+            // to scouting (see Plan), which prevents the whole world marching on one target and spreads
+            // their intel so later rounds diversify.
+            .Where(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets)
+                < WorldTargetPressureService.MaxConcurrentTargetPressure)
             .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
             .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("enemy", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
