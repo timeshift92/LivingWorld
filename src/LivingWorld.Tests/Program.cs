@@ -9269,6 +9269,9 @@ static void TestArmoryLoadoutSelection()
     AssertEqual(false, LoadoutSelectionService.IsCombatEligible(3, 3));
     AssertEqual(true, LoadoutSelectionService.IsCombatEligible(4, 0));
     AssertEqual(true, LoadoutSelectionService.IsCombatEligible(0, 7));
+    // Configurable threshold (exposed as a mod setting): same skills, different cutoff.
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(3, 3, 2));
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(5, 5, 6));
 
     var pistol = new WeaponOption("Pistol", true, 100);
     var rifle = new WeaponOption("Rifle", true, 300);
@@ -9315,6 +9318,7 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("public static void ReturnKit(", adapter);
     AssertContains("LoadoutSelectionService.SelectWeapon", adapter);
     AssertContains("LoadoutSelectionService.RankArmor", adapter);
+    AssertContains("mobilizationSkillThreshold", adapter);
     AssertContains("ApparelUtility.CanWearTogether(", adapter);
     AssertContains("pawn.apparel.Wear(", adapter);
     AssertContains("FreeRackCell(", adapter);
@@ -9395,13 +9399,20 @@ static void TestRimWorldArmoryMobilization()
     AssertContains("component.ToggleManual()", gizmo);
     AssertContains("settings.armoryMobilizationEnabled", gizmo);
 
+    // Diagnostic log line when the alert flips.
+    AssertContains("loggedMobilized", component);
+    AssertContains("Mobilization ON", component);
+    AssertContains("Mobilization OFF", component);
+
     // Settings toggle wired and drawn.
     var settings = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
     AssertContains("armoryMobilizationEnabled = true", settings);
+    AssertContains("mobilizationSkillThreshold = 4", settings);
     var drawer = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
     AssertContains("LW_Settings_ArmoryMobilization", drawer);
+    AssertContains("LW_Settings_MobilizationSkill", drawer);
 
     // RimWorld APIs the feature depends on exist in this game version.
     AssertRimWorldMethodExists("Verse.MapComponent", "MapComponentTick");
@@ -9417,6 +9428,7 @@ static void TestRimWorldArmoryMobilization()
         "LW_MobilizeTooltip",
         "LW_Settings_ArmoryMobilization",
         "LW_Settings_ArmoryMobilizationTip",
+        "LW_Settings_MobilizationSkill",
     })
     {
         AssertContains($"<{key}>", englishXml);

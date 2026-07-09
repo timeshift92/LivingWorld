@@ -23,6 +23,7 @@ public sealed class MobilizationMapComponent : MapComponent
 
     private bool manualMobilized;
     private bool threatPresent;
+    private bool loggedMobilized;
 
     // Colonists this system actually armed, so on stand-down we disarm only them — never a hunter or a
     // pawn the player armed on purpose. Kept by reference, persisted with the map.
@@ -109,6 +110,25 @@ public sealed class MobilizationMapComponent : MapComponent
                 && rack.StoredItems.Any(thing => thing?.def != null && thing.def.IsWeapon));
 
             mobilizedByUs.RemoveAll(pawn => pawn == null);
+
+            // Diagnostic: one line when the alert flips, so behaviour is visible in the log while tuning.
+            if (settings.debugLogging && mobilized != loggedMobilized)
+            {
+                loggedMobilized = mobilized;
+                var eligible = colonists.Count(LoadoutAdapter.IsMobilizationCandidate);
+                var armed = colonists.Count(pawn => pawn != null && LoadoutAdapter.IsArmed(pawn));
+                if (mobilized)
+                {
+                    var reason = ManualMobilized ? "manual" : "threat";
+                    Log.Message($"[LivingWorld] Mobilization ON ({reason}): {eligible} eligible, {armed} already armed, "
+                                + $"weapons on racks: {(weaponAvailable ? "yes" : "no")}.");
+                }
+                else
+                {
+                    Log.Message($"[LivingWorld] Mobilization OFF: standing down {mobilizedByUs.Count} armed by us "
+                                + $"({armed} armed in total).");
+                }
+            }
 
             foreach (var pawn in colonists)
             {

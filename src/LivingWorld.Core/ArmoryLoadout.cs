@@ -23,9 +23,14 @@ public static class MobilizationTuning
 /// </summary>
 public static class LoadoutSelectionService
 {
+    public static bool IsCombatEligible(int shootingSkill, int meleeSkill, int threshold)
+    {
+        return Math.Max(shootingSkill, meleeSkill) >= threshold;
+    }
+
     public static bool IsCombatEligible(int shootingSkill, int meleeSkill)
     {
-        return Math.Max(shootingSkill, meleeSkill) >= MobilizationTuning.CombatSkillThreshold;
+        return IsCombatEligible(shootingSkill, meleeSkill, MobilizationTuning.CombatSkillThreshold);
     }
 
     public static WeaponOption? SelectWeapon(

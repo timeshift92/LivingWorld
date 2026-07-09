@@ -27,6 +27,7 @@ public sealed class LivingWorldSettings : ModSettings
     public bool mechClustersEnabled = true;
     public bool arrivalsTravelEnabled = true;
     public bool armoryMobilizationEnabled = true;
+    public int mobilizationSkillThreshold = 4;
     public int worldWarTravelDays = 3;
     public int worldWarRaidCombatants = 8;
     public int worldWarWarbandCooldownDays = 8;
@@ -65,6 +66,7 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref mechClustersEnabled, "mechClustersEnabled", true);
         Scribe_Values.Look(ref arrivalsTravelEnabled, "arrivalsTravelEnabled", true);
         Scribe_Values.Look(ref armoryMobilizationEnabled, "armoryMobilizationEnabled", true);
+        Scribe_Values.Look(ref mobilizationSkillThreshold, "mobilizationSkillThreshold", 4);
         Scribe_Values.Look(ref worldWarTravelDays, "worldWarTravelDays", 3);
         Scribe_Values.Look(ref worldWarRaidCombatants, "worldWarRaidCombatants", 8);
         Scribe_Values.Look(ref worldWarWarbandCooldownDays, "worldWarWarbandCooldownDays", 8);

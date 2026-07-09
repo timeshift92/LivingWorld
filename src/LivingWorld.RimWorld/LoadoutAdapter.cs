@@ -28,7 +28,9 @@ public static class LoadoutAdapter
 
             var shooting = SkillLevel(pawn, SkillDefOf.Shooting);
             var melee = SkillLevel(pawn, SkillDefOf.Melee);
-            return LoadoutSelectionService.IsCombatEligible(shooting, melee);
+            var threshold = LivingWorldSettings.Instance?.mobilizationSkillThreshold
+                            ?? MobilizationTuning.CombatSkillThreshold;
+            return LoadoutSelectionService.IsCombatEligible(shooting, melee, threshold);
         }
         catch
         {

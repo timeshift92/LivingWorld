@@ -154,6 +154,7 @@
   <LW_Settings_ArrivalsTravelTip>Если включено, гости, торговые караваны и путники фракций выходят из одного из своих поселений и идут по карте мира к твоей колонии — ты видишь их приближение — вместо появления у края карты. Выключите, чтобы прибывали мгновенно. Орбитальных торговцев не затрагивает.</LW_Settings_ArrivalsTravelTip>
   <LW_Settings_ArmoryMobilization>Арсенал / мобилизация колонии</LW_Settings_ArmoryMobilization>
   <LW_Settings_ArmoryMobilizationTip>Если включено, колонисты работают в гражданке и вооружаются из арсенала только при мобилизации — вручную кнопкой «Мобилизация» или автоматически, когда на карте враги.</LW_Settings_ArmoryMobilizationTip>
+  <LW_Settings_MobilizationSkill>Порог боевого навыка для мобилизации</LW_Settings_MobilizationSkill>
   <LW_MobilizeToggle>Мобилизация колонии</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Переключить мобилизацию колонии. Если включено, боеспособные колонисты вооружаются из стоек арсенала; колония также мобилизуется автоматически, пока на карте враги. Выключено — возвращаются к работе и в гражданку.</LW_MobilizeTooltip>
   <LW_AssignKit>Назначить боевой набор</LW_AssignKit>

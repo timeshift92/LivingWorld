@@ -58,6 +58,7 @@ public static class LivingWorldSettingsDrawer
         listing.CheckboxLabeled("LW_Settings_MechClusters".Translate(), ref settings.mechClustersEnabled, "LW_Settings_MechClustersTip".Translate());
         listing.CheckboxLabeled("LW_Settings_ArrivalsTravel".Translate(), ref settings.arrivalsTravelEnabled, "LW_Settings_ArrivalsTravelTip".Translate());
         listing.CheckboxLabeled("LW_Settings_ArmoryMobilization".Translate(), ref settings.armoryMobilizationEnabled, "LW_Settings_ArmoryMobilizationTip".Translate());
+        DrawIntSlider(listing, "LW_Settings_MobilizationSkill".Translate(), ref settings.mobilizationSkillThreshold, 0, 20);
         DrawIntSlider(listing, "LW_Settings_WorldWarTravelDays".Translate(), ref settings.worldWarTravelDays, 1, 15);
         DrawIntSlider(listing, "LW_Settings_WorldWarRaidCombatants".Translate(), ref settings.worldWarRaidCombatants, 1, 30);
         DrawIntSlider(listing, "LW_Settings_WorldWarCooldown".Translate(), ref settings.worldWarWarbandCooldownDays, 0, 30);
