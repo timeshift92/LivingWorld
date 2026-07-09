@@ -300,6 +300,8 @@ var tests = new List<(string Name, Action Test)>
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
     ("localizes faction raid incident", TestRimWorldFactionRaidLocalization),
     ("makes faction raids travel across the world map", TestRimWorldTravelingRaids),
+    ("gives settlements a deterministic economic character", TestEconomicCharacterVariation),
+    ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8173,6 +8175,104 @@ static void TestRimWorldFactionRaidLocalization()
     AssertContains("<LW_FactionRaidLetterText>", englishXml);
     AssertContains("<LW_FactionRaidLetterText>", russianXml);
     AssertContains("<LivingWorld_FactionRaid.label>", incidentRussianXml);
+}
+
+static void TestEconomicCharacterVariation()
+{
+    // Deterministic: the same (seed, id) always yields the same character.
+    AssertEqual(
+        SettlementEconomicCharacterService.EconomyScaleFor(12345, 7),
+        SettlementEconomicCharacterService.EconomyScaleFor(12345, 7));
+    AssertEqual(
+        SettlementEconomicCharacterService.ArchetypeFor(12345, 7),
+        SettlementEconomicCharacterService.ArchetypeFor(12345, 7));
+
+    // Scale stays within the declared envelope, and the world is not flat: prosperity and specialization
+    // genuinely spread across settlements instead of every one reading as the 100/Balanced default.
+    var scales = new HashSet<int>();
+    var archetypes = new HashSet<ProductionArchetype>();
+    for (var id = 0; id < 200; id++)
+    {
+        var scale = SettlementEconomicCharacterService.EconomyScaleFor(2026, id);
+        AssertEqual(true, scale >= SettlementEconomicCharacterService.MinEconomyScalePercent);
+        AssertEqual(true, scale <= SettlementEconomicCharacterService.MaxEconomyScalePercent);
+        scales.Add(scale);
+        archetypes.Add(SettlementEconomicCharacterService.ArchetypeFor(2026, id));
+    }
+
+    AssertEqual(true, scales.Count > 20);
+    AssertEqual(true, archetypes.Count >= 4);
+
+    // Apply stamps an untouched default profile with the rolled character.
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("camp", "Camp", "pirates");
+    var baseProfile = SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment("TemperateForest", "SmallHills", "Industrial", 55, 850, 21));
+    AssertEqual(100, baseProfile.EconomyScalePercent);
+
+    var stamped = SettlementEconomicCharacterService.Apply(baseProfile, 12345);
+    AssertEqual(
+        SettlementEconomicCharacterService.EconomyScaleFor(12345, settlement.Id.Value),
+        stamped.EconomyScalePercent);
+    AssertEqual(
+        SettlementEconomicCharacterService.ArchetypeFor(12345, settlement.Id.Value),
+        stamped.Archetype);
+
+    // A scale another system already raised above the default (e.g. crop tech) is preserved, never lowered.
+    var raised = baseProfile with { EconomyScalePercent = 300 };
+    AssertEqual(300, SettlementEconomicCharacterService.Apply(raised, 12345).EconomyScalePercent);
+
+    // Endowment scaling is proportional and safe on zero / empty settlements.
+    const int seed = 777;
+    const long sid = 42;
+    var s = SettlementEconomicCharacterService.EconomyScaleFor(seed, sid);
+    AssertEqual(1000 * s / 100, SettlementEconomicCharacterService.ScaleEndowment(1000, seed, sid));
+    AssertEqual(0, SettlementEconomicCharacterService.ScaleEndowment(0, seed, sid));
+    AssertEqual(
+        SettlementEconomicCharacterService.ScaleEndowment(24 * SettlementEconomicCharacterService.BaseSilverPerAdult, seed, sid),
+        SettlementEconomicCharacterService.SilverEndowment(24, seed, sid));
+    AssertEqual(0, SettlementEconomicCharacterService.SilverEndowment(0, seed, sid));
+}
+
+static void TestRimWorldEconomicDiversity()
+{
+    var root = FindRepoRoot();
+
+    var service = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.Core", "SettlementEconomicCharacterService.cs"));
+    AssertContains("public static SettlementProductionProfile Apply(", service);
+    AssertContains("public static int ScaleEndowment(", service);
+    AssertContains("public static int SilverEndowment(", service);
+
+    // Seeding stamps each new profile with its character and scales the starting endowment (steel +
+    // a silver reserve) so the wealth spread exists from day one; a one-time migration upgrades old saves.
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("ApplyEconomicCharacter(", component);
+    AssertContains("SettlementEconomicCharacterService.Apply", component);
+    AssertContains("ScaleEconomicEndowment(", component);
+    AssertContains("EconomicSilverEndowment(", component);
+    AssertContains("MigrateEconomicDiversityForLegacySave", component);
+    AssertContains("livingWorld_appliedEconomicDiversity", component);
+    AssertContains("settings.economicDiversityEnabled", component);
+
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("economicDiversityEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_EconomicDiversity", drawer);
+
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_Settings_EconomicDiversity", "LW_Settings_EconomicDiversityTip" })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
 }
 
 static void TestRimWorldTravelingRaids()

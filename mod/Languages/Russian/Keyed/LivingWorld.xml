@@ -141,6 +141,8 @@
   <LW_Settings_WorldWarEnabledTip>Если включено, NPC-фракции устраивают рейды, разведку, торговлю и войны между собой. Автоматически уступается Rim War, когда тот активен.</LW_Settings_WorldWarEnabledTip>
   <LW_Settings_TravelingRaids>Рейды идут по карте мира</LW_Settings_TravelingRaids>
   <LW_Settings_TravelingRaidsTip>Если включено, рейды фракций выходят из ближайшего поселения атакующего и идут по карте мира к вашей колонии — вы видите приближающийся отряд и получаете предупреждение — вместо появления у края карты. Выключите, чтобы рейды прибывали мгновенно.</LW_Settings_TravelingRaidsTip>
+  <LW_Settings_EconomicDiversity>Фракции различаются экономически</LW_Settings_EconomicDiversity>
+  <LW_Settings_EconomicDiversityTip>Если включено, каждое поселение получает детерминированный экономический характер (специализацию и достаток) из сида мира, поэтому одни фракции реально богаче или лучше вооружены других. Именно это оживляет события, зависящие от богатства — более тяжёлые рейды богатых фракций, больше серебра у торговцев, предупреждения о богатой фракции. Выключите для плоской, одинаковой экономики.</LW_Settings_EconomicDiversityTip>
   <LW_Settings_WorldWarTravelDays>Дней в пути (армии/миссии)</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Бойцов в варбанде</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Кулдаун варбанда (дни)</LW_Settings_WorldWarCooldown>

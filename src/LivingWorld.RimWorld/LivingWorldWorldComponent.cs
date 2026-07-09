@@ -21,10 +21,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private const string SteelResourceKey = "Steel";
     private const string MedicineResourceKey = "MedicineIndustrial";
     private const string ComponentResourceKey = "ComponentIndustrial";
+    private const string SilverResourceKey = "Silver";
 
     private readonly World rimWorld;
     private bool bootstrapped;
     private bool migratedDrifterReservoir;
+    private bool appliedEconomicDiversity;
     private string serializedState = string.Empty;
     private int lastSimulatedDay;
     private int cachedWorldPopulation;
@@ -142,6 +144,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         BootstrapFromRimWorldSettlements();
         MigrateDrifterReservoirForLegacySave();
         RepairMissingProductionProfilesFromRimWorldSettlements();
+        MigrateEconomicDiversityForLegacySave();
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
@@ -1418,6 +1421,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref lastWorldWarLetterTick, "livingWorld_lastWorldWarLetterTick", int.MinValue);
         Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
         Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);
+        Scribe_Values.Look(ref appliedEconomicDiversity, "livingWorld_appliedEconomicDiversity", false);
         Scribe_Collections.Look(ref notifiedResolvedRaidArmyIds, "livingWorld_notifiedResolvedRaidArmyIds", LookMode.Value);
         notifiedResolvedRaidArmyIds ??= new List<long>();
         Scribe_Collections.Look(ref notifiedRaidWarningFactIds, "livingWorld_notifiedRaidWarningFactIds", LookMode.Value);
@@ -1456,7 +1460,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         State = new WorldState(ResolveWorldSeed(rimWorld));
         var settlement = State.CreateSettlement("debug-settlement", "LW_DebugSettlementName".Translate().ToString(), "LivingWorldDebug");
         var citizenCount = Math.Max(6, settings.baselineHumanSettlementAdults);
-        State.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        State.RecordSettlementProductionProfile(ApplyEconomicCharacter(SettlementProductionProfile.FromEnvironment(
             settlement.Id,
             new SettlementProductionEnvironment(
                 "TemperateForest",
@@ -1464,7 +1468,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 "Industrial",
                 55,
                 850,
-                21)));
+                21))));
 
         for (var i = 0; i < citizenCount; i++)
         {
@@ -1479,7 +1483,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
 
         State.AddResource(settlement.Id, FoodResourceKey, citizenCount * Math.Max(1, settings.foodPerCitizen));
-        State.AddResource(settlement.Id, SteelResourceKey, citizenCount * Math.Max(1, settings.steelPerCitizen));
+        State.AddResource(
+            settlement.Id,
+            SteelResourceKey,
+            ScaleEconomicEndowment(settlement.Id, citizenCount * Math.Max(1, settings.steelPerCitizen)));
+        var debugSilver = EconomicSilverEndowment(settlement.Id, citizenCount);
+        if (debugSilver > 0)
+        {
+            State.AddResource(settlement.Id, SilverResourceKey, debugSilver);
+        }
+
         PlayerKnowledgeService.RecordPublicSettlementInfo(
             State,
             settlement.Id,
@@ -1600,10 +1613,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     settings.minSettlementAdults,
                     Math.Min(settings.maxSettlementAdults, configuredAdults));
                 var worldSettlement = State.CreateSettlement(settlement.StableKey, settlement.Name, settlement.FactionId);
-                var productionProfile = RimWorldSettlementProductionProfileFactory.Create(
+                var productionProfile = ApplyEconomicCharacter(RimWorldSettlementProductionProfileFactory.Create(
                     settlement,
                     worldSettlement.Id,
-                    faction);
+                    faction));
 
                 State.RunInitialWorldSeeding(() =>
                 {
@@ -1624,7 +1637,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
                     if (settings.steelPerCitizen > 0)
                     {
-                        State.AddResource(worldSettlement.Id, SteelResourceKey, baselineAdults * settings.steelPerCitizen);
+                        State.AddResource(
+                            worldSettlement.Id,
+                            SteelResourceKey,
+                            ScaleEconomicEndowment(worldSettlement.Id, baselineAdults * settings.steelPerCitizen));
+                    }
+
+                    var silverEndowment = EconomicSilverEndowment(worldSettlement.Id, baselineAdults);
+                    if (silverEndowment > 0)
+                    {
+                        State.AddResource(worldSettlement.Id, SilverResourceKey, silverEndowment);
                     }
                 });
 
@@ -1668,6 +1690,72 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
     }
 
+    // Stamps a freshly created production profile with its deterministic economic character (archetype +
+    // economy scale) so settlements diverge economically. Gated by the settings toggle; a no-op when off.
+    private SettlementProductionProfile ApplyEconomicCharacter(SettlementProductionProfile profile)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        return settings.economicDiversityEnabled
+            ? SettlementEconomicCharacterService.Apply(profile, State.WorldSeed)
+            : profile;
+    }
+
+    // Scales a baseline seeding endowment by the settlement's economic character, so prosperous
+    // settlements start richer. Off → the baseline is used unchanged.
+    private int ScaleEconomicEndowment(EntityId settlementId, int baseline)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        return settings.economicDiversityEnabled
+            ? SettlementEconomicCharacterService.ScaleEndowment(baseline, State.WorldSeed, settlementId.Value)
+            : baseline;
+    }
+
+    // The starting silver reserve for a settlement, scaled by its economic character. Prosperous
+    // settlements begin with real silver, poor ones with little — an immediate day-one wealth spread.
+    private int EconomicSilverEndowment(EntityId settlementId, int adults)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        return settings.economicDiversityEnabled
+            ? SettlementEconomicCharacterService.SilverEndowment(adults, State.WorldSeed, settlementId.Value)
+            : 0;
+    }
+
+    // One-time upgrade for saves created before economic diversity existed: every settlement's profile is
+    // still at the untouched default (Balanced, scale 100), so the world reads flat. Apply the rolled
+    // character to those default profiles once. Deterministic and idempotent; profiles a system already
+    // raised above default (crop tech) are preserved by Apply.
+    private void MigrateEconomicDiversityForLegacySave()
+    {
+        if (appliedEconomicDiversity)
+        {
+            return;
+        }
+
+        appliedEconomicDiversity = true;
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.economicDiversityEnabled || !bootstrapped)
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var profile in State.ProductionProfiles.ToList())
+            {
+                if (profile.Archetype == ProductionArchetype.Balanced && profile.EconomyScalePercent == 100)
+                {
+                    State.RecordSettlementProductionProfile(
+                        SettlementEconomicCharacterService.Apply(profile, State.WorldSeed));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Economic-diversity migration skipped safely: {ex.Message}");
+        }
+    }
+
     private void RepairMissingProductionProfilesFromRimWorldSettlements()
     {
         if (!bootstrapped
@@ -1692,10 +1780,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 var faction = Find.FactionManager.AllFactionsListForReading
                     .FirstOrDefault(existing => existing.def?.defName == candidate.FactionId);
                 State.RecordSettlementProductionProfile(
-                    RimWorldSettlementProductionProfileFactory.Create(
+                    ApplyEconomicCharacter(RimWorldSettlementProductionProfileFactory.Create(
                         candidate,
                         settlement.Id,
-                        faction));
+                        faction)));
                 repaired++;
             }
 

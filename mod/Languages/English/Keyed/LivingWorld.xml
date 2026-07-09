@@ -141,6 +141,8 @@
   <LW_Settings_WorldWarEnabledTip>When on, NPC factions raid, scout, trade and wage war on each other. Automatically ceded to Rim War when it is active.</LW_Settings_WorldWarEnabledTip>
   <LW_Settings_TravelingRaids>Raids travel across the world map</LW_Settings_TravelingRaids>
   <LW_Settings_TravelingRaidsTip>When on, faction raids set out from the attacker's nearest settlement and march across the world map to your colony - you see the warband coming and get a warning - instead of appearing at the map edge. Turn off to have raids arrive instantly.</LW_Settings_TravelingRaidsTip>
+  <LW_Settings_EconomicDiversity>Factions vary economically</LW_Settings_EconomicDiversity>
+  <LW_Settings_EconomicDiversityTip>When on, each settlement gets a deterministic economic character (specialization and prosperity) from the world seed, so some factions are genuinely richer or better-armed than others. This is what makes wealth-driven events - tougher raids from rich factions, bigger trader silver, wealthy-faction warnings - actually vary. Turn off for a flat, uniform economy.</LW_Settings_EconomicDiversityTip>
   <LW_Settings_WorldWarTravelDays>Army/mission travel days</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Warband combatants</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Warband cooldown (days)</LW_Settings_WorldWarCooldown>
