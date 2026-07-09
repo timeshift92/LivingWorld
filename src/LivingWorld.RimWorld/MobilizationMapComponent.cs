@@ -29,6 +29,11 @@ public sealed class MobilizationMapComponent : MapComponent
     // pawn the player armed on purpose. Kept by reference, persisted with the map.
     private List<Pawn> mobilizedByUs = new();
 
+    // Colonists this system auto-drafted for the current raid. Transient (not persisted): used only to draft
+    // each combat pawn once per raid, so the player can still undraft someone mid-fight without us re-drafting
+    // them. Cleared when the threat ends. We never auto-undraft — that stays the player's call.
+    private readonly List<Pawn> draftedByUs = new();
+
     public MobilizationMapComponent(Map map)
         : base(map)
     {
@@ -74,6 +79,70 @@ public sealed class MobilizationMapComponent : MapComponent
         }
 
         PushMobilizationJobs();
+        AutoDraftOnThreat();
+    }
+
+    // When a real enemy is on the map, wake and draft the colony's combat-capable, armed colonists so they do
+    // not sleep or work through a raid — the player then positions them. Only on an actual threat (not the
+    // manual toggle), gated by a setting, and each pawn is drafted only once per raid so a manual undraft
+    // sticks. We never auto-undraft. Fail-safe.
+    private void AutoDraftOnThreat()
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.armoryMobilizationEnabled || !settings.autoDraftOnThreat)
+        {
+            return;
+        }
+
+        try
+        {
+            draftedByUs.RemoveAll(pawn => pawn == null);
+
+            if (!threatPresent)
+            {
+                // Raid over — reset so the next raid drafts afresh; leave everyone's drafted state alone.
+                draftedByUs.Clear();
+                return;
+            }
+
+            var colonists = map?.mapPawns?.FreeColonistsSpawned;
+            if (colonists == null)
+            {
+                return;
+            }
+
+            foreach (var pawn in colonists)
+            {
+                if (pawn == null || pawn.Downed || pawn.InMentalState || pawn.drafter == null)
+                {
+                    continue;
+                }
+
+                // Only combat-capable, already-armed colonists; unarmed ones arm up from the racks first and
+                // get drafted on a later tick once they are carrying a weapon.
+                if (!LoadoutAdapter.IsMobilizationCandidate(pawn) || !LoadoutAdapter.IsArmed(pawn))
+                {
+                    continue;
+                }
+
+                if (pawn.Drafted || draftedByUs.Contains(pawn))
+                {
+                    continue;
+                }
+
+                if (!RestUtility.Awake(pawn))
+                {
+                    RestUtility.WakeUp(pawn, startNewJob: false);
+                }
+
+                pawn.drafter.Drafted = true;
+                draftedByUs.Add(pawn);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Auto-draft on threat skipped safely: {ex.Message}");
+        }
     }
 
     // Autonomous armory behaviour without touching the vanilla think tree (which would risk breaking all

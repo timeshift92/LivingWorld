@@ -155,6 +155,8 @@
   <LW_Settings_ArmoryMobilization>Арсенал / мобилизация колонии</LW_Settings_ArmoryMobilization>
   <LW_Settings_ArmoryMobilizationTip>Если включено, колонисты работают в гражданке и вооружаются из арсенала только при мобилизации — вручную кнопкой «Мобилизация» или автоматически, когда на карте враги.</LW_Settings_ArmoryMobilizationTip>
   <LW_Settings_MobilizationSkill>Порог боевого навыка для мобилизации</LW_Settings_MobilizationSkill>
+  <LW_Settings_AutoDraft>Авто-драфт боевых при рейде</LW_Settings_AutoDraft>
+  <LW_Settings_AutoDraftTip>Если включено, боеспособных вооружённых колонистов автоматически будят и берут под драфт, пока на карте есть настоящий враг — чтобы они не спали и не работали сквозь рейд. Позиционируешь их ты, а ручное снятие драфта сохраняется. На ручной тумблер «Мобилизация» не срабатывает.</LW_Settings_AutoDraftTip>
   <LW_MobilizeToggle>Мобилизация колонии</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Переключить мобилизацию колонии. Если включено, боеспособные колонисты вооружаются из стоек арсенала; колония также мобилизуется автоматически, пока на карте враги. Выключено — возвращаются к работе и в гражданку.</LW_MobilizeTooltip>
   <LW_AssignKit>Назначить боевой набор</LW_AssignKit>

@@ -9610,15 +9610,23 @@ static void TestRimWorldArmoryMobilization()
     AssertContains("Mobilization ON", component);
     AssertContains("Mobilization OFF", component);
 
+    // Auto-draft on a real threat: wake + draft armed combat pawns, once per raid, never auto-undraft.
+    AssertContains("private void AutoDraftOnThreat()", component);
+    AssertContains("draftedByUs", component);
+    AssertContains("pawn.drafter.Drafted = true", component);
+    AssertRimWorldMethodExists("RimWorld.Pawn_DraftController", "set_Drafted");
+
     // Settings toggle wired and drawn.
     var settings = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
     AssertContains("armoryMobilizationEnabled = true", settings);
     AssertContains("mobilizationSkillThreshold = 4", settings);
+    AssertContains("autoDraftOnThreat = true", settings);
     var drawer = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
     AssertContains("LW_Settings_ArmoryMobilization", drawer);
     AssertContains("LW_Settings_MobilizationSkill", drawer);
+    AssertContains("LW_Settings_AutoDraft", drawer);
 
     // RimWorld APIs the feature depends on exist in this game version.
     AssertRimWorldMethodExists("Verse.MapComponent", "MapComponentTick");
@@ -9635,6 +9643,8 @@ static void TestRimWorldArmoryMobilization()
         "LW_Settings_ArmoryMobilization",
         "LW_Settings_ArmoryMobilizationTip",
         "LW_Settings_MobilizationSkill",
+        "LW_Settings_AutoDraft",
+        "LW_Settings_AutoDraftTip",
     })
     {
         AssertContains($"<{key}>", englishXml);
