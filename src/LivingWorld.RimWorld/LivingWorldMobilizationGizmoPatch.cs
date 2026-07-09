@@ -45,6 +45,13 @@ public static class LivingWorldMobilizationGizmoPatch
                         var pawn = __instance;
                         gizmos.Add(new Command_Action
                         {
+                            defaultLabel = "LW_ConfigureKit".Translate(),
+                            defaultDesc = "LW_ConfigureKitTooltip".Translate(),
+                            icon = TexCommand.Attack,
+                            action = () => Find.WindowStack.Add(new Dialog_ArmoryLoadout(pawn)),
+                        });
+                        gizmos.Add(new Command_Action
+                        {
                             defaultLabel = "LW_AssignKit".Translate(),
                             defaultDesc = "LW_AssignKitTooltip".Translate(),
                             icon = TexCommand.Draft,

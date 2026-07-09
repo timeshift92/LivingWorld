@@ -161,6 +161,17 @@
   <LW_AssignKitTooltip>Запомнить текущее оружие и броню колониста как его боевой набор. При мобилизации он всегда будет брать со стоек именно этот набор (если он там есть), а не скилл-подбор. Сначала экипируй как нужно, потом назначь.</LW_AssignKitTooltip>
   <LW_ClearKit>Очистить боевой набор</LW_ClearKit>
   <LW_ClearKitTooltip>Забыть назначенный набор колониста. При мобилизации он возьмёт со стоек оружие и броню по навыкам.</LW_ClearKitTooltip>
+  <LW_ConfigureKit>Настроить боевой набор</LW_ConfigureKit>
+  <LW_ConfigureKitTooltip>Открыть окно и выбрать колонисту конкретное оружие и части брони для мобилизации из того, что лежит на стойках арсенала. Что не задано — подбирается автоматически по навыкам.</LW_ConfigureKitTooltip>
+  <LW_LoadoutTitle>Боевой набор: {0}</LW_LoadoutTitle>
+  <LW_LoadoutAuto>Авто (по навыкам)</LW_LoadoutAuto>
+  <LW_LoadoutWeapon>Оружие</LW_LoadoutWeapon>
+  <LW_LoadoutArmor>Комплект брони</LW_LoadoutArmor>
+  <LW_LoadoutChange>Изменить...</LW_LoadoutChange>
+  <LW_LoadoutRemove>Убрать</LW_LoadoutRemove>
+  <LW_LoadoutAddArmor>Добавить часть брони...</LW_LoadoutAddArmor>
+  <LW_LoadoutClear>Сбросить (всё авто)</LW_LoadoutClear>
+  <LW_LoadoutNothingStocked>(на стойках нет подходящего)</LW_LoadoutNothingStocked>
   <LW_GroupApproachingLabel>Приближается группа</LW_GroupApproachingLabel>
   <LW_GroupApproachingText>Группа ({kind}) фракции {faction} выступила к {colony}. Доберутся примерно через {days} дн. Следи за ними на карте мира.</LW_GroupApproachingText>
   <LW_ArrivalKind_Visitors>гости</LW_ArrivalKind_Visitors>

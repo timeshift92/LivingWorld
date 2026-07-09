@@ -36,9 +36,15 @@ public sealed class ArmoryAssignmentComponent : GameComponent
         return pawn != null && weaponDefByPawn.TryGetValue(pawn, out var def) ? def : null;
     }
 
-    public string? AssignedArmorDef(Pawn pawn)
+    // The assigned armour set, as a list of def names (stored comma-joined). Empty when none assigned.
+    public List<string> AssignedArmorDefs(Pawn pawn)
     {
-        return pawn != null && armorDefByPawn.TryGetValue(pawn, out var def) ? def : null;
+        if (pawn == null || !armorDefByPawn.TryGetValue(pawn, out var joined) || string.IsNullOrEmpty(joined))
+        {
+            return new List<string>();
+        }
+
+        return joined.Split(',').Where(def => !string.IsNullOrEmpty(def)).ToList();
     }
 
     public bool HasAssignment(Pawn pawn)
@@ -46,7 +52,8 @@ public sealed class ArmoryAssignmentComponent : GameComponent
         return pawn != null && (weaponDefByPawn.ContainsKey(pawn) || armorDefByPawn.ContainsKey(pawn));
     }
 
-    // Captures whatever the colonist is currently carrying/wearing as their assigned combat kit.
+    // Captures whatever the colonist is currently carrying/wearing as their assigned combat kit — the weapon
+    // and the full set of combat armour worn (not just one piece).
     public void AssignFromCurrent(Pawn pawn)
     {
         if (pawn == null)
@@ -62,11 +69,40 @@ public sealed class ArmoryAssignmentComponent : GameComponent
 
         var armor = pawn.apparel?.WornApparel?
             .Where(apparel => apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp) >= 0.4f)
-            .OrderByDescending(apparel => apparel.MarketValue)
-            .FirstOrDefault()?.def?.defName;
-        if (!string.IsNullOrEmpty(armor))
+            .Select(apparel => apparel.def.defName)
+            .ToList() ?? new List<string>();
+        if (armor.Count > 0)
         {
-            armorDefByPawn[pawn] = armor!;
+            armorDefByPawn[pawn] = string.Join(",", armor);
+        }
+    }
+
+    // Sets an explicit loadout from the configuration UI: a weapon def (null/empty = auto by skill) and an
+    // armour set (empty = auto by skill).
+    public void SetLoadout(Pawn pawn, string? weaponDef, IEnumerable<string>? armorDefs)
+    {
+        if (pawn == null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(weaponDef))
+        {
+            weaponDefByPawn.Remove(pawn);
+        }
+        else
+        {
+            weaponDefByPawn[pawn] = weaponDef!;
+        }
+
+        var armor = armorDefs?.Where(def => !string.IsNullOrEmpty(def)).ToList() ?? new List<string>();
+        if (armor.Count > 0)
+        {
+            armorDefByPawn[pawn] = string.Join(",", armor);
+        }
+        else
+        {
+            armorDefByPawn.Remove(pawn);
         }
     }
 

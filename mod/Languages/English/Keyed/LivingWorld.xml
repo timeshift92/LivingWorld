@@ -161,6 +161,17 @@
   <LW_AssignKitTooltip>Remember this colonist's current weapon and armour as their combat kit. On mobilization they will always take exactly this kit from the racks (if available) instead of a skill-based pick. Equip them as you want first, then assign.</LW_AssignKitTooltip>
   <LW_ClearKit>Clear combat kit</LW_ClearKit>
   <LW_ClearKitTooltip>Forget this colonist's assigned kit. On mobilization they will take a skill-appropriate weapon and armour from the racks instead.</LW_ClearKitTooltip>
+  <LW_ConfigureKit>Configure combat kit</LW_ConfigureKit>
+  <LW_ConfigureKitTooltip>Open a window to pick this colonist's exact mobilization weapon and armour pieces from what is stocked on the armory racks. Anything left unset is chosen automatically by skill.</LW_ConfigureKitTooltip>
+  <LW_LoadoutTitle>Combat loadout: {0}</LW_LoadoutTitle>
+  <LW_LoadoutAuto>Auto (by skill)</LW_LoadoutAuto>
+  <LW_LoadoutWeapon>Weapon</LW_LoadoutWeapon>
+  <LW_LoadoutArmor>Armour set</LW_LoadoutArmor>
+  <LW_LoadoutChange>Change...</LW_LoadoutChange>
+  <LW_LoadoutRemove>Remove</LW_LoadoutRemove>
+  <LW_LoadoutAddArmor>Add armour piece...</LW_LoadoutAddArmor>
+  <LW_LoadoutClear>Clear (auto everything)</LW_LoadoutClear>
+  <LW_LoadoutNothingStocked>(nothing suitable on the racks)</LW_LoadoutNothingStocked>
   <LW_GroupApproachingLabel>A group is approaching</LW_GroupApproachingLabel>
   <LW_GroupApproachingText>A group of {kind} from {faction} has set out toward {colony}. They should reach you in about {days} day(s). Track them on the world map.</LW_GroupApproachingText>
   <LW_ArrivalKind_Visitors>visitors</LW_ArrivalKind_Visitors>

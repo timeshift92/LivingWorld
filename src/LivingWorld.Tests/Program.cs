@@ -9432,6 +9432,27 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("assignments.AssignFromCurrent(pawn)", gizmoPatch);
     AssertContains("assignments.Clear(pawn)", gizmoPatch);
 
+    // Per-colonist loadout configuration window: opened from a gizmo, picks weapon/armour from the racks,
+    // stored as an explicit loadout the adapter honours over the skill pick.
+    AssertContains("new Dialog_ArmoryLoadout(pawn)", gizmoPatch);
+    var loadoutUi = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "Dialog_ArmoryLoadout.cs"));
+    AssertContains("class Dialog_ArmoryLoadout : Window", loadoutUi);
+    AssertContains("public override void DoWindowContents(Rect inRect)", loadoutUi);
+    AssertContains("Building_ArmoryRack", loadoutUi);
+    AssertContains("comp.SetLoadout(", loadoutUi);
+    AssertContains("SetLoadout", assignment);
+    AssertContains("AssignedArmorDefs", assignment);
+    AssertContains("AssignedArmorDefs", adapter);
+    AssertRimWorldMethodExists("Verse.Window", "DoWindowContents");
+    AssertRimWorldMethodExists("Verse.Widgets", "ButtonText");
+    foreach (var loadoutKey in new[] { "LW_ConfigureKit", "LW_LoadoutTitle", "LW_LoadoutWeapon", "LW_LoadoutAddArmor" })
+    {
+        AssertContains($"<{loadoutKey}>", File.ReadAllText(
+            Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml")));
+        AssertContains($"<{loadoutKey}>", File.ReadAllText(
+            Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml")));
+    }
+
     // Clothing handled via vanilla apparel policies: an auto-created combat policy on arm, the pawn's own
     // policy restored on stand-down. The delicate dressing/undressing/hauling is left to the game.
     var outfit = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationOutfitService.cs"));

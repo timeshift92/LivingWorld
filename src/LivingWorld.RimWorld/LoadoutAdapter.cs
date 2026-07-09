@@ -75,7 +75,7 @@ public static class LoadoutAdapter
             // Hybrid: a colonist's assigned kit wins if that gear is on the racks; otherwise the skill pick.
             var assignments = ArmoryAssignmentComponent.Instance;
             var assignedWeaponDef = assignments?.AssignedWeaponDef(pawn);
-            var assignedArmorDef = assignments?.AssignedArmorDef(pawn);
+            var assignedArmorDefs = assignments?.AssignedArmorDefs(pawn) ?? new List<string>();
 
             var weaponPool = weaponThings
                 .Select(thing => new WeaponOption(thing.def.defName, thing.def.IsRangedWeapon, (int)thing.MarketValue))
@@ -88,33 +88,44 @@ public static class LoadoutAdapter
                 ? null
                 : weaponThings.FirstOrDefault(thing => thing.def.defName == chosenWeapon.DefName);
 
-            var armorPool = armorThings
-                .Select(apparel => new ArmorOption(
-                    apparel.def.defName,
-                    ProtectionScore(apparel),
-                    apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp) >= HeavyArmorThreshold))
-                .ToList();
-            var assignedArmor = string.IsNullOrEmpty(assignedArmorDef)
-                ? null
-                : armorPool.FirstOrDefault(option => option.DefName == assignedArmorDef);
-
-            // Wear a full set: walk the priority order and take every piece that fits with those already
-            // chosen, so a colonist ends up in the most protective armour available, not a single item.
-            var ranked = LoadoutSelectionService.RankArmor(shooting, melee, assignedArmor, armorPool);
             var body = pawn.RaceProps?.body;
             var armor = new List<Apparel>();
-            foreach (var option in ranked)
-            {
-                var piece = armorThings.FirstOrDefault(apparel =>
-                    apparel.def.defName == option.DefName && !armor.Contains(apparel));
-                if (piece == null)
-                {
-                    continue;
-                }
 
-                if (body == null || armor.All(worn => ApparelUtility.CanWearTogether(worn.def, piece.def, body)))
+            if (assignedArmorDefs.Count > 0)
+            {
+                // Explicit loadout from the UI: wear exactly the assigned pieces that are on the racks, in the
+                // chosen order, skipping any that cannot be worn with those already picked.
+                foreach (var def in assignedArmorDefs)
                 {
-                    armor.Add(piece);
+                    var piece = armorThings.FirstOrDefault(apparel =>
+                        apparel.def.defName == def && !armor.Contains(apparel));
+                    if (piece != null && (body == null
+                        || armor.All(worn => ApparelUtility.CanWearTogether(worn.def, piece.def, body))))
+                    {
+                        armor.Add(piece);
+                    }
+                }
+            }
+            else
+            {
+                // Auto: wear a full set in protection priority order, taking every piece that fits with those
+                // already chosen, so a colonist ends up in the most protective armour available.
+                var armorPool = armorThings
+                    .Select(apparel => new ArmorOption(
+                        apparel.def.defName,
+                        ProtectionScore(apparel),
+                        apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp) >= HeavyArmorThreshold))
+                    .ToList();
+                var ranked = LoadoutSelectionService.RankArmor(shooting, melee, null, armorPool);
+                foreach (var option in ranked)
+                {
+                    var piece = armorThings.FirstOrDefault(apparel =>
+                        apparel.def.defName == option.DefName && !armor.Contains(apparel));
+                    if (piece != null && (body == null
+                        || armor.All(worn => ApparelUtility.CanWearTogether(worn.def, piece.def, body))))
+                    {
+                        armor.Add(piece);
+                    }
                 }
             }
 
