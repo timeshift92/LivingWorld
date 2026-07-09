@@ -8739,6 +8739,8 @@ static void TestRimWorldApproachingVisitors()
     var patch = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldGroupTravelPatch.cs"));
     AssertContains("HarmonyPatch(typeof(IncidentWorker_VisitorGroup), \"TryExecuteWorker\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_TraderCaravanArrival), \"TryExecuteWorker\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_TravelerGroup), \"TryExecuteWorker\")", patch);
     AssertContains("ApproachingGroupRuntime.FiringArrival", patch);
     AssertContains("TryLaunchApproachingGroup", patch);
 
@@ -8765,6 +8767,8 @@ static void TestRimWorldApproachingVisitors()
 
     // RimWorld API the feature depends on exists in this game version.
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_VisitorGroup", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_TraderCaravanArrival", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_TravelerGroup", "TryExecuteWorker");
 
     // Localization present in both languages.
     var englishXml = File.ReadAllText(
@@ -8776,6 +8780,8 @@ static void TestRimWorldApproachingVisitors()
         "LW_GroupApproachingLabel",
         "LW_GroupApproachingText",
         "LW_ArrivalKind_Visitors",
+        "LW_ArrivalKind_Traders",
+        "LW_ArrivalKind_Travelers",
         "LW_MissionReason_Visit",
         "LW_Settings_ArrivalsTravel",
         "LW_Settings_ArrivalsTravelTip",

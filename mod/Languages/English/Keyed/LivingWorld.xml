@@ -150,12 +150,14 @@
   <LW_MechClusterActive>Mechanoid complex - ACTIVE. Roused mechanoids are launching raids from here against your colony.</LW_MechClusterActive>
   <LW_MechClusterAwakenLabel>Mechanoid complex activated</LW_MechClusterAwakenLabel>
   <LW_MechClusterAwakenText>A dormant mechanoid complex has powered up, roused by your colony's growing wealth and its proximity. Expect mechanoid incursions from it - this is no random attack. Track it on the world map.</LW_MechClusterAwakenText>
-  <LW_Settings_ArrivalsTravel>Visitors travel across the world</LW_Settings_ArrivalsTravel>
-  <LW_Settings_ArrivalsTravelTip>When on, faction visitor groups set out from one of their settlements and cross the world map to your colony - you see them coming - instead of appearing at the map edge. Turn off to have them arrive instantly. (Traders and travellers follow in later updates.)</LW_Settings_ArrivalsTravelTip>
-  <LW_GroupApproachingLabel>Visitors approaching</LW_GroupApproachingLabel>
+  <LW_Settings_ArrivalsTravel>Neutral groups travel across the world</LW_Settings_ArrivalsTravel>
+  <LW_Settings_ArrivalsTravelTip>When on, faction visitors, trade caravans and travellers set out from one of their settlements and cross the world map to your colony - you see them coming - instead of appearing at the map edge. Turn off to have them arrive instantly. Orbital traders are unaffected.</LW_Settings_ArrivalsTravelTip>
+  <LW_GroupApproachingLabel>A group is approaching</LW_GroupApproachingLabel>
   <LW_GroupApproachingText>A group of {kind} from {faction} has set out toward {colony}. They should reach you in about {days} day(s). Track them on the world map.</LW_GroupApproachingText>
   <LW_ArrivalKind_Visitors>visitors</LW_ArrivalKind_Visitors>
-  <LW_MissionReason_Visit>visiting your colony</LW_MissionReason_Visit>
+  <LW_ArrivalKind_Traders>traders</LW_ArrivalKind_Traders>
+  <LW_ArrivalKind_Travelers>travellers</LW_ArrivalKind_Travelers>
+  <LW_MissionReason_Visit>heading to your colony</LW_MissionReason_Visit>
   <LW_Settings_WorldWarTravelDays>Army/mission travel days</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Warband combatants</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Warband cooldown (days)</LW_Settings_WorldWarCooldown>
