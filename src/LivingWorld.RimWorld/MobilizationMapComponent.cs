@@ -24,6 +24,10 @@ public sealed class MobilizationMapComponent : MapComponent
     private bool manualMobilized;
     private bool threatPresent;
 
+    // Colonists this system actually armed, so on stand-down we disarm only them — never a hunter or a
+    // pawn the player armed on purpose. Kept by reference, persisted with the map.
+    private List<Pawn> mobilizedByUs = new();
+
     public MobilizationMapComponent(Map map)
         : base(map)
     {
@@ -99,6 +103,13 @@ public sealed class MobilizationMapComponent : MapComponent
                 return;
             }
 
+            // Nothing to arm with means every fetch would end unarmed and re-fire next tick — don't thrash.
+            var weaponAvailable = racks.Any(rack =>
+                rack != null && rack.Spawned && rack.Kind == ArmoryRackKind.Weapon
+                && rack.StoredItems.Any(thing => thing?.def != null && thing.def.IsWeapon));
+
+            mobilizedByUs.RemoveAll(pawn => pawn == null);
+
             foreach (var pawn in colonists)
             {
                 if (pawn == null || pawn.Drafted || pawn.Downed || pawn.InMentalState)
@@ -106,10 +117,18 @@ public sealed class MobilizationMapComponent : MapComponent
                     continue;
                 }
 
+                // Once a pawn is no longer armed its kit is back — forget it, so we never disarm a colonist
+                // we did not arm (a hunter, or someone the player armed on purpose).
+                if (!LoadoutAdapter.IsArmed(pawn))
+                {
+                    mobilizedByUs.Remove(pawn);
+                }
+
                 if (mobilized)
                 {
                     if (!LoadoutAdapter.IsMobilizationCandidate(pawn)
                         || LoadoutAdapter.IsArmed(pawn)
+                        || !weaponAvailable
                         || pawn.CurJobDef == LivingWorldArmoryJobDefOf.LivingWorld_FetchKit)
                     {
                         continue;
@@ -118,6 +137,11 @@ public sealed class MobilizationMapComponent : MapComponent
                     var rack = NearestRack(pawn, racks, ArmoryRackKind.Weapon) ?? racks[0];
                     if (rack != null)
                     {
+                        if (!mobilizedByUs.Contains(pawn))
+                        {
+                            mobilizedByUs.Add(pawn);
+                        }
+
                         pawn.jobs?.TryTakeOrderedJob(
                             JobMaker.MakeJob(LivingWorldArmoryJobDefOf.LivingWorld_FetchKit, rack),
                             JobTag.Misc);
@@ -125,13 +149,16 @@ public sealed class MobilizationMapComponent : MapComponent
                 }
                 else
                 {
+                    // Stand down only colonists this system armed; leave the player's own armed pawns alone.
                     if (!LoadoutAdapter.IsArmed(pawn)
+                        || !mobilizedByUs.Contains(pawn)
                         || pawn.CurJobDef == LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit)
                     {
                         continue;
                     }
 
-                    var rack = NearestRack(pawn, racks, ArmoryRackKind.Apparel) ?? racks[0];
+                    // Return to the weapon rack so the kit lands next to its storage, not across the base.
+                    var rack = NearestRack(pawn, racks, ArmoryRackKind.Weapon) ?? racks[0];
                     if (rack != null)
                     {
                         pawn.jobs?.TryTakeOrderedJob(
@@ -159,6 +186,8 @@ public sealed class MobilizationMapComponent : MapComponent
     {
         base.ExposeData();
         Scribe_Values.Look(ref manualMobilized, "livingWorld_manualMobilized", false);
+        Scribe_Collections.Look(ref mobilizedByUs, "livingWorld_mobilizedByUs", LookMode.Reference);
+        mobilizedByUs ??= new List<Pawn>();
     }
 
     public static MobilizationMapComponent? For(Map map)

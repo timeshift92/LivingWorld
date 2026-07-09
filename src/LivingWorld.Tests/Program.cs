@@ -9146,6 +9146,11 @@ static void TestRimWorldArmoryEquipAndJobs()
         Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
     AssertContains("PushMobilizationJobs", component);
     AssertContains("TryTakeOrderedJob", component);
+    // Only disarm colonists this system armed (never the colony hunter), and don't push fetch with no
+    // weapon on the racks (would thrash every recheck).
+    AssertContains("mobilizedByUs", component);
+    AssertContains("var weaponAvailable", component);
+    AssertContains("Scribe_Collections.Look(ref mobilizedByUs", component);
 
     // Hybrid: per-colonist assigned kit stored in a GameComponent, captured from current gear, and used by
     // the adapter (assigned wins over the skill pick).
