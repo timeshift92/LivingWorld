@@ -143,6 +143,13 @@
   <LW_Settings_TravelingRaidsTip>When on, faction raids set out from the attacker's nearest settlement and march across the world map to your colony - you see the warband coming and get a warning - instead of appearing at the map edge. Turn off to have raids arrive instantly.</LW_Settings_TravelingRaidsTip>
   <LW_Settings_EconomicDiversity>Factions vary economically</LW_Settings_EconomicDiversity>
   <LW_Settings_EconomicDiversityTip>When on, each settlement gets a deterministic economic character (specialization and prosperity) from the world seed, so some factions are genuinely richer or better-armed than others. This is what makes wealth-driven events - tougher raids from rich factions, bigger trader silver, wealthy-faction warnings - actually vary. Turn off for a flat, uniform economy.</LW_Settings_EconomicDiversityTip>
+  <LW_Settings_MechClusters>Mechanoid threats have a source</LW_Settings_MechClusters>
+  <LW_Settings_MechClustersTip>When on, a couple of dormant mechanoid complexes appear on the world map. They are roused by your colony's wealth and their proximity, and mechanoid raids are attributed to the nearest one - so mech attacks have a visible cause instead of coming from nowhere. Turn off to leave mechanoid raids as vanilla.</LW_Settings_MechClustersTip>
+  <LW_MechClusterLabel>Mechanoid complex</LW_MechClusterLabel>
+  <LW_MechClusterDormant>Mechanoid complex - dormant. A derelict mechanoid site, inactive for now. It stirs as a nearby colony grows wealthy.</LW_MechClusterDormant>
+  <LW_MechClusterActive>Mechanoid complex - ACTIVE. Roused mechanoids are launching raids from here against your colony.</LW_MechClusterActive>
+  <LW_MechClusterAwakenLabel>Mechanoid complex activated</LW_MechClusterAwakenLabel>
+  <LW_MechClusterAwakenText>A dormant mechanoid complex has powered up, roused by your colony's growing wealth and its proximity. Expect mechanoid incursions from it - this is no random attack. Track it on the world map.</LW_MechClusterAwakenText>
   <LW_Settings_WorldWarTravelDays>Army/mission travel days</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Warband combatants</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Warband cooldown (days)</LW_Settings_WorldWarCooldown>

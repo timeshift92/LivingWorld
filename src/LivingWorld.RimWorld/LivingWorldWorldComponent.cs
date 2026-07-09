@@ -43,6 +43,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> offeredAllianceConflictIds = new();
     private List<PendingApproachingRaid> approachingRaids = new();
     private int nextApproachRaidId;
+    private List<MechClusterNode> mechClusters = new();
+    private int nextMechClusterId;
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -150,6 +152,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncArmyWorldObjects();
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
+        SyncMechClusterMarkers();
     }
 
     public override void WorldComponentTick()
@@ -192,6 +195,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendConflictLetters();
         MaybeSendAllianceOffers();
         MaybeGrantVictoryRewards();
+        SimulateMechClusters(currentTick, Math.Max(1, simulatedDays));
 
         LogSimulationDebugSnapshot(simulatedDays, currentTick);
     }
@@ -1195,6 +1199,259 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         return string.IsNullOrWhiteSpace(label) ? "LW_YourColony".Translate().ToString() : label!;
     }
 
+    // Daily driver for mechanoid complexes: makes sure a couple exist, accumulates awakening pressure
+    // from the player colony's wealth and each complex's proximity (the "wealth + proximity" cause), and
+    // rouses a complex once its pressure crosses the threshold (with a telegraph letter). Fail-open.
+    private void SimulateMechClusters(int tick, int days)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.mechClustersEnabled)
+        {
+            SyncMechClusterMarkers();
+            return;
+        }
+
+        try
+        {
+            EnsureMechClusters();
+
+            var playerMap = Find.AnyPlayerHomeMap;
+            var grid = Find.WorldGrid;
+            if (playerMap != null && grid != null)
+            {
+                var wealth = playerMap.wealthWatcher?.WealthTotal ?? 0f;
+                int playerTile = playerMap.Tile;
+                foreach (var cluster in mechClusters)
+                {
+                    if (cluster.Awake || cluster.Tile < 0)
+                    {
+                        continue;
+                    }
+
+                    var distance = grid.ApproxDistanceInTiles(cluster.Tile, playerTile);
+                    cluster.Pressure += MechClusterRuntime.DailyPressure(wealth, distance) * Math.Max(1, days);
+                    if (MechClusterRuntime.ShouldAwaken(cluster.Pressure))
+                    {
+                        AwakenMechCluster(cluster, tick);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Mech cluster simulation skipped safely: {ex.Message}");
+        }
+
+        SyncMechClusterMarkers();
+    }
+
+    // Called from the raid patch when a mechanoid raid actually fired: gives it a source. If a complex is
+    // already awake the cause is established (its telegraph already fired) and the raid is simply "from"
+    // it. Otherwise the nearest dormant complex is roused now — this raid is its awakening.
+    public void NotifyMechanoidRaid(IncidentParms parms)
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.mechClustersEnabled)
+        {
+            return;
+        }
+
+        EnsureMechClusters();
+        if (mechClusters.Count == 0 || mechClusters.Any(cluster => cluster.Awake))
+        {
+            return;
+        }
+
+        var map = parms?.target as Map ?? Find.AnyPlayerHomeMap;
+        var grid = Find.WorldGrid;
+        if (map == null || grid == null)
+        {
+            return;
+        }
+
+        int playerTile = map.Tile;
+        MechClusterNode? nearest = null;
+        var best = float.MaxValue;
+        foreach (var cluster in mechClusters)
+        {
+            if (cluster.Tile < 0)
+            {
+                continue;
+            }
+
+            var distance = grid.ApproxDistanceInTiles(cluster.Tile, playerTile);
+            if (distance < best)
+            {
+                best = distance;
+                nearest = cluster;
+            }
+        }
+
+        if (nearest != null)
+        {
+            AwakenMechCluster(nearest, Find.TickManager?.TicksGame ?? 0);
+            SyncMechClusterMarkers();
+        }
+    }
+
+    private void AwakenMechCluster(MechClusterNode cluster, int tick)
+    {
+        cluster.Awake = true;
+        cluster.AwakenTick = tick;
+
+        if (Current.ProgramState == ProgramState.Playing)
+        {
+            var marker = FindMechClusterMarker(cluster.Id);
+            var look = marker != null ? new LookTargets(marker) : new LookTargets((PlanetTile)cluster.Tile);
+            Find.LetterStack?.ReceiveLetter(
+                "LW_MechClusterAwakenLabel".Translate(),
+                "LW_MechClusterAwakenText".Translate(),
+                LetterDefOf.ThreatSmall,
+                look);
+        }
+    }
+
+    private void EnsureMechClusters()
+    {
+        if (mechClusters.Count >= MechClusterRuntime.MaxClusters)
+        {
+            return;
+        }
+
+        var playerMap = Find.AnyPlayerHomeMap;
+        if (playerMap == null)
+        {
+            return;
+        }
+
+        int playerTile = playerMap.Tile;
+        var guard = 0;
+        while (mechClusters.Count < MechClusterRuntime.MaxClusters && guard++ < MechClusterRuntime.MaxClusters + 3)
+        {
+            if (!TryFindMechClusterTile(playerTile, out var tile))
+            {
+                break;
+            }
+
+            mechClusters.Add(new MechClusterNode
+            {
+                Id = nextMechClusterId++,
+                Tile = tile,
+                Awake = false,
+            });
+        }
+    }
+
+    // Finds a valid land tile at a believable distance from the colony. Deterministic-ish scan (seeded by
+    // the world seed) over the tile grid, skipping water/impassable/unbuildable tiles and tiles too near
+    // or too far, and any already hosting a complex. Bounded so it can never spin.
+    private bool TryFindMechClusterTile(int playerTile, out int tile)
+    {
+        tile = -1;
+        var grid = Find.WorldGrid;
+        if (grid == null || playerTile < 0)
+        {
+            return false;
+        }
+
+        var count = grid.TilesCount;
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        var start = (int)(Math.Abs((State.WorldSeed * 2654435761L) + (nextMechClusterId * 40503L)) % count);
+        for (var i = 0; i < 500; i++)
+        {
+            var candidate = (int)(((long)start + (i * 7919L)) % count);
+            var candidateTile = grid[candidate];
+            var biome = candidateTile?.PrimaryBiome;
+            if (biome == null || candidateTile!.WaterCovered || biome.impassable || !biome.canBuildBase)
+            {
+                continue;
+            }
+
+            var distance = grid.ApproxDistanceInTiles(candidate, playerTile);
+            if (distance < MechClusterRuntime.MinClusterDistanceFromPlayer
+                || distance > MechClusterRuntime.MaxClusterDistanceFromPlayer)
+            {
+                continue;
+            }
+
+            if (mechClusters.Any(cluster => cluster.Tile == candidate))
+            {
+                continue;
+            }
+
+            tile = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    // Reconciles the world-map markers for mechanoid complexes with the ledger of clusters: one marker per
+    // complex (recoloured when it awakens), removed if the cluster is gone or the feature is off.
+    private void SyncMechClusterMarkers()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        var def = settings.mechClustersEnabled
+            ? DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_MechCluster")
+            : null;
+
+        var existing = new Dictionary<int, WorldObject_MechCluster>();
+        foreach (var worldObject in worldObjects.AllWorldObjects)
+        {
+            if (worldObject is WorldObject_MechCluster marker)
+            {
+                existing[marker.NodeId] = marker;
+            }
+        }
+
+        var live = new HashSet<int>();
+        if (def != null)
+        {
+            foreach (var cluster in mechClusters)
+            {
+                if (cluster.Tile < 0)
+                {
+                    continue;
+                }
+
+                live.Add(cluster.Id);
+                var isNew = !existing.TryGetValue(cluster.Id, out var marker);
+                marker ??= (WorldObject_MechCluster)WorldObjectMaker.MakeWorldObject(def);
+                marker.Tile = cluster.Tile;
+                marker.Configure(cluster.Id, cluster.Awake);
+                if (isNew)
+                {
+                    worldObjects.Add(marker);
+                }
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
+        }
+    }
+
+    private WorldObject_MechCluster? FindMechClusterMarker(int nodeId)
+    {
+        return Find.WorldObjects?.AllWorldObjects
+            .OfType<WorldObject_MechCluster>()
+            .FirstOrDefault(marker => marker.NodeId == nodeId);
+    }
+
     private MissionMarkerDetails BuildWarbandMarkerDetails(WorldArmy army)
     {
         var combatants = State.Citizens.Count(citizen =>
@@ -1437,6 +1694,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref approachingRaids, "livingWorld_approachingRaids", LookMode.Deep);
         approachingRaids ??= new List<PendingApproachingRaid>();
         Scribe_Values.Look(ref nextApproachRaidId, "livingWorld_nextApproachRaidId", 0);
+        Scribe_Collections.Look(ref mechClusters, "livingWorld_mechClusters", LookMode.Deep);
+        mechClusters ??= new List<MechClusterNode>();
+        Scribe_Values.Look(ref nextMechClusterId, "livingWorld_nextMechClusterId", 0);
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

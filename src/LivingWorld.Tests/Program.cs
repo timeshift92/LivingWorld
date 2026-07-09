@@ -87,6 +87,7 @@ var tests = new List<(string Name, Action Test)>
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
     ("settlement defense materialization reserves defenders and resources", TestSettlementDefenseMaterializationReservesDefendersAndResources),
     ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
+    ("settlement map layout builds rooms and stockpile slots from ledger facilities", TestSettlementMapLayoutBuildsRoomsAndStockpiles),
     ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
@@ -305,6 +306,7 @@ var tests = new List<(string Name, Action Test)>
     ("materializes settlement visitors as ledger citizens via leases", TestRimWorldSettlementVisitMaterialization),
     ("materializes attacked settlement maps from ledger defense", TestRimWorldSettlementMapMaterialization),
     ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
+    ("materializes settlement rooms and stockpiles on attacked maps", TestRimWorldSettlementRoomsAndStockpilesMaterialization),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -312,6 +314,7 @@ var tests = new List<(string Name, Action Test)>
     ("makes faction raids travel across the world map", TestRimWorldTravelingRaids),
     ("gives settlements a deterministic economic character", TestEconomicCharacterVariation),
     ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
+    ("gives mechanoid raids a world-map source", TestRimWorldMechClusters),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -2772,6 +2775,68 @@ static void TestSettlementMapLayoutMaterializesRealFacilities()
     {
         throw new InvalidOperationException("Facility anchors should be deterministic and distinct.");
     }
+}
+
+static void TestSettlementMapLayoutBuildsRoomsAndStockpiles()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("store-town", "Store Town", "Outlander");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            Biome: "TemperateForest",
+            Hilliness: "SmallHills",
+            TechLevel: "Industrial",
+            GrowingDays: 60,
+            Rainfall: 900,
+            AverageTemperature: 20)));
+    var storage = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 10),
+        settlement.Id,
+        SettlementFacilityKind.Storage,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 15_000));
+    var workshop = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 11),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 1,
+        ConditionPercent: 70,
+        BuiltTick: 16_000));
+
+    var layout = SettlementMapLayoutService.BuildFacilityLayout(
+        state,
+        new SettlementMapLayoutRequest(
+            settlement.Id,
+            CenterX: 100,
+            CenterZ: 100,
+            MaxFacilities: 4));
+
+    AssertEqual(SettlementMapLayoutStatus.Success, layout.Status);
+    AssertEqual(2, layout.Rooms.Count);
+    AssertEqual(storage.Id, layout.Rooms[0].FacilityId);
+    AssertEqual(SettlementFacilityKind.Storage, layout.Rooms[0].Kind);
+    AssertEqual("Wall", layout.Rooms[0].WallThingDefName);
+    AssertEqual("Door", layout.Rooms[0].DoorThingDefName);
+    AssertEqual("Concrete", layout.Rooms[0].FloorTerrainDefName);
+    AssertEqual("Steel", layout.Rooms[0].WallStuffDefName);
+    if (layout.Rooms[0].Width < 8 || layout.Rooms[0].Height < 8)
+    {
+        throw new InvalidOperationException("Higher-level facilities should materialize as larger rooms.");
+    }
+
+    if (layout.StockpileCells.Count < 6)
+    {
+        throw new InvalidOperationException("Storage facilities should expose deterministic stockpile cells for real loot stacks.");
+    }
+
+    if (layout.StockpileCells.Select(cell => (cell.X, cell.Z)).Distinct().Count() != layout.StockpileCells.Count)
+    {
+        throw new InvalidOperationException("Stockpile cells should be distinct.");
+    }
+
+    AssertEqual(workshop.Id, layout.Rooms[1].FacilityId);
 }
 
 static void TestAnimalMapFateSyncReturnsOnlyLiveDepartures()
@@ -7304,6 +7369,25 @@ static void TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization()
     AssertContains("LivingWorldAnimalMapPawnTracker.TryMarkReturned", exitPatch);
 }
 
+static void TestRimWorldSettlementRoomsAndStockpilesMaterialization()
+{
+    var root = FindRepoRoot();
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+
+    AssertContains("SpawnSettlementRooms", service);
+    AssertContains("TrySpawnRoomShell", service);
+    AssertContains("TerrainDef", service);
+    AssertContains("WallThingDefName", service);
+    AssertContains("DoorThingDefName", service);
+    AssertContains("WallStuffDefName", service);
+    AssertContains("layout.StockpileCells", service);
+    AssertContains("TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("ThingDef.Named(resourceKey)", service);
+    AssertContains("ResourceLedgerService.ConsumeResource", service);
+}
+
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a
 // bound visit pawn's fate returns its citizen to the ledger exactly like a raider's.
 static void TestSettlementVisitLeaseResolvesThroughPawnSync()
@@ -8549,6 +8633,76 @@ static void TestRimWorldEconomicDiversity()
     var russianXml = File.ReadAllText(
         Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     foreach (var key in new[] { "LW_Settings_EconomicDiversity", "LW_Settings_EconomicDiversityTip" })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
+}
+
+static void TestRimWorldMechClusters()
+{
+    var root = FindRepoRoot();
+
+    // Cluster model + pure awakening math: a complex wakes when pressure crosses a threshold; pressure
+    // is the wealth x proximity combo. The math is pure, so its shape is asserted directly.
+    var runtimePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "MechCluster.cs");
+    AssertFileExists(runtimePath);
+    var runtime = File.ReadAllText(runtimePath);
+    AssertContains("class MechClusterNode : IExposable", runtime);
+    AssertContains("public static float DailyPressure(", runtime);
+    AssertContains("public static bool ShouldAwaken(", runtime);
+    AssertContains("WealthFactor", runtime);
+    AssertContains("ProximityFactor", runtime);
+
+    var markerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_MechCluster.cs");
+    AssertFileExists(markerPath);
+    AssertContains("class WorldObject_MechCluster : WorldObject", File.ReadAllText(markerPath));
+    var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_MechCluster.xml");
+    AssertFileExists(defPath);
+    AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_MechCluster</worldObjectClass>", File.ReadAllText(defPath));
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMechRaidPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_RaidEnemy), \"TryExecuteWorker\")", patch);
+    AssertContains("FactionDefOf.Mechanoid", patch);
+    AssertContains("NotifyMechanoidRaid", patch);
+
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("public void NotifyMechanoidRaid(IncidentParms parms)", component);
+    AssertContains("SimulateMechClusters(", component);
+    AssertContains("EnsureMechClusters(", component);
+    AssertContains("AwakenMechCluster(", component);
+    AssertContains("SyncMechClusterMarkers()", component);
+    AssertContains("TryFindMechClusterTile(", component);
+    AssertContains("wealthWatcher", component);
+    AssertContains("livingWorld_mechClusters", component);
+    AssertContains("settings.mechClustersEnabled", component);
+
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("mechClustersEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_MechClusters", drawer);
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_RaidEnemy", "TryExecuteWorker");
+
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_MechClusterLabel",
+        "LW_MechClusterDormant",
+        "LW_MechClusterActive",
+        "LW_MechClusterAwakenLabel",
+        "LW_MechClusterAwakenText",
+        "LW_Settings_MechClusters",
+        "LW_Settings_MechClustersTip",
+    })
     {
         AssertContains($"<{key}>", englishXml);
         AssertContains($"<{key}>", russianXml);

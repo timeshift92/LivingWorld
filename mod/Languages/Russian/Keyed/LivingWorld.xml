@@ -143,6 +143,13 @@
   <LW_Settings_TravelingRaidsTip>Если включено, рейды фракций выходят из ближайшего поселения атакующего и идут по карте мира к вашей колонии — вы видите приближающийся отряд и получаете предупреждение — вместо появления у края карты. Выключите, чтобы рейды прибывали мгновенно.</LW_Settings_TravelingRaidsTip>
   <LW_Settings_EconomicDiversity>Фракции различаются экономически</LW_Settings_EconomicDiversity>
   <LW_Settings_EconomicDiversityTip>Если включено, каждое поселение получает детерминированный экономический характер (специализацию и достаток) из сида мира, поэтому одни фракции реально богаче или лучше вооружены других. Именно это оживляет события, зависящие от богатства — более тяжёлые рейды богатых фракций, больше серебра у торговцев, предупреждения о богатой фракции. Выключите для плоской, одинаковой экономики.</LW_Settings_EconomicDiversityTip>
+  <LW_Settings_MechClusters>У механоидных угроз есть источник</LW_Settings_MechClusters>
+  <LW_Settings_MechClustersTip>Если включено, на карте мира появляется пара спящих механоидных комплексов. Их будит богатство твоей колонии и близость, а мех-рейды приписываются ближайшему — так у атак механоидов есть видимая причина, а не «из ниоткуда». Выключите, чтобы мех-рейды остались ванильными.</LW_Settings_MechClustersTip>
+  <LW_MechClusterLabel>Механоидный комплекс</LW_MechClusterLabel>
+  <LW_MechClusterDormant>Механоидный комплекс — спящий. Заброшенный мех-объект, пока неактивен. Просыпается, когда рядом богатеет колония.</LW_MechClusterDormant>
+  <LW_MechClusterActive>Механоидный комплекс — АКТИВЕН. Пробудившиеся механоиды шлют отсюда рейды на твою колонию.</LW_MechClusterActive>
+  <LW_MechClusterAwakenLabel>Механоидный комплекс активировался</LW_MechClusterAwakenLabel>
+  <LW_MechClusterAwakenText>Спящий механоидный комплекс запитался, разбуженный растущим богатством твоей колонии и близостью. Жди механоидных вторжений оттуда — это не случайная атака. Следи за ним на карте мира.</LW_MechClusterAwakenText>
   <LW_Settings_WorldWarTravelDays>Дней в пути (армии/миссии)</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Бойцов в варбанде</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Кулдаун варбанда (дни)</LW_Settings_WorldWarCooldown>

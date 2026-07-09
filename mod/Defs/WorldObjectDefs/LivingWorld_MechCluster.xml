@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef>
+    <defName>LivingWorld_MechCluster</defName>
+    <label>mechanoid complex</label>
+    <description>A derelict mechanoid complex. When roused by a nearby, wealthy colony it becomes the source of mechanoid raids.</description>
+    <worldObjectClass>LivingWorld.RimWorld.WorldObject_MechCluster</worldObjectClass>
+    <texture>World/LivingWorld_Warband</texture>
+    <useDynamicDrawer>true</useDynamicDrawer>
+    <expandingIcon>true</expandingIcon>
+    <expandingIconTexture>World/LivingWorld_Warband</expandingIconTexture>
+    <expandingIconPriority>85</expandingIconPriority>
+    <selectable>true</selectable>
+  </WorldObjectDef>
+</Defs>

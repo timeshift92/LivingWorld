@@ -55,6 +55,7 @@ public static class LivingWorldSettingsDrawer
         listing.CheckboxLabeled("LW_Settings_WorldWarEnabled".Translate(), ref settings.worldWarEnabled, "LW_Settings_WorldWarEnabledTip".Translate());
         listing.CheckboxLabeled("LW_Settings_TravelingRaids".Translate(), ref settings.travelingRaidsEnabled, "LW_Settings_TravelingRaidsTip".Translate());
         listing.CheckboxLabeled("LW_Settings_EconomicDiversity".Translate(), ref settings.economicDiversityEnabled, "LW_Settings_EconomicDiversityTip".Translate());
+        listing.CheckboxLabeled("LW_Settings_MechClusters".Translate(), ref settings.mechClustersEnabled, "LW_Settings_MechClustersTip".Translate());
         DrawIntSlider(listing, "LW_Settings_WorldWarTravelDays".Translate(), ref settings.worldWarTravelDays, 1, 15);
         DrawIntSlider(listing, "LW_Settings_WorldWarRaidCombatants".Translate(), ref settings.worldWarRaidCombatants, 1, 30);
         DrawIntSlider(listing, "LW_Settings_WorldWarCooldown".Translate(), ref settings.worldWarWarbandCooldownDays, 0, 30);
