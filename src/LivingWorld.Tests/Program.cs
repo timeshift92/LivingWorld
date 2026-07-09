@@ -36,6 +36,7 @@ var tests = new List<(string Name, Action Test)>
     ("technology diffusion upgrades lower tier settlements", TestTechnologyDiffusionUpgradesLowerTierSettlements),
     ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
+    ("seeds settlement population with deterministic variation", TestSettlementPopulationSeedingVariesBaseline),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
     ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
@@ -311,6 +312,7 @@ var tests = new List<(string Name, Action Test)>
     ("materializes attacked settlement maps from ledger defense", TestRimWorldSettlementMapMaterialization),
     ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
     ("materializes settlement rooms and stockpiles on attacked maps", TestRimWorldSettlementRoomsAndStockpilesMaterialization),
+    ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -1270,6 +1272,31 @@ static void TestSettlementDailySimulationConsumesFoodAndBirths()
     AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
     AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Children);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
+}
+
+static void TestSettlementPopulationSeedingVariesBaseline()
+{
+    var counts = Enumerable.Range(1, 8)
+        .Select(id => SettlementPopulationSeedingService.CalculateAdultCount(
+            worldSeed: 12345,
+            settlementStableId: id,
+            configuredAdults: 57,
+            minAdults: 12,
+            maxAdults: 90))
+        .ToList();
+
+    AssertEqual(true, counts.All(count => count >= 12 && count <= 90));
+    AssertEqual(true, counts.Distinct().Count() > 1);
+
+    var first = SettlementPopulationSeedingService.CalculateAdultCount(12345, 4, 57, 12, 90);
+    var second = SettlementPopulationSeedingService.CalculateAdultCount(12345, 4, 57, 12, 90);
+    AssertEqual(first, second);
+
+    var ages = Enumerable.Range(0, 20)
+        .Select(index => SettlementPopulationSeedingService.CalculateAdultAge(12345, 4, index))
+        .ToList();
+    AssertEqual(true, ages.All(age => age >= 18 && age <= 88));
+    AssertEqual(true, ages.Any(age => age >= 70));
 }
 
 static void TestSettlementDailySimulationRecordsFoodShortage()
@@ -7441,9 +7468,33 @@ static void TestRimWorldSettlementRoomsAndStockpilesMaterialization()
     AssertContains("DoorThingDefName", service);
     AssertContains("WallStuffDefName", service);
     AssertContains("layout.StockpileCells", service);
-    AssertContains("TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
+}
+
+static void TestRimWorldSettlementMapResourceReconciliation()
+{
+    var root = FindRepoRoot();
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapResourceTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("public static void Track", tracker);
+    AssertContains("public static int ReconcileMap", tracker);
+    AssertContains("thing.Spawned", tracker);
+    AssertContains("thing.Map != map", tracker);
+    AssertContains("ResourceLedgerService.AddResource", tracker);
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("[HarmonyPatch(typeof(MapDeiniter), \"Deinit\")]", patch);
+    AssertRimWorldMethodExists("Verse.MapDeiniter", "Deinit");
+    AssertContains("public static void Prefix(Map map", patch);
+    AssertContains("LivingWorldSettlementMapResourceTracker.ReconcileMap", patch);
+
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+    AssertContains("LivingWorldSettlementMapResourceTracker.Track", service);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a

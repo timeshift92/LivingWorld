@@ -13,8 +13,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 {
     private const int TicksPerDay = 60_000;
     private const int MaxCatchUpSimulationDays = 7;
-    private const int BirthIntervalDays = 30;
-    private const int AgeIntervalDays = 60;
+    private const int BirthIntervalDays = 10;
+    private const int AgeIntervalDays = 30;
     private const int NaturalDeathAge = 85;
     private const int MaxNaturalDeathsPerDay = 5;
     private const string FoodResourceKey = "PackagedSurvivalMeal";
@@ -1998,7 +1998,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
         State = new WorldState(ResolveWorldSeed(rimWorld));
         var settlement = State.CreateSettlement("debug-settlement", "LW_DebugSettlementName".Translate().ToString(), "LivingWorldDebug");
-        var citizenCount = Math.Max(6, settings.baselineHumanSettlementAdults);
+        var citizenCount = SettlementPopulationSeedingService.CalculateAdultCount(
+            State.WorldSeed,
+            settlement.Id.Value,
+            Math.Max(6, settings.baselineHumanSettlementAdults),
+            6,
+            Math.Max(6, settings.maxSettlementAdults));
         State.RecordSettlementProductionProfile(ApplyEconomicCharacter(SettlementProductionProfile.FromEnvironment(
             settlement.Id,
             new SettlementProductionEnvironment(
@@ -2012,7 +2017,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         for (var i = 0; i < citizenCount; i++)
         {
             var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
-            var age = 18 + (i % 42);
+            var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, settlement.Id.Value, i);
             State.CreateCitizen(
                 "LW_DebugCitizenName".Translate((i + 1).Named("index")).ToString(),
                 age,
@@ -2148,10 +2153,13 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 var configuredAdults = faction?.def?.humanlikeFaction == true
                     ? settings.baselineHumanSettlementAdults
                     : settings.baselineNonHumanSettlementAdults;
-                var baselineAdults = Math.Max(
-                    settings.minSettlementAdults,
-                    Math.Min(settings.maxSettlementAdults, configuredAdults));
                 var worldSettlement = State.CreateSettlement(settlement.StableKey, settlement.Name, settlement.FactionId);
+                var baselineAdults = SettlementPopulationSeedingService.CalculateAdultCount(
+                    State.WorldSeed,
+                    worldSettlement.Id.Value,
+                    configuredAdults,
+                    settings.minSettlementAdults,
+                    settings.maxSettlementAdults);
                 var productionProfile = ApplyEconomicCharacter(RimWorldSettlementProductionProfileFactory.Create(
                     settlement,
                     worldSettlement.Id,
@@ -2165,7 +2173,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     for (var i = 0; i < baselineAdults; i++)
                     {
                         var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
-                        var age = 18 + (i % 42);
+                        var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, worldSettlement.Id.Value, i);
                         State.CreateCitizen($"{settlement.Name} citizen {i + 1}", age, sex, "settler", worldSettlement.Id);
                     }
 
