@@ -17,6 +17,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private const int AgeIntervalDays = 30;
     private const int NaturalDeathAge = 85;
     private const int MaxNaturalDeathsPerDay = 5;
+    private const int PlayerCaravanMarkerContactCheckIntervalTicks = 250;
     private const string FoodResourceKey = "PackagedSurvivalMeal";
     private const string SteelResourceKey = "Steel";
     private const string MedicineResourceKey = "MedicineIndustrial";
@@ -48,6 +49,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int nextMechClusterId;
     private List<PendingApproachingGroup> approachingGroups = new();
     private int nextApproachGroupId;
+    private List<string> notifiedPlayerCaravanMarkerContacts = new();
+    private int lastPlayerCaravanMarkerContactCheckTick;
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -175,6 +178,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
+        CheckPlayerCaravanMarkerContacts(currentTick);
         var currentDay = currentTick / TicksPerDay;
         if (currentDay <= 0 || currentDay <= lastSimulatedDay)
         {
@@ -918,6 +922,64 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         if (isNew)
         {
             worldObjects.Add(marker);
+        }
+    }
+
+    private void CheckPlayerCaravanMarkerContacts(int now)
+    {
+        if (now - lastPlayerCaravanMarkerContactCheckTick < PlayerCaravanMarkerContactCheckIntervalTicks)
+        {
+            return;
+        }
+
+        lastPlayerCaravanMarkerContactCheckTick = now;
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null || Current.ProgramState != ProgramState.Playing)
+        {
+            return;
+        }
+
+        var playerCaravans = worldObjects.AllWorldObjects
+            .OfType<Caravan>()
+            .Where(caravan => caravan.Faction == Faction.OfPlayer)
+            .ToList();
+        if (playerCaravans.Count == 0)
+        {
+            return;
+        }
+
+        var markers = worldObjects.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .Where(marker => !string.IsNullOrWhiteSpace(marker.MarkerKey))
+            .ToList();
+        foreach (var caravan in playerCaravans)
+        {
+            foreach (var marker in markers)
+            {
+                var contactKey = $"{caravan.ID}:{marker.MarkerKey}";
+                if (notifiedPlayerCaravanMarkerContacts.Contains(contactKey))
+                {
+                    continue;
+                }
+
+                var contactDistance = marker.Tile.Layer.AverageTileSize * 0.75f;
+                if (Vector3.Distance(caravan.DrawPos, marker.DrawPos) > contactDistance)
+                {
+                    continue;
+                }
+
+                notifiedPlayerCaravanMarkerContacts.Add(contactKey);
+                var details = marker.DetailsText;
+                Find.LetterStack?.ReceiveLetter(
+                    "LW_PlayerCaravanMarkerContactLabel".Translate(),
+                    "LW_PlayerCaravanMarkerContactText".Translate(details.Named("details")),
+                    LetterDefOf.NeutralEvent,
+                    new LookTargets(marker));
+                if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
+                {
+                    Log.Message($"[LivingWorld] Player caravan {caravan.ID} contacted world marker {marker.MarkerKey}: {details}");
+                }
+            }
         }
     }
 
@@ -1981,6 +2043,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref approachingGroups, "livingWorld_approachingGroups", LookMode.Deep);
         approachingGroups ??= new List<PendingApproachingGroup>();
         Scribe_Values.Look(ref nextApproachGroupId, "livingWorld_nextApproachGroupId", 0);
+        Scribe_Collections.Look(ref notifiedPlayerCaravanMarkerContacts, "livingWorld_notifiedPlayerCaravanMarkerContacts", LookMode.Value);
+        notifiedPlayerCaravanMarkerContacts ??= new List<string>();
+        Scribe_Values.Look(ref lastPlayerCaravanMarkerContactCheckTick, "livingWorld_lastPlayerCaravanMarkerContactCheckTick", 0);
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

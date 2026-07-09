@@ -8561,6 +8561,9 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("LW_MissionMarkerStrengthLine", marker);
     AssertContains("LW_MissionMarkerResourceLine", marker);
     AssertContains("LW_MissionMarkerReasonLine", marker);
+    AssertContains("public override IEnumerable<Gizmo> GetGizmos()", marker);
+    AssertContains("LW_MissionMarkerDetails", marker);
+    AssertContains("Dialog_MessageBox", marker);
     AssertContains("combatants.Named(\"combatants\")", marker);
     AssertContains("strength.Named(\"strength\")", marker);
     AssertContains("resourceSummary.Named(\"resources\")", marker);
@@ -8586,6 +8589,11 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("BuildWarbandMarkerDetails", component);
     AssertContains("BuildCaravanMarkerDetails", component);
     AssertContains("BuildMissionMarkerDetails", component);
+    AssertContains("CheckPlayerCaravanMarkerContacts", component);
+    AssertContains("WorldObject_LivingWorldArmy", component);
+    AssertContains("Caravan", component);
+    AssertContains("LW_PlayerCaravanMarkerContactLabel", component);
+    AssertContains("LW_PlayerCaravanMarkerContactText", component);
     AssertContains("ResourceLedgerService.GetResources", component);
     AssertContains("existing.TryGetValue(key", component);
     // Scout and diplomat missions are rendered too, each with its own icon.
@@ -8620,6 +8628,12 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_MissionMarkerResourceLine>", ru);
     AssertContains("<LW_MissionMarkerReasonLine>", en);
     AssertContains("<LW_MissionMarkerReasonLine>", ru);
+    AssertContains("<LW_MissionMarkerDetails>", en);
+    AssertContains("<LW_MissionMarkerDetails>", ru);
+    AssertContains("<LW_PlayerCaravanMarkerContactLabel>", en);
+    AssertContains("<LW_PlayerCaravanMarkerContactLabel>", ru);
+    AssertContains("<LW_PlayerCaravanMarkerContactText>", en);
+    AssertContains("<LW_PlayerCaravanMarkerContactText>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
 }

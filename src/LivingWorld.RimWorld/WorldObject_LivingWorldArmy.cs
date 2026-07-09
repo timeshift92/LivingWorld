@@ -1,5 +1,6 @@
 using RimWorld;
 using RimWorld.Planet;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using Verse;
@@ -141,36 +142,60 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
 
     public override string GetInspectString()
     {
-        var remainingTicks = arrivalTick - (Find.TickManager?.TicksGame ?? arrivalTick);
-        var days = Mathf.Max(0, Mathf.RoundToInt(remainingTicks / 60000f));
-        var builder = new StringBuilder();
-        builder.Append("LW_MissionMarkerInspect".Translate(
-            factionLabel.Named("faction"),
-            kindNoun.Named("kind"),
-            targetLabel.Named("target"),
-            days.Named("days")));
+        return DetailsText;
+    }
 
-        if (combatants > 0 || strength > 0)
+    public string DetailsText
+    {
+        get
         {
-            builder.AppendLine();
-            builder.Append("LW_MissionMarkerStrengthLine".Translate(
-                combatants.Named("combatants"),
-                strength.Named("strength")));
+            var remainingTicks = arrivalTick - (Find.TickManager?.TicksGame ?? arrivalTick);
+            var days = Mathf.Max(0, Mathf.RoundToInt(remainingTicks / 60000f));
+            var builder = new StringBuilder();
+            builder.Append("LW_MissionMarkerInspect".Translate(
+                factionLabel.Named("faction"),
+                kindNoun.Named("kind"),
+                targetLabel.Named("target"),
+                days.Named("days")));
+
+            if (combatants > 0 || strength > 0)
+            {
+                builder.AppendLine();
+                builder.Append("LW_MissionMarkerStrengthLine".Translate(
+                    combatants.Named("combatants"),
+                    strength.Named("strength")));
+            }
+
+            if (!string.IsNullOrWhiteSpace(resourceSummary))
+            {
+                builder.AppendLine();
+                builder.Append("LW_MissionMarkerResourceLine".Translate(resourceSummary.Named("resources")));
+            }
+
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                builder.AppendLine();
+                builder.Append("LW_MissionMarkerReasonLine".Translate(reason.Named("reason")));
+            }
+
+            return builder.ToString();
+        }
+    }
+
+    public override IEnumerable<Gizmo> GetGizmos()
+    {
+        foreach (var gizmo in base.GetGizmos())
+        {
+            yield return gizmo;
         }
 
-        if (!string.IsNullOrWhiteSpace(resourceSummary))
+        yield return new Command_Action
         {
-            builder.AppendLine();
-            builder.Append("LW_MissionMarkerResourceLine".Translate(resourceSummary.Named("resources")));
-        }
-
-        if (!string.IsNullOrWhiteSpace(reason))
-        {
-            builder.AppendLine();
-            builder.Append("LW_MissionMarkerReasonLine".Translate(reason.Named("reason")));
-        }
-
-        return builder.ToString();
+            defaultLabel = "LW_MissionMarkerDetails".Translate(),
+            defaultDesc = DetailsText,
+            icon = TexButton.Info,
+            action = () => Find.WindowStack?.Add(new Dialog_MessageBox(DetailsText)),
+        };
     }
 
     private static void ConfigureIconTexture(Material material)

@@ -194,6 +194,9 @@
   <LW_MissionMarkerStrengthLine>Force: {combatants} people, strength {strength}</LW_MissionMarkerStrengthLine>
   <LW_MissionMarkerResourceLine>Cargo/supplies: {resources}</LW_MissionMarkerResourceLine>
   <LW_MissionMarkerReasonLine>Purpose: {reason}</LW_MissionMarkerReasonLine>
+  <LW_MissionMarkerDetails>Details</LW_MissionMarkerDetails>
+  <LW_PlayerCaravanMarkerContactLabel>Caravan contact</LW_PlayerCaravanMarkerContactLabel>
+  <LW_PlayerCaravanMarkerContactText>Your caravan crossed paths with a Living World group.\n\n{details}\n\nThis is currently an informational contact; combat, trade and negotiation choices will build on this marker contact.</LW_PlayerCaravanMarkerContactText>
   <LW_MissionReason_Warband>military action ordered by its faction</LW_MissionReason_Warband>
   <LW_MissionReason_Caravan>moving real goods between settlements</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>gathering intel for future action (value {amount})</LW_MissionReason_Scout>

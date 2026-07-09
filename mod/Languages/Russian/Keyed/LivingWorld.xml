@@ -194,6 +194,9 @@
   <LW_MissionMarkerStrengthLine>Сила: людей {combatants}, мощь {strength}</LW_MissionMarkerStrengthLine>
   <LW_MissionMarkerResourceLine>Груз/припасы: {resources}</LW_MissionMarkerResourceLine>
   <LW_MissionMarkerReasonLine>Цель: {reason}</LW_MissionMarkerReasonLine>
+  <LW_MissionMarkerDetails>Подробности</LW_MissionMarkerDetails>
+  <LW_PlayerCaravanMarkerContactLabel>Контакт каравана</LW_PlayerCaravanMarkerContactLabel>
+  <LW_PlayerCaravanMarkerContactText>Ваш караван пересёкся с группой Living World.\n\n{details}\n\nПока это информационный контакт; бой, торговля и переговоры будут строиться поверх этого контакта маркеров.</LW_PlayerCaravanMarkerContactText>
   <LW_MissionReason_Warband>военный приказ фракции</LW_MissionReason_Warband>
   <LW_MissionReason_Caravan>перевозит реальные товары между поселениями</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>собирает разведданные для будущих действий (ценность {amount})</LW_MissionReason_Scout>
