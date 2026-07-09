@@ -140,22 +140,36 @@ first real-map settlement materialization slice after vanilla map generation:
    defender pawns with `CompLivingWorldIdentity`;
 4. move a bounded resource payload (`Steel`, meals, medicine, components,
    silver) from the settlement ledger to the materialization lease owner;
-5. spawn that payload as real map things through RimWorld's normal `ThingDef`
-   and `GenSpawn` APIs;
-6. if binding fails, abort the preparation and return the payload to the
+5. build a deterministic Core settlement-map blueprint from the settlement's
+   active `SettlementFacility` ledger records and `SettlementProductionProfile`
+   technology level;
+6. materialize facility rooms as real RimWorld walls, doors and floor terrain,
+   then spawn facility props inside those rooms;
+7. spawn the resource payload as real map things through RimWorld's normal
+   `ThingDef` and `GenSpawn` APIs, preferring stockpile cells inside the
+   materialized storage room;
+8. if binding fails, abort the preparation and return the payload to the
    settlement ledger.
 
-This is deliberately not a full settlement generator yet. It does not build a
-custom town layout, materialize facilities as buildings, or reconcile every
-individual looted stack back from the map. The important contract is already
-real: defenders are concrete ledger citizens, spawned loot is removed from the
-settlement ledger before the player can take it, and a small bounded sample of
-settlement animals is withdrawn from ledger cohorts before spawning on the map.
-If an animal pawn cannot be spawned, that count is returned to its cohort.
-Spawned animals are not yet individually identity-tracked; they are treated as
-leaving ledger control when the map materializes. If the player later defeats
-the settlement, the existing defeat bridge destroys the matched ledger
-settlement and only the remaining ledger-owned resources move into the ruin.
+This is still a bounded settlement materialization layer, not a full NPC-city
+AI simulation. It now builds a visible ledger-driven shell (rooms, doors,
+floors, facility props and stockpile stacks), but does not yet generate full
+bedroom/work schedules, power networks, pawn jobs, or per-thing damage state.
+The important contract is real: defenders are concrete ledger citizens, spawned
+loot is removed from the settlement ledger before the player can take it, and a
+small bounded sample of settlement animals is withdrawn from ledger cohorts
+before spawning on the map. If an animal pawn cannot be spawned, that count is
+returned to its cohort. Spawned animal pawns are cohort-tracked until they die
+or safely leave the map. If the player later defeats the settlement, the
+existing defeat bridge destroys the matched ledger settlement and only the
+remaining ledger-owned resources move into the ruin.
+
+The remaining hard part is **map-end loot reconciliation**: currently a
+successfully spawned resource stack has left the settlement ledger. That avoids
+double-counting when the player picks it up, but unlooted stacks abandoned on a
+temporary map are not yet returned to the settlement/ruin ledger. That needs a
+separate tracked-loot lifecycle hook rather than guessing from aggregate
+resource counts.
 
 ### Dematerialization
 

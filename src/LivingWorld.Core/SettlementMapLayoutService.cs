@@ -23,10 +23,30 @@ public sealed record SettlementMapFacilityFeature(
     int AnchorX,
     int AnchorZ);
 
+public sealed record SettlementMapRoom(
+    EntityId FacilityId,
+    SettlementFacilityKind Kind,
+    int Level,
+    int MinX,
+    int MinZ,
+    int Width,
+    int Height,
+    string WallThingDefName,
+    string DoorThingDefName,
+    string FloorTerrainDefName,
+    string WallStuffDefName);
+
+public sealed record SettlementMapStockpileCell(
+    int X,
+    int Z,
+    int Order);
+
 public sealed record SettlementMapLayoutResult(
     SettlementMapLayoutStatus Status,
     string Reason,
-    IReadOnlyList<SettlementMapFacilityFeature> Facilities);
+    IReadOnlyList<SettlementMapFacilityFeature> Facilities,
+    IReadOnlyList<SettlementMapRoom> Rooms,
+    IReadOnlyList<SettlementMapStockpileCell> StockpileCells);
 
 public static class SettlementMapLayoutService
 {
@@ -44,7 +64,9 @@ public static class SettlementMapLayoutService
             return new SettlementMapLayoutResult(
                 SettlementMapLayoutStatus.InvalidRequest,
                 "Settlement map layout requires a positive facility cap.",
-                Array.Empty<SettlementMapFacilityFeature>());
+                Array.Empty<SettlementMapFacilityFeature>(),
+                Array.Empty<SettlementMapRoom>(),
+                Array.Empty<SettlementMapStockpileCell>());
         }
 
         var settlement = state.GetSettlement(request.SettlementId);
@@ -53,9 +75,13 @@ public static class SettlementMapLayoutService
             return new SettlementMapLayoutResult(
                 SettlementMapLayoutStatus.UnknownSettlement,
                 $"Settlement {request.SettlementId} does not exist or is inactive.",
-                Array.Empty<SettlementMapFacilityFeature>());
+                Array.Empty<SettlementMapFacilityFeature>(),
+                Array.Empty<SettlementMapRoom>(),
+                Array.Empty<SettlementMapStockpileCell>());
         }
 
+        var profile = state.GetSettlementProductionProfile(request.SettlementId);
+        var techScore = TechScore(profile?.TechLevel);
         var facilities = state.GetSettlementFacilities(request.SettlementId)
             .Where(facility => facility.ConditionPercent > 0)
             .OrderBy(facility => FacilitySortRank(facility.Kind))
@@ -70,13 +96,24 @@ public static class SettlementMapLayoutService
             return new SettlementMapLayoutResult(
                 SettlementMapLayoutStatus.NoFacilities,
                 $"Settlement {request.SettlementId} has no active facilities to materialize.",
-                Array.Empty<SettlementMapFacilityFeature>());
+                Array.Empty<SettlementMapFacilityFeature>(),
+                Array.Empty<SettlementMapRoom>(),
+                Array.Empty<SettlementMapStockpileCell>());
         }
+
+        var rooms = facilities
+            .Select(feature => ToRoom(feature, techScore))
+            .ToList();
+        var stockpileRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Storage)
+            ?? rooms.First();
+        var stockpileCells = ToStockpileCells(stockpileRoom).ToList();
 
         return new SettlementMapLayoutResult(
             SettlementMapLayoutStatus.Success,
             $"Prepared {facilities.Count} settlement facility feature(s).",
-            facilities);
+            facilities,
+            rooms,
+            stockpileCells);
     }
 
     private static SettlementMapFacilityFeature ToFeature(
@@ -130,6 +167,94 @@ public static class SettlementMapLayoutService
             SettlementFacilityKind.Storage => "Shelf",
             _ => "TableShort"
         };
+    }
+
+    private static SettlementMapRoom ToRoom(SettlementMapFacilityFeature feature, int techScore)
+    {
+        var size = Math.Max(7, Math.Min(12, 6 + feature.Level));
+        if (feature.Kind == SettlementFacilityKind.Storage)
+        {
+            size += 1;
+        }
+
+        var minX = feature.AnchorX - size / 2;
+        var minZ = feature.AnchorZ - size / 2;
+        return new SettlementMapRoom(
+            feature.FacilityId,
+            feature.Kind,
+            feature.Level,
+            minX,
+            minZ,
+            size,
+            size,
+            "Wall",
+            "Door",
+            FloorTerrainDefName(feature.Kind, techScore),
+            WallStuffDefName(techScore));
+    }
+
+    private static IEnumerable<SettlementMapStockpileCell> ToStockpileCells(SettlementMapRoom room)
+    {
+        var order = 0;
+        for (var z = room.MinZ + 2; z < room.MinZ + room.Height - 1; z++)
+        {
+            for (var x = room.MinX + 2; x < room.MinX + room.Width - 1; x++)
+            {
+                yield return new SettlementMapStockpileCell(x, z, order++);
+            }
+        }
+    }
+
+    private static string WallStuffDefName(int techScore)
+    {
+        return techScore >= 3
+            ? "Steel"
+            : "WoodLog";
+    }
+
+    private static string FloorTerrainDefName(SettlementFacilityKind kind, int techScore)
+    {
+        if (kind == SettlementFacilityKind.Clinic && techScore >= 3)
+        {
+            return "SterileTile";
+        }
+
+        return techScore >= 3
+            ? "Concrete"
+            : "WoodPlankFloor";
+    }
+
+    private static int TechScore(string? techLevel)
+    {
+        if (string.IsNullOrWhiteSpace(techLevel))
+        {
+            return 0;
+        }
+
+        var normalized = (techLevel ?? string.Empty).Trim().ToLowerInvariant();
+        if (ContainsOrdinal(normalized, "spacer") || ContainsOrdinal(normalized, "ultra"))
+        {
+            return 4;
+        }
+
+        if (ContainsOrdinal(normalized, "industrial"))
+        {
+            return 3;
+        }
+
+        if (ContainsOrdinal(normalized, "medieval"))
+        {
+            return 2;
+        }
+
+        return ContainsOrdinal(normalized, "neolithic")
+            ? 1
+            : 0;
+    }
+
+    private static bool ContainsOrdinal(string value, string token)
+    {
+        return value.IndexOf(token, StringComparison.Ordinal) >= 0;
     }
 }
 
