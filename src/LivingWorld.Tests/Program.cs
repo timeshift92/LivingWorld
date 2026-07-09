@@ -9323,6 +9323,8 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("pawn.apparel.Wear(", adapter);
     AssertContains("FreeRackCell(", adapter);
     AssertContains("rack.Accepts(item)", adapter);
+    // On arm, clashing civvies are stowed on the clothing rack (not the floor) so vanilla re-dresses later.
+    AssertContains("ArmoryRackKind.Apparel", adapter);
     AssertRimWorldMethodExists("RimWorld.ApparelUtility", "CanWearTogether");
     AssertRimWorldMethodExists("RimWorld.Building_Storage", "Accepts");
 
@@ -9361,6 +9363,20 @@ static void TestRimWorldArmoryEquipAndJobs()
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMobilizationGizmoPatch.cs"));
     AssertContains("assignments.AssignFromCurrent(pawn)", gizmoPatch);
     AssertContains("assignments.Clear(pawn)", gizmoPatch);
+
+    // Clothing handled via vanilla apparel policies: an auto-created combat policy on arm, the pawn's own
+    // policy restored on stand-down. The delicate dressing/undressing/hauling is left to the game.
+    var outfit = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationOutfitService.cs"));
+    AssertContains("public static void ToCombat(Pawn pawn)", outfit);
+    AssertContains("public static void Restore(Pawn pawn)", outfit);
+    AssertContains("outfitDatabase", outfit);
+    AssertContains("CurrentApparelPolicy", outfit);
+    AssertContains("MobilizationOutfitService.ToCombat(pawn)", component);
+    AssertContains("MobilizationOutfitService.Restore(pawn)", component);
+    AssertContains("RememberPolicy", assignment);
+    AssertContains("TakeRememberedPolicy", assignment);
+    AssertContains("previousPolicyIdByPawn", assignment);
+    AssertRimWorldMethodExists("RimWorld.OutfitDatabase", "MakeNewOutfit");
 
     // Rack labels are translated to Russian (DefInjected) so they are not left English / error.
     var racksRu = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "DefInjected", "ThingDef", "LivingWorld_ArmoryRacks.xml"));

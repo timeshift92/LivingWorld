@@ -162,11 +162,17 @@ public sealed class MobilizationMapComponent : MapComponent
                             mobilizedByUs.Add(pawn);
                         }
 
+                        // Move to the combat apparel policy so vanilla keeps the armour on during the alert.
+                        MobilizationOutfitService.ToCombat(pawn);
                         PushArmoryJob(pawn, LivingWorldArmoryJobDefOf.LivingWorld_FetchKit, rack);
                     }
                 }
                 else
                 {
+                    // Restore the pre-mobilization apparel policy (also covers pawns who never found a
+                    // weapon); once the combat armour is off, vanilla re-dresses them in civvies.
+                    MobilizationOutfitService.Restore(pawn);
+
                     // Stand down only colonists this system armed; leave the player's own armed pawns alone.
                     if (!LoadoutAdapter.IsArmed(pawn)
                         || !mobilizedByUs.Contains(pawn)

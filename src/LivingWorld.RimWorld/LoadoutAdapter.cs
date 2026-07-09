@@ -151,8 +151,29 @@ public static class LoadoutAdapter
                 pawn.equipment.AddEquipment(weaponWithComps);
             }
 
-            if (pawn?.apparel != null && armor != null)
+            if (pawn?.apparel != null && armor != null && armor.Count > 0)
             {
+                var map = pawn.Map;
+                var body = pawn.RaceProps?.body;
+
+                // Take off the civvies that clash with the incoming armour and stow them on the clothing
+                // rack, so vanilla can re-dress the colonist from there on stand-down (instead of leaving
+                // the clothes on the floor where they may be hauled off or deteriorate).
+                if (map != null && body != null)
+                {
+                    var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
+                                ?? new List<Building_ArmoryRack>();
+                    var clashing = pawn.apparel.WornApparel?
+                        .Where(worn => worn != null && armor.Any(piece =>
+                            piece != null && !ApparelUtility.CanWearTogether(worn.def, piece.def, body)))
+                        .ToList() ?? new List<Apparel>();
+                    foreach (var civ in clashing)
+                    {
+                        var cell = FreeRackCell(racks, ArmoryRackKind.Apparel, civ, pawn.Position, map) ?? pawn.Position;
+                        pawn.apparel.TryDrop(civ, out _, cell);
+                    }
+                }
+
                 foreach (var apparel in armor)
                 {
                     if (apparel == null)
