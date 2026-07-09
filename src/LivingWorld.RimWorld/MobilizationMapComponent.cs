@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using RimWorld;
 using Verse;
+using Verse.AI;
 
 namespace LivingWorld.RimWorld;
 
@@ -65,6 +67,92 @@ public sealed class MobilizationMapComponent : MapComponent
             threatPresent = false;
             Log.Warning($"[LivingWorld] Mobilization threat check failed safely: {ex.Message}");
         }
+
+        PushMobilizationJobs();
+    }
+
+    // Autonomous armory behaviour without touching the vanilla think tree (which would risk breaking all
+    // colonist AI): on each throttled tick we push a fetch-kit job to eligible undrafted colonists who are
+    // not yet armed while mobilized, and a return-kit job to armed ones once stood down. Pushed as ordered
+    // jobs so they stick; fail-safe (any error just skips this tick, and a job that can't run ends and the
+    // pawn resumes normal behaviour). Only acts when armory racks exist on the map.
+    private void PushMobilizationJobs()
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.armoryMobilizationEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            var racks = map?.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList();
+            if (racks == null || racks.Count == 0)
+            {
+                return;
+            }
+
+            var mobilized = IsMobilized;
+            var colonists = map?.mapPawns?.FreeColonistsSpawned;
+            if (colonists == null)
+            {
+                return;
+            }
+
+            foreach (var pawn in colonists)
+            {
+                if (pawn == null || pawn.Drafted || pawn.Downed || pawn.InMentalState)
+                {
+                    continue;
+                }
+
+                if (mobilized)
+                {
+                    if (!LoadoutAdapter.IsMobilizationCandidate(pawn)
+                        || LoadoutAdapter.IsArmed(pawn)
+                        || pawn.CurJobDef == LivingWorldArmoryJobDefOf.LivingWorld_FetchKit)
+                    {
+                        continue;
+                    }
+
+                    var rack = NearestRack(pawn, racks, ArmoryRackKind.Weapon) ?? racks[0];
+                    if (rack != null)
+                    {
+                        pawn.jobs?.TryTakeOrderedJob(
+                            JobMaker.MakeJob(LivingWorldArmoryJobDefOf.LivingWorld_FetchKit, rack),
+                            JobTag.Misc);
+                    }
+                }
+                else
+                {
+                    if (!LoadoutAdapter.IsArmed(pawn)
+                        || pawn.CurJobDef == LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit)
+                    {
+                        continue;
+                    }
+
+                    var rack = NearestRack(pawn, racks, ArmoryRackKind.Apparel) ?? racks[0];
+                    if (rack != null)
+                    {
+                        pawn.jobs?.TryTakeOrderedJob(
+                            JobMaker.MakeJob(LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit, rack),
+                            JobTag.Misc);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Mobilization job push failed safely: {ex.Message}");
+        }
+    }
+
+    private static Building_ArmoryRack? NearestRack(Pawn pawn, List<Building_ArmoryRack> racks, ArmoryRackKind kind)
+    {
+        return racks
+            .Where(rack => rack != null && rack.Spawned && rack.Kind == kind)
+            .OrderBy(rack => pawn.Position.DistanceToSquared(rack.Position))
+            .FirstOrDefault();
     }
 
     public override void ExposeData()

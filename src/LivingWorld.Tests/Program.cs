@@ -331,6 +331,8 @@ var tests = new List<(string Name, Action Test)>
     ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
     ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
     ("tracks colony mobilization state and toggle", TestRimWorldArmoryMobilization),
+    ("selects armory loadout by skill", TestArmoryLoadoutSelection),
+    ("wires armory racks, equip adapter and fetch jobs", TestRimWorldArmoryEquipAndJobs),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8965,6 +8967,73 @@ static void TestDrifterReservoirTakeForArrival()
 
     // An empty pool yields nobody.
     AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 1));
+}
+
+static void TestArmoryLoadoutSelection()
+{
+    // Eligibility: best combat skill must reach the threshold.
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(3, 3));
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(4, 0));
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(0, 7));
+
+    var pistol = new WeaponOption("Pistol", true, 100);
+    var rifle = new WeaponOption("Rifle", true, 300);
+    var sword = new WeaponOption("Sword", false, 200);
+    var pool = new[] { pistol, rifle, sword };
+
+    AssertEqual("Rifle", LoadoutSelectionService.SelectWeapon(10, 2, null, pool)!.DefName);   // shooter -> best ranged
+    AssertEqual("Sword", LoadoutSelectionService.SelectWeapon(2, 10, null, pool)!.DefName);   // brawler -> melee
+    AssertEqual("Pistol", LoadoutSelectionService.SelectWeapon(10, 2, pistol, pool)!.DefName); // assigned wins
+    AssertEqual("Sword", LoadoutSelectionService.SelectWeapon(10, 2, null, new[] { sword })!.DefName); // no ranged -> best of any
+    AssertEqual(true, LoadoutSelectionService.SelectWeapon(10, 2, null, Array.Empty<WeaponOption>()) == null);
+
+    var duster = new ArmorOption("Duster", 100, false);
+    var flak = new ArmorOption("Flak", 300, true);
+    var armorPool = new[] { duster, flak };
+    AssertEqual("Flak", LoadoutSelectionService.SelectArmor(2, 10, null, armorPool)!.DefName); // brawler -> heavy
+    AssertEqual("Flak", LoadoutSelectionService.SelectArmor(10, 2, null, armorPool)!.DefName); // shooter -> best value
+    AssertEqual(true, LoadoutSelectionService.SelectArmor(5, 5, null, Array.Empty<ArmorOption>()) == null);
+}
+
+static void TestRimWorldArmoryEquipAndJobs()
+{
+    var root = FindRepoRoot();
+
+    // Three storage-building racks routed through our Building_ArmoryRack.
+    var racksXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Defs", "ThingDefs_Armory", "LivingWorld_ArmoryRacks.xml"));
+    AssertContains("<defName>LivingWorld_WeaponRack</defName>", racksXml);
+    AssertContains("<defName>LivingWorld_ArmorRack</defName>", racksXml);
+    AssertContains("<defName>LivingWorld_ApparelRack</defName>", racksXml);
+    AssertContains("LivingWorld.RimWorld.Building_ArmoryRack", racksXml);
+    AssertContains("class Building_ArmoryRack : Building_Storage",
+        File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "Building_ArmoryRack.cs")));
+
+    // Adapter equips the skill-chosen kit and dons armour (auto-dropping civvies).
+    var adapter = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LoadoutAdapter.cs"));
+    AssertContains("public static void EquipKit(", adapter);
+    AssertContains("public static void ReturnKit(", adapter);
+    AssertContains("LoadoutSelectionService.SelectWeapon", adapter);
+    AssertContains("pawn.apparel.Wear(", adapter);
+
+    // Walk-to-armory jobs and the autonomous driver that pushes them (no think-tree injection).
+    var jobs = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "JobDriver_ArmoryKit.cs"));
+    AssertContains("class JobDriver_FetchKit : JobDriver", jobs);
+    AssertContains("class JobDriver_ReturnKit : JobDriver", jobs);
+    AssertContains("Toils_Goto.GotoThing", jobs);
+    var jobDefs = File.ReadAllText(
+        Path.Combine(root, "mod", "Defs", "JobDefs_Armory", "LivingWorld_ArmoryJobs.xml"));
+    AssertContains("<defName>LivingWorld_FetchKit</defName>", jobDefs);
+    AssertContains("<defName>LivingWorld_ReturnKit</defName>", jobDefs);
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
+    AssertContains("PushMobilizationJobs", component);
+    AssertContains("TryTakeOrderedJob", component);
+
+    // RimWorld APIs the equip/job path depends on.
+    AssertRimWorldMethodExists("Verse.Pawn_EquipmentTracker", "AddEquipment");
+    AssertRimWorldMethodExists("RimWorld.Pawn_ApparelTracker", "Wear");
+    AssertRimWorldMethodExists("Verse.AI.Toils_Goto", "GotoThing");
 }
 
 static void TestRimWorldArmoryMobilization()

@@ -153,7 +153,7 @@
   <LW_Settings_ArrivalsTravel>Neutral groups travel across the world</LW_Settings_ArrivalsTravel>
   <LW_Settings_ArrivalsTravelTip>When on, faction visitors, trade caravans and travellers set out from one of their settlements and cross the world map to your colony - you see them coming - instead of appearing at the map edge. Turn off to have them arrive instantly. Orbital traders are unaffected.</LW_Settings_ArrivalsTravelTip>
   <LW_Settings_ArmoryMobilization>Colony armory / mobilization</LW_Settings_ArmoryMobilization>
-  <LW_Settings_ArmoryMobilizationTip>When on, colonists work in civvies and arm up from the armory only when mobilized - manually via the Mobilize toggle, or automatically while enemies are on the map. (Racks and the autonomous fetch/return behaviour arrive in later updates.)</LW_Settings_ArmoryMobilizationTip>
+  <LW_Settings_ArmoryMobilizationTip>When on, colonists work in civvies and arm up from the armory only when mobilized - manually via the Mobilize toggle, or automatically while enemies are on the map.</LW_Settings_ArmoryMobilizationTip>
   <LW_MobilizeToggle>Mobilize colony</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Toggle colony mobilization. When on, combat-capable colonists arm up from the armory racks; the colony also mobilizes automatically while enemies are on the map. Off returns them to work and civvies.</LW_MobilizeTooltip>
   <LW_GroupApproachingLabel>A group is approaching</LW_GroupApproachingLabel>
