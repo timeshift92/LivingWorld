@@ -324,6 +324,7 @@ var tests = new List<(string Name, Action Test)>
     ("makes visitor groups travel across the world map", TestRimWorldApproachingVisitors),
     ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
     ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
+    ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8794,6 +8795,23 @@ static void TestDrifterReservoirTakeForArrival()
 
     // An empty pool yields nobody.
     AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 1));
+}
+
+static void TestRimWorldCaravanMeetingGate()
+{
+    var root = FindRepoRoot();
+
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanMeetingPatch.cs"));
+    // Postfix the vanilla caravan-meeting gate; only fire when the player caravan is near a settlement.
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanMeeting), \"CanFireNowSub\")", patch);
+    AssertContains("parms?.target is not Caravan caravan", patch);
+    AssertContains("ApproxDistanceInTiles", patch);
+    AssertContains("worldObjects.Settlements", patch);
+    // Gated by the arrivals setting; fail-open.
+    AssertContains("settings.arrivalsTravelEnabled", patch);
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanMeeting", "CanFireNowSub");
 }
 
 static void TestRimWorldSourcedWanderers()
