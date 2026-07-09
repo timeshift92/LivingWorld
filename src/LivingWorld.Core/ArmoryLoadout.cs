@@ -3,7 +3,10 @@ namespace LivingWorld.Core;
 /// <summary>A weapon available to a mobilizing colonist, reduced to what selection needs.</summary>
 public sealed record WeaponOption(string DefName, bool IsRanged, int Value);
 
-/// <summary>A piece of armour available to a mobilizing colonist.</summary>
+/// <summary>
+/// A piece of armour available to a mobilizing colonist. <paramref name="Value"/> is a protection score
+/// (higher = more armour), not market value, so selection prefers the piece that actually protects more.
+/// </summary>
 public sealed record ArmorOption(string DefName, int Value, bool IsHeavy);
 
 public static class MobilizationTuning
@@ -59,28 +62,30 @@ public static class LoadoutSelectionService
             .First();
     }
 
-    public static ArmorOption? SelectArmor(
+    /// <summary>
+    /// Orders the available armour by the priority a mobilizing colonist should wear it in: an assigned piece
+    /// first, then (for melee-leaning fighters) heavy armour, then most protective, then a stable name
+    /// tie-break. The adapter walks this order and dons every piece that can be worn together, so a colonist
+    /// puts on a full protective set — not just one item. Empty pool → empty list.
+    /// </summary>
+    public static IReadOnlyList<ArmorOption> RankArmor(
         int shootingSkill,
         int meleeSkill,
         ArmorOption? assigned,
         IReadOnlyList<ArmorOption> pool)
     {
-        if (assigned != null)
-        {
-            return assigned;
-        }
-
         if (pool == null || pool.Count == 0)
         {
-            return null;
+            return Array.Empty<ArmorOption>();
         }
 
         // Melee-leaning fighters take the front line, so give them the heavy armour first when available.
         var preferHeavy = meleeSkill > shootingSkill;
         return pool
-            .OrderByDescending(armor => preferHeavy && armor.IsHeavy ? 1 : 0)
+            .OrderByDescending(armor => assigned != null && armor.DefName == assigned.DefName ? 1 : 0)
+            .ThenByDescending(armor => preferHeavy && armor.IsHeavy ? 1 : 0)
             .ThenByDescending(armor => armor.Value)
             .ThenBy(armor => armor.DefName, StringComparer.Ordinal)
-            .First();
+            .ToList();
     }
 }

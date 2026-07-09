@@ -9181,9 +9181,14 @@ static void TestArmoryLoadoutSelection()
     var duster = new ArmorOption("Duster", 100, false);
     var flak = new ArmorOption("Flak", 300, true);
     var armorPool = new[] { duster, flak };
-    AssertEqual("Flak", LoadoutSelectionService.SelectArmor(2, 10, null, armorPool)!.DefName); // brawler -> heavy
-    AssertEqual("Flak", LoadoutSelectionService.SelectArmor(10, 2, null, armorPool)!.DefName); // shooter -> best value
-    AssertEqual(true, LoadoutSelectionService.SelectArmor(5, 5, null, Array.Empty<ArmorOption>()) == null);
+    // RankArmor returns the wear priority (most protective first); the adapter dons a full non-conflicting
+    // set from this order, honouring an assigned piece first.
+    AssertEqual("Flak", LoadoutSelectionService.RankArmor(2, 10, null, armorPool)[0].DefName);   // brawler -> heavy first
+    AssertEqual("Flak", LoadoutSelectionService.RankArmor(10, 2, null, armorPool)[0].DefName);   // more protection first
+    AssertEqual(2, LoadoutSelectionService.RankArmor(5, 5, null, armorPool).Count);               // ranks the whole pool
+    AssertEqual("Duster",
+        LoadoutSelectionService.RankArmor(5, 5, new ArmorOption("Duster", 100, false), armorPool)[0].DefName); // assigned first
+    AssertEqual(0, LoadoutSelectionService.RankArmor(5, 5, null, Array.Empty<ArmorOption>()).Count);
 }
 
 static void TestRimWorldArmoryEquipAndJobs()
@@ -9200,12 +9205,19 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("class Building_ArmoryRack : Building_Storage",
         File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "Building_ArmoryRack.cs")));
 
-    // Adapter equips the skill-chosen kit and dons armour (auto-dropping civvies).
+    // Adapter equips the skill-chosen kit and dons a full protective armour set (auto-dropping civvies),
+    // and on stand-down stows the gear directly onto a free rack cell instead of dropping it on the floor.
     var adapter = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LoadoutAdapter.cs"));
     AssertContains("public static void EquipKit(", adapter);
     AssertContains("public static void ReturnKit(", adapter);
     AssertContains("LoadoutSelectionService.SelectWeapon", adapter);
+    AssertContains("LoadoutSelectionService.RankArmor", adapter);
+    AssertContains("ApparelUtility.CanWearTogether(", adapter);
     AssertContains("pawn.apparel.Wear(", adapter);
+    AssertContains("FreeRackCell(", adapter);
+    AssertContains("rack.Accepts(item)", adapter);
+    AssertRimWorldMethodExists("RimWorld.ApparelUtility", "CanWearTogether");
+    AssertRimWorldMethodExists("RimWorld.Building_Storage", "Accepts");
 
     // Walk-to-armory jobs and the autonomous driver that pushes them (no think-tree injection).
     var jobs = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "JobDriver_ArmoryKit.cs"));

@@ -69,7 +69,7 @@ public static class CaravanArmoryService
                 }
 
                 var (weapon, armor) = LoadoutAdapter.ResolveKit(pawn, pawn.Map);
-                if (weapon == null && armor == null)
+                if (weapon == null && armor.Count == 0)
                 {
                     continue;
                 }

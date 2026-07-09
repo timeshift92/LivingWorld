@@ -42,14 +42,15 @@ public static class LoadoutAdapter
         return pawn?.equipment?.Primary != null;
     }
 
-    // Picks the weapon+armour this pawn should take from the racks. Returns the real things (may be null).
-    public static (Thing? weapon, Thing? armor) ResolveKit(Pawn pawn, Map map)
+    // Picks the weapon and the armour set this pawn should take from the racks. Returns the real things
+    // (weapon may be null; armour is a possibly-empty set of pieces that can be worn together).
+    public static (Thing? weapon, List<Apparel> armor) ResolveKit(Pawn pawn, Map map)
     {
         try
         {
             if (pawn == null || map == null)
             {
-                return (null, null);
+                return (null, new List<Apparel>());
             }
 
             var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
@@ -88,28 +89,52 @@ public static class LoadoutAdapter
             var armorPool = armorThings
                 .Select(apparel => new ArmorOption(
                     apparel.def.defName,
-                    (int)apparel.MarketValue,
+                    ProtectionScore(apparel),
                     apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp) >= HeavyArmorThreshold))
                 .ToList();
             var assignedArmor = string.IsNullOrEmpty(assignedArmorDef)
                 ? null
                 : armorPool.FirstOrDefault(option => option.DefName == assignedArmorDef);
-            var chosenArmor = LoadoutSelectionService.SelectArmor(shooting, melee, assignedArmor, armorPool);
-            var armor = chosenArmor == null
-                ? null
-                : armorThings.FirstOrDefault(apparel => apparel.def.defName == chosenArmor.DefName);
+
+            // Wear a full set: walk the priority order and take every piece that fits with those already
+            // chosen, so a colonist ends up in the most protective armour available, not a single item.
+            var ranked = LoadoutSelectionService.RankArmor(shooting, melee, assignedArmor, armorPool);
+            var body = pawn.RaceProps?.body;
+            var armor = new List<Apparel>();
+            foreach (var option in ranked)
+            {
+                var piece = armorThings.FirstOrDefault(apparel =>
+                    apparel.def.defName == option.DefName && !armor.Contains(apparel));
+                if (piece == null)
+                {
+                    continue;
+                }
+
+                if (body == null || armor.All(worn => ApparelUtility.CanWearTogether(worn.def, piece.def, body)))
+                {
+                    armor.Add(piece);
+                }
+            }
 
             return (weapon, armor);
         }
         catch (Exception ex)
         {
             Log.Warning($"[LivingWorld] Armory ResolveKit failed safely: {ex.Message}");
-            return (null, null);
+            return (null, new List<Apparel>());
         }
     }
 
-    // Equips a resolved weapon and dons resolved armour (Wear auto-drops the conflicting civvies).
-    public static void EquipKit(Pawn pawn, Thing? weapon, Thing? armor)
+    // Higher = more protective. Sharp + blunt armour rating, scaled to a stable integer for ranking.
+    private static int ProtectionScore(Apparel apparel)
+    {
+        var sharp = apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp);
+        var blunt = apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Blunt);
+        return (int)((sharp + blunt) * 100f);
+    }
+
+    // Equips a resolved weapon and dons the resolved armour set (Wear auto-drops the conflicting civvies).
+    public static void EquipKit(Pawn pawn, Thing? weapon, List<Apparel>? armor)
     {
         try
         {
@@ -124,14 +149,22 @@ public static class LoadoutAdapter
                 pawn.equipment.AddEquipment(weaponWithComps);
             }
 
-            if (pawn?.apparel != null && armor is Apparel apparel)
+            if (pawn?.apparel != null && armor != null)
             {
-                if (apparel.Spawned)
+                foreach (var apparel in armor)
                 {
-                    apparel.DeSpawn();
-                }
+                    if (apparel == null)
+                    {
+                        continue;
+                    }
 
-                pawn.apparel.Wear(apparel, dropReplacedApparel: true);
+                    if (apparel.Spawned)
+                    {
+                        apparel.DeSpawn();
+                    }
+
+                    pawn.apparel.Wear(apparel, dropReplacedApparel: true);
+                }
             }
         }
         catch (Exception ex)
@@ -140,24 +173,36 @@ public static class LoadoutAdapter
         }
     }
 
-    // Puts the weapon and worn combat armour back. RimWorld's apparel policy then re-dresses civvies.
+    // Puts the weapon and worn combat armour back onto the racks. The gear is dropped directly onto a free
+    // rack cell so it is actually stored, not left on the floor for someone to haul later. RimWorld's
+    // apparel policy then re-dresses civvies.
     public static void ReturnKit(Pawn pawn, Map map)
     {
         try
         {
-            if (pawn?.equipment?.Primary is ThingWithComps primary)
+            if (pawn == null || map == null)
             {
-                pawn.equipment.TryDropEquipment(primary, out _, pawn.Position);
+                return;
             }
 
-            if (pawn?.apparel != null && map != null)
+            var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
+                        ?? new List<Building_ArmoryRack>();
+
+            if (pawn.equipment?.Primary is ThingWithComps primary)
+            {
+                var cell = FreeRackCell(racks, ArmoryRackKind.Weapon, primary, pawn.Position, map) ?? pawn.Position;
+                pawn.equipment.TryDropEquipment(primary, out _, cell);
+            }
+
+            if (pawn.apparel != null)
             {
                 var combatArmor = pawn.apparel.WornApparel?
                     .Where(apparel => apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp) >= HeavyArmorThreshold)
                     .ToList() ?? new List<Apparel>();
                 foreach (var apparel in combatArmor)
                 {
-                    pawn.apparel.TryDrop(apparel, out _, pawn.Position);
+                    var cell = FreeRackCell(racks, ArmoryRackKind.Armor, apparel, pawn.Position, map) ?? pawn.Position;
+                    pawn.apparel.TryDrop(apparel, out _, cell);
                 }
             }
         }
@@ -165,6 +210,44 @@ public static class LoadoutAdapter
         {
             Log.Warning($"[LivingWorld] Armory ReturnKit failed safely: {ex.Message}");
         }
+    }
+
+    // A free cell on the nearest armory rack of the given kind that will accept the item, so returned gear
+    // lands in storage instead of on the floor. Null if there is no such rack/cell (caller drops at feet).
+    private static IntVec3? FreeRackCell(
+        List<Building_ArmoryRack> racks, ArmoryRackKind kind, Thing item, IntVec3 from, Map map)
+    {
+        try
+        {
+            var candidates = racks
+                .Where(rack => rack != null && rack.Spawned && rack.Kind == kind && rack.Accepts(item))
+                .OrderBy(rack => from.DistanceToSquared(rack.Position));
+
+            foreach (var rack in candidates)
+            {
+                var cells = rack.slotGroup?.CellsList;
+                if (cells == null)
+                {
+                    continue;
+                }
+
+                var max = rack.def?.building?.maxItemsInCell ?? 1;
+                foreach (var cell in cells)
+                {
+                    var itemCount = cell.GetThingList(map).Count(thing => thing?.def?.category == ThingCategory.Item);
+                    if (itemCount < max)
+                    {
+                        return cell;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fall through: caller drops at the pawn's feet.
+        }
+
+        return null;
     }
 
     private static int SkillLevel(Pawn pawn, SkillDef skill)
