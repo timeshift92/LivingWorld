@@ -156,6 +156,10 @@
   <LW_Settings_ArmoryMobilizationTip>When on, colonists work in civvies and arm up from the armory only when mobilized - manually via the Mobilize toggle, or automatically while enemies are on the map.</LW_Settings_ArmoryMobilizationTip>
   <LW_MobilizeToggle>Mobilize colony</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Toggle colony mobilization. When on, combat-capable colonists arm up from the armory racks; the colony also mobilizes automatically while enemies are on the map. Off returns them to work and civvies.</LW_MobilizeTooltip>
+  <LW_AssignKit>Assign combat kit</LW_AssignKit>
+  <LW_AssignKitTooltip>Remember this colonist's current weapon and armour as their combat kit. On mobilization they will always take exactly this kit from the racks (if available) instead of a skill-based pick. Equip them as you want first, then assign.</LW_AssignKitTooltip>
+  <LW_ClearKit>Clear combat kit</LW_ClearKit>
+  <LW_ClearKitTooltip>Forget this colonist's assigned kit. On mobilization they will take a skill-appropriate weapon and armour from the racks instead.</LW_ClearKitTooltip>
   <LW_GroupApproachingLabel>A group is approaching</LW_GroupApproachingLabel>
   <LW_GroupApproachingText>A group of {kind} from {faction} has set out toward {colony}. They should reach you in about {days} day(s). Track them on the world map.</LW_GroupApproachingText>
   <LW_ArrivalKind_Visitors>visitors</LW_ArrivalKind_Visitors>

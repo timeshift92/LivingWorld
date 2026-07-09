@@ -156,6 +156,10 @@
   <LW_Settings_ArmoryMobilizationTip>Если включено, колонисты работают в гражданке и вооружаются из арсенала только при мобилизации — вручную кнопкой «Мобилизация» или автоматически, когда на карте враги.</LW_Settings_ArmoryMobilizationTip>
   <LW_MobilizeToggle>Мобилизация колонии</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Переключить мобилизацию колонии. Если включено, боеспособные колонисты вооружаются из стоек арсенала; колония также мобилизуется автоматически, пока на карте враги. Выключено — возвращаются к работе и в гражданку.</LW_MobilizeTooltip>
+  <LW_AssignKit>Назначить боевой набор</LW_AssignKit>
+  <LW_AssignKitTooltip>Запомнить текущее оружие и броню колониста как его боевой набор. При мобилизации он всегда будет брать со стоек именно этот набор (если он там есть), а не скилл-подбор. Сначала экипируй как нужно, потом назначь.</LW_AssignKitTooltip>
+  <LW_ClearKit>Очистить боевой набор</LW_ClearKit>
+  <LW_ClearKitTooltip>Забыть назначенный набор колониста. При мобилизации он возьмёт со стоек оружие и броню по навыкам.</LW_ClearKitTooltip>
   <LW_GroupApproachingLabel>Приближается группа</LW_GroupApproachingLabel>
   <LW_GroupApproachingText>Группа ({kind}) фракции {faction} выступила к {colony}. Доберутся примерно через {days} дн. Следи за ними на карте мира.</LW_GroupApproachingText>
   <LW_ArrivalKind_Visitors>гости</LW_ArrivalKind_Visitors>

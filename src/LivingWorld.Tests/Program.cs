@@ -9030,6 +9030,26 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("PushMobilizationJobs", component);
     AssertContains("TryTakeOrderedJob", component);
 
+    // Hybrid: per-colonist assigned kit stored in a GameComponent, captured from current gear, and used by
+    // the adapter (assigned wins over the skill pick).
+    var assignment = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmoryAssignmentComponent.cs"));
+    AssertContains("class ArmoryAssignmentComponent : GameComponent", assignment);
+    AssertContains("public void AssignFromCurrent(Pawn pawn)", assignment);
+    AssertContains("Scribe_Collections.Look(", assignment);
+    AssertContains("ArmoryAssignmentComponent.Instance", adapter);
+    AssertContains("SelectWeapon(shooting, melee, assignedWeapon, weaponPool)", adapter);
+    var gizmoPatch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMobilizationGizmoPatch.cs"));
+    AssertContains("assignments.AssignFromCurrent(pawn)", gizmoPatch);
+    AssertContains("assignments.Clear(pawn)", gizmoPatch);
+
+    // Rack labels are translated to Russian (DefInjected) so they are not left English / error.
+    var racksRu = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "DefInjected", "ThingDef", "LivingWorld_ArmoryRacks.xml"));
+    AssertContains("<LivingWorld_WeaponRack.label>", racksRu);
+    AssertContains("<LivingWorld_ArmorRack.label>", racksRu);
+    AssertContains("<LivingWorld_ApparelRack.label>", racksRu);
+
     // RimWorld APIs the equip/job path depends on.
     AssertRimWorldMethodExists("Verse.Pawn_EquipmentTracker", "AddEquipment");
     AssertRimWorldMethodExists("RimWorld.Pawn_ApparelTracker", "Wear");

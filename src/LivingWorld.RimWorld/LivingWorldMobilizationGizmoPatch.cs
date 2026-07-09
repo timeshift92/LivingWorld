@@ -22,7 +22,7 @@ public static class LivingWorldMobilizationGizmoPatch
             yield return gizmo;
         }
 
-        Command_Toggle? toggle = null;
+        var gizmos = new List<Gizmo>();
         try
         {
             if (__instance != null && __instance.IsColonist && __instance.Faction == Faction.OfPlayer)
@@ -31,26 +31,49 @@ public static class LivingWorldMobilizationGizmoPatch
                 var component = MobilizationMapComponent.For(__instance.Map);
                 if (settings.armoryMobilizationEnabled && component != null)
                 {
-                    toggle = new Command_Toggle
+                    gizmos.Add(new Command_Toggle
                     {
                         defaultLabel = "LW_MobilizeToggle".Translate(),
                         defaultDesc = "LW_MobilizeTooltip".Translate(),
                         icon = ContentFinder<Texture2D>.Get("UI/Commands/DraftMode", false),
                         isActive = () => component.ManualMobilized,
                         toggleAction = () => component.ToggleManual(),
-                    };
+                    });
+
+                    var assignments = ArmoryAssignmentComponent.Instance;
+                    if (assignments != null)
+                    {
+                        var pawn = __instance;
+                        gizmos.Add(new Command_Action
+                        {
+                            defaultLabel = "LW_AssignKit".Translate(),
+                            defaultDesc = "LW_AssignKitTooltip".Translate(),
+                            icon = ContentFinder<Texture2D>.Get("UI/Commands/DraftMode", false),
+                            action = () => assignments.AssignFromCurrent(pawn),
+                        });
+                        if (assignments.HasAssignment(pawn))
+                        {
+                            gizmos.Add(new Command_Action
+                            {
+                                defaultLabel = "LW_ClearKit".Translate(),
+                                defaultDesc = "LW_ClearKitTooltip".Translate(),
+                                icon = ContentFinder<Texture2D>.Get("UI/Commands/DraftMode", false),
+                                action = () => assignments.Clear(pawn),
+                            });
+                        }
+                    }
                 }
             }
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Mobilization gizmo skipped safely: {ex.Message}");
-            toggle = null;
+            Log.Warning($"[LivingWorld] Mobilization gizmos skipped safely: {ex.Message}");
+            gizmos.Clear();
         }
 
-        if (toggle != null)
+        foreach (var gizmo in gizmos)
         {
-            yield return toggle;
+            yield return gizmo;
         }
     }
 }

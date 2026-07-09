@@ -69,10 +69,18 @@ public static class LoadoutAdapter
             var shooting = SkillLevel(pawn, SkillDefOf.Shooting);
             var melee = SkillLevel(pawn, SkillDefOf.Melee);
 
+            // Hybrid: a colonist's assigned kit wins if that gear is on the racks; otherwise the skill pick.
+            var assignments = ArmoryAssignmentComponent.Instance;
+            var assignedWeaponDef = assignments?.AssignedWeaponDef(pawn);
+            var assignedArmorDef = assignments?.AssignedArmorDef(pawn);
+
             var weaponPool = weaponThings
                 .Select(thing => new WeaponOption(thing.def.defName, thing.def.IsRangedWeapon, (int)thing.MarketValue))
                 .ToList();
-            var chosenWeapon = LoadoutSelectionService.SelectWeapon(shooting, melee, null, weaponPool);
+            var assignedWeapon = string.IsNullOrEmpty(assignedWeaponDef)
+                ? null
+                : weaponPool.FirstOrDefault(option => option.DefName == assignedWeaponDef);
+            var chosenWeapon = LoadoutSelectionService.SelectWeapon(shooting, melee, assignedWeapon, weaponPool);
             var weapon = chosenWeapon == null
                 ? null
                 : weaponThings.FirstOrDefault(thing => thing.def.defName == chosenWeapon.DefName);
@@ -83,7 +91,10 @@ public static class LoadoutAdapter
                     (int)apparel.MarketValue,
                     apparel.def.GetStatValueAbstract(StatDefOf.ArmorRating_Sharp) >= HeavyArmorThreshold))
                 .ToList();
-            var chosenArmor = LoadoutSelectionService.SelectArmor(shooting, melee, null, armorPool);
+            var assignedArmor = string.IsNullOrEmpty(assignedArmorDef)
+                ? null
+                : armorPool.FirstOrDefault(option => option.DefName == assignedArmorDef);
+            var chosenArmor = LoadoutSelectionService.SelectArmor(shooting, melee, assignedArmor, armorPool);
             var armor = chosenArmor == null
                 ? null
                 : armorThings.FirstOrDefault(apparel => apparel.def.defName == chosenArmor.DefName);

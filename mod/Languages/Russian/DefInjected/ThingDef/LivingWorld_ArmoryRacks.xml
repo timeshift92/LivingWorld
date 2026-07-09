@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LivingWorld_WeaponRack.label>оружейная стойка</LivingWorld_WeaponRack.label>
+  <LivingWorld_WeaponRack.description>Стойка арсенала для оружия колонии. Пока колония в мирном положении, боевое оружие хранится здесь; при мобилизации боеспособные колонисты приходят и вооружаются.</LivingWorld_WeaponRack.description>
+  <LivingWorld_ArmorRack.label>стойка брони</LivingWorld_ArmorRack.label>
+  <LivingWorld_ArmorRack.description>Стойка арсенала для брони колонии. Пока колония в мирном положении, боевая броня хранится здесь; при мобилизации боеспособные колонисты приходят и надевают её.</LivingWorld_ArmorRack.description>
+  <LivingWorld_ApparelRack.label>стойка одежды</LivingWorld_ApparelRack.label>
+  <LivingWorld_ApparelRack.description>Стойка арсенала для гражданской одежды колонии. При мобилизации колонисты оставляют здесь гражданку; при отбое переодеваются обратно.</LivingWorld_ApparelRack.description>
+</LanguageData>
