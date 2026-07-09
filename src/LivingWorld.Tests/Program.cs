@@ -7501,7 +7501,8 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldArmy</worldObjectClass>", defXml);
     AssertContains("<texture>World/LivingWorld_Warband</texture>", defXml);
     AssertContains("<useDynamicDrawer>true</useDynamicDrawer>", defXml);
-    AssertContains("<expandingIcon>true</expandingIcon>", defXml);
+    AssertDoesNotContain("<expandingIcon>true</expandingIcon>", defXml);
+    AssertDoesNotContain("<expandingIconTexture>", defXml);
 
     // The icon ships with the mod.
     AssertFileExists(Path.Combine(root, "mod", "Textures", "World", "LivingWorld_Warband.png"));
@@ -7518,6 +7519,10 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("Vector3.Slerp", marker);
     AssertContains("MaterialPool.MatFrom", marker);
     AssertContains("WorldOverlayTransparentLit", marker);
+    AssertContains("MarkerDrawSize", marker);
+    AssertContains("ConfigureIconTexture", marker);
+    AssertContains("FilterMode.Trilinear", marker);
+    AssertContains("texture.mipMapBias", marker);
     AssertContains("public override void ExposeData()", marker);
     AssertContains("LW_MissionMarkerInspect", marker);
     AssertContains("LW_MissionMarkerStrengthLine", marker);

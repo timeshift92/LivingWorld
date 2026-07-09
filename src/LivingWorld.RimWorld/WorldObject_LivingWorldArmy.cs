@@ -16,6 +16,8 @@ namespace LivingWorld.RimWorld;
 /// </summary>
 public sealed class WorldObject_LivingWorldArmy : WorldObject
 {
+    private const float MarkerDrawSize = 0.46f;
+
     private string markerKey = string.Empty;
     private string textureName = "World/LivingWorld_Warband";
     private string kindNoun = string.Empty;
@@ -111,6 +113,7 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
                     shader: ShaderDatabase.WorldOverlayTransparentLit,
                     color: color,
                     renderQueue: WorldMaterials.DynamicObjectRenderQueue);
+                ConfigureIconTexture(cachedMaterial);
             }
 
             return cachedMaterial;
@@ -118,6 +121,23 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     }
 
     public override string Label => string.IsNullOrEmpty(factionLabel) ? base.Label : factionLabel;
+
+    public override void Draw()
+    {
+        var material = Material;
+        if (Tile.LayerDef.isSpace || !material)
+        {
+            return;
+        }
+
+        var averageTileSize = Tile.Layer.AverageTileSize;
+        var altitudeOffset = Rand.RangeSeeded(0f, 0.01f, ID) + def.drawAltitudeOffset;
+        WorldRendererUtility.DrawQuadTangentialToPlanet(
+            DrawPos,
+            MarkerDrawSize * averageTileSize,
+            DrawAltitude + altitudeOffset,
+            material);
+    }
 
     public override string GetInspectString()
     {
@@ -151,6 +171,16 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
         }
 
         return builder.ToString();
+    }
+
+    private static void ConfigureIconTexture(Material material)
+    {
+        if (material?.mainTexture is Texture2D texture)
+        {
+            texture.filterMode = FilterMode.Trilinear;
+            texture.anisoLevel = 2;
+            texture.mipMapBias = -0.15f;
+        }
     }
 
     public override void ExposeData()
