@@ -182,7 +182,7 @@ public static class LivingWorldSettlementMapMaterializationService
 
         foreach (var resource in prepared.Resources)
         {
-            var spawned = TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells);
+            var spawned = TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity, layout.StockpileCells);
             if (spawned > 0)
             {
                 ResourceLedgerService.ConsumeResource(
@@ -208,7 +208,6 @@ public static class LivingWorldSettlementMapMaterializationService
 
     private static int TrySpawnResourceStack(
         Map map,
-        EntityId returnOwnerId,
         string resourceKey,
         int quantity,
         IReadOnlyList<SettlementMapStockpileCell> stockpileCells)
@@ -242,7 +241,6 @@ public static class LivingWorldSettlementMapMaterializationService
             var thing = ThingMaker.MakeThing(def);
             thing.stackCount = stack;
             GenSpawn.Spawn(thing, cell, map);
-            LivingWorldSettlementMapResourceTracker.Track(thing, returnOwnerId, resourceKey);
             remaining -= stack;
             spawned += stack;
             stackIndex++;

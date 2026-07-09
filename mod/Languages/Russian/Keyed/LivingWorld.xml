@@ -150,14 +150,6 @@
   <LW_MechClusterActive>Механоидный комплекс — АКТИВЕН. Пробудившиеся механоиды шлют отсюда рейды на твою колонию.</LW_MechClusterActive>
   <LW_MechClusterAwakenLabel>Механоидный комплекс активировался</LW_MechClusterAwakenLabel>
   <LW_MechClusterAwakenText>Спящий механоидный комплекс запитался, разбуженный растущим богатством твоей колонии и близостью. Жди механоидных вторжений оттуда — это не случайная атака. Следи за ним на карте мира.</LW_MechClusterAwakenText>
-  <LW_Settings_ArrivalsTravel>Нейтральные группы идут по карте мира</LW_Settings_ArrivalsTravel>
-  <LW_Settings_ArrivalsTravelTip>Если включено, гости, торговые караваны и путники фракций выходят из одного из своих поселений и идут по карте мира к твоей колонии — ты видишь их приближение — вместо появления у края карты. Выключите, чтобы прибывали мгновенно. Орбитальных торговцев не затрагивает.</LW_Settings_ArrivalsTravelTip>
-  <LW_GroupApproachingLabel>Приближается группа</LW_GroupApproachingLabel>
-  <LW_GroupApproachingText>Группа ({kind}) фракции {faction} выступила к {colony}. Доберутся примерно через {days} дн. Следи за ними на карте мира.</LW_GroupApproachingText>
-  <LW_ArrivalKind_Visitors>гости</LW_ArrivalKind_Visitors>
-  <LW_ArrivalKind_Traders>торговцы</LW_ArrivalKind_Traders>
-  <LW_ArrivalKind_Travelers>путники</LW_ArrivalKind_Travelers>
-  <LW_MissionReason_Visit>направляются к вашей колонии</LW_MissionReason_Visit>
   <LW_Settings_WorldWarTravelDays>Дней в пути (армии/миссии)</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Бойцов в варбанде</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Кулдаун варбанда (дни)</LW_Settings_WorldWarCooldown>

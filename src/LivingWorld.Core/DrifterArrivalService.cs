@@ -20,22 +20,6 @@ public sealed record DrifterArrivalResult(int Arrived, int PoolSize);
 /// </summary>
 public static class DrifterArrivalService
 {
-    /// <summary>
-    /// Draws up to <paramref name="count"/> people from the outside-world drifter reservoir and returns how
-    /// many were actually available. Used to source arrivals that RimWorld would otherwise conjure from
-    /// nowhere (e.g. a wandering joiner) against the tracked outside-world population, so they deplete a
-    /// real pool instead of appearing from the void. Returns 0 when the reservoir is empty.
-    /// </summary>
-    public static int TakeForArrival(WorldState state, int count)
-    {
-        if (state == null)
-        {
-            throw new ArgumentNullException(nameof(state));
-        }
-
-        return count <= 0 ? 0 : state.ConsumeDrifterArrivalReservoir(count);
-    }
-
     public static DrifterArrivalResult SimulateArrivals(WorldState state, DrifterArrivalRequest request)
     {
         if (state == null)

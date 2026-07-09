@@ -148,11 +148,7 @@ first real-map settlement materialization slice after vanilla map generation:
 7. spawn the resource payload as real map things through RimWorld's normal
    `ThingDef` and `GenSpawn` APIs, preferring stockpile cells inside the
    materialized storage room;
-8. track every spawned ledger-backed resource stack by map and thing id;
-9. on `MapDeiniter.Deinit`, return only stacks that still exist on that map to
-   the settlement ledger, or to the active ruin ledger if the settlement was
-   destroyed while the map was open;
-10. if binding fails, abort the preparation and return the payload to the
+8. if binding fails, abort the preparation and return the payload to the
    settlement ledger.
 
 This is still a bounded settlement materialization layer, not a full NPC-city
@@ -165,10 +161,15 @@ small bounded sample of settlement animals is withdrawn from ledger cohorts
 before spawning on the map. If an animal pawn cannot be spawned, that count is
 returned to its cohort. Spawned animal pawns are cohort-tracked until they die
 or safely leave the map. If the player later defeats the settlement, the
-existing defeat bridge destroys the matched ledger settlement. Map-end resource
-reconciliation then returns only unlooted tracked stacks to the active ruin, so
-the next visit sees the consequences of what the player actually took or
-destroyed instead of recreating the original stockpile.
+existing defeat bridge destroys the matched ledger settlement and only the
+remaining ledger-owned resources move into the ruin.
+
+The remaining hard part is **map-end loot reconciliation**: currently a
+successfully spawned resource stack has left the settlement ledger. That avoids
+double-counting when the player picks it up, but unlooted stacks abandoned on a
+temporary map are not yet returned to the settlement/ruin ledger. That needs a
+separate tracked-loot lifecycle hook rather than guessing from aggregate
+resource counts.
 
 ### Dematerialization
 
@@ -531,19 +532,11 @@ Trade intel остается отдельным следом: дорогие и�
 Daily simulation now has an explicit demographic lifecycle:
 
 - `DemographyService` ages `Alive` citizens on a configured age interval
-  (`AgeIntervalDays`, currently thirty simulation days in the RimWorld shell);
+  (`AgeIntervalDays`, currently one RimWorld year);
 - citizens crossing the natural death age can die from old age;
 - deaths write `CitizenDied` and remove that citizen from settlement population
   through status filtering;
 - ageing writes `CitizenAged` for surviving citizens.
-
-World bootstrap also uses `SettlementPopulationSeedingService` instead of a
-single fixed adult count for every settlement. The configured population remains
-the center point, but each imported settlement gets deterministic variation by
-world seed and settlement id, and seeded adult ages span young adults through
-elders. This keeps new worlds from opening with every faction row showing the
-same exact population and makes natural demographic change visible much sooner
-in live playtests.
 
 This is deterministic and capped per day. The goal is to prevent population from
 only growing through births while avoiding a large one-tick death spike in old

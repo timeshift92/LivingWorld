@@ -58,17 +58,14 @@ public static class FactionActionPlanner
 
         var developmentTarget = FindDevelopmentTarget(state, factionId, plannedTargets);
         var target = FindEnemyTarget(state, factionId, tick, plannedTargets);
-        var hasTradeRoute = CanSendCaravan(state, factionId);
-        var hasScoutingTarget = WorldWarTargetSelector.FindScoutingTarget(state, factionId) != null;
-        var hasDiplomacyTarget = CanSendDiplomat(state, factionId);
 
         var action = profile.Behavior switch
         {
-            FactionBehavior.Warmonger => ChooseRaiderAction(tick, target.HasValue, hasScoutingTarget, hasDiplomacyTarget),
-            FactionBehavior.Aggressive => ChooseRaiderAction(tick, target.HasValue, hasScoutingTarget, hasDiplomacyTarget),
+            FactionBehavior.Warmonger => target.HasValue ? WarAction.Warband : WarAction.ScoutingParty,
+            FactionBehavior.Aggressive => target.HasValue ? WarAction.Warband : WarAction.ScoutingParty,
             FactionBehavior.Expansionist => developmentTarget.HasValue ? WarAction.Develop : WarAction.Settler,
-            FactionBehavior.Merchant => ChooseMerchantAction(tick, developmentTarget.HasValue, hasTradeRoute, hasScoutingTarget, hasDiplomacyTarget),
-            FactionBehavior.Cautious => ChooseCautiousAction(tick, developmentTarget.HasValue, hasScoutingTarget, hasDiplomacyTarget),
+            FactionBehavior.Merchant => developmentTarget.HasValue ? WarAction.Develop : WarAction.Caravan,
+            FactionBehavior.Cautious => developmentTarget.HasValue ? WarAction.Develop : WarAction.ScoutingParty,
             FactionBehavior.Random => DeterministicRandomAction(tick, target.HasValue),
             _ => WarAction.None,
         };
@@ -116,90 +113,6 @@ public static class FactionActionPlanner
         }
 
         return plans;
-    }
-
-    private static WarAction ChooseRaiderAction(
-        int tick,
-        bool hasKnownAttackTarget,
-        bool hasScoutingTarget,
-        bool hasDiplomacyTarget)
-    {
-        if (!hasKnownAttackTarget)
-        {
-            return WarAction.ScoutingParty;
-        }
-
-        var day = SimulatedDay(tick);
-        if (day > 1 && day % 11 == 0 && hasDiplomacyTarget)
-        {
-            return WarAction.Diplomat;
-        }
-
-        if (day > 1 && day % 7 == 0 && hasScoutingTarget)
-        {
-            return WarAction.ScoutingParty;
-        }
-
-        return WarAction.Warband;
-    }
-
-    private static WarAction ChooseMerchantAction(
-        int tick,
-        bool hasDevelopmentTarget,
-        bool hasTradeRoute,
-        bool hasScoutingTarget,
-        bool hasDiplomacyTarget)
-    {
-        var day = SimulatedDay(tick);
-        if (day > 1 && day % 5 == 0 && hasDiplomacyTarget)
-        {
-            return WarAction.Diplomat;
-        }
-
-        if (hasTradeRoute)
-        {
-            return WarAction.Caravan;
-        }
-
-        if (hasDevelopmentTarget)
-        {
-            return WarAction.Develop;
-        }
-
-        return hasScoutingTarget ? WarAction.ScoutingParty : WarAction.None;
-    }
-
-    private static WarAction ChooseCautiousAction(
-        int tick,
-        bool hasDevelopmentTarget,
-        bool hasScoutingTarget,
-        bool hasDiplomacyTarget)
-    {
-        var day = SimulatedDay(tick);
-        if (hasDevelopmentTarget && day % 3 != 0)
-        {
-            return WarAction.Develop;
-        }
-
-        if (hasScoutingTarget)
-        {
-            return WarAction.ScoutingParty;
-        }
-
-        return hasDiplomacyTarget ? WarAction.Diplomat : WarAction.None;
-    }
-
-    private static bool CanSendCaravan(WorldState state, string factionId)
-    {
-        return WorldWarTargetSelector.FindTradeSource(state, factionId, "Steel") != null
-            && WorldWarTargetSelector.FindTradeTarget(state, factionId) != null;
-    }
-
-    private static bool CanSendDiplomat(WorldState state, string factionId)
-    {
-        var targetFaction = WorldWarTargetSelector.FindDiplomacyTargetFaction(state, factionId);
-        return targetFaction != null
-            && WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, factionId, targetFaction) != null;
     }
 
     private static int FactionPower(WorldState state, string factionId)
@@ -258,12 +171,7 @@ public static class FactionActionPlanner
             ? new[] { WarAction.Warband, WarAction.Settler, WarAction.Caravan, WarAction.ScoutingParty, WarAction.Diplomat }
             : new[] { WarAction.Settler, WarAction.Caravan, WarAction.ScoutingParty, WarAction.ScoutingParty, WarAction.Diplomat };
 
-        var day = SimulatedDay(tick);
+        var day = Math.Max(0, tick) / 60_000;
         return options[day % options.Length];
-    }
-
-    private static int SimulatedDay(int tick)
-    {
-        return Math.Max(0, tick) / 60_000;
     }
 }
