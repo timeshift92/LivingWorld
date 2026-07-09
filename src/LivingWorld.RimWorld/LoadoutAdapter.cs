@@ -26,6 +26,13 @@ public static class LoadoutAdapter
                 return false;
             }
 
+            // Never mobilize a colonist who cannot fight: pacifists / violence-incapable pawns, and pawns
+            // that cannot be drafted at all (children, etc.). They would only get armed and drafted in vain.
+            if (pawn.WorkTagIsDisabled(WorkTags.Violent) || pawn.drafter == null)
+            {
+                return false;
+            }
+
             var shooting = SkillLevel(pawn, SkillDefOf.Shooting);
             var melee = SkillLevel(pawn, SkillDefOf.Melee);
             var threshold = LivingWorldSettings.Instance?.mobilizationSkillThreshold

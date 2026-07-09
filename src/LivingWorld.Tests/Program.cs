@@ -9485,6 +9485,10 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("LoadoutSelectionService.SelectWeapon", adapter);
     AssertContains("LoadoutSelectionService.RankArmor", adapter);
     AssertContains("mobilizationSkillThreshold", adapter);
+    // Never mobilize violence-incapable (pacifist) or non-draftable colonists.
+    AssertContains("WorkTagIsDisabled(WorkTags.Violent)", adapter);
+    AssertContains("pawn.drafter == null", adapter);
+    AssertRimWorldMethodExists("Verse.Pawn", "WorkTagIsDisabled");
     AssertContains("ApparelUtility.CanWearTogether(", adapter);
     AssertContains("pawn.apparel.Wear(", adapter);
     AssertContains("FreeRackCell(", adapter);
@@ -9615,6 +9619,9 @@ static void TestRimWorldArmoryMobilization()
     AssertContains("draftedByUs", component);
     AssertContains("pawn.drafter.Drafted = true", component);
     AssertRimWorldMethodExists("RimWorld.Pawn_DraftController", "set_Drafted");
+    // Never pull a colonist off firefighting / tending / rescuing to draft them.
+    AssertContains("JobDefOf.BeatFire", component);
+    AssertContains("JobDefOf.TendPatient", component);
 
     // Settings toggle wired and drawn.
     var settings = File.ReadAllText(

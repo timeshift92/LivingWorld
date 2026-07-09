@@ -130,6 +130,14 @@ public sealed class MobilizationMapComponent : MapComponent
                     continue;
                 }
 
+                // Don't yank a colonist off an urgent life-or-base-saving task (firefighting, tending a
+                // patient, rescuing the downed). They get drafted on a later tick once that job is done.
+                var job = pawn.CurJobDef;
+                if (job == JobDefOf.BeatFire || job == JobDefOf.TendPatient || job == JobDefOf.Rescue)
+                {
+                    continue;
+                }
+
                 if (!RestUtility.Awake(pawn))
                 {
                     RestUtility.WakeUp(pawn, startNewJob: false);
