@@ -17,14 +17,16 @@ public sealed class ArmoryAssignmentComponent : GameComponent
     private Dictionary<Pawn, string> armorDefByPawn = new();
 
     // The apparel policy a colonist had before mobilization moved them to the combat policy, so stand-down
-    // can put them back on it. Stored by policy id so it survives save/load.
-    private Dictionary<Pawn, int> previousPolicyIdByPawn = new();
+    // can put them back on it. Keyed by pawn thingIDNumber (not a Pawn reference) and valued by policy id, so
+    // it scribes as plain values — no cross-reference list that would error when loading a save made before
+    // this field existed.
+    private Dictionary<int, int> previousPolicyIdByPawnId = new();
 
     private List<Pawn>? weaponKeysScratch;
     private List<string>? weaponValsScratch;
     private List<Pawn>? armorKeysScratch;
     private List<string>? armorValsScratch;
-    private List<Pawn>? policyKeysScratch;
+    private List<int>? policyKeysScratch;
     private List<int>? policyValsScratch;
 
     public ArmoryAssignmentComponent(Game game)
@@ -120,23 +122,23 @@ public sealed class ArmoryAssignmentComponent : GameComponent
     // Remembers a colonist's apparel policy the first time mobilization moves them off it.
     public void RememberPolicy(Pawn? pawn, ApparelPolicy? policy)
     {
-        if (pawn == null || policy == null || previousPolicyIdByPawn.ContainsKey(pawn))
+        if (pawn == null || policy == null || previousPolicyIdByPawnId.ContainsKey(pawn.thingIDNumber))
         {
             return;
         }
 
-        previousPolicyIdByPawn[pawn] = policy.id;
+        previousPolicyIdByPawnId[pawn.thingIDNumber] = policy.id;
     }
 
     // Returns and forgets the colonist's remembered policy, resolved back to a live policy (null if gone).
     public ApparelPolicy? TakeRememberedPolicy(Pawn? pawn)
     {
-        if (pawn == null || !previousPolicyIdByPawn.TryGetValue(pawn, out var id))
+        if (pawn == null || !previousPolicyIdByPawnId.TryGetValue(pawn.thingIDNumber, out var id))
         {
             return null;
         }
 
-        previousPolicyIdByPawn.Remove(pawn);
+        previousPolicyIdByPawnId.Remove(pawn.thingIDNumber);
         return Current.Game?.outfitDatabase?.AllOutfits?.FirstOrDefault(policy => policy != null && policy.id == id);
     }
 
@@ -150,11 +152,11 @@ public sealed class ArmoryAssignmentComponent : GameComponent
             ref armorDefByPawn, "livingWorld_armoryArmorByPawn",
             LookMode.Reference, LookMode.Value, ref armorKeysScratch, ref armorValsScratch);
         Scribe_Collections.Look(
-            ref previousPolicyIdByPawn, "livingWorld_armoryPrevPolicyByPawn",
-            LookMode.Reference, LookMode.Value, ref policyKeysScratch, ref policyValsScratch);
+            ref previousPolicyIdByPawnId, "livingWorld_armoryPrevPolicyByPawnId",
+            LookMode.Value, LookMode.Value, ref policyKeysScratch, ref policyValsScratch);
         weaponDefByPawn ??= new Dictionary<Pawn, string>();
         armorDefByPawn ??= new Dictionary<Pawn, string>();
-        previousPolicyIdByPawn ??= new Dictionary<Pawn, int>();
+        previousPolicyIdByPawnId ??= new Dictionary<int, int>();
     }
 
     public static ArmoryAssignmentComponent? Instance => Current.Game?.GetComponent<ArmoryAssignmentComponent>();
