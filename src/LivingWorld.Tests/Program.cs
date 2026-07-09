@@ -170,6 +170,7 @@ var tests = new List<(string Name, Action Test)>
     ("war planner keeps scouts and diplomats visible even after attacks unlock", TestFactionActionPlannerDiversifiesVisibleActions),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("war planner avoids targets already under pressure", TestFactionActionPlannerAvoidsPressuredEnemyTargets),
+    ("war planner scouts instead of dogpiling a saturated target", TestFactionActionPlannerAbstainsWhenTargetSaturated),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
     ("non-combat world actions do not target the player faction", TestWorldWarNonCombatActionsSkipPlayerFaction),
@@ -4845,6 +4846,38 @@ static void TestFactionActionPlannerAvoidsPressuredEnemyTargets()
 
     AssertEqual(WarAction.Warband, pressured.Action);
     AssertEqual(alternate, pressured.TargetSettlementId);
+}
+
+static void TestFactionActionPlannerAbstainsWhenTargetSaturated()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+
+    // The faction knows exactly one enemy settlement.
+    var onlyTarget = state.CreateSettlement("target-one", "Target One", "TargetOneFaction");
+    state.RecordFactionSettlementIntel("Raiders", onlyTarget.Id, IntelSourceKind.Scout, 0, confidence: 80);
+
+    // With no pressure it would march on that single known target.
+    AssertEqual(WarAction.Warband, FactionActionPlanner.Plan(state, "Raiders", 60_000).Action);
+
+    // Saturate that target with rival armies (each in-flight army is x3 pressure) up to the cap.
+    var rivalHome = state.CreateSettlement("rival-home", "Rival Home", "Rivals");
+    var rivalA = state.CreateArmy("Rival A", "Rivals", rivalHome.Id);
+    var rivalB = state.CreateArmy("Rival B", "Rivals", rivalHome.Id);
+    state.DispatchArmy(rivalA.Id, onlyTarget.Id, 5 * 60_000);
+    state.DispatchArmy(rivalB.Id, onlyTarget.Id, 5 * 60_000);
+
+    // Its only known target is now saturated, so it does not dogpile — it falls through to scouting,
+    // which is how it gathers the intel to diversify its targets in later rounds.
+    var plan = FactionActionPlanner.Plan(state, "Raiders", 120_000);
+    AssertEqual(WarAction.ScoutingParty, plan.Action);
+    AssertEqual(true, plan.TargetSettlementId == null);
 }
 
 static void TestFactionActionPlannerSkipsAlliedTargets()
