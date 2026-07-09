@@ -48,6 +48,7 @@ var tests = new List<(string Name, Action Test)>
     ("deep production uses archetype labor scale and complexity", TestSettlementProductionUsesDepthModifiers),
     ("virtual trade conserves goods and silver", TestVirtualTradeTransfersGoodsAndSilver),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
+    ("summarizes recent world activity by domain", TestWorldActivitySummaryGroupsRecentEvents),
     ("settlement facilities modify production output", TestSettlementFacilitiesModifyProductionOutput),
     ("settlement production status reports effective daily output", TestSettlementProductionStatusUsesEffectiveOutput),
     ("settlement projects consume resources and complete facilities", TestSettlementProjectsConsumeResourcesAndCompleteFacilities),
@@ -198,9 +199,10 @@ var tests = new List<(string Name, Action Test)>
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
-    ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
+    ("expansionist faction launches a real settler expedition before founding", TestWorldWarExpansionistLaunchesSettlerExpeditionBeforeFounding),
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
-    ("expansion creates unique colony slugs", TestWorldWarExpansionUsesUniqueColonySlugs),
+    ("settler expedition creates unique colony slugs on arrival", TestSettlerExpeditionUsesUniqueColonySlugsOnArrival),
+    ("settler expedition survives save load before founding", TestSettlerExpeditionSurvivesSaveLoadBeforeFounding),
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
     ("world war caravan reserves and returns real crew", TestWorldWarCaravanReservesAndReturnsRealCrew),
     ("world war target selector skips inactive settlements", TestWorldWarTargetSelectorSkipsInactiveSettlements),
@@ -1664,6 +1666,38 @@ static void TestSettlementProductionAddsOwnedResources()
     AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial"));
     AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementProductionUpdated));
+}
+
+static void TestWorldActivitySummaryGroupsRecentEvents()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("town", "Town", "Settlers");
+    var target = state.CreateSettlement("target", "Target", "Visitors");
+    var citizen = state.CreateCitizen("Ada", 30, Sex.Female, "farmer", settlement.Id);
+
+    state.AdvanceToTick(10_000);
+    state.AddResource(settlement.Id, "Steel", 20);
+    state.RecordEvent(WorldEventKind.SettlementProjectCompleted, settlement.Id, "workshop completed");
+    state.RecordEvent(WorldEventKind.CaravanLaunched, settlement.Id, "caravan departed");
+    state.RecordEvent(WorldEventKind.DiplomaticMissionSent, settlement.Id, "envoys departed");
+    state.RecordEvent(WorldEventKind.AnimalHunted, settlement.Id, "hunted muffalo");
+    state.RecordEvent(WorldEventKind.TechnologyDiffused, settlement.Id, "industrial farming diffused");
+    state.RecordEvent(WorldEventKind.WarbandLaunched, target.Id, "unrelated warband");
+    state.RecordEvent(WorldEventKind.CitizenDied, citizen.Id, "Ada died");
+
+    var summary = WorldActivitySummaryService.Summarize(
+        state,
+        new WorldActivitySummaryRequest(CurrentTick: 10_000, LookbackTicks: 60_000, SettlementId: settlement.Id));
+
+    AssertEqual(-1, summary.PopulationDelta);
+    AssertEqual(1, summary.EconomyEvents);
+    AssertEqual(1, summary.ConstructionEvents);
+    AssertEqual(0, summary.MilitaryEvents);
+    AssertEqual(1, summary.TradeEvents);
+    AssertEqual(1, summary.DiplomacyEvents);
+    AssertEqual(1, summary.EcologyEvents);
+    AssertEqual(1, summary.TechnologyEvents);
+    AssertEqual(7, summary.TotalEvents);
 }
 
 static void TestSettlementFacilitiesModifyProductionOutput()
@@ -5743,7 +5777,7 @@ static void TestWorldWarWarbandCooldownThrottlesLaunches()
     AssertEqual(1, totalLaunched);
 }
 
-static void TestWorldWarExpansionistFoundsColony()
+static void TestWorldWarExpansionistLaunchesSettlerExpeditionBeforeFounding()
 {
     var state = new WorldState(4242);
     var home = state.CreateSettlement("home", "Home", "Settlers");
@@ -5761,14 +5795,33 @@ static void TestWorldWarExpansionistFoundsColony()
         state,
         new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
 
-    AssertEqual(1, result.ColoniesFounded);
+    AssertEqual(0, result.ColoniesFounded);
+    AssertEqual(1, result.SettlerExpeditionsLaunched);
+    AssertEqual(settlementsBefore, state.Settlements.Count);
+    AssertEqual(totalCitizens, state.Citizens.Count);
+    AssertEqual(1, state.MigrationGroups.Count(group => group.Reason == MigrationService.ReasonSettlementFounding));
+
+    var expedition = state.MigrationGroups.Single(group => group.Reason == MigrationService.ReasonSettlementFounding);
+    AssertEqual(MigrationGroupStatus.Traveling, expedition.Status);
+    AssertEqual(null, expedition.TargetSettlementId);
+    AssertEqual("Settlers-colony-2", expedition.PlannedSettlementSlug);
+    AssertEqual(6, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == expedition.Id));
+    AssertEqual(24, state.GetSettlementPopulation(home.Id).Adults);
+
+    var arrival = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(180_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, arrival.ColoniesFounded);
     AssertEqual(settlementsBefore + 1, state.Settlements.Count);
-    // Population is conserved: the settlers relocated, none were created from nothing.
     AssertEqual(totalCitizens, state.Citizens.Count);
 
     var colony = state.Settlements.First(settlement => settlement.Id != home.Id);
     AssertEqual(6, state.GetSettlementPopulation(colony.Id).Adults);
     AssertEqual("Settlers", state.GetSettlement(colony.Id)!.FactionId);
+    AssertEqual(MigrationGroupStatus.Arrived, state.GetMigrationGroup(expedition.Id)!.Status);
+    AssertEqual(0, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == expedition.Id));
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestExpandSettlementRejectsEmptyOrInsufficientSettlers()
@@ -5785,7 +5838,7 @@ static void TestExpandSettlementRejectsEmptyOrInsufficientSettlers()
     AssertEqual(1, state.GetSettlementPopulation(home.Id).Adults);
 }
 
-static void TestWorldWarExpansionUsesUniqueColonySlugs()
+static void TestSettlerExpeditionUsesUniqueColonySlugsOnArrival()
 {
     var state = new WorldState(4242);
     var home = state.CreateSettlement("home", "Home", "Settlers");
@@ -5806,9 +5859,50 @@ static void TestWorldWarExpansionUsesUniqueColonySlugs()
         state,
         new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
 
-    AssertEqual(1, result.ColoniesFounded);
+    AssertEqual(0, result.ColoniesFounded);
+    AssertEqual(1, result.SettlerExpeditionsLaunched);
+    AssertEqual(false, state.Settlements.Any(settlement => settlement.Slug == "Settlers-colony-4"));
+
+    var arrival = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(180_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, arrival.ColoniesFounded);
     AssertEqual(true, state.Settlements.Any(settlement => settlement.Slug == "Settlers-colony-4"));
     AssertEqual(false, state.Validate().Any(error => error.Contains("Duplicate settlement slug", StringComparison.Ordinal)));
+}
+
+static void TestSettlerExpeditionSurvivesSaveLoadBeforeFounding()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("home", "Home", "Settlers");
+    for (var i = 0; i < 30; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "settler", home.Id);
+    }
+
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Expansionist);
+
+    WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    var expedition = state.MigrationGroups.Single(group => group.Reason == MigrationService.ReasonSettlementFounding);
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredExpedition = restored.GetMigrationGroup(expedition.Id)!;
+
+    AssertEqual(MigrationGroupStatus.Traveling, restoredExpedition.Status);
+    AssertEqual("Settlers-colony-2", restoredExpedition.PlannedSettlementSlug);
+    AssertEqual(6, restored.Citizens.Count(citizen => restored.GetOwner(citizen.Id) == restoredExpedition.Id));
+    AssertEqual(1, restored.Settlements.Count);
+
+    var arrival = WorldWarService.SimulateDay(
+        restored,
+        new WorldWarRequest(180_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, arrival.ColoniesFounded);
+    AssertEqual(2, restored.Settlements.Count);
+    AssertEqual(0, restored.Validate().Count());
 }
 
 static void TestWorldWarCaravanTransfersRealGoods()
@@ -6071,9 +6165,10 @@ static void TestDerivedAggregatesTrackCaptureAndExpansion()
     AssertFactionAggregateMatchesFullScan(state, "Settlers");
     AssertAggregateMatchesFullScan(state, settler.Id);
 
-    // Expansion moves adults to a new colony — the source settlement aggregate must track the drop.
+    // Expansion now starts as a travelling settler expedition — the source aggregate must track
+    // the drop before the new colony is founded.
     AssertAggregateMatchesFullScan(state, raider.Id);
-    state.ExpandSettlement(raider.Id, "a-colony", "A Colony", 6);
+    state.StartSettlementExpedition(raider.Id, "a-colony", "A Colony", 6, 60_000, 120_000);
     AssertAggregateMatchesFullScan(state, raider.Id);
     AssertFactionAggregateMatchesFullScan(state, "Raiders");
 }
@@ -8301,10 +8396,13 @@ static void TestRimWorldWorldActivityTrends()
 
     AssertContains("LW_SettlementObserver_DailyTrend", observerWindow);
     AssertContains("BuildDailyTrend", observerWindow);
-    AssertContains("WorldEventKind.SettlementProjectCompleted", observerWindow);
+    AssertContains("WorldActivitySummaryService.Summarize", observerWindow);
+    AssertContains("WorldActivitySummaryRequest", observerWindow);
+    AssertContains("summary.TradeEvents", observerWindow);
+    AssertContains("summary.ConstructionEvents", observerWindow);
+    AssertContains("summary.EconomyEvents", observerWindow);
+    AssertContains("summary.EcologyEvents", observerWindow);
     AssertContains("WorldEventKind.SettlementFacilityDamaged", observerWindow);
-    AssertContains("WorldEventKind.CaravanLaunched", observerWindow);
-    AssertContains("WorldEventKind.DiplomaticMissionSent", observerWindow);
     AssertContains("ActiveTravelsForSettlement", observerWindow);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));

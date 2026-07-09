@@ -15,4 +15,9 @@ public sealed record WorldMigrationGroup(
     int CreatedTick,
     int ArrivalTick,
     MigrationGroupStatus Status,
-    string Reason);
+    string Reason)
+{
+    public string PlannedSettlementSlug { get; init; } = string.Empty;
+
+    public string PlannedSettlementName { get; init; } = string.Empty;
+}

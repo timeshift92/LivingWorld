@@ -17,6 +17,7 @@ public static class MigrationService
 {
     public const string ReasonNone = "none";
     public const string ReasonStarvation = "starvation";
+    public const string ReasonSettlementFounding = "settlement-founding";
 
     public static MigrationSimulationResult SimulateDay(
         WorldState state,
