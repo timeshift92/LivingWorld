@@ -161,6 +161,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncApproachingRaidMarkers();
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
+        LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
     }
 
     public override void WorldComponentTick()
@@ -178,6 +179,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
+        if (currentTick % 250 == 0)
+        {
+            LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
+        }
+
         CheckPlayerCaravanMarkerContacts(currentTick);
         var currentDay = currentTick / TicksPerDay;
         if (currentDay <= 0 || currentDay <= lastSimulatedDay)

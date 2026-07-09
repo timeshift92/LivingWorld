@@ -330,6 +330,7 @@ var tests = new List<(string Name, Action Test)>
     ("tracks settlement map floors and reconciles facility damage", TestRimWorldSettlementMapFloorDamageReconciliation),
     ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
     ("materializes full npc city layout surface", TestRimWorldSettlementMapFullCitySurface),
+    ("cleans orphaned lord references before save", TestRimWorldCleansOrphanedLordReferences),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -8705,6 +8706,28 @@ static void TestRimWorldRuinSites()
     AssertContains("ruin site creation failed safely", component);
     // The real RimWorld site-building API exists in this build.
     AssertRimWorldMethodExists("RimWorld.Planet.SiteMaker", "MakeSite");
+}
+
+static void TestRimWorldCleansOrphanedLordReferences()
+{
+    var root = FindRepoRoot();
+    var cleaner = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldOrphanedLordReferenceCleaner.cs"));
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    var mapGeneration = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationPatch.cs"));
+
+    AssertContains("SignalAction_DormancyWakeUp", cleaner);
+    AssertContains("AccessTools.Field(thing.GetType(), \"lord\")", cleaner);
+    AssertContains("map.lordManager?.lords", cleaner);
+    AssertContains("!savedLords.Contains(lord)", cleaner);
+    AssertContains("thing.Destroy(DestroyMode.Vanish)", cleaner);
+    AssertContains("CleanOrphanedLordOwnedPawns", cleaner);
+    AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
+    AssertContains("ownedPawns.RemoveAt(index)", cleaner);
+    AssertContains("IsPawnDeepSavedByMap", cleaner);
+    AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
+    AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
+    AssertContains("currentTick % 250 == 0", component);
+    AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
 }
 
 static void TestRimWorldDrifterFlowSettings()
