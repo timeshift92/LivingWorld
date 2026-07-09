@@ -192,6 +192,7 @@
   <LW_EconomyCol_Wealth>Богатство</LW_EconomyCol_Wealth>
   <LW_SettlementObserverTitle>Наблюдение за поселениями</LW_SettlementObserverTitle>
   <LW_SettlementObserver_Settlements>Поселения</LW_SettlementObserver_Settlements>
+  <LW_SettlementObserver_DebugOnly>Точный просмотр ledger-а поселений доступен только при включённом debug logging Living World. Игровые сведения должны приходить через разведку, торговцев и прямые визиты.</LW_SettlementObserver_DebugOnly>
   <LW_SettlementObserver_NoSettlement>Поселение не выбрано.</LW_SettlementObserver_NoSettlement>
   <LW_SettlementObserver_Overview>Статус {status} | уровень {tier} | население {total} (взрослые {adults}, дети {children}, старики {elderly}) | богатство {wealth}</LW_SettlementObserver_Overview>
   <LW_SettlementObserver_Production>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_SettlementObserver_Production>

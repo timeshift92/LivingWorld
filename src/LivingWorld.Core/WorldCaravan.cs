@@ -5,6 +5,7 @@ public enum CaravanStatus
     Traveling,
     Arrived,
     Destroyed,
+    Recalled,
 }
 
 public sealed record WorldCaravan(
@@ -15,4 +16,5 @@ public sealed record WorldCaravan(
     EntityId TargetSettlementId,
     int DepartTick,
     int ArrivalTick,
-    CaravanStatus Status);
+    CaravanStatus Status,
+    EntityId? CrewCitizenId = null);

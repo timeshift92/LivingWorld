@@ -191,7 +191,9 @@ public sealed class LivingWorldEconomyWindow : Window
         cachedSettlementCount = state.Settlements.Count;
         cachedRows.Clear();
 
-        var rows = state.Settlements
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        var visibleSettlements = debugExact ? state.Settlements.Where(settlement => settlement.IsActive) : KnownSettlementsForPlayer(state);
+        var rows = visibleSettlements
             .GroupBy(settlement => settlement.FactionId, System.StringComparer.Ordinal)
             .Select(group =>
             {
@@ -232,6 +234,12 @@ public sealed class LivingWorldEconomyWindow : Window
                 row.Wealth,
                 fill));
         }
+    }
+
+    private static IEnumerable<WorldSettlement> KnownSettlementsForPlayer(WorldState state)
+    {
+        var knownSettlementIds = new HashSet<EntityId>(state.KnownSettlementInfos.Select(info => info.SettlementId));
+        return state.Settlements.Where(settlement => settlement.IsActive && knownSettlementIds.Contains(settlement.Id));
     }
 
     private static int DailyOutputValue(SettlementProductionStatus production)

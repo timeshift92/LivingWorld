@@ -8,9 +8,9 @@ public sealed record TransitEncounterResult(
 
 /// <summary>
 /// Resolves deterministic encounters between travelling combat forces and non-combat traffic.
-/// This is intentionally conservative: only exact opposite endpoint routes are considered a
-/// crossing. It avoids radius math in Core while preventing obvious "they pass through each other"
-/// cases on the world map.
+/// This is intentionally conservative: exact opposite endpoint routes and same-target convergence
+/// are considered crossings. It avoids radius math in Core while preventing visible traffic from
+/// passing through the same war objective without consequences.
 /// </summary>
 public static class TransitEncounterService
 {
@@ -60,11 +60,7 @@ public static class TransitEncounterService
                 continue;
             }
 
-            state.SetMissionStatus(mission.Id, WorldMissionStatus.Failed);
-            state.RecordEvent(
-                WorldEventKind.WorldMissionDisrupted,
-                mission.Id,
-                $"Mission {mission.Id} disrupted by {attacker.ArmyId}.");
+            state.FailMission(mission.Id, $"disrupted by {attacker.ArmyId}");
             missionsDisrupted++;
         }
 
@@ -79,8 +75,9 @@ public static class TransitEncounterService
             return false;
         }
 
-        return army.SourceSettlementId == caravan.TargetSettlementId
-            && armyMovement.TargetSettlementId == caravan.SourceSettlementId;
+        return (army.SourceSettlementId == caravan.TargetSettlementId
+                && armyMovement.TargetSettlementId == caravan.SourceSettlementId)
+            || armyMovement.TargetSettlementId == caravan.TargetSettlementId;
     }
 
     private static bool CanThreatenMission(WorldState state, WorldArmyMovement armyMovement, WorldMission mission)
@@ -91,8 +88,9 @@ public static class TransitEncounterService
             return false;
         }
 
-        return army.SourceSettlementId == mission.TargetSettlementId
-            && armyMovement.TargetSettlementId == mission.OriginSettlementId;
+        return (army.SourceSettlementId == mission.TargetSettlementId
+                && armyMovement.TargetSettlementId == mission.OriginSettlementId)
+            || armyMovement.TargetSettlementId == mission.TargetSettlementId;
     }
 
     private static bool IsHostile(WorldState state, string factionA, string factionB)

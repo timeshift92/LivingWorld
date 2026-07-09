@@ -40,7 +40,7 @@ public static class ArmyInterceptionService
             for (var rightIndex = leftIndex + 1; rightIndex < movements.Count; rightIndex++)
             {
                 var right = movements[rightIndex];
-                if (consumed.Contains(right.ArmyId) || !RoutesMeetHeadOn(state, left, right))
+                if (consumed.Contains(right.ArmyId) || !RoutesConflict(state, left, right))
                 {
                     continue;
                 }
@@ -56,7 +56,7 @@ public static class ArmyInterceptionService
         return new ArmyInterceptionResult(interceptions);
     }
 
-    private static bool RoutesMeetHeadOn(WorldState state, WorldArmyMovement left, WorldArmyMovement right)
+    private static bool RoutesConflict(WorldState state, WorldArmyMovement left, WorldArmyMovement right)
     {
         var leftArmy = state.GetArmy(left.ArmyId);
         var rightArmy = state.GetArmy(right.ArmyId);
@@ -71,8 +71,9 @@ public static class ArmyInterceptionService
             return false;
         }
 
-        return leftArmy.SourceSettlementId == right.TargetSettlementId
-            && rightArmy.SourceSettlementId == left.TargetSettlementId;
+        return (leftArmy.SourceSettlementId == right.TargetSettlementId
+                && rightArmy.SourceSettlementId == left.TargetSettlementId)
+            || left.TargetSettlementId == right.TargetSettlementId;
     }
 
     private static void ResolveInterception(

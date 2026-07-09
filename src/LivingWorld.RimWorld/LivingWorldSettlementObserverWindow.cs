@@ -35,6 +35,19 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             return;
         }
 
+        var debugLogging = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        if (!debugLogging)
+        {
+            Widgets.Label(inRect, "LW_SettlementObserver_DebugOnly".Translate());
+            var debugCloseRect = new Rect(inRect.center.x - 80f, inRect.yMax - 38f, 160f, 34f);
+            if (Widgets.ButtonText(debugCloseRect, "CloseButton".Translate()))
+            {
+                Close();
+            }
+
+            return;
+        }
+
         var state = component.State;
         Text.Font = GameFont.Medium;
         Widgets.Label(new Rect(inRect.x, inRect.y, inRect.width, 34f), "LW_SettlementObserverTitle".Translate());
@@ -60,6 +73,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         Widgets.DrawLineHorizontal(rect.x, rect.y + 26f, rect.width);
 
         var settlements = state.Settlements
+            .Where(settlement => settlement.IsActive)
             .OrderBy(settlement => settlement.Name, StringComparer.Ordinal)
             .ThenBy(settlement => settlement.Id.Value)
             .Take(MaxSettlementRows)

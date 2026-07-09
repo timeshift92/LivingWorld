@@ -21,8 +21,11 @@ public static class CaravanMovementService
             .OrderBy(caravan => caravan.Id.Value)
             .ToList())
         {
-            state.MarkCaravanArrived(caravan.Id);
-            arrived++;
+            var updated = state.MarkCaravanArrived(caravan.Id);
+            if (updated.Status == CaravanStatus.Arrived)
+            {
+                arrived++;
+            }
         }
 
         return new CaravanMovementResult(arrived);

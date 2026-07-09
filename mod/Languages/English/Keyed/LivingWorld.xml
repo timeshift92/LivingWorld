@@ -192,6 +192,7 @@
   <LW_EconomyCol_Wealth>Wealth</LW_EconomyCol_Wealth>
   <LW_SettlementObserverTitle>Settlement observer</LW_SettlementObserverTitle>
   <LW_SettlementObserver_Settlements>Settlements</LW_SettlementObserver_Settlements>
+  <LW_SettlementObserver_DebugOnly>Exact settlement ledger inspection is available only when Living World debug logging is enabled. Use scouts, traders and direct visits for player-facing knowledge.</LW_SettlementObserver_DebugOnly>
   <LW_SettlementObserver_NoSettlement>No settlement selected.</LW_SettlementObserver_NoSettlement>
   <LW_SettlementObserver_Overview>Status {status} | tier {tier} | population {total} (adults {adults}, children {children}, elders {elderly}) | wealth {wealth}</LW_SettlementObserver_Overview>
   <LW_SettlementObserver_Production>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_SettlementObserver_Production>

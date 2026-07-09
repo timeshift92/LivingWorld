@@ -61,7 +61,13 @@ public static class WorldStateCodec
                             new XAttribute("targetSettlementId", caravan.TargetSettlementId.Value),
                             new XAttribute("departTick", caravan.DepartTick),
                             new XAttribute("arrivalTick", caravan.ArrivalTick),
-                            new XAttribute("status", caravan.Status)))),
+                            new XAttribute("status", caravan.Status),
+                            caravan.CrewCitizenId.HasValue
+                                ? new XAttribute("crewKind", caravan.CrewCitizenId.Value.Kind)
+                                : null,
+                            caravan.CrewCitizenId.HasValue
+                                ? new XAttribute("crewId", caravan.CrewCitizenId.Value.Value)
+                                : null))),
                 new XElement(
                     "Missions",
                     snapshot.Missions.Select(mission =>
@@ -77,6 +83,12 @@ public static class WorldStateCodec
                             new XAttribute("departTick", mission.DepartTick),
                             new XAttribute("arrivalTick", mission.ArrivalTick),
                             new XAttribute("status", mission.Status),
+                            mission.CrewCitizenId.HasValue
+                                ? new XAttribute("crewKind", mission.CrewCitizenId.Value.Kind)
+                                : null,
+                            mission.CrewCitizenId.HasValue
+                                ? new XAttribute("crewId", mission.CrewCitizenId.Value.Value)
+                                : null,
                             new XAttribute("targetFactionId", mission.TargetFactionId),
                             new XAttribute("amount", mission.Amount)))),
                 new XElement(
@@ -725,7 +737,8 @@ public static class WorldStateCodec
                     ReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
                     RequiredInt(element, "departTick"),
                     RequiredInt(element, "arrivalTick"),
-                    RequiredEnum<CaravanStatus>(element, "status")))
+                    RequiredEnum<CaravanStatus>(element, "status"),
+                    TryReadEntityId(element, "crewKind", "crewId")))
                 .ToList(),
             Missions = OptionalContainer(root, "Missions")
                 .Elements("Mission")
@@ -737,7 +750,8 @@ public static class WorldStateCodec
                     ReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
                     RequiredInt(element, "departTick"),
                     RequiredInt(element, "arrivalTick"),
-                    RequiredEnum<WorldMissionStatus>(element, "status"))
+                    RequiredEnum<WorldMissionStatus>(element, "status"),
+                    TryReadEntityId(element, "crewKind", "crewId"))
                 {
                     TargetFactionId = OptionalString(element, "targetFactionId") ?? string.Empty,
                     Amount = OptionalInt(element, "amount", 0),

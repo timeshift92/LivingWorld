@@ -1,10 +1,11 @@
 namespace LivingWorld.Core;
 
-internal static class WorldWarTargetSelector
+public static class WorldWarTargetSelector
 {
     public static WorldSettlement? FindReadySourceSettlement(WorldState state, string factionId)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => state.GetSettlementPopulation(settlement.Id).Adults > 0)
             .OrderBy(settlement => settlement.Id.Value)
@@ -14,6 +15,7 @@ internal static class WorldWarTargetSelector
     public static WorldSettlement? FindTradeSource(WorldState state, string factionId, string resourceKey)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => state.GetSettlementPopulation(settlement.Id).Adults > 0)
             .Where(settlement => state.GetOwnedResourceQuantity(settlement.Id, resourceKey) > 0)
@@ -25,6 +27,7 @@ internal static class WorldWarTargetSelector
     public static WorldSettlement? FindTradeTarget(WorldState state, string factionId)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Hostile)
@@ -36,6 +39,7 @@ internal static class WorldWarTargetSelector
     public static WorldSettlement? FindScoutingTarget(WorldState state, string factionId)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !state.HasFactionSettlementIntel(factionId, settlement.Id))
@@ -47,6 +51,7 @@ internal static class WorldWarTargetSelector
     public static WorldSettlement? FindExpansionSource(WorldState state, string factionId)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .OrderByDescending(settlement => state.GetSettlementPopulation(settlement.Id).Adults)
             .ThenBy(settlement => settlement.Id.Value)
@@ -56,6 +61,7 @@ internal static class WorldWarTargetSelector
     public static string? FindDiplomacyTargetFaction(WorldState state, string factionId)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(settlement.FactionId))
@@ -73,6 +79,7 @@ internal static class WorldWarTargetSelector
         string targetFactionId)
     {
         return state.Settlements
+            .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, targetFactionId, StringComparison.Ordinal))
             .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)

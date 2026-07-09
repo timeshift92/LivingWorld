@@ -15,6 +15,12 @@ internal static class DiplomacyActionExecutor
             return false;
         }
 
+        var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
+        if (crew == null)
+        {
+            return false;
+        }
+
         // The mission travels to a settlement of the target faction (for the world-map marker + tile).
         var targetSettlement = WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, factionId, targetFaction);
         if (targetSettlement == null)
@@ -32,7 +38,7 @@ internal static class DiplomacyActionExecutor
         }
 
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
-        state.DispatchMission(
+        var mission = state.DispatchMission(
             WorldMissionKind.Diplomat,
             factionId,
             source.Id,
@@ -40,7 +46,14 @@ internal static class DiplomacyActionExecutor
             request.Tick,
             arrivalTick,
             targetFactionId: targetFaction,
-            amount: delta);
-        return true;
+            amount: delta,
+            crewCitizenId: crew.Id);
+        if (TravelCrewService.ReserveCrew(state, source.Id, mission.Id, crew.Id, "diplomatic mission launched"))
+        {
+            return true;
+        }
+
+        state.RemoveMissionForLedger(mission.Id);
+        return false;
     }
 }

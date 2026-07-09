@@ -580,9 +580,9 @@ public sealed class WorldState
         ThrowIfNullOrWhiteSpace(name, nameof(name));
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
 
-        if (!_settlements.ContainsKey(sourceSettlementId))
+        if (!IsActiveSettlement(sourceSettlementId))
         {
-            throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
+            throw new InvalidOperationException($"Settlement {sourceSettlementId} is not active.");
         }
 
         var army = new WorldArmy(
@@ -605,19 +605,20 @@ public sealed class WorldState
         EntityId sourceSettlementId,
         EntityId targetSettlementId,
         int departTick,
-        int arrivalTick)
+        int arrivalTick,
+        EntityId? crewCitizenId = null)
     {
         ThrowIfNullOrWhiteSpace(name, nameof(name));
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
 
-        if (!_settlements.ContainsKey(sourceSettlementId))
+        if (!IsActiveSettlement(sourceSettlementId))
         {
-            throw new InvalidOperationException($"Source settlement {sourceSettlementId} does not exist.");
+            throw new InvalidOperationException($"Source settlement {sourceSettlementId} is not active.");
         }
 
-        if (!_settlements.ContainsKey(targetSettlementId))
+        if (!IsActiveSettlement(targetSettlementId))
         {
-            throw new InvalidOperationException($"Target settlement {targetSettlementId} does not exist.");
+            throw new InvalidOperationException($"Target settlement {targetSettlementId} is not active.");
         }
 
         var caravan = new WorldCaravan(
@@ -628,7 +629,8 @@ public sealed class WorldState
             targetSettlementId,
             Math.Max(0, departTick),
             Math.Max(departTick, arrivalTick),
-            CaravanStatus.Traveling);
+            CaravanStatus.Traveling,
+            crewCitizenId);
 
         _caravans.Add(caravan.Id, caravan);
         _owners[caravan.Id] = sourceSettlementId;
@@ -657,9 +659,14 @@ public sealed class WorldState
             return caravan;
         }
 
-        if (caravan.Status == CaravanStatus.Destroyed)
+        if (caravan.Status is CaravanStatus.Destroyed or CaravanStatus.Recalled)
         {
-            throw new InvalidOperationException($"Destroyed caravan {caravanId} cannot arrive.");
+            throw new InvalidOperationException($"Terminal caravan {caravanId} cannot arrive.");
+        }
+
+        if (!IsActiveSettlement(caravan.TargetSettlementId))
+        {
+            return MarkCaravanRecalled(caravanId, "target settlement unavailable");
         }
 
         foreach (var resource in ResourcesForOwner(caravanId))
@@ -678,8 +685,49 @@ public sealed class WorldState
 
         var arrived = caravan with { Status = CaravanStatus.Arrived };
         _caravans[caravanId] = arrived;
+        TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, "caravan arrived");
         AppendEvent(WorldEventKind.CaravanArrived, caravanId, $"Caravan {caravanId} arrived at {caravan.TargetSettlementId}.");
         return arrived;
+    }
+
+    public WorldCaravan MarkCaravanRecalled(EntityId caravanId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (!_caravans.TryGetValue(caravanId, out var caravan))
+        {
+            throw new InvalidOperationException($"Caravan {caravanId} does not exist.");
+        }
+
+        if (caravan.Status == CaravanStatus.Recalled)
+        {
+            return caravan;
+        }
+
+        if (caravan.Status is CaravanStatus.Arrived or CaravanStatus.Destroyed)
+        {
+            throw new InvalidOperationException($"Terminal caravan {caravanId} cannot be recalled.");
+        }
+
+        foreach (var resource in ResourcesForOwner(caravanId))
+        {
+            var transfer = TransferResource(
+                caravanId,
+                caravan.SourceSettlementId,
+                resource.ResourceKey,
+                resource.Quantity,
+                reason);
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+        }
+
+        var recalled = caravan with { Status = CaravanStatus.Recalled };
+        _caravans[caravanId] = recalled;
+        TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, reason);
+        AppendEvent(WorldEventKind.CaravanDestroyed, caravanId, $"Caravan {caravanId} recalled: {reason}.");
+        return recalled;
     }
 
     public WorldCaravan DestroyCaravan(EntityId caravanId, string reason)
@@ -703,6 +751,7 @@ public sealed class WorldState
 
         var destroyed = caravan with { Status = CaravanStatus.Destroyed };
         _caravans[caravanId] = destroyed;
+        TravelCrewService.MarkCrewMissing(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, reason);
         AppendEvent(WorldEventKind.CaravanDestroyed, caravanId, $"Caravan {caravanId} destroyed: {reason}.");
         return destroyed;
     }
@@ -714,9 +763,9 @@ public sealed class WorldState
             throw new InvalidOperationException($"Army {armyId} does not exist.");
         }
 
-        if (!_settlements.ContainsKey(targetSettlementId))
+        if (!IsActiveSettlement(targetSettlementId))
         {
-            throw new InvalidOperationException($"Settlement {targetSettlementId} does not exist.");
+            throw new InvalidOperationException($"Settlement {targetSettlementId} is not active.");
         }
 
         var movement = new WorldArmyMovement(
@@ -779,18 +828,19 @@ public sealed class WorldState
         int departTick,
         int arrivalTick,
         string targetFactionId = "",
-        int amount = 0)
+        int amount = 0,
+        EntityId? crewCitizenId = null)
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
 
-        if (!_settlements.ContainsKey(originSettlementId))
+        if (!IsActiveSettlement(originSettlementId))
         {
-            throw new InvalidOperationException($"Origin settlement {originSettlementId} does not exist.");
+            throw new InvalidOperationException($"Origin settlement {originSettlementId} is not active.");
         }
 
-        if (!_settlements.ContainsKey(targetSettlementId))
+        if (!IsActiveSettlement(targetSettlementId))
         {
-            throw new InvalidOperationException($"Target settlement {targetSettlementId} does not exist.");
+            throw new InvalidOperationException($"Target settlement {targetSettlementId} is not active.");
         }
 
         var mission = new WorldMission(
@@ -801,7 +851,8 @@ public sealed class WorldState
             targetSettlementId,
             Math.Max(0, departTick),
             Math.Max(departTick, arrivalTick),
-            WorldMissionStatus.Traveling)
+            WorldMissionStatus.Traveling,
+            crewCitizenId)
         {
             TargetFactionId = targetFactionId ?? string.Empty,
             Amount = amount,
@@ -826,6 +877,27 @@ public sealed class WorldState
         var updated = mission with { Status = status };
         _missions[missionId] = updated;
         return updated;
+    }
+
+    public WorldMission FailMission(EntityId missionId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+
+        if (!_missions.TryGetValue(missionId, out var mission))
+        {
+            throw new InvalidOperationException($"Mission {missionId} does not exist.");
+        }
+
+        if (mission.Status == WorldMissionStatus.Failed)
+        {
+            return mission;
+        }
+
+        var failed = mission with { Status = WorldMissionStatus.Failed };
+        _missions[missionId] = failed;
+        TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, reason);
+        AppendEvent(WorldEventKind.WorldMissionDisrupted, missionId, $"Mission {missionId} failed: {reason}.");
+        return failed;
     }
 
     internal bool RemoveMissionForLedger(EntityId missionId)
@@ -1383,6 +1455,11 @@ public sealed class WorldState
         return _settlements.TryGetValue(id, out var settlement)
             ? settlement
             : null;
+    }
+
+    public bool IsActiveSettlement(EntityId id)
+    {
+        return _settlements.TryGetValue(id, out var settlement) && settlement.IsActive;
     }
 
     public WorldArmy? GetArmy(EntityId id)
@@ -3077,6 +3154,7 @@ public sealed class WorldState
             EntityKind.Settlement => _settlements.ContainsKey(ownerId),
             EntityKind.Army => _armies.ContainsKey(ownerId),
             EntityKind.Caravan => _caravans.ContainsKey(ownerId),
+            EntityKind.Mission => _missions.ContainsKey(ownerId),
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(ownerId),
             EntityKind.IntelReport => _intelReports.ContainsKey(ownerId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(ownerId),
@@ -3097,6 +3175,7 @@ public sealed class WorldState
             EntityKind.Settlement => _settlements.ContainsKey(assetId),
             EntityKind.Army => _armies.ContainsKey(assetId),
             EntityKind.Caravan => _caravans.ContainsKey(assetId),
+            EntityKind.Mission => _missions.ContainsKey(assetId),
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(assetId),
             EntityKind.IntelReport => _intelReports.ContainsKey(assetId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(assetId),

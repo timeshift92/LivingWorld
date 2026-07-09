@@ -25,6 +25,12 @@ internal static class CaravanActionExecutor
             return false;
         }
 
+        var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
+        if (crew == null)
+        {
+            return false;
+        }
+
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
         var caravan = state.CreateCaravan(
             $"{factionId} caravan",
@@ -32,7 +38,14 @@ internal static class CaravanActionExecutor
             source.Id,
             target.Id,
             request.Tick,
-            arrivalTick);
+            arrivalTick,
+            crew.Id);
+
+        if (!TravelCrewService.ReserveCrew(state, source.Id, caravan.Id, crew.Id, "world-war caravan crew"))
+        {
+            state.MarkCaravanRecalled(caravan.Id, "caravan crew unavailable");
+            return false;
+        }
 
         var transfer = state.TransferResource(
             source.Id,
@@ -42,7 +55,7 @@ internal static class CaravanActionExecutor
             $"world-war caravan loaded from {source.Id} to {target.Id}");
         if (transfer.Status != OwnershipTransferStatus.Success)
         {
-            state.DestroyCaravan(caravan.Id, transfer.Reason);
+            state.MarkCaravanRecalled(caravan.Id, transfer.Reason);
             return false;
         }
 

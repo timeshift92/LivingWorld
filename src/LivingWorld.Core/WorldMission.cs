@@ -2,10 +2,9 @@ namespace LivingWorld.Core;
 
 /// <summary>
 /// A non-combat, non-cargo world-war mission that travels to a target settlement and applies its
-/// effect on arrival (a scout hands over intel; a diplomat improves relations). Warbands and caravans
-/// have their own travelling entities (they carry real citizens/goods); these missions carry nothing,
-/// so they are conservation-trivial. Movement is abstract travel time in the ledger — the RimWorld
-/// layer visualizes it on the globe with a per-kind icon.
+/// effect on arrival (a scout hands over intel; a diplomat improves relations). The mission reserves
+/// a real citizen crew member while travelling so visible world-map markers are backed by ledger
+/// population instead of virtual traffic.
 /// </summary>
 public enum WorldMissionKind
 {
@@ -28,7 +27,8 @@ public sealed record WorldMission(
     EntityId TargetSettlementId,
     int DepartTick,
     int ArrivalTick,
-    WorldMissionStatus Status)
+    WorldMissionStatus Status,
+    EntityId? CrewCitizenId = null)
 {
     /// <summary>Second party for relationship missions (diplomacy); empty otherwise.</summary>
     public string TargetFactionId { get; init; } = string.Empty;

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <LivingWorld_DrifterArrival.label>прибытие дрифтера Living World</LivingWorld_DrifterArrival.label>
+  <LivingWorld_DrifterArrival.letterLabel>Прибыл дрифтер</LivingWorld_DrifterArrival.letterLabel>
+  <LivingWorld_DrifterArrival.letterText>К вашей колонии пришёл дрифтер из населения Living World.</LivingWorld_DrifterArrival.letterText>
   <LivingWorld_FactionRaid.label>рейд фракции Living World</LivingWorld_FactionRaid.label>
 </LanguageData>

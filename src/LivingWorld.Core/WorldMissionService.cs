@@ -36,6 +36,13 @@ public static class WorldMissionService
             .OrderBy(candidate => candidate.Id.Value)
             .ToList())
         {
+            if (!state.IsActiveSettlement(mission.OriginSettlementId)
+                || !state.IsActiveSettlement(mission.TargetSettlementId))
+            {
+                state.FailMission(mission.Id, "mission endpoint unavailable");
+                continue;
+            }
+
             switch (mission.Kind)
             {
                 case WorldMissionKind.Scout:
@@ -66,6 +73,7 @@ public static class WorldMissionService
                     break;
             }
 
+            TravelCrewService.ReturnCrew(state, mission.Id, mission.OriginSettlementId, mission.CrewCitizenId, "mission arrived");
             state.RemoveMissionForLedger(mission.Id);
         }
 

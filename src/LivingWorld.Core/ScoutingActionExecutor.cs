@@ -16,6 +16,12 @@ internal static class ScoutingActionExecutor
             return false;
         }
 
+        var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
+        if (crew == null)
+        {
+            return false;
+        }
+
         // One scouting party per faction in transit at a time — do not stack new ones each day.
         if (state.Missions.Any(mission =>
             mission.Status == WorldMissionStatus.Traveling
@@ -26,14 +32,21 @@ internal static class ScoutingActionExecutor
         }
 
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
-        state.DispatchMission(
+        var mission = state.DispatchMission(
             WorldMissionKind.Scout,
             factionId,
             source.Id,
             target.Id,
             request.Tick,
             arrivalTick,
-            amount: ScoutIntelValue);
-        return true;
+            amount: ScoutIntelValue,
+            crewCitizenId: crew.Id);
+        if (TravelCrewService.ReserveCrew(state, source.Id, mission.Id, crew.Id, "scouting mission launched"))
+        {
+            return true;
+        }
+
+        state.RemoveMissionForLedger(mission.Id);
+        return false;
     }
 }

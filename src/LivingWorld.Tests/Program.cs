@@ -153,8 +153,12 @@ var tests = new List<(string Name, Action Test)>
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
     ("opposing armies intercept each other in transit", TestOpposingArmiesInterceptInTransit),
+    ("hostile armies contest the same target in transit", TestHostileArmiesContestSameTargetInTransit),
     ("hostile armies can intercept caravans in transit", TestHostileArmiesInterceptCaravansInTransit),
+    ("hostile armies can intercept same-target caravans in transit", TestHostileArmiesInterceptSameTargetCaravansInTransit),
     ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
+    ("travelling missions reserve and return real citizens", TestWorldMissionReservesAndReturnsRealCitizen),
+    ("missions fail without intel when the target is inactive", TestWorldMissionFailsWhenTargetInactive),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
@@ -187,7 +191,11 @@ var tests = new List<(string Name, Action Test)>
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
     ("expansion creates unique colony slugs", TestWorldWarExpansionUsesUniqueColonySlugs),
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
+    ("world war caravan reserves and returns real crew", TestWorldWarCaravanReservesAndReturnsRealCrew),
+    ("world war target selector skips inactive settlements", TestWorldWarTargetSelectorSkipsInactiveSettlements),
     ("persistent caravan preserves cargo through save load", TestPersistentCaravanSerialization),
+    ("persistent caravan preserves crew through save load", TestPersistentCaravanCrewSerialization),
+    ("caravan recalls crew and cargo when target is inactive", TestCaravanRecallsWhenTargetInactive),
     ("destroying a persistent caravan removes its cargo", TestDestroyPersistentCaravanRemovesCargo),
     ("prunes terminal caravans after the retention window", TestCaravanPruneRemovesTerminalCaravans),
     ("world mission survives save load and arrives", TestWorldMissionSurvivesSaveLoadAndArrives),
@@ -4333,6 +4341,67 @@ static void TestHostileArmiesInterceptCaravansInTransit()
     AssertEqual(0, state.Validate().Count());
 }
 
+static void TestHostileArmiesContestSameTargetInTransit()
+{
+    var state = new WorldState(4242);
+    var redHome = state.CreateSettlement("red-home", "Red Home", "Red");
+    var blueHome = state.CreateSettlement("blue-home", "Blue Home", "Blue");
+    var prize = state.CreateSettlement("prize", "Prize", "Prize");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "fighter", redHome.Id);
+        state.CreateCitizen("B" + i, 30, Sex.Male, "fighter", blueHome.Id);
+    }
+
+    var redReserve = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Red", "Red warband", 6, FoodPerCitizen: 0));
+    var blueReserve = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Blue", "Blue warband", 6, FoodPerCitizen: 0));
+
+    state.DispatchArmy(redReserve.Army!.Id, prize.Id, arrivalTick: 5 * 60_000);
+    state.DispatchArmy(blueReserve.Army!.Id, prize.Id, arrivalTick: 5 * 60_000);
+
+    var result = ArmyInterceptionService.SimulateDay(state, new ArmyInterceptionRequest(2 * 60_000));
+
+    AssertEqual(1, result.Interceptions);
+    AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Traveling));
+    AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Recalled));
+    AssertEqual(true, state.Conflicts.Any(conflict => conflict.Involves("Red") && conflict.Involves("Blue")));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestHostileArmiesInterceptSameTargetCaravansInTransit()
+{
+    var state = new WorldState(4242);
+    var traderHome = state.CreateSettlement("trader-home", "Trader Home", "Traders");
+    var raiderHome = state.CreateSettlement("raider-home", "Raider Home", "Raiders");
+    var market = state.CreateSettlement("market", "Market", "Market");
+    state.AddResource(traderHome.Id, "Steel", 50);
+    var crew = state.CreateCitizen("Crew", 30, Sex.Female, "merchant", traderHome.Id);
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", raiderHome.Id);
+    }
+
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", traderHome.Id, market.Id, 0, 5 * 60_000, crew.Id);
+    state.TransferAsset(crew.Id, traderHome.Id, caravan.Id, "caravan crew");
+    state.TransferResource(traderHome.Id, caravan.Id, "Steel", 20, "cargo");
+    var reservation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Raiders", "Road patrol", 4, FoodPerCitizen: 0));
+    state.DispatchArmy(reservation.Army!.Id, market.Id, 5 * 60_000);
+
+    var result = TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(2 * 60_000));
+
+    AssertEqual(1, result.CaravansDestroyed);
+    AssertEqual(CaravanStatus.Destroyed, state.GetCaravan(caravan.Id)!.Status);
+    AssertEqual(CitizenStatus.Missing, state.GetCitizen(crew.Id)!.Status);
+    AssertEqual(traderHome.Id, state.GetOwner(crew.Id));
+    AssertEqual(0, state.Validate().Count());
+}
+
 static void TestHostileArmiesDisruptMissionsInTransit()
 {
     var state = new WorldState(4242);
@@ -4356,6 +4425,49 @@ static void TestHostileArmiesDisruptMissionsInTransit()
     AssertEqual(WorldMissionStatus.Failed, state.GetMission(mission.Id)!.Status);
     AssertEqual(null, state.GetKnownSettlementInfo(raiders.Id));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
+}
+
+static void TestWorldMissionReservesAndReturnsRealCitizen()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("scouts", "Scouts", "Scouts");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var citizen = state.CreateCitizen("Scout", 30, Sex.Female, "scout", scouts.Id);
+
+    var mission = state.DispatchMission(WorldMissionKind.Scout, "Scouts", scouts.Id, target.Id, 0, 60_000, amount: 100, crewCitizenId: citizen.Id);
+    state.TransferAsset(citizen.Id, scouts.Id, mission.Id, "scouting mission launched");
+
+    AssertEqual(mission.Id, state.GetOwner(citizen.Id));
+    AssertEqual(0, state.GetSettlementPopulation(scouts.Id).Total);
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(60_000));
+
+    AssertEqual(scouts.Id, state.GetOwner(citizen.Id));
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
+    AssertEqual(0, state.Missions.Count);
+    AssertEqual(IntelSourceKind.Scout, state.GetKnownSettlementInfo(target.Id)!.SourceKind);
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestWorldMissionFailsWhenTargetInactive()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("scouts", "Scouts", "Scouts");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var citizen = state.CreateCitizen("Scout", 30, Sex.Female, "scout", scouts.Id);
+    var mission = state.DispatchMission(WorldMissionKind.Scout, "Scouts", scouts.Id, target.Id, 0, 60_000, amount: 100, crewCitizenId: citizen.Id);
+    state.TransferAsset(citizen.Id, scouts.Id, mission.Id, "scouting mission launched");
+    SettlementLifecycleService.DestroySettlement(state, target.Id, 30_000, "destroyed before arrival");
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(60_000));
+
+    AssertEqual(WorldMissionStatus.Failed, state.GetMission(mission.Id)!.Status);
+    AssertEqual(null, state.GetKnownSettlementInfo(target.Id));
+    AssertEqual(scouts.Id, state.GetOwner(citizen.Id));
+    AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestFactionBehaviorPersists()
@@ -5232,7 +5344,58 @@ static void TestWorldWarCaravanTransfersRealGoods()
     AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
     AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanArrived));
-    AssertEqual(2, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+    AssertEqual(4, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+}
+
+static void TestWorldWarCaravanReservesAndReturnsRealCrew()
+{
+    var state = new WorldState(4242);
+    var market = state.CreateSettlement("market", "Market", "Traders");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Trader " + i, 30, Sex.Female, "merchant", market.Id);
+    }
+
+    state.AddResource(market.Id, "Steel", 40);
+    var village = state.CreateSettlement("village", "Village", "Settlers");
+    state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+
+    var caravan = state.Caravans.Single();
+    AssertEqual(EntityKind.Citizen, caravan.CrewCitizenId!.Value.Kind);
+    AssertEqual(caravan.Id, state.GetOwner(caravan.CrewCitizenId.Value));
+    AssertEqual(2, state.GetSettlementPopulation(market.Id).Total);
+
+    state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+
+    AssertEqual(CaravanStatus.Arrived, state.GetCaravan(caravan.Id)!.Status);
+    AssertEqual(market.Id, state.GetOwner(caravan.CrewCitizenId.Value));
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(caravan.CrewCitizenId.Value)!.Status);
+    AssertEqual(3, state.GetSettlementPopulation(market.Id).Total);
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestWorldWarTargetSelectorSkipsInactiveSettlements()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var inactive = state.CreateSettlement("inactive", "Inactive", "Visitors");
+    var active = state.CreateSettlement("active", "Active", "Visitors");
+    state.CreateCitizen("Trader", 30, Sex.Female, "merchant", source.Id);
+    state.AddResource(source.Id, "Steel", 40);
+    SettlementLifecycleService.DestroySettlement(state, inactive.Id, 0, "test");
+
+    var tradeTarget = WorldWarTargetSelector.FindTradeTarget(state, "Traders");
+    var scoutTarget = WorldWarTargetSelector.FindScoutingTarget(state, "Traders");
+    var diplomacyFaction = WorldWarTargetSelector.FindDiplomacyTargetFaction(state, "Traders");
+    var diplomacySettlement = WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, "Traders", "Visitors");
+
+    AssertEqual(active.Id, tradeTarget!.Id);
+    AssertEqual(active.Id, scoutTarget!.Id);
+    AssertEqual("Visitors", diplomacyFaction);
+    AssertEqual(active.Id, diplomacySettlement!.Id);
 }
 
 static void TestPersistentCaravanSerialization()
@@ -5252,6 +5415,51 @@ static void TestPersistentCaravanSerialization()
     AssertEqual(source.Id, restoredCaravan.SourceSettlementId);
     AssertEqual(target.Id, restoredCaravan.TargetSettlementId);
     AssertEqual(20, restored.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+}
+
+static void TestPersistentCaravanCrewSerialization()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var crew = state.CreateCitizen("Crew", 30, Sex.Female, "merchant", source.Id);
+    state.AddResource(source.Id, "Steel", 50);
+
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000, crew.Id);
+    state.TransferAsset(crew.Id, source.Id, caravan.Id, "caravan crew");
+    state.TransferResource(source.Id, caravan.Id, "Steel", 20, "test cargo");
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredCaravan = restored.GetCaravan(caravan.Id)!;
+
+    AssertEqual(crew.Id, restoredCaravan.CrewCitizenId);
+    AssertEqual(caravan.Id, restored.GetOwner(crew.Id));
+    AssertEqual(0, restored.GetSettlementPopulation(source.Id).Total);
+    AssertEqual(0, restored.Validate().Count());
+}
+
+static void TestCaravanRecallsWhenTargetInactive()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var crew = state.CreateCitizen("Crew", 30, Sex.Female, "merchant", source.Id);
+    state.AddResource(source.Id, "Steel", 50);
+    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000, crew.Id);
+    state.TransferAsset(crew.Id, source.Id, caravan.Id, "caravan crew");
+    state.TransferResource(source.Id, caravan.Id, "Steel", 20, "cargo");
+    SettlementLifecycleService.DestroySettlement(state, target.Id, 30_000, "destroyed before arrival");
+
+    var result = CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(60_000));
+
+    AssertEqual(0, result.Arrived);
+    AssertEqual(CaravanStatus.Recalled, state.GetCaravan(caravan.Id)!.Status);
+    AssertEqual(50, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(source.Id, state.GetOwner(crew.Id));
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(crew.Id)!.Status);
+    AssertEqual(1, state.GetSettlementPopulation(source.Id).Total);
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestDestroyPersistentCaravanRemovesCargo()
@@ -7442,6 +7650,9 @@ static void TestRimWorldEconomyWindow()
 
     // A columnar table: one row per faction with settlements, population, top tier and wealth.
     AssertContains("class LivingWorldEconomyWindow : Window", window);
+    AssertContains(".Where(settlement => settlement.IsActive", window);
+    AssertContains("KnownSettlementsForPlayer", window);
+    AssertContains("debugExact ? state.Settlements.Where(settlement => settlement.IsActive) : KnownSettlementsForPlayer(state)", window);
     AssertContains("GroupBy(settlement => settlement.FactionId", window);
     AssertContains("GetSettlementPopulation", window);
     AssertContains("SettlementDevelopmentService.GetTier", window);
@@ -7484,6 +7695,9 @@ static void TestRimWorldSettlementObserverWindow()
     var window = File.ReadAllText(windowPath);
 
     AssertContains("class LivingWorldSettlementObserverWindow : Window", window);
+    AssertContains("debugLogging", window);
+    AssertContains("LW_SettlementObserver_DebugOnly", window);
+    AssertContains(".Where(settlement => settlement.IsActive", window);
     AssertContains("GetSettlementPopulation", window);
     AssertContains("GetSettlementProductionStatus", window);
     AssertContains("GetSettlementFacilities", window);
@@ -7523,6 +7737,7 @@ static void TestRimWorldSettlementObserverWindow()
         "LW_OpenSettlementObserverWindow",
         "LW_SettlementObserverTitle",
         "LW_SettlementObserver_Settlements",
+        "LW_SettlementObserver_DebugOnly",
         "LW_SettlementObserver_Overview",
         "LW_SettlementObserver_Projects",
         "LW_SettlementObserver_Facilities",
