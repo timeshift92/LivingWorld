@@ -37,6 +37,8 @@ var tests = new List<(string Name, Action Test)>
     ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
     ("seeds settlement population with deterministic variation", TestSettlementPopulationSeedingVariesBaseline),
+    ("seeds settlement population with children and stable-key variation", TestSettlementPopulationSeedingAddsChildrenAndStableKeyVariation),
+    ("bootstrap primer creates visible settlement dynamics before first daily tick", TestSettlementBootstrapPrimerCreatesVisibleDynamics),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
     ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
@@ -290,6 +292,8 @@ var tests = new List<(string Name, Action Test)>
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
     ("uses RimWorld world seed for deterministic state", TestWorldComponentUsesRimWorldWorldSeed),
+    ("primes RimWorld bootstrap with immediate visible dynamics", TestRimWorldBootstrapPrimesImmediateDynamics),
+    ("migrates legacy saves to visible settlement dynamics", TestWorldComponentMigratesLegacyVisibleDynamics),
     ("catches up missed daily simulations with a cap", TestWorldComponentCatchesUpMissedSimulationDays),
     ("marks bootstrap as initial world seeding", TestWorldComponentUsesInitialWorldSeedingBoundary),
     ("suppresses noisy bootstrap citizen events", TestWorldComponentSuppressesBootstrapEventSpam),
@@ -1312,6 +1316,69 @@ static void TestSettlementPopulationSeedingVariesBaseline()
         .ToList();
     AssertEqual(true, ages.All(age => age >= 18 && age <= 88));
     AssertEqual(true, ages.Any(age => age >= 70));
+}
+
+static void TestSettlementPopulationSeedingAddsChildrenAndStableKeyVariation()
+{
+    var stableKeys = new[] { "settlement:tile:101", "settlement:tile:207", "settlement:tile:313", "settlement:tile:419" };
+    var adultCounts = stableKeys
+        .Select(key => SettlementPopulationSeedingService.CalculateAdultCount(
+            worldSeed: 98765,
+            settlementStableId: SettlementPopulationSeedingService.StableSettlementSeed(key),
+            configuredAdults: 57,
+            minAdults: 12,
+            maxAdults: 90))
+        .ToList();
+    var childCounts = adultCounts
+        .Select((adults, index) => SettlementPopulationSeedingService.CalculateChildCount(
+            worldSeed: 98765,
+            settlementStableId: SettlementPopulationSeedingService.StableSettlementSeed(stableKeys[index]),
+            adultCount: adults))
+        .ToList();
+
+    AssertEqual(true, adultCounts.Distinct().Count() > 1);
+    AssertEqual(true, childCounts.All(count => count > 0));
+    AssertEqual(true, childCounts.Distinct().Count() > 1);
+
+    var childAges = Enumerable.Range(0, 12)
+        .Select(index => SettlementPopulationSeedingService.CalculateChildAge(98765, 101, index))
+        .ToList();
+    AssertEqual(true, childAges.All(age => age >= 0 && age <= 17));
+    AssertEqual(true, childAges.Distinct().Count() > 1);
+}
+
+static void TestSettlementBootstrapPrimerCreatesVisibleDynamics()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("lee", "Lee", "Empire");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "TemperateSwamp",
+            "SmallHills",
+            "Spacer",
+            GrowingDays: 40,
+            Rainfall: 900,
+            AverageTemperature: 14)));
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 200);
+    state.AddResource(settlement.Id, "Steel", 300);
+    state.AddResource(settlement.Id, "Silver", 1200);
+
+    var result = SettlementBootstrapPrimer.PrimeSettlement(
+        state,
+        new SettlementBootstrapPrimerRequest(
+            Tick: 0,
+            SettlementId: settlement.Id,
+            FoodResourceKey: "PackagedSurvivalMeal",
+            SteelResourceKey: "Steel",
+            ComponentResourceKey: "ComponentIndustrial"));
+
+    AssertEqual(1, result.FacilitiesSeeded);
+    AssertEqual(true, result.AnimalCohortsSeeded > 0);
+    AssertEqual(true, result.WealthSnapshot.TotalWealth > 0);
+    AssertEqual(true, state.GetSettlementFacilities(settlement.Id).Count > 0);
+    AssertEqual(true, state.GetAnimalCohorts(settlement.Id).Count > 0);
+    AssertEqual(true, state.GetSettlementWealth(settlement.Id)!.TotalWealth > 0);
 }
 
 static void TestSettlementDailySimulationRecordsFoodShortage()
@@ -8536,6 +8603,42 @@ static void TestWorldComponentUsesRimWorldWorldSeed()
     AssertContains("world.info.seedString", source);
     AssertContains("StableSeedFromString", source);
     AssertContains("new WorldState(ResolveWorldSeed", source);
+}
+
+static void TestRimWorldBootstrapPrimesImmediateDynamics()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+
+    var source = File.ReadAllText(componentPath);
+
+    AssertContains("SettlementPopulationSeedingService.StableSettlementSeed(settlement.StableKey)", source);
+    AssertContains("SettlementPopulationSeedingService.CalculateChildCount", source);
+    AssertContains("SettlementPopulationSeedingService.CalculateChildAge", source);
+    AssertContains("SettlementBootstrapPrimer.PrimeSettlement", source);
+    AssertContains("SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook)", source);
+}
+
+static void TestWorldComponentMigratesLegacyVisibleDynamics()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+
+    var source = File.ReadAllText(componentPath);
+
+    AssertContains("livingWorld_migratedVisibleDynamics", source);
+    AssertContains("MigrateVisibleDynamicsForLegacySave();", source);
+    AssertContains("private void MigrateVisibleDynamicsForLegacySave()", source);
+    AssertContains("State.RunInitialWorldSeeding(() =>", source);
+    AssertContains("SettlementBootstrapPrimer.PrimeSettlement", source);
+    AssertContains("AddMissingLegacyPopulation", source);
+    AssertContains("SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook)", source);
 }
 
 static void TestWorldComponentCatchesUpMissedSimulationDays()

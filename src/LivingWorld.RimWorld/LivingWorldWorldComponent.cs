@@ -27,6 +27,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private bool bootstrapped;
     private bool migratedDrifterReservoir;
     private bool appliedEconomicDiversity;
+    private bool migratedVisibleDynamics;
     private string serializedState = string.Empty;
     private int lastSimulatedDay;
     private int cachedWorldPopulation;
@@ -149,6 +150,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MigrateDrifterReservoirForLegacySave();
         RepairMissingProductionProfilesFromRimWorldSettlements();
         MigrateEconomicDiversityForLegacySave();
+        MigrateVisibleDynamicsForLegacySave();
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
@@ -1955,6 +1957,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
         Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);
         Scribe_Values.Look(ref appliedEconomicDiversity, "livingWorld_appliedEconomicDiversity", false);
+        Scribe_Values.Look(ref migratedVisibleDynamics, "livingWorld_migratedVisibleDynamics", false);
         Scribe_Collections.Look(ref notifiedResolvedRaidArmyIds, "livingWorld_notifiedResolvedRaidArmyIds", LookMode.Value);
         notifiedResolvedRaidArmyIds ??= new List<long>();
         Scribe_Collections.Look(ref notifiedRaidWarningFactIds, "livingWorld_notifiedRaidWarningFactIds", LookMode.Value);
@@ -2154,12 +2157,19 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     ? settings.baselineHumanSettlementAdults
                     : settings.baselineNonHumanSettlementAdults;
                 var worldSettlement = State.CreateSettlement(settlement.StableKey, settlement.Name, settlement.FactionId);
+                var settlementStableSeed = SettlementPopulationSeedingService.StableSettlementSeed(settlement.StableKey);
                 var baselineAdults = SettlementPopulationSeedingService.CalculateAdultCount(
                     State.WorldSeed,
-                    worldSettlement.Id.Value,
+                    settlementStableSeed,
                     configuredAdults,
                     settings.minSettlementAdults,
                     settings.maxSettlementAdults);
+                var baselineChildren = faction?.def?.humanlikeFaction == true
+                    ? SettlementPopulationSeedingService.CalculateChildCount(
+                        State.WorldSeed,
+                        settlementStableSeed,
+                        baselineAdults)
+                    : 0;
                 var productionProfile = ApplyEconomicCharacter(RimWorldSettlementProductionProfileFactory.Create(
                     settlement,
                     worldSettlement.Id,
@@ -2173,13 +2183,20 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     for (var i = 0; i < baselineAdults; i++)
                     {
                         var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
-                        var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, worldSettlement.Id.Value, i);
+                        var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, settlementStableSeed, i);
                         State.CreateCitizen($"{settlement.Name} citizen {i + 1}", age, sex, "settler", worldSettlement.Id);
+                    }
+
+                    for (var i = 0; i < baselineChildren; i++)
+                    {
+                        var sex = i % 2 == 0 ? Sex.Female : Sex.Male;
+                        var age = SettlementPopulationSeedingService.CalculateChildAge(State.WorldSeed, settlementStableSeed, i);
+                        State.CreateCitizen($"{settlement.Name} child {i + 1}", age, sex, "child", worldSettlement.Id);
                     }
 
                     if (settings.foodPerCitizen > 0)
                     {
-                        State.AddResource(worldSettlement.Id, FoodResourceKey, baselineAdults * settings.foodPerCitizen);
+                        State.AddResource(worldSettlement.Id, FoodResourceKey, (baselineAdults + baselineChildren) * settings.foodPerCitizen);
                     }
 
                     if (settings.steelPerCitizen > 0)
@@ -2195,6 +2212,15 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     {
                         State.AddResource(worldSettlement.Id, SilverResourceKey, silverEndowment);
                     }
+
+                    SettlementBootstrapPrimer.PrimeSettlement(
+                        State,
+                        new SettlementBootstrapPrimerRequest(
+                            Tick: 0,
+                            SettlementId: worldSettlement.Id,
+                            FoodResourceKey: FoodResourceKey,
+                            SteelResourceKey: SteelResourceKey,
+                            ComponentResourceKey: ComponentResourceKey));
                 });
 
                 PlayerKnowledgeService.RecordPublicSettlementInfo(
@@ -2210,6 +2236,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             {
                 State.AddDrifterArrivalReservoir(initialDrifterReservoir, "initial outside-world population reserve");
             });
+            SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook);
 
             // A freshly-generated world is seeded here, so it never needs the legacy migration.
             migratedDrifterReservoir = true;
@@ -2301,6 +2328,117 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             Log.Warning($"[LivingWorld] Economic-diversity migration skipped safely: {ex.Message}");
         }
+    }
+
+    // One-time upgrade for saves bootstrapped before settlements had day-one visible dynamics.
+    // It is additive: existing citizens/resources/events are preserved, while missing starter
+    // facilities, animal cohorts, wealth snapshots and child cohorts are seeded deterministically.
+    private void MigrateVisibleDynamicsForLegacySave()
+    {
+        if (migratedVisibleDynamics)
+        {
+            return;
+        }
+
+        migratedVisibleDynamics = true;
+
+        if (!bootstrapped || State.Settlements.Count == 0)
+        {
+            return;
+        }
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        var upgradedSettlements = 0;
+        var addedCitizens = 0;
+
+        try
+        {
+            State.RunInitialWorldSeeding(() =>
+            {
+                foreach (var settlement in State.Settlements.OrderBy(candidate => candidate.Id.Value))
+                {
+                    SettlementBootstrapPrimer.PrimeSettlement(
+                        State,
+                        new SettlementBootstrapPrimerRequest(
+                            Tick: 0,
+                            SettlementId: settlement.Id,
+                            FoodResourceKey: FoodResourceKey,
+                            SteelResourceKey: SteelResourceKey,
+                            ComponentResourceKey: ComponentResourceKey));
+
+                    addedCitizens += AddMissingLegacyPopulation(settlement, settings);
+                    upgradedSettlements++;
+                }
+
+                SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook);
+            });
+
+            if (settings.debugLogging)
+            {
+                Log.Message($"[LivingWorld] Migrated legacy save visible dynamics for {upgradedSettlements} settlements, added {addedCitizens} citizens.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Visible-dynamics migration skipped safely: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private int AddMissingLegacyPopulation(WorldSettlement settlement, LivingWorldSettings settings)
+    {
+        var current = State.GetSettlementPopulation(settlement.Id);
+        var faction = Find.FactionManager.AllFactionsListForReading
+            .FirstOrDefault(candidate => candidate.def?.defName == settlement.FactionId);
+        if (faction?.def?.humanlikeFaction != true)
+        {
+            return 0;
+        }
+
+        var stableSeed = SettlementPopulationSeedingService.StableSettlementSeed(settlement.Slug);
+        var targetAdults = SettlementPopulationSeedingService.CalculateAdultCount(
+            State.WorldSeed,
+            stableSeed,
+            settings.baselineHumanSettlementAdults,
+            settings.minSettlementAdults,
+            settings.maxSettlementAdults);
+        var targetChildren = SettlementPopulationSeedingService.CalculateChildCount(
+            State.WorldSeed,
+            stableSeed,
+            Math.Max(targetAdults, current.Adults));
+        var added = 0;
+        var addedAdults = 0;
+
+        for (var i = current.Adults; i < targetAdults; i++)
+        {
+            var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
+            var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, stableSeed, i);
+            State.CreateCitizen($"{settlement.Name} citizen {i + 1}", age, sex, "settler", settlement.Id);
+            added++;
+            addedAdults++;
+        }
+
+        for (var i = current.Children; i < targetChildren; i++)
+        {
+            var sex = i % 2 == 0 ? Sex.Female : Sex.Male;
+            var age = SettlementPopulationSeedingService.CalculateChildAge(State.WorldSeed, stableSeed, i);
+            State.CreateCitizen($"{settlement.Name} child {i + 1}", age, sex, "child", settlement.Id);
+            added++;
+        }
+
+        if (settings.foodPerCitizen > 0 && added > 0)
+        {
+            State.AddResource(settlement.Id, FoodResourceKey, added * settings.foodPerCitizen);
+        }
+
+        if (settings.steelPerCitizen > 0 && addedAdults > 0)
+        {
+            State.AddResource(
+                settlement.Id,
+                SteelResourceKey,
+                ScaleEconomicEndowment(settlement.Id, addedAdults * settings.steelPerCitizen));
+        }
+
+        return added;
     }
 
     private void RepairMissingProductionProfilesFromRimWorldSettlements()
