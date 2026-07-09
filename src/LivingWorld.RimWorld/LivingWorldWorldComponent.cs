@@ -45,6 +45,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int nextApproachRaidId;
     private List<MechClusterNode> mechClusters = new();
     private int nextMechClusterId;
+    private List<PendingApproachingGroup> approachingGroups = new();
+    private int nextApproachGroupId;
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -153,6 +155,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
         SyncMechClusterMarkers();
+        SyncApproachingGroupMarkers();
     }
 
     public override void WorldComponentTick()
@@ -167,6 +170,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Materialize any travelling raids that have reached the colony — every tick, ahead of the
         // daily-simulation gate below, so arrival lands on time rather than on the next day rollover.
         ProcessApproachingRaidArrivals(Find.TickManager?.TicksGame ?? 0);
+        ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
         var currentDay = currentTick / TicksPerDay;
@@ -744,7 +748,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             if (worldObject is WorldObject_LivingWorldArmy marker
                 && !string.IsNullOrEmpty(marker.MarkerKey)
-                && !marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal))
+                && !marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
+                && !marker.MarkerKey.StartsWith(ApproachingGroupRuntime.MarkerKeyPrefix, StringComparison.Ordinal))
             {
                 // Approaching-raid markers are managed by SyncApproachingRaidMarkers (they are keyed to
                 // RW incident state, not ledger travels); this ledger reconcile must not remove them.
@@ -1453,6 +1458,276 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .FirstOrDefault(marker => marker.NodeId == nodeId);
     }
 
+    // Called by the group-travel patch when the storyteller fires a neutral group arrival (visitors, and
+    // later traders/travellers). Turns it into a group marching from one of the faction's settlements to
+    // the colony, shown as a world-map marker, and defers the arrival until it gets there. Returns false
+    // (so the incident fires immediately, unchanged) when travelling arrivals are off, there is no map
+    // target, or the faction has no settlement to travel from — an arrival is never lost.
+    public bool TryLaunchApproachingGroup(IncidentDef? incidentDef, IncidentParms parms, string kindKey)
+    {
+        try
+        {
+            var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+            if (!settings.arrivalsTravelEnabled)
+            {
+                return false;
+            }
+
+            var defName = incidentDef?.defName;
+            if (string.IsNullOrWhiteSpace(defName) || parms?.target is not Map map)
+            {
+                return false;
+            }
+
+            var faction = parms.faction ?? PickNeutralFactionWithSettlement();
+            var factionId = faction?.def?.defName;
+            if (faction == null || string.IsNullOrWhiteSpace(factionId))
+            {
+                return false;
+            }
+
+            int targetTile = map.Tile;
+            var originTile = NearestFactionSettlementTile(faction, targetTile);
+            if (originTile < 0)
+            {
+                return false;
+            }
+
+            var distance = Find.WorldGrid?.ApproxDistanceInTiles(originTile, targetTile) ?? 0f;
+            var travelTicks = ApproachingGroupRuntime.TravelTicksFor(distance);
+            var now = Find.TickManager?.TicksGame ?? 0;
+
+            var pending = new PendingApproachingGroup
+            {
+                IncidentDefName = defName!,
+                FactionDefName = factionId!,
+                Points = parms.points,
+                TargetTile = targetTile,
+                OriginTile = originTile,
+                DepartTick = now,
+                ArrivalTick = now + travelTicks,
+                MarkerKey = $"{ApproachingGroupRuntime.MarkerKeyPrefix}{nextApproachGroupId++}",
+                KindKey = string.IsNullOrWhiteSpace(kindKey) ? "LW_ArrivalKind_Visitors" : kindKey,
+                TargetLabel = ResolveColonyLabel(map),
+            };
+            approachingGroups.Add(pending);
+            SyncApproachingGroupMarkers();
+
+            if (Current.ProgramState == ProgramState.Playing)
+            {
+                var days = Mathf.Max(1, Mathf.RoundToInt(travelTicks / (float)TicksPerDay));
+                var marker = FindApproachGroupMarker(pending.MarkerKey);
+                var look = marker != null
+                    ? new LookTargets(marker)
+                    : new LookTargets((PlanetTile)targetTile);
+                Find.LetterStack?.ReceiveLetter(
+                    "LW_GroupApproachingLabel".Translate(),
+                    "LW_GroupApproachingText".Translate(
+                        (faction.Name ?? factionId!).Named("faction"),
+                        pending.KindKey.Translate().Named("kind"),
+                        pending.TargetLabel.Named("colony"),
+                        days.Named("days")),
+                    LetterDefOf.NeutralEvent,
+                    look);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Approaching-group launch failed, firing incident immediately: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ProcessApproachingGroupArrivals(int now)
+    {
+        if (approachingGroups.Count == 0)
+        {
+            return;
+        }
+
+        List<PendingApproachingGroup>? arrived = null;
+        foreach (var group in approachingGroups)
+        {
+            if (group.ArrivalTick <= now)
+            {
+                (arrived ??= new List<PendingApproachingGroup>()).Add(group);
+            }
+        }
+
+        if (arrived == null)
+        {
+            return;
+        }
+
+        foreach (var group in arrived)
+        {
+            approachingGroups.Remove(group);
+            FireArrivedGroup(group);
+        }
+
+        SyncApproachingGroupMarkers();
+    }
+
+    // Re-fires the neutral-group incident at its destination map with FiringArrival set so the travel
+    // patch lets the vanilla worker run and spawn the group now. Fail-open: if the map is gone or anything
+    // throws, the group simply does not land.
+    private void FireArrivedGroup(PendingApproachingGroup group)
+    {
+        try
+        {
+            var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == group.TargetTile);
+            if (map == null)
+            {
+                return;
+            }
+
+            var faction = Find.FactionManager?.AllFactionsListForReading
+                .FirstOrDefault(candidate => candidate.def?.defName == group.FactionDefName);
+
+            var def = DefDatabase<IncidentDef>.GetNamedSilentFail(group.IncidentDefName);
+            if (def?.Worker == null)
+            {
+                return;
+            }
+
+            var parms = StorytellerUtility.DefaultParmsNow(def.category, map);
+            if (faction != null)
+            {
+                parms.faction = faction;
+            }
+
+            if (group.Points > 0f)
+            {
+                parms.points = group.Points;
+            }
+
+            parms.target = map;
+
+            ApproachingGroupRuntime.FiringArrival = true;
+            try
+            {
+                def.Worker.TryExecute(parms);
+            }
+            finally
+            {
+                ApproachingGroupRuntime.FiringArrival = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Arrived group failed to materialize: {ex.Message}");
+        }
+    }
+
+    private void SyncApproachingGroupMarkers()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        var markerDef = settings.arrivalsTravelEnabled
+            ? DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker")
+            : null;
+
+        var existing = new Dictionary<string, WorldObject_LivingWorldArmy>(StringComparer.Ordinal);
+        foreach (var worldObject in worldObjects.AllWorldObjects)
+        {
+            if (worldObject is WorldObject_LivingWorldArmy marker
+                && marker.MarkerKey.StartsWith(ApproachingGroupRuntime.MarkerKeyPrefix, StringComparison.Ordinal))
+            {
+                existing[marker.MarkerKey] = marker;
+            }
+        }
+
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        if (markerDef != null)
+        {
+            foreach (var group in approachingGroups)
+            {
+                if (group.TargetTile < 0 || group.OriginTile < 0)
+                {
+                    continue;
+                }
+
+                live.Add(group.MarkerKey);
+
+                var faction = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == group.FactionDefName);
+
+                var isNew = !existing.TryGetValue(group.MarkerKey, out var marker);
+                marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+                marker.Tile = group.TargetTile;
+                if (faction != null)
+                {
+                    marker.SetFaction(faction);
+                }
+
+                marker.Configure(
+                    group.MarkerKey,
+                    "World/LivingWorld_Trader",
+                    group.KindKey.Translate(),
+                    group.OriginTile,
+                    group.TargetTile,
+                    group.DepartTick,
+                    group.ArrivalTick,
+                    faction?.Name ?? group.FactionDefName,
+                    group.TargetLabel,
+                    0,
+                    0,
+                    string.Empty,
+                    "LW_MissionReason_Visit".Translate().ToString());
+                if (isNew)
+                {
+                    worldObjects.Add(marker);
+                }
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
+        }
+    }
+
+    private WorldObject_LivingWorldArmy? FindApproachGroupMarker(string key)
+    {
+        return Find.WorldObjects?.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .FirstOrDefault(marker => marker.MarkerKey == key);
+    }
+
+    private static Faction? PickNeutralFactionWithSettlement()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return null;
+        }
+
+        var player = Faction.OfPlayer;
+        foreach (var settlement in worldObjects.Settlements)
+        {
+            var faction = settlement?.Faction;
+            if (faction != null
+                && !faction.IsPlayer
+                && faction.def?.humanlikeFaction == true
+                && (player == null || !faction.HostileTo(player)))
+            {
+                return faction;
+            }
+        }
+
+        return null;
+    }
+
     private MissionMarkerDetails BuildWarbandMarkerDetails(WorldArmy army)
     {
         var combatants = State.Citizens.Count(citizen =>
@@ -1698,6 +1973,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref mechClusters, "livingWorld_mechClusters", LookMode.Deep);
         mechClusters ??= new List<MechClusterNode>();
         Scribe_Values.Look(ref nextMechClusterId, "livingWorld_nextMechClusterId", 0);
+        Scribe_Collections.Look(ref approachingGroups, "livingWorld_approachingGroups", LookMode.Deep);
+        approachingGroups ??= new List<PendingApproachingGroup>();
+        Scribe_Values.Look(ref nextApproachGroupId, "livingWorld_nextApproachGroupId", 0);
 
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {

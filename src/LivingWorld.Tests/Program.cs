@@ -319,6 +319,7 @@ var tests = new List<(string Name, Action Test)>
     ("gives settlements a deterministic economic character", TestEconomicCharacterVariation),
     ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
     ("gives mechanoid raids a world-map source", TestRimWorldMechClusters),
+    ("makes visitor groups travel across the world map", TestRimWorldApproachingVisitors),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8714,6 +8715,71 @@ static void TestRimWorldEconomicDiversity()
     var russianXml = File.ReadAllText(
         Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     foreach (var key in new[] { "LW_Settings_EconomicDiversity", "LW_Settings_EconomicDiversityTip" })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
+}
+
+static void TestRimWorldApproachingVisitors()
+{
+    var root = FindRepoRoot();
+
+    // Runtime + persisted pending-group model, and the re-entrancy guard for the arrival re-fire.
+    var runtimePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "ApproachingGroup.cs");
+    AssertFileExists(runtimePath);
+    var runtime = File.ReadAllText(runtimePath);
+    AssertContains("class PendingApproachingGroup : IExposable", runtime);
+    AssertContains("public static bool FiringArrival", runtime);
+    AssertContains("MarkerKeyPrefix", runtime);
+    AssertContains("TravelTicksFor", runtime);
+
+    // The visitor patch defers into a travelling group on first fire and lets the vanilla worker run on
+    // the arrival re-fire; additive Prefix, never loses the incident.
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldGroupTravelPatch.cs"));
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_VisitorGroup), \"TryExecuteWorker\")", patch);
+    AssertContains("ApproachingGroupRuntime.FiringArrival", patch);
+    AssertContains("TryLaunchApproachingGroup", patch);
+
+    // The world component launches the travelling group, materializes it on arrival, and reconciles the
+    // markers separately from the ledger-driven army markers. Persisted and settings-gated.
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("public bool TryLaunchApproachingGroup(", component);
+    AssertContains("ProcessApproachingGroupArrivals(", component);
+    AssertContains("private void FireArrivedGroup(", component);
+    AssertContains("SyncApproachingGroupMarkers()", component);
+    AssertContains("ApproachingGroupRuntime.FiringArrival = true", component);
+    AssertContains("def.Worker.TryExecute(parms)", component);
+    AssertContains("livingWorld_approachingGroups", component);
+    AssertContains("settings.arrivalsTravelEnabled", component);
+
+    // Settings toggle wired and drawn.
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("arrivalsTravelEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_ArrivalsTravel", drawer);
+
+    // RimWorld API the feature depends on exists in this game version.
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_VisitorGroup", "TryExecuteWorker");
+
+    // Localization present in both languages.
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_GroupApproachingLabel",
+        "LW_GroupApproachingText",
+        "LW_ArrivalKind_Visitors",
+        "LW_MissionReason_Visit",
+        "LW_Settings_ArrivalsTravel",
+        "LW_Settings_ArrivalsTravelTip",
+    })
     {
         AssertContains($"<{key}>", englishXml);
         AssertContains($"<{key}>", russianXml);
