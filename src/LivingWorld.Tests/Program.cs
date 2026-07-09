@@ -9314,7 +9314,11 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertFileExists(patchPath);
     var patch = File.ReadAllText(patchPath);
 
-    AssertContains("HarmonyPatch(typeof(CaravanExitMapUtility), \"ExitMapAndCreateCaravan\")", patch);
+    // ExitMapAndCreateCaravan is overloaded, so the bare [HarmonyPatch(type, name)] form is an ambiguous
+    // match that throws at mod load. The patch must instead resolve explicit signatures via TargetMethods.
+    AssertDoesNotContain("HarmonyPatch(typeof(CaravanExitMapUtility), \"ExitMapAndCreateCaravan\")", patch);
+    AssertContains("public static IEnumerable<MethodBase> TargetMethods()", patch);
+    AssertContains("AccessTools.Method(", patch);
     AssertContains("CaravanArmoryService.ArmDepartingPawns(pawns)", patch);
     AssertContains("settings.armoryMobilizationEnabled", patch);
     AssertContains("LoadoutAdapter.IsMobilizationCandidate", patch);
@@ -9323,6 +9327,15 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertContains("LoadoutAdapter.IsArmed", patch);
     AssertContains("Log.Warning", patch);
     AssertRimWorldMethodExists("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan");
+    // Proof the bare form really is ambiguous: the method has more than one overload in this game version.
+    AssertEqual(true, RimWorldMethodOverloadCount("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan") >= 2);
+    // Both explicit signatures the patch targets must each resolve to exactly one real overload.
+    AssertEqual(1, RimWorldMethodMatchCount(
+        "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
+        new[] { "IEnumerable`1", "Faction", "PlanetTile", "PlanetTile", "PlanetTile", "Boolean" }));
+    AssertEqual(1, RimWorldMethodMatchCount(
+        "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
+        new[] { "IEnumerable`1", "Faction", "PlanetTile", "Direction8Way", "PlanetTile", "Boolean" }));
 }
 
 static void TestLiveVisitAnimalCaravanDocs()
@@ -9878,6 +9891,46 @@ static void AssertRimWorldMethodExists(string typeName, string methodName)
     {
         throw new InvalidOperationException($"Expected RimWorld type '{typeName}' to declare method '{methodName}'.");
     }
+}
+
+static int RimWorldMethodOverloadCount(string typeName, string methodName)
+{
+    var managedPath = Path.Combine("C:\\Games\\RimWorld", "RimWorldWin64_Data", "Managed");
+    var assemblyPath = Path.Combine(managedPath, "Assembly-CSharp.dll");
+    AssertFileExists(assemblyPath);
+
+    var assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
+    var type = assembly.GetType(typeName)
+        ?? throw new InvalidOperationException($"Expected RimWorld type '{typeName}' to exist.");
+    var flags = System.Reflection.BindingFlags.Public
+        | System.Reflection.BindingFlags.NonPublic
+        | System.Reflection.BindingFlags.Instance
+        | System.Reflection.BindingFlags.Static
+        | System.Reflection.BindingFlags.DeclaredOnly;
+
+    return type.GetMethods(flags).Count(method => method.Name == methodName);
+}
+
+// Counts overloads of a method whose parameter types (by simple type name, order-sensitive) match exactly.
+// Used to prove the explicit Harmony target signatures resolve to one method each (no ambiguity, no typo).
+static int RimWorldMethodMatchCount(string typeName, string methodName, string[] paramTypeNames)
+{
+    var managedPath = Path.Combine("C:\\Games\\RimWorld", "RimWorldWin64_Data", "Managed");
+    var assemblyPath = Path.Combine(managedPath, "Assembly-CSharp.dll");
+    AssertFileExists(assemblyPath);
+
+    var assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
+    var type = assembly.GetType(typeName)
+        ?? throw new InvalidOperationException($"Expected RimWorld type '{typeName}' to exist.");
+    var flags = System.Reflection.BindingFlags.Public
+        | System.Reflection.BindingFlags.NonPublic
+        | System.Reflection.BindingFlags.Instance
+        | System.Reflection.BindingFlags.Static
+        | System.Reflection.BindingFlags.DeclaredOnly;
+
+    return type.GetMethods(flags).Count(method =>
+        method.Name == methodName
+        && method.GetParameters().Select(p => p.ParameterType.Name).SequenceEqual(paramTypeNames));
 }
 
 static void AssertEqual<T>(T expected, T actual)
