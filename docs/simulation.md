@@ -672,7 +672,7 @@ settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive
 
 **Обоснование последовательности:**
 
-- **Arrival** — гомеостатический расход внешнего резерва: добавляет в пул новые `Drifter`-записи, только чтобы закрыть дефицит до целевой популяции, не выше жёсткого потолка и не больше сохранённого `State.DrifterArrivalReservoir`; метрированно (1–2 в день).
+- **Arrival** — гомеостатический расход внешнего резерва: добавляет в пул новые `Drifter`-записи, чтобы активное население мира могло вырасти на размер сохранённого `State.DrifterArrivalReservoir`, не выше жёсткого потолка; метрированно (по настройке `maxDrifterArrivalsPerDay`).
 - **Founding** идёт **раньше** ассимиляции: если в пуле набралась группа (≥ `drifterMinFounders`) и лучший по `LeadershipAptitude` лидер проходит порог, группа основывает новое поселение или банду; дрифтеры-основатели удаляются из пула и становятся гражданами (`FoundSettlement`).
 - **Assimilation** — оставшиеся дрифтеры (старейшие по `ArrivalTick`) вливаются в наименее населённые поселения как граждане (`AssimilateDrifter`), тоже метрированно.
 
@@ -685,6 +685,15 @@ ledger-карты. Он сохраняется в `WorldState`, уменьшае
 bootstrap RimWorld layer создаёт стартовый резерв как
 `settlements * targetWorldPopulationPerSettlement`, но daily flow не может
 создавать людей сверх этого запаса.
+
+Важно: `targetWorldPopulationPerSettlement` больше не используется как
+абсолютная цель вида «в мире должно быть только N человек на поселение».
+Иначе мир, импортированный с 57 жителями на поселение, навсегда блокировал бы
+приток при дефолтной цели 24. Daily flow теперь считает цель как
+`current alive citizens + pooled drifters + remaining external reserve`
+(с учётом `drifterHardCeiling`). Поэтому резерв является конечным источником
+роста **поверх уже импортированного населения**, а не нижней планкой, которая
+случайно отключает всю демографию.
 
 Legacy saves from before this field are repaired once in the RimWorld component:
 if the save is already bootstrapped, has settlements, and has not run the bridge,

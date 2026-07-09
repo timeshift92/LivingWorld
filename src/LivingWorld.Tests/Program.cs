@@ -114,6 +114,7 @@ var tests = new List<(string Name, Action Test)>
     ("drifter arrival spends a finite external reservoir", TestDrifterArrivalSpendsFiniteReservoir),
     ("drifter reservoir survives save load", TestDrifterReservoirSerializationRoundTrip),
     ("adds drifters toward the target world population in metered steps", TestDrifterArrivalFillsTowardTarget),
+    ("drifter flow target includes finite reserve above current population", TestDrifterFlowTargetIncludesReserveAboveCurrentPopulation),
     ("idles the arrival tap when the world already meets its target", TestDrifterArrivalIdlesWhenWorldPopulated),
     ("never pushes world population past the hard ceiling", TestDrifterArrivalRespectsHardCeiling),
     ("adds no drifters when the arrival tap is disabled", TestDrifterArrivalDisabled),
@@ -297,6 +298,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines the drifter arrival incident def", TestRimWorldDrifterArrivalIncidentDef),
     ("defines the drifter arrival incident worker", TestRimWorldDrifterArrivalWorker),
     ("drifter arrival requires a pooled drifter before firing", TestDrifterArrivalGateRequiresPooledDrifter),
+    ("uses finite reserve as population growth target in daily tick", TestRimWorldDailyTickUsesReserveGrowthTarget),
     ("drifter arrival validates edge spawn cells", TestRimWorldDrifterArrivalWorkerValidatesSpawnCell),
     ("defines Russian incident def localization", TestRimWorldIncidentDefRussianLocalization),
     ("defines the faction raid incident def", TestRimWorldFactionRaidIncidentDef),
@@ -3422,6 +3424,31 @@ static void TestDrifterArrivalFillsTowardTarget()
     AssertEqual(5, third.PoolSize);
     AssertEqual(0, DrifterArrivalService.SimulateArrivals(state, request with { Tick = 240_000 }).Arrived);
     AssertEqual(5, state.Drifters.Count);
+}
+
+static void TestDrifterFlowTargetIncludesReserveAboveCurrentPopulation()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("populated-camp", "Populated Camp", "Outlander");
+    for (var i = 0; i < 57; i++)
+    {
+        state.CreateCitizen($"Settler {i + 1}", 25, Sex.Male, "settler", settlement.Id);
+    }
+
+    state.AddDrifterArrivalReservoir(24, "outside reserve");
+
+    var target = PopulationFlowTargetService.Calculate(
+        state,
+        new PopulationFlowTargetRequest(HardCeiling: 2_000));
+
+    AssertEqual(57, target.CurrentPopulation);
+    AssertEqual(24, target.ExternalReserve);
+    AssertEqual(81, target.TargetPopulation);
+
+    var arrivals = DrifterArrivalService.SimulateArrivals(
+        state,
+        new DrifterArrivalRequest(60_000, target.TargetPopulation, target.HardCeiling, MaxArrivalsPerStep: 3));
+    AssertEqual(3, arrivals.Arrived);
 }
 
 static void TestDrifterArrivalIdlesWhenWorldPopulated()
@@ -8438,6 +8465,18 @@ static void TestDrifterArrivalGateRequiresPooledDrifter()
 
     AssertContains("State.Drifters.Count > 0", source);
     AssertDoesNotContain("cachedWorldPopulation < cachedTargetPopulation", source);
+}
+
+static void TestRimWorldDailyTickUsesReserveGrowthTarget()
+{
+    var path = Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("PopulationFlowTargetService.Calculate", source);
+    AssertContains("flowTarget.TargetPopulation", source);
+    AssertContains("flowTarget.HardCeiling", source);
+    AssertContains("cachedTargetPopulation = flowTarget.TargetPopulation", source);
 }
 
 static void TestRimWorldDrifterArrivalWorkerValidatesSpawnCell()

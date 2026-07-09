@@ -658,12 +658,13 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         if (settings.drifterFlowEnabled && !State.IsInitialWorldSeedingActive)
         {
             var dayTick = day * TicksPerDay;
-            var target = Math.Max(0, State.Settlements.Count * Math.Max(0, settings.targetWorldPopulationPerSettlement));
-            var ceiling = Math.Max(target, Math.Max(0, settings.drifterHardCeiling));
+            var flowTarget = PopulationFlowTargetService.Calculate(
+                State,
+                new PopulationFlowTargetRequest(Math.Max(0, settings.drifterHardCeiling)));
 
             DrifterArrivalService.SimulateArrivals(
                 State,
-                new DrifterArrivalRequest(dayTick, target, ceiling, settings.maxDrifterArrivalsPerDay));
+                new DrifterArrivalRequest(dayTick, flowTarget.TargetPopulation, flowTarget.HardCeiling, settings.maxDrifterArrivalsPerDay));
             DrifterFoundingService.SimulateFounding(
                 State,
                 new DrifterFoundingRequest(dayTick, settings.drifterMinFounders, settings.drifterLeaderAptitudeThreshold));
@@ -671,7 +672,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 State,
                 new DrifterAssimilationRequest(dayTick, settings.maxDrifterAssimilationsPerDay));
 
-            cachedTargetPopulation = target;
+            cachedTargetPopulation = flowTarget.TargetPopulation;
             cachedWorldPopulation = State.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive) + State.Drifters.Count;
         }
 
