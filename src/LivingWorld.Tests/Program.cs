@@ -320,6 +320,8 @@ var tests = new List<(string Name, Action Test)>
     ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
     ("gives mechanoid raids a world-map source", TestRimWorldMechClusters),
     ("makes visitor groups travel across the world map", TestRimWorldApproachingVisitors),
+    ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
+    ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8719,6 +8721,50 @@ static void TestRimWorldEconomicDiversity()
         AssertContains($"<{key}>", englishXml);
         AssertContains($"<{key}>", russianXml);
     }
+}
+
+static void TestDrifterReservoirTakeForArrival()
+{
+    var state = new WorldState(1);
+    state.AddDrifterArrivalReservoir(5, "seed");
+    AssertEqual(5, state.DrifterArrivalReservoir);
+
+    // Takes what is asked while available, and reports the amount actually drawn.
+    AssertEqual(2, DrifterArrivalService.TakeForArrival(state, 2));
+    AssertEqual(3, state.DrifterArrivalReservoir);
+
+    // Non-positive requests are a no-op.
+    AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 0));
+    AssertEqual(3, state.DrifterArrivalReservoir);
+
+    // Cannot draw more than remain: clamps to what is left and empties the pool.
+    AssertEqual(3, DrifterArrivalService.TakeForArrival(state, 10));
+    AssertEqual(0, state.DrifterArrivalReservoir);
+
+    // An empty pool yields nobody.
+    AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 1));
+}
+
+static void TestRimWorldSourcedWanderers()
+{
+    var root = FindRepoRoot();
+
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWandererSourcePatch.cs"));
+    // Gate the vanilla join behind reservoir availability, and draw one person on success.
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_WandererJoin), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_WandererJoin), \"TryExecuteWorker\")", patch);
+    AssertContains("DrifterArrivalReservoir < 1", patch);
+    AssertContains("DrifterArrivalService.TakeForArrival(component.State, 1)", patch);
+    // Gated by the existing drifter-flow setting; fail-open.
+    AssertContains("settings.drifterFlowEnabled", patch);
+
+    var service = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.Core", "DrifterArrivalService.cs"));
+    AssertContains("public static int TakeForArrival(", service);
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_WandererJoin", "CanFireNowSub");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_WandererJoin", "TryExecuteWorker");
 }
 
 static void TestRimWorldApproachingVisitors()
