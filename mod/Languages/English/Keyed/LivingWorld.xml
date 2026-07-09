@@ -205,6 +205,8 @@
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
+  <LW_DirectVisitObserver>Observe Living World settlement</LW_DirectVisitObserver>
+  <LW_DirectVisitObserverTooltip>Record a direct visit to this settlement and open its Living World ledger view. This reveals exact population, projects, animals and stores for this settlement only.</LW_DirectVisitObserverTooltip>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>

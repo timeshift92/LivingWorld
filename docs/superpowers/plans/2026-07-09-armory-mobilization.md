@@ -161,10 +161,12 @@ Steps:
 - Create/Modify: a Harmony hook on caravan formation to force `FetchKit` on departing colonists first.
 
 Steps:
-- [ ] Structural test for the caravan hook.
-- [ ] Implement: on `Dialog_FormCaravan` confirm (or `CaravanFormingUtility`), queue fetch-kit for eligible departing pawns.
-- [ ] Reflection-verify the caravan-formation API.
+- [x] Structural test for the caravan hook.
+- [x] Implement: patch `CaravanExitMapUtility.ExitMapAndCreateCaravan` and arm eligible departing pawns from racks before they become a world caravan.
+- [x] Reflection-verify the caravan-formation API.
 - [ ] Build/test/commit + settings toggle `armoryMobilizationEnabled` + EN/RU + final polish.
+
+Status: implemented in `LivingWorldCaravanArmoryPatch` / `CaravanArmoryService`. It equips skill-eligible, unarmed departing colonists from existing armory racks and fails open if the map/racks/signature are unavailable. Live tuning still needs an actual caravan formation test to confirm timing and UX.
 
 ---
 

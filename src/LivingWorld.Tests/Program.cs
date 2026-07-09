@@ -93,6 +93,7 @@ var tests = new List<(string Name, Action Test)>
     ("settlement map layout builds districts roads style power network and activity points", TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity),
     ("settlement map damage lowers facility condition", TestSettlementMapDamageLowersFacilityCondition),
     ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
+    ("animal map fate sync keeps player-taken animals out of source cohorts", TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -284,6 +285,7 @@ var tests = new List<(string Name, Action Test)>
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
+    ("opens a direct settlement observer from the world map", TestRimWorldDirectSettlementObserver),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -335,6 +337,8 @@ var tests = new List<(string Name, Action Test)>
     ("tracks colony mobilization state and toggle", TestRimWorldArmoryMobilization),
     ("selects armory loadout by skill", TestArmoryLoadoutSelection),
     ("wires armory racks, equip adapter and fetch jobs", TestRimWorldArmoryEquipAndJobs),
+    ("arms caravan expeditions from the colony armory before departure", TestRimWorldCaravanArmoryPreparation),
+    ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -3114,6 +3118,45 @@ static void TestAnimalMapFateSyncReturnsOnlyLiveDepartures()
     AssertEqual(AnimalMapFateSyncStatus.Success, live.Status);
     AssertEqual(AnimalMapFateSyncStatus.Success, dead.Status);
     AssertEqual(4, state.GetAnimalCohort(herd.Id)!.Count);
+}
+
+static void TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts()
+{
+    var state = new WorldState(4243);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    var herd = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 4,
+        healthPercent: 80,
+        fertilityPercent: 60,
+        carryingCapacity: 12,
+        tick: 100);
+
+    var withdrawn = AnimalMapMaterializationService.WithdrawForSettlementMap(
+        state,
+        new AnimalMapMaterializationRequest(settlement.Id, MaxAnimals: 1, Tick: 200, PurposeKey: "map:ranch:2"));
+    AssertEqual(AnimalMapMaterializationStatus.Success, withdrawn.Status);
+    AssertEqual(3, state.GetAnimalCohort(herd.Id)!.Count);
+    var declineEventsBefore = state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined);
+
+    var taken = AnimalMapFateSyncService.Resolve(
+        state,
+        new AnimalMapFateSyncRequest(
+            withdrawn.Animals[0].CohortId,
+            withdrawn.Animals[0].AnimalKind,
+            withdrawn.Animals[0].Type,
+            Count: 1,
+            Fate: AnimalMapFateKind.TakenByPlayer,
+            Tick: 300,
+            Reason: "animal tamed or taken by the player"));
+
+    AssertEqual(AnimalMapFateSyncStatus.Success, taken.Status);
+    AssertEqual(3, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(
+        declineEventsBefore + 1,
+        state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined));
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()
@@ -7676,6 +7719,7 @@ static void TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization()
     AssertContains("AnimalMapFateSyncService.Resolve", tracker);
     AssertContains("AnimalMapFateKind.Returned", tracker);
     AssertContains("AnimalMapFateKind.Dead", tracker);
+    AssertContains("AnimalMapFateKind.TakenByPlayer", tracker);
 
     var killPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnKillPatch.cs"));
     var exitPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
@@ -8241,6 +8285,36 @@ static void TestRimWorldSettlementObserverWindow()
         "LW_SettlementObserver_NoActiveProject",
         "LW_SettlementObserver_ProjectProgress"
     })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldDirectSettlementObserver()
+{
+    var root = FindRepoRoot();
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementDirectVisitPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    AssertContains("HarmonyPatch(typeof(Settlement), \"GetGizmos\")", patch);
+    AssertContains("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
+    AssertContains("new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true)", patch);
+    AssertContains("Faction.OfPlayer", patch);
+    AssertContains("LW_DirectVisitObserver", patch);
+    AssertContains("LW_DirectVisitObserverTooltip", patch);
+    AssertRimWorldMethodExists("RimWorld.Planet.WorldObject", "GetGizmos");
+
+    var window = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
+    AssertContains("LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)", window);
+    AssertContains("if (!debugLogging && !allowExactWithoutDebug)", window);
+    AssertContains("!scopedSettlementId.HasValue || settlement.Id == scopedSettlementId.Value", window);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_DirectVisitObserver", "LW_DirectVisitObserverTooltip" })
     {
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);
@@ -9230,6 +9304,49 @@ static void TestRimWorldArmoryMobilization()
         AssertContains($"<{key}>", englishXml);
         AssertContains($"<{key}>", russianXml);
     }
+}
+
+static void TestRimWorldCaravanArmoryPreparation()
+{
+    var root = FindRepoRoot();
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanArmoryPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    AssertContains("HarmonyPatch(typeof(CaravanExitMapUtility), \"ExitMapAndCreateCaravan\")", patch);
+    AssertContains("CaravanArmoryService.ArmDepartingPawns(pawns)", patch);
+    AssertContains("settings.armoryMobilizationEnabled", patch);
+    AssertContains("LoadoutAdapter.IsMobilizationCandidate", patch);
+    AssertContains("LoadoutAdapter.ResolveKit", patch);
+    AssertContains("LoadoutAdapter.EquipKit", patch);
+    AssertContains("LoadoutAdapter.IsArmed", patch);
+    AssertContains("Log.Warning", patch);
+    AssertRimWorldMethodExists("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan");
+}
+
+static void TestLiveVisitAnimalCaravanDocs()
+{
+    var root = FindRepoRoot();
+
+    var taskBoard = File.ReadAllText(
+        Path.Combine(root, "docs", "superpowers", "plans", "2026-07-08-next-systems-task-board.md"));
+    AssertContains("Direct observer slice landed", taskBoard);
+    AssertContains("player-taken/tamed animals stay out of the source cohort", taskBoard);
+
+    var armoryPlan = File.ReadAllText(
+        Path.Combine(root, "docs", "superpowers", "plans", "2026-07-09-armory-mobilization.md"));
+    AssertContains("patch `CaravanExitMapUtility.ExitMapAndCreateCaravan`", armoryPlan);
+    AssertContains("Live tuning still needs an actual caravan formation test", armoryPlan);
+
+    var completionPlan = File.ReadAllText(
+        Path.Combine(root, "docs", "superpowers", "plans", "2026-07-09-eight-point-live-world-completion.md"));
+    AssertContains("cohort-stack fate sync is implemented", completionPlan);
+    AssertContains("direct settlement observer action records `DirectVisit` intel", completionPlan);
+
+    var simulation = File.ReadAllText(Path.Combine(root, "docs", "simulation.md"));
+    AssertContains("world-map command on NPC settlements", simulation);
+    AssertContains("player-taken", simulation);
 }
 
 static void TestRimWorldCaravanMeetingGate()

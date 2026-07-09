@@ -766,7 +766,8 @@ public enum AnimalMapFateKind
 {
     Returned,
     Dead,
-    Missing
+    Missing,
+    TakenByPlayer
 }
 
 public enum AnimalMapFateSyncStatus

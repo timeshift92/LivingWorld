@@ -205,6 +205,8 @@
   <LW_InspectThreatLine>Под угрозой: приближается варбанд - прибытие примерно через {days} дн.</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Открыть таблицу населения и экономики</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>
+  <LW_DirectVisitObserver>Осмотреть поселение Living World</LW_DirectVisitObserver>
+  <LW_DirectVisitObserverTooltip>Записать прямой визит в это поселение и открыть его ledger-просмотр Living World. Это раскрывает точное население, проекты, животных и склады только для этого поселения.</LW_DirectVisitObserverTooltip>
   <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Фракция</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Поселения</LW_EconomyCol_Settlements>

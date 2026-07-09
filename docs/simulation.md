@@ -165,18 +165,23 @@ first real-map settlement materialization slice after vanilla map generation:
 13. if binding fails, abort the preparation and return the payload to the
    settlement ledger.
 
-This is still a bounded settlement materialization layer, not a peaceful NPC-city
-AI simulation. It now builds a visible ledger-driven town shell (districts,
+This is still a bounded settlement materialization layer, not a full peaceful
+NPC-city AI simulation. It now builds a visible ledger-driven town shell (districts,
 roads, rooms, doors, floors, facility props, housing, defenses, power network,
 work/activity props and stockpile stacks). What remains outside this layer is a
-separate observer/peaceful-visit system with complete pawn job schedules and
-daily routines. The important contract is real: defenders are concrete ledger
+larger peaceful schedule layer with complete pawn jobs and daily routines. The
+first observer slice exists as a world-map command on NPC settlements: selecting
+a settlement can record `DirectVisit` knowledge and open an exact observer scoped
+to that settlement only, while the global observer remains debug-gated. The
+important contract is real: defenders are concrete ledger
 citizens, spawned loot is removed from the settlement ledger before the player
 can take it, a small bounded sample of settlement animals is withdrawn from
 ledger cohorts before spawning on the map, and destroyed facility structures
 degrade the facility that produced them. If an animal pawn cannot be spawned,
 that count is returned to its cohort. Spawned animal pawns are cohort-tracked
-until they die or safely leave the map. If the player later defeats the
+until they die, safely leave the map, or become player-owned/tamed; player-taken
+animals stay out of the source cohort instead of silently returning. If the
+player later defeats the
 settlement, the existing defeat bridge destroys the matched ledger settlement.
 Map-end resource reconciliation returns only unlooted tracked stacks to the
 settlement or active ruin, while picked-up/burned/destroyed stacks stay gone.

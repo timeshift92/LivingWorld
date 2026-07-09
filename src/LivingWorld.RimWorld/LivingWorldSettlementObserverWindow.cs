@@ -23,8 +23,21 @@ public sealed class LivingWorldSettlementObserverWindow : Window
     private Vector2 settlementScroll;
     private Vector2 detailScroll;
     private EntityId? selectedSettlementId;
+    private readonly EntityId? scopedSettlementId;
+    private readonly bool allowExactWithoutDebug;
 
     public override Vector2 InitialSize => new Vector2(920f, 620f);
+
+    public LivingWorldSettlementObserverWindow()
+    {
+    }
+
+    public LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)
+    {
+        this.scopedSettlementId = scopedSettlementId;
+        this.selectedSettlementId = scopedSettlementId;
+        this.allowExactWithoutDebug = allowExactWithoutDebug;
+    }
 
     public override void DoWindowContents(Rect inRect)
     {
@@ -36,7 +49,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         }
 
         var debugLogging = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
-        if (!debugLogging)
+        if (!debugLogging && !allowExactWithoutDebug)
         {
             Widgets.Label(inRect, "LW_SettlementObserver_DebugOnly".Translate());
             var debugCloseRect = new Rect(inRect.center.x - 80f, inRect.yMax - 38f, 160f, 34f);
@@ -74,6 +87,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
 
         var settlements = state.Settlements
             .Where(settlement => settlement.IsActive)
+            .Where(settlement => !scopedSettlementId.HasValue || settlement.Id == scopedSettlementId.Value)
             .OrderBy(settlement => settlement.Name, StringComparer.Ordinal)
             .ThenBy(settlement => settlement.Id.Value)
             .Take(MaxSettlementRows)
