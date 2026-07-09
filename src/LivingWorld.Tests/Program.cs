@@ -342,6 +342,7 @@ var tests = new List<(string Name, Action Test)>
     ("selects armory loadout by skill", TestArmoryLoadoutSelection),
     ("wires armory racks, equip adapter and fetch jobs", TestRimWorldArmoryEquipAndJobs),
     ("arms caravan expeditions from the colony armory before departure", TestRimWorldCaravanArmoryPreparation),
+    ("repairs armory gear at the repair bench", TestRimWorldArmoryRepair),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
@@ -9482,6 +9483,48 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertEqual(1, RimWorldMethodMatchCount(
         "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
         new[] { "IEnumerable`1", "Faction", "PlanetTile", "Direction8Way", "PlanetTile", "Boolean" }));
+}
+
+static void TestRimWorldArmoryRepair()
+{
+    var root = FindRepoRoot();
+
+    // Recipe worker restores the most-damaged rack gear to full HP (vanilla has no repair). Fail-safe.
+    var worker = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "RecipeWorker_RepairArmoryGear.cs"));
+    AssertContains("class RecipeWorker_RepairArmoryGear : RecipeWorker", worker);
+    AssertContains("public override void Notify_IterationCompleted(Pawn billDoer, List<Thing> ingredients)", worker);
+    AssertContains("HitPoints = ", worker);
+    AssertContains("Building_ArmoryRack", worker);
+    AssertContains("Log.Warning", worker);
+
+    // Repair bench building: a vanilla work table with a bills tab, buildable under Production.
+    var bench = File.ReadAllText(
+        Path.Combine(root, "mod", "Defs", "ThingDefs_Armory", "LivingWorld_RepairBench.xml"));
+    AssertContains("<defName>LivingWorld_RepairBench</defName>", bench);
+    AssertContains("<thingClass>Building_WorkTable</thingClass>", bench);
+    AssertContains("ITab_Bills", bench);
+    AssertContains("<designationCategory>Production</designationCategory>", bench);
+
+    // Repair recipe routed through the custom worker, on the repair bench, costing steel.
+    var recipe = File.ReadAllText(
+        Path.Combine(root, "mod", "Defs", "RecipeDefs_Armory", "LivingWorld_RepairRecipe.xml"));
+    AssertContains("<defName>LivingWorld_RepairArmoryGear</defName>", recipe);
+    AssertContains("<workerClass>LivingWorld.RimWorld.RecipeWorker_RepairArmoryGear</workerClass>", recipe);
+    AssertContains("<li>LivingWorld_RepairBench</li>", recipe);
+    AssertContains("<li>Steel</li>", recipe);
+
+    // Russian translations exist so the bench and recipe are not left English / error.
+    var benchRu = File.ReadAllText(Path.Combine(
+        root, "mod", "Languages", "Russian", "DefInjected", "ThingDef", "LivingWorld_RepairBench.xml"));
+    AssertContains("<LivingWorld_RepairBench.label>", benchRu);
+    var recipeRu = File.ReadAllText(Path.Combine(
+        root, "mod", "Languages", "Russian", "DefInjected", "RecipeDef", "LivingWorld_RepairRecipe.xml"));
+    AssertContains("<LivingWorld_RepairArmoryGear.label>", recipeRu);
+
+    // RimWorld APIs the repair path depends on exist in this game version.
+    AssertRimWorldMethodExists("Verse.RecipeWorker", "Notify_IterationCompleted");
+    AssertRimWorldMethodExists("Verse.Thing", "set_HitPoints");
 }
 
 static void TestLiveVisitAnimalCaravanDocs()

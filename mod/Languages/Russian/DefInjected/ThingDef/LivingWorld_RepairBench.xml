@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LivingWorld_RepairBench.label>ремонтный стол арсенала</LivingWorld_RepairBench.label>
+  <LivingWorld_RepairBench.description>Верстак для починки боевого снаряжения колонии. Задайте здесь билл ремонта, и колонисты будут восстанавливать прочность повреждённого оружия и брони со стоек арсенала, тратя сталь за каждую починку. Иначе ванильные оружие и броня не чинятся.</LivingWorld_RepairBench.description>
+</LanguageData>
