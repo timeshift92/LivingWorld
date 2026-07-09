@@ -409,6 +409,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 if (cell.InBounds(map) && !cell.Fogged(map))
                 {
                     map.terrainGrid.SetTerrain(cell, terrain);
+                    LivingWorldSettlementMapFloorTracker.Track(map, room.FacilityId, cell, room.FloorTerrainDefName);
                 }
             }
         }

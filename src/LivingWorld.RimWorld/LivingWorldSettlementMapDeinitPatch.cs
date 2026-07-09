@@ -22,5 +22,9 @@ public static class LivingWorldSettlementMapDeinitPatch
             component.State,
             map,
             "settlement map deinit");
+        LivingWorldSettlementMapFloorTracker.ReconcileMap(
+            component.State,
+            map,
+            "settlement map deinit");
     }
 }

@@ -152,13 +152,15 @@ first real-map settlement materialization slice after vanilla map generation:
    `ThingDef` and `GenSpawn` APIs, preferring stockpile cells inside the
    materialized storage room;
 9. track every spawned ledger-backed resource stack by map and thing id;
-10. track spawned walls, doors and facility-bound props by facility id;
+10. track spawned walls, doors, floor terrain cells and facility-bound props by
+   facility id;
 11. on `MapDeiniter.Deinit`, return only stacks that still exist on that map to
    the settlement ledger, or to the active ruin ledger if the settlement was
    destroyed while the map was open;
-12. on `MapDeiniter.Deinit`, compare tracked facility structures/props against
-   the things still spawned on the map and translate missing/destroyed objects
-   into `SettlementFacility.ConditionPercent` damage;
+12. on `MapDeiniter.Deinit`, compare tracked facility structures/props/floors
+   against the things and terrain still present on the map and translate
+   missing/destroyed/replaced objects into `SettlementFacility.ConditionPercent`
+   damage;
 13. if binding fails, abort the preparation and return the payload to the
    settlement ledger.
 
@@ -177,9 +179,9 @@ or safely leave the map. If the player later defeats the settlement, the
 existing defeat bridge destroys the matched ledger settlement. Map-end resource
 reconciliation returns only unlooted tracked stacks to the settlement or active
 ruin, while picked-up/burned/destroyed stacks stay gone. Map-end facility
-reconciliation lowers damaged facilities, so the next visit sees damaged
-workshops/storage/power plants and changed stockpiles instead of recreating
-pristine buildings and original loot.
+reconciliation lowers damaged facilities, including replaced or stripped room
+floors, so the next visit sees damaged workshops/storage/power plants and
+changed stockpiles instead of recreating pristine buildings and original loot.
 
 ### Dematerialization
 

@@ -316,6 +316,7 @@ var tests = new List<(string Name, Action Test)>
     ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
     ("materializes settlement rooms and stockpiles on attacked maps", TestRimWorldSettlementRoomsAndStockpilesMaterialization),
     ("tracks settlement map structures and reconciles facility damage", TestRimWorldSettlementMapFacilityDamageReconciliation),
+    ("tracks settlement map floors and reconciles facility damage", TestRimWorldSettlementMapFloorDamageReconciliation),
     ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
@@ -7621,6 +7622,27 @@ static void TestRimWorldSettlementMapFacilityDamageReconciliation()
     AssertContains("LivingWorldSettlementMapFacilityTracker.Track", service);
     AssertContains("TrySpawnStructure(", service);
     AssertContains("new IntVec3", service);
+}
+
+static void TestRimWorldSettlementMapFloorDamageReconciliation()
+{
+    var root = FindRepoRoot();
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapFloorTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("public static void Track", tracker);
+    AssertContains("public static int ReconcileMap", tracker);
+    AssertContains("map.terrainGrid.TerrainAt", tracker);
+    AssertContains("SettlementMapDamageService.ReconcileFacilityDamage", tracker);
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("LivingWorldSettlementMapFloorTracker.ReconcileMap", patch);
+
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+    AssertContains("LivingWorldSettlementMapFloorTracker.Track", service);
+    AssertContains("room.FacilityId", service);
+    AssertContains("room.FloorTerrainDefName", service);
 }
 
 static void TestRimWorldSettlementMapResourceReconciliation()
