@@ -152,6 +152,10 @@
   <LW_MechClusterAwakenText>Спящий механоидный комплекс запитался, разбуженный растущим богатством твоей колонии и близостью. Жди механоидных вторжений оттуда — это не случайная атака. Следи за ним на карте мира.</LW_MechClusterAwakenText>
   <LW_Settings_ArrivalsTravel>Нейтральные группы идут по карте мира</LW_Settings_ArrivalsTravel>
   <LW_Settings_ArrivalsTravelTip>Если включено, гости, торговые караваны и путники фракций выходят из одного из своих поселений и идут по карте мира к твоей колонии — ты видишь их приближение — вместо появления у края карты. Выключите, чтобы прибывали мгновенно. Орбитальных торговцев не затрагивает.</LW_Settings_ArrivalsTravelTip>
+  <LW_Settings_ArmoryMobilization>Арсенал / мобилизация колонии</LW_Settings_ArmoryMobilization>
+  <LW_Settings_ArmoryMobilizationTip>Если включено, колонисты работают в гражданке и вооружаются из арсенала только при мобилизации — вручную кнопкой «Мобилизация» или автоматически, когда на карте враги. (Стойки и автономное поведение «взять/вернуть» — в следующих обновлениях.)</LW_Settings_ArmoryMobilizationTip>
+  <LW_MobilizeToggle>Мобилизация колонии</LW_MobilizeToggle>
+  <LW_MobilizeTooltip>Переключить мобилизацию колонии. Если включено, боеспособные колонисты вооружаются из стоек арсенала; колония также мобилизуется автоматически, пока на карте враги. Выключено — возвращаются к работе и в гражданку.</LW_MobilizeTooltip>
   <LW_GroupApproachingLabel>Приближается группа</LW_GroupApproachingLabel>
   <LW_GroupApproachingText>Группа ({kind}) фракции {faction} выступила к {colony}. Доберутся примерно через {days} дн. Следи за ними на карте мира.</LW_GroupApproachingText>
   <LW_ArrivalKind_Visitors>гости</LW_ArrivalKind_Visitors>

@@ -330,6 +330,7 @@ var tests = new List<(string Name, Action Test)>
     ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
     ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
     ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
+    ("tracks colony mobilization state and toggle", TestRimWorldArmoryMobilization),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -8964,6 +8965,60 @@ static void TestDrifterReservoirTakeForArrival()
 
     // An empty pool yields nobody.
     AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 1));
+}
+
+static void TestRimWorldArmoryMobilization()
+{
+    var root = FindRepoRoot();
+
+    // Per-map mobilization state: manual flag OR a throttled, fail-safe threat check; persisted.
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
+    AssertContains("class MobilizationMapComponent : MapComponent", component);
+    AssertContains("public bool IsMobilized => manualMobilized || threatPresent", component);
+    AssertContains("public void ToggleManual()", component);
+    AssertContains("public override void MapComponentTick()", component);
+    AssertContains("HostileTo(player)", component);
+    // Throttled + fail-safe.
+    AssertContains("ThreatRecheckInterval", component);
+    AssertContains("threatPresent = false", component);
+    AssertContains("Scribe_Values.Look(ref manualMobilized", component);
+
+    // Colony toggle gizmo on player colonists, gated by the armory setting, fail-open.
+    var gizmo = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMobilizationGizmoPatch.cs"));
+    AssertContains("HarmonyPatch(typeof(Pawn), \"GetGizmos\")", gizmo);
+    AssertContains("Command_Toggle", gizmo);
+    AssertContains("component.ToggleManual()", gizmo);
+    AssertContains("settings.armoryMobilizationEnabled", gizmo);
+
+    // Settings toggle wired and drawn.
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("armoryMobilizationEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_ArmoryMobilization", drawer);
+
+    // RimWorld APIs the feature depends on exist in this game version.
+    AssertRimWorldMethodExists("Verse.MapComponent", "MapComponentTick");
+    AssertRimWorldMethodExists("Verse.Pawn", "GetGizmos");
+
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_MobilizeToggle",
+        "LW_MobilizeTooltip",
+        "LW_Settings_ArmoryMobilization",
+        "LW_Settings_ArmoryMobilizationTip",
+    })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
 }
 
 static void TestRimWorldCaravanMeetingGate()
