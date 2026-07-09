@@ -86,6 +86,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 map.Center.x,
                 map.Center.z,
                 MaxFacilities: 8));
+        var cityTerrainCount = SpawnDistrictTerrain(map, layout);
         var roomCount = SpawnSettlementRooms(map, settlement.Faction, layout);
         SpawnReservedResources(component.State, map, prepared, layout);
         var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
@@ -98,7 +99,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 $"[LivingWorld] materialized settlement map '{settlement.LabelCap}'"
                 + $" with {bound} ledger defender(s), {animalCount} animal(s),"
                 + $" {facilityCount} facility feature(s), {roomCount} room shell(s),"
-                + $" {cityFeatureCount} city feature(s),"
+                + $" {cityFeatureCount} city feature(s), {cityTerrainCount} district/path terrain cell(s),"
                 + $" and {prepared.Resources.Sum(resource => resource.Quantity)} resource unit(s).");
         }
 
@@ -355,6 +356,66 @@ public static class LivingWorldSettlementMapMaterializationService
         return spawned;
     }
 
+    private static int SpawnDistrictTerrain(Map map, SettlementMapLayoutResult layout)
+    {
+        if (layout.Status != SettlementMapLayoutStatus.Success)
+        {
+            return 0;
+        }
+
+        var placed = 0;
+        foreach (var district in layout.Districts.OrderBy(district => district.Order))
+        {
+            for (var x = district.MinX; x < district.MinX + district.Width; x++)
+            {
+                for (var z = district.MinZ; z < district.MinZ + district.Height; z++)
+                {
+                    var cell = new IntVec3(x, 0, z);
+                    if (TrySetTerrain(map, cell, district.FloorTerrainDefName, district.FacilityId))
+                    {
+                        placed++;
+                    }
+                }
+            }
+        }
+
+        foreach (var pathCell in layout.PathCells.OrderBy(cell => cell.Order))
+        {
+            if (TrySetTerrain(
+                map,
+                new IntVec3(pathCell.X, 0, pathCell.Z),
+                layout.Style.RoadTerrainDefName,
+                facilityId: null))
+            {
+                placed++;
+            }
+        }
+
+        return placed;
+    }
+
+    private static bool TrySetTerrain(Map map, IntVec3 cell, string terrainDefName, EntityId? facilityId)
+    {
+        if (!cell.InBounds(map) || cell.Fogged(map))
+        {
+            return false;
+        }
+
+        var terrain = DefDatabase<TerrainDef>.GetNamedSilentFail(terrainDefName);
+        if (terrain == null)
+        {
+            return false;
+        }
+
+        map.terrainGrid.SetTerrain(cell, terrain);
+        if (facilityId.HasValue)
+        {
+            LivingWorldSettlementMapFloorTracker.Track(map, facilityId.Value, cell, terrainDefName);
+        }
+
+        return true;
+    }
+
     private static bool TrySpawnRoomShell(Map map, Faction faction, SettlementMapRoom room)
     {
         var anyPlaced = false;
@@ -562,11 +623,16 @@ public static class LivingWorldSettlementMapMaterializationService
     private static bool TrySpawnCityFeatureThing(Map map, Faction faction, SettlementMapCityFeature feature)
     {
         var cell = new IntVec3(feature.X, 0, feature.Z);
+        var isPowerConduit = feature.Kind == SettlementMapCityFeatureKind.PowerConduit;
+        var isPowerGenerator = feature.Kind == SettlementMapCityFeatureKind.PowerGenerator;
+        var isGuardPost = feature.Kind == SettlementMapCityFeatureKind.GuardPost;
+        var isActivity = feature.Kind == SettlementMapCityFeatureKind.Activity;
+        var blocksItemSlot = !isPowerConduit && !isPowerGenerator && !isGuardPost && !isActivity;
         if (!cell.InBounds(map)
             || cell.Fogged(map)
-            || !cell.Standable(map)
+            || (!isPowerConduit && !cell.Standable(map))
             || cell.GetEdifice(map) != null
-            || cell.GetFirstItem(map) != null)
+            || (blocksItemSlot && cell.GetFirstItem(map) != null))
         {
             return false;
         }

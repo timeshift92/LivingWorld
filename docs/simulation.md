@@ -141,13 +141,14 @@ first real-map settlement materialization slice after vanilla map generation:
 4. move a bounded resource payload (`Steel`, meals, medicine, components,
    silver) from the settlement ledger to the materialization lease owner;
 5. build a deterministic Core settlement-map blueprint from the settlement's
-   active `SettlementFacility` ledger records and `SettlementProductionProfile`
-   technology level;
+   active `SettlementFacility` ledger records, population, capabilities,
+   production archetype, biome and technology level;
 6. materialize facility rooms as real RimWorld walls, doors and floor terrain,
    then spawn facility props inside those rooms;
-7. add a bounded city layer from the same ledger blueprint: population-scaled
-   beds/barracks spots, defensive positions, power props, work props and
-   storage markers;
+7. add a bounded city layer from the same ledger blueprint: facility districts,
+   housing, commons, security perimeter, deterministic roads, biome/tech/faction
+   style, power conduits, generators, batteries, lamps, guard posts, work props,
+   activity props and storage markers;
 8. spawn the resource payload as real map things through RimWorld's normal
    `ThingDef` and `GenSpawn` APIs, preferring stockpile cells inside the
    materialized storage room;
@@ -164,21 +165,22 @@ first real-map settlement materialization slice after vanilla map generation:
 13. if binding fails, abort the preparation and return the payload to the
    settlement ledger.
 
-This is still a bounded settlement materialization layer, not a full NPC-city
-AI simulation. It now builds a visible ledger-driven shell (rooms, doors,
-floors, facility props, basic housing, defenses, power/work props and stockpile
-stacks), but does not yet generate complete pawn job schedules, fully styled
-district layouts, or a vanilla-quality base plan for every faction/biome. The
-important contract is real: defenders are concrete ledger citizens, spawned
-loot is removed from the settlement ledger before the player can take it, a
-small bounded sample of settlement animals is withdrawn from ledger cohorts
-before spawning on the map, and destroyed facility structures degrade the
-facility that produced them. If an animal pawn cannot be spawned, that count is
-returned to its cohort. Spawned animal pawns are cohort-tracked until they die
-or safely leave the map. If the player later defeats the settlement, the
-existing defeat bridge destroys the matched ledger settlement. Map-end resource
-reconciliation returns only unlooted tracked stacks to the settlement or active
-ruin, while picked-up/burned/destroyed stacks stay gone. Map-end facility
+This is still a bounded settlement materialization layer, not a peaceful NPC-city
+AI simulation. It now builds a visible ledger-driven town shell (districts,
+roads, rooms, doors, floors, facility props, housing, defenses, power network,
+work/activity props and stockpile stacks). What remains outside this layer is a
+separate observer/peaceful-visit system with complete pawn job schedules and
+daily routines. The important contract is real: defenders are concrete ledger
+citizens, spawned loot is removed from the settlement ledger before the player
+can take it, a small bounded sample of settlement animals is withdrawn from
+ledger cohorts before spawning on the map, and destroyed facility structures
+degrade the facility that produced them. If an animal pawn cannot be spawned,
+that count is returned to its cohort. Spawned animal pawns are cohort-tracked
+until they die or safely leave the map. If the player later defeats the
+settlement, the existing defeat bridge destroys the matched ledger settlement.
+Map-end resource reconciliation returns only unlooted tracked stacks to the
+settlement or active ruin, while picked-up/burned/destroyed stacks stay gone.
+Map-end facility
 reconciliation lowers damaged facilities, including replaced or stripped room
 floors, so the next visit sees damaged workshops/storage/power plants and
 changed stockpiles instead of recreating pristine buildings and original loot.
@@ -409,14 +411,17 @@ cohort остаётся окончательным; если оно живым �
 
 Для атакуемых NPC-поселений facilities тоже материализуются из ledger, а не
 из воздуха. `SettlementMapLayoutService.BuildFacilityLayout` строит
-детерминированный payload из `SettlementFacility`: workshop создаёт
-machining table, clinic - hospital bed, farm - hydroponics basin,
-storage - shelf, power plant - battery. RimWorld-слой спавнит эти реальные
-things рядом с центром карты, если нашёл свободную клетку, и fail-open
-пропускает объект, если соответствующий `ThingDef` недоступен или карта занята.
-Это не полная генерация города с комнатами, расписаниями и power grid; это
-проверяемый слой, где второй заход на поселение уже видит следствия ledger:
-построенные facilities, потерянных защитников, ресурсы и судьбу животных.
+детерминированный payload из `SettlementFacility`, населения, capabilities,
+биома, технологий и экономического архетипа. Workshop создаёт производственный
+район, clinic - medical district, storage - склад, power plant - power district;
+дополнительно строятся housing, commons, security district, дороги, power
+conduits, генераторы, батареи, lamps, guard posts и activity props. RimWorld-слой
+спавнит эти реальные things/terrain рядом с центром карты, если нашёл свободную
+клетку, и fail-open пропускает объект, если соответствующий `ThingDef` недоступен
+или карта занята. Это проверяемый слой, где второй заход на поселение уже видит
+следствия ledger: построенные facilities, потерянных защитников, ресурсы,
+повреждённые районы и судьбу животных. Полная мирная симуляция расписаний NPC
+остаётся отдельным observer/visit layer.
 
 Если волков стало больше:
 

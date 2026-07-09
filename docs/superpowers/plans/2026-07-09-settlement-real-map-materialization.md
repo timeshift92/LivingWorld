@@ -23,15 +23,17 @@
 - [x] Track spawned walls, doors and facility-bound props and translate destroyed/missing things into `SettlementFacility.ConditionPercent` damage on map deinit.
 - [x] Track spawned resource stacks and return only unlooted stacks to the settlement or active ruin ledger on map deinit.
 - [x] Track materialized room floor terrain cells and translate replaced/stripped floors into `SettlementFacility.ConditionPercent` damage on map deinit.
+- [x] Extend Core layout with deterministic facility districts, housing, commons, security district, roads, biome/tech/archetype style and power-network/activity/guard features.
+- [x] Materialize district terrain, roads, power conduits/generators/lights, guard posts and activity props on attacked NPC settlement maps.
 
 ## Non-Goals
 
-- Full generated town planning with vanilla-quality districts, faction-specific architecture, complete power grids and pawn schedules.
+- Peaceful NPC observer/visit maps with complete pawn job schedules and daily routines. Attacked settlement maps now have deterministic districts, roads, style and a bounded power network, but defenders still behave through RimWorld's combat map AI.
 - Full per-animal identity records. This slice tracks spawned animals by cohort stack, because animal cohorts are intentionally lightweight ledger records.
 
 ## Verification
 
-- [x] `dotnet run --project src/LivingWorld.Tests/LivingWorld.Tests.csproj` - 321 passed.
+- [x] `dotnet run --project src/LivingWorld.Tests/LivingWorld.Tests.csproj` - 334 passed.
 - [x] `dotnet build LivingWorld.sln` - 0 warnings, 0 errors.
 - [x] `git diff --check` - clean.
 - [x] `tools/install-rimworld-mod.ps1` - installed to `C:\Games\RimWorld\Mods\LivingWorld`.

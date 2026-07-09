@@ -90,6 +90,7 @@ var tests = new List<(string Name, Action Test)>
     ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
     ("settlement map layout builds rooms and stockpile slots from ledger facilities", TestSettlementMapLayoutBuildsRoomsAndStockpiles),
     ("settlement map layout builds city housing defense power and work features", TestSettlementMapLayoutBuildsCityInfrastructure),
+    ("settlement map layout builds districts roads style power network and activity points", TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity),
     ("settlement map damage lowers facility condition", TestSettlementMapDamageLowersFacilityCondition),
     ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
@@ -318,6 +319,7 @@ var tests = new List<(string Name, Action Test)>
     ("tracks settlement map structures and reconciles facility damage", TestRimWorldSettlementMapFacilityDamageReconciliation),
     ("tracks settlement map floors and reconciles facility damage", TestRimWorldSettlementMapFloorDamageReconciliation),
     ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
+    ("materializes full npc city layout surface", TestRimWorldSettlementMapFullCitySurface),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -2944,6 +2946,102 @@ static void TestSettlementMapLayoutBuildsCityInfrastructure()
 
     AssertContains("Battery", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
     AssertContains("Table", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
+}
+
+static void TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("zenith-dock", "Zenith Dock", "Outlander");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            Biome: "AridShrubland",
+            Hilliness: "SmallHills",
+            TechLevel: "Industrial",
+            GrowingDays: 40,
+            Rainfall: 420,
+            AverageTemperature: 24)) with
+        {
+            Archetype = ProductionArchetype.Warrior
+        });
+    state.RecordSettlementCapability(new SettlementCapability(
+        settlement.Id,
+        HousingCapacity: 40,
+        FoodStorageCapacity: 500,
+        MedicineStorageCapacity: 60,
+        PowerCapacity: 6,
+        LaboratoryCapacity: 1,
+        AnimalCapacity: 10,
+        CropCapacity: 2,
+        ResearchCapacity: 1,
+        MechanicalCapacity: 2,
+        PollutionHandling: 0));
+    for (var i = 0; i < 24; i++)
+    {
+        state.CreateCitizen($"Citizen {i}", 18 + i, i % 2 == 0 ? Sex.Male : Sex.Female, "worker", settlement.Id);
+    }
+
+    var storage = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 40),
+        settlement.Id,
+        SettlementFacilityKind.Storage,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    var workshop = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 41),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 3,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 42),
+        settlement.Id,
+        SettlementFacilityKind.PowerPlant,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 43),
+        settlement.Id,
+        SettlementFacilityKind.Clinic,
+        Level: 1,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+
+    var layout = SettlementMapLayoutService.BuildFacilityLayout(
+        state,
+        new SettlementMapLayoutRequest(
+            settlement.Id,
+            CenterX: 120,
+            CenterZ: 120,
+            MaxFacilities: 8));
+
+    AssertEqual(SettlementMapLayoutStatus.Success, layout.Status);
+    AssertEqual("arid-industrial-warrior", layout.Style.StyleKey);
+    AssertEqual("SandstoneBlocks", layout.Style.WallStuffDefName);
+    AssertEqual("Concrete", layout.Style.RoadTerrainDefName);
+    if (layout.Districts.Count < 5)
+    {
+        throw new InvalidOperationException("NPC city layout should include facility districts plus housing/security/common districts.");
+    }
+
+    AssertEqual(storage.Id, layout.Districts.First(district => district.Kind == SettlementMapDistrictKind.Storage).FacilityId);
+    AssertEqual(workshop.Id, layout.Districts.First(district => district.Kind == SettlementMapDistrictKind.Industry).FacilityId);
+    AssertEqual(true, layout.Districts.Any(district => district.Kind == SettlementMapDistrictKind.Housing));
+    AssertEqual(true, layout.Districts.Any(district => district.Kind == SettlementMapDistrictKind.Security));
+    AssertEqual(true, layout.Districts.Any(district => district.Kind == SettlementMapDistrictKind.Commons));
+    if (layout.PathCells.Count < layout.Districts.Count * 2)
+    {
+        throw new InvalidOperationException("NPC city layout should connect districts with deterministic roads.");
+    }
+
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.PowerConduit));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.PowerGenerator));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Light));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.GuardPost));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Activity));
 }
 
 static void TestSettlementMapDamageLowersFacilityCondition()
@@ -7668,6 +7766,25 @@ static void TestRimWorldSettlementMapResourceReconciliation()
     var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
     AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
     AssertContains("LivingWorldSettlementMapResourceTracker.Track", service);
+}
+
+static void TestRimWorldSettlementMapFullCitySurface()
+{
+    var root = FindRepoRoot();
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+
+    AssertContains("SpawnDistrictTerrain", service);
+    AssertContains("layout.Districts", service);
+    AssertContains("layout.PathCells", service);
+    AssertContains("RoadTerrainDefName", service);
+    AssertContains("PowerConduit", service);
+    AssertContains("PowerGenerator", service);
+    AssertContains("GuardPost", service);
+    AssertContains("Activity", service);
+    AssertContains("TrySetTerrain", service);
+    AssertContains("LivingWorldSettlementMapFacilityTracker.Track", service);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a

@@ -41,13 +41,55 @@ public sealed record SettlementMapStockpileCell(
     int Z,
     int Order);
 
+public enum SettlementMapDistrictKind
+{
+    Housing,
+    Storage,
+    Industry,
+    Medical,
+    Agriculture,
+    Power,
+    Security,
+    Commons
+}
+
+public sealed record SettlementMapStyle(
+    string StyleKey,
+    string WallStuffDefName,
+    string RoadTerrainDefName,
+    string CommonFloorTerrainDefName);
+
+public sealed record SettlementMapDistrict(
+    SettlementMapDistrictKind Kind,
+    EntityId? FacilityId,
+    int CenterX,
+    int CenterZ,
+    int MinX,
+    int MinZ,
+    int Width,
+    int Height,
+    string FloorTerrainDefName,
+    string WallStuffDefName,
+    int Order);
+
+public sealed record SettlementMapPathCell(
+    int X,
+    int Z,
+    string TerrainDefName,
+    int Order);
+
 public enum SettlementMapCityFeatureKind
 {
     Bed,
     Defense,
     Power,
     Work,
-    StockpileMarker
+    StockpileMarker,
+    PowerConduit,
+    PowerGenerator,
+    Light,
+    GuardPost,
+    Activity
 }
 
 public sealed record SettlementMapCityFeature(
@@ -65,7 +107,17 @@ public sealed record SettlementMapLayoutResult(
     IReadOnlyList<SettlementMapFacilityFeature> Facilities,
     IReadOnlyList<SettlementMapRoom> Rooms,
     IReadOnlyList<SettlementMapStockpileCell> StockpileCells,
-    IReadOnlyList<SettlementMapCityFeature> CityFeatures);
+    IReadOnlyList<SettlementMapCityFeature> CityFeatures)
+{
+    public SettlementMapStyle Style { get; init; } =
+        new("unknown-tribal-balanced", "WoodLog", "PackedDirt", "PackedDirt");
+
+    public IReadOnlyList<SettlementMapDistrict> Districts { get; init; } =
+        Array.Empty<SettlementMapDistrict>();
+
+    public IReadOnlyList<SettlementMapPathCell> PathCells { get; init; } =
+        Array.Empty<SettlementMapPathCell>();
+}
 
 public static class SettlementMapLayoutService
 {
@@ -102,6 +154,7 @@ public static class SettlementMapLayoutService
         }
 
         var profile = state.GetSettlementProductionProfile(request.SettlementId);
+        var style = BuildStyle(profile);
         var techScore = TechScore(profile?.TechLevel);
         var facilities = state.GetSettlementFacilities(request.SettlementId)
             .Where(facility => facility.ConditionPercent > 0)
@@ -124,12 +177,21 @@ public static class SettlementMapLayoutService
         }
 
         var rooms = facilities
-            .Select(feature => ToRoom(feature, techScore))
+            .Select(feature => ToRoom(feature, techScore, style))
             .ToList();
+        var districts = BuildDistricts(state, request.SettlementId, rooms, request.CenterX, request.CenterZ, style).ToList();
+        var pathCells = BuildPathCells(districts, style).ToList();
         var stockpileRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Storage)
             ?? rooms.First();
         var stockpileCells = ToStockpileCells(stockpileRoom).ToList();
-        var cityFeatures = BuildCityFeatures(state, request.SettlementId, rooms, stockpileCells, techScore).ToList();
+        var cityFeatures = BuildCityFeatures(
+            state,
+            request.SettlementId,
+            rooms,
+            districts,
+            pathCells,
+            stockpileCells,
+            techScore).ToList();
 
         return new SettlementMapLayoutResult(
             SettlementMapLayoutStatus.Success,
@@ -137,7 +199,12 @@ public static class SettlementMapLayoutService
             facilities,
             rooms,
             stockpileCells,
-            cityFeatures);
+            cityFeatures)
+        {
+            Style = style,
+            Districts = districts,
+            PathCells = pathCells,
+        };
     }
 
     private static SettlementMapFacilityFeature ToFeature(
@@ -193,7 +260,7 @@ public static class SettlementMapLayoutService
         };
     }
 
-    private static SettlementMapRoom ToRoom(SettlementMapFacilityFeature feature, int techScore)
+    private static SettlementMapRoom ToRoom(SettlementMapFacilityFeature feature, int techScore, SettlementMapStyle style)
     {
         var size = Math.Max(7, Math.Min(12, 6 + feature.Level));
         if (feature.Kind == SettlementFacilityKind.Storage)
@@ -214,7 +281,132 @@ public static class SettlementMapLayoutService
             "Wall",
             "Door",
             FloorTerrainDefName(feature.Kind, techScore),
-            WallStuffDefName(techScore));
+            style.WallStuffDefName);
+    }
+
+    private static IEnumerable<SettlementMapDistrict> BuildDistricts(
+        WorldState state,
+        EntityId settlementId,
+        IReadOnlyList<SettlementMapRoom> rooms,
+        int centerX,
+        int centerZ,
+        SettlementMapStyle style)
+    {
+        var order = 0;
+        foreach (var room in rooms.OrderBy(room => room.MinX).ThenBy(room => room.MinZ))
+        {
+            yield return new SettlementMapDistrict(
+                DistrictKindForFacility(room.Kind),
+                room.FacilityId,
+                room.MinX + room.Width / 2,
+                room.MinZ + room.Height / 2,
+                room.MinX - 2,
+                room.MinZ - 2,
+                room.Width + 4,
+                room.Height + 4,
+                room.FloorTerrainDefName,
+                room.WallStuffDefName,
+                order++);
+        }
+
+        var population = state.GetSettlementPopulation(settlementId);
+        var housingSize = Math.Max(9, Math.Min(18, 8 + population.Total / 4));
+        yield return new SettlementMapDistrict(
+            SettlementMapDistrictKind.Housing,
+            null,
+            centerX,
+            centerZ + 14,
+            centerX - housingSize / 2,
+            centerZ + 14 - housingSize / 2,
+            housingSize,
+            housingSize,
+            style.CommonFloorTerrainDefName,
+            style.WallStuffDefName,
+            order++);
+
+        yield return new SettlementMapDistrict(
+            SettlementMapDistrictKind.Commons,
+            null,
+            centerX,
+            centerZ,
+            centerX - 5,
+            centerZ - 5,
+            11,
+            11,
+            style.CommonFloorTerrainDefName,
+            style.WallStuffDefName,
+            order++);
+
+        var securitySize = Math.Max(11, Math.Min(22, 10 + rooms.Count * 2));
+        yield return new SettlementMapDistrict(
+            SettlementMapDistrictKind.Security,
+            null,
+            centerX,
+            centerZ - 18,
+            centerX - securitySize / 2,
+            centerZ - 18 - securitySize / 2,
+            securitySize,
+            securitySize,
+            style.RoadTerrainDefName,
+            style.WallStuffDefName,
+            order++);
+    }
+
+    private static SettlementMapDistrictKind DistrictKindForFacility(SettlementFacilityKind kind)
+    {
+        return kind switch
+        {
+            SettlementFacilityKind.Storage => SettlementMapDistrictKind.Storage,
+            SettlementFacilityKind.Workshop => SettlementMapDistrictKind.Industry,
+            SettlementFacilityKind.Clinic => SettlementMapDistrictKind.Medical,
+            SettlementFacilityKind.Farm => SettlementMapDistrictKind.Agriculture,
+            SettlementFacilityKind.PowerPlant => SettlementMapDistrictKind.Power,
+            _ => SettlementMapDistrictKind.Commons,
+        };
+    }
+
+    private static IEnumerable<SettlementMapPathCell> BuildPathCells(
+        IReadOnlyList<SettlementMapDistrict> districts,
+        SettlementMapStyle style)
+    {
+        var order = 0;
+        var commons = districts.FirstOrDefault(district => district.Kind == SettlementMapDistrictKind.Commons)
+            ?? districts.OrderBy(district => district.Order).FirstOrDefault();
+        if (commons == null)
+        {
+            yield break;
+        }
+
+        var seen = new HashSet<(int X, int Z)>();
+        foreach (var district in districts.OrderBy(district => district.Order))
+        {
+            foreach (var cell in ManhattanPath(commons.CenterX, commons.CenterZ, district.CenterX, district.CenterZ))
+            {
+                if (!seen.Add(cell))
+                {
+                    continue;
+                }
+
+                yield return new SettlementMapPathCell(cell.X, cell.Z, style.RoadTerrainDefName, order++);
+            }
+        }
+    }
+
+    private static IEnumerable<(int X, int Z)> ManhattanPath(int startX, int startZ, int endX, int endZ)
+    {
+        var stepX = startX <= endX ? 1 : -1;
+        for (var x = startX; x != endX; x += stepX)
+        {
+            yield return (x, startZ);
+        }
+
+        var stepZ = startZ <= endZ ? 1 : -1;
+        for (var z = startZ; z != endZ; z += stepZ)
+        {
+            yield return (endX, z);
+        }
+
+        yield return (endX, endZ);
     }
 
     private static IEnumerable<SettlementMapStockpileCell> ToStockpileCells(SettlementMapRoom room)
@@ -233,6 +425,8 @@ public static class SettlementMapLayoutService
         WorldState state,
         EntityId settlementId,
         IReadOnlyList<SettlementMapRoom> rooms,
+        IReadOnlyList<SettlementMapDistrict> districts,
+        IReadOnlyList<SettlementMapPathCell> pathCells,
         IReadOnlyList<SettlementMapStockpileCell> stockpileCells,
         int techScore)
     {
@@ -309,13 +503,91 @@ public static class SettlementMapLayoutService
         var powerRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.PowerPlant);
         if (powerRoom != null)
         {
-            foreach (var cell in InteriorGrid(powerRoom, margin: 3).Take(2))
+            var powerCells = InteriorGrid(powerRoom, margin: 3).Take(3).ToList();
+            if (powerCells.Count > 0)
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.PowerGenerator,
+                    techScore >= 3 ? "SolarGenerator" : "Battery",
+                    "Steel",
+                    powerRoom.FacilityId,
+                    powerCells[0].X,
+                    powerCells[0].Z,
+                    order++);
+
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.Power,
+                    "Battery",
+                    "Steel",
+                    powerRoom.FacilityId,
+                    powerCells[0].X + 1,
+                    powerCells[0].Z,
+                    order++);
+            }
+
+            foreach (var cell in powerCells.Skip(1))
             {
                 yield return new SettlementMapCityFeature(
                     SettlementMapCityFeatureKind.Power,
-                    cell == InteriorGrid(powerRoom, margin: 3).First() ? "Battery" : "StandingLamp",
+                    "Battery",
                     "Steel",
                     powerRoom.FacilityId,
+                    cell.X,
+                    cell.Z,
+                    order++);
+            }
+        }
+
+        foreach (var pathCell in pathCells.Where((_, index) => index % 3 == 0).Take(24))
+        {
+            yield return new SettlementMapCityFeature(
+                SettlementMapCityFeatureKind.PowerConduit,
+                "PowerConduit",
+                "Steel",
+                null,
+                pathCell.X,
+                pathCell.Z,
+                order++);
+        }
+
+        foreach (var district in districts.Where(district => district.Kind is SettlementMapDistrictKind.Commons or SettlementMapDistrictKind.Housing).Take(4))
+        {
+            yield return new SettlementMapCityFeature(
+                SettlementMapCityFeatureKind.Light,
+                "StandingLamp",
+                "Steel",
+                district.FacilityId,
+                district.CenterX,
+                district.CenterZ,
+                order++);
+        }
+
+        var securityDistrict = districts.FirstOrDefault(district => district.Kind == SettlementMapDistrictKind.Security);
+        if (securityDistrict != null)
+        {
+            foreach (var cell in DistrictRing(securityDistrict).Take(Math.Max(6, Math.Min(18, population.Adults / 3 + rooms.Count))))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.GuardPost,
+                    techScore >= 3 ? "Barricade" : "Sandbags",
+                    techScore >= 3 ? "Steel" : "WoodLog",
+                    null,
+                    cell.X,
+                    cell.Z,
+                    order++);
+            }
+        }
+
+        var commonsDistrict = districts.FirstOrDefault(district => district.Kind == SettlementMapDistrictKind.Commons);
+        if (commonsDistrict != null)
+        {
+            foreach (var cell in DistrictInterior(commonsDistrict, margin: 2).Take(4))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.Activity,
+                    techScore >= 3 ? "TableShort" : "Campfire",
+                    techScore >= 3 ? "Steel" : "WoodLog",
+                    null,
                     cell.X,
                     cell.Z,
                     order++);
@@ -355,6 +627,86 @@ public static class SettlementMapLayoutService
             yield return (minX, z);
             yield return (maxX, z);
         }
+    }
+
+    private static IEnumerable<(int X, int Z)> DistrictInterior(SettlementMapDistrict district, int margin)
+    {
+        var minX = district.MinX + Math.Max(1, margin);
+        var maxX = district.MinX + district.Width - Math.Max(1, margin);
+        var minZ = district.MinZ + Math.Max(1, margin);
+        var maxZ = district.MinZ + district.Height - Math.Max(1, margin);
+        for (var z = minZ; z < maxZ; z += 2)
+        {
+            for (var x = minX; x < maxX; x += 2)
+            {
+                yield return (x, z);
+            }
+        }
+    }
+
+    private static IEnumerable<(int X, int Z)> DistrictRing(SettlementMapDistrict district)
+    {
+        var minX = district.MinX - 1;
+        var maxX = district.MinX + district.Width;
+        var minZ = district.MinZ - 1;
+        var maxZ = district.MinZ + district.Height;
+        for (var x = minX; x <= maxX; x += 3)
+        {
+            yield return (x, minZ);
+            yield return (x, maxZ);
+        }
+
+        for (var z = minZ + 3; z <= maxZ - 3; z += 3)
+        {
+            yield return (minX, z);
+            yield return (maxX, z);
+        }
+    }
+
+    private static SettlementMapStyle BuildStyle(SettlementProductionProfile? profile)
+    {
+        var biome = BiomeStyle(profile?.Biome);
+        var tech = TechStyle(profile?.TechLevel);
+        var archetype = (profile?.Archetype ?? ProductionArchetype.Balanced).ToString().ToLowerInvariant();
+        var wallStuff = biome switch
+        {
+            "arid" => "SandstoneBlocks",
+            "desert" => "SandstoneBlocks",
+            "cold" => tech == "industrial" ? "Steel" : "GraniteBlocks",
+            _ => tech == "industrial" ? "Steel" : "WoodLog",
+        };
+        var roadTerrain = tech == "industrial" ? "Concrete" : "PackedDirt";
+        return new SettlementMapStyle(
+            $"{biome}-{tech}-{archetype}",
+            wallStuff,
+            roadTerrain,
+            tech == "industrial" ? "Concrete" : "WoodPlankFloor");
+    }
+
+    private static string BiomeStyle(string? biome)
+    {
+        var value = (biome ?? string.Empty).ToLowerInvariant();
+        if (ContainsOrdinal(value, "arid"))
+        {
+            return "arid";
+        }
+
+        if (ContainsOrdinal(value, "desert"))
+        {
+            return "desert";
+        }
+
+        if (ContainsOrdinal(value, "boreal") || ContainsOrdinal(value, "tundra") || ContainsOrdinal(value, "ice"))
+        {
+            return "cold";
+        }
+
+        return "temperate";
+    }
+
+    private static string TechStyle(string? techLevel)
+    {
+        return TechScore(techLevel) >= 3 ? "industrial" : "tribal";
     }
 
     private static string WallStuffDefName(int techScore)
