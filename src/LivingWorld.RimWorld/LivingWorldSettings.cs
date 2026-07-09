@@ -34,6 +34,11 @@ public sealed class LivingWorldSettings : ModSettings
     public bool settlementDevelopmentEnabled = true;
     public int settlementDevelopmentStep = 2;
     public int settlementHousingHeadroom = 4;
+    public bool showWarbandMarkers = true;
+    public bool showCaravanMarkers = true;
+    public bool showScoutMarkers = true;
+    public bool showDiplomatMarkers = true;
+    public bool showSettlerMarkers = true;
     public bool worldMapSpeedTestEnabled = false;
     public int worldMapSpeedMultiplier = 5;
 
@@ -72,6 +77,11 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref settlementDevelopmentEnabled, "settlementDevelopmentEnabled", true);
         Scribe_Values.Look(ref settlementDevelopmentStep, "settlementDevelopmentStep", 2);
         Scribe_Values.Look(ref settlementHousingHeadroom, "settlementHousingHeadroom", 4);
+        Scribe_Values.Look(ref showWarbandMarkers, "showWarbandMarkers", true);
+        Scribe_Values.Look(ref showCaravanMarkers, "showCaravanMarkers", true);
+        Scribe_Values.Look(ref showScoutMarkers, "showScoutMarkers", true);
+        Scribe_Values.Look(ref showDiplomatMarkers, "showDiplomatMarkers", true);
+        Scribe_Values.Look(ref showSettlerMarkers, "showSettlerMarkers", true);
         Scribe_Values.Look(ref worldMapSpeedTestEnabled, "worldMapSpeedTestEnabled", false);
         Scribe_Values.Look(ref worldMapSpeedMultiplier, "worldMapSpeedMultiplier", 5);
 

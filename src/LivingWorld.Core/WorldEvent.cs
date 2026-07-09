@@ -73,6 +73,7 @@ public enum WorldEventKind
     AnimalBreedingProjectStarted,
     AnimalBreedingProjectCompleted,
     AnimalCohortIncubated,
+    NamedAnimalRegistered,
     CropStrainProjectStarted,
     CropStrainProjectCompleted,
     TechnologyDiffused,

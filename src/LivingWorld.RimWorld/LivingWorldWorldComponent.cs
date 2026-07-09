@@ -767,6 +767,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             // Warbands marching to battle.
             foreach (var movement in State.ArmyMovements)
             {
+                if (!LivingWorldWorldMapMarkerControls.IsVisible(LivingWorldWorldMapMarkerKind.Warband, settings))
+                {
+                    continue;
+                }
+
                 if (movement.Status != ArmyMovementStatus.Traveling)
                 {
                     continue;
@@ -794,6 +799,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             // Caravans hauling goods between settlements (Core's caravan travel system).
             foreach (var caravan in State.Caravans)
             {
+                if (!LivingWorldWorldMapMarkerControls.IsVisible(LivingWorldWorldMapMarkerKind.Caravan, settings))
+                {
+                    continue;
+                }
+
                 if (caravan.Status != CaravanStatus.Traveling)
                 {
                     continue;
@@ -826,6 +836,13 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 var kindKey = mission.Kind == WorldMissionKind.Scout
                     ? "LW_MissionKind_Scout"
                     : "LW_MissionKind_Diplomat";
+                var markerKind = mission.Kind == WorldMissionKind.Scout
+                    ? LivingWorldWorldMapMarkerKind.Scout
+                    : LivingWorldWorldMapMarkerKind.Diplomat;
+                if (!LivingWorldWorldMapMarkerControls.IsVisible(markerKind, settings))
+                {
+                    continue;
+                }
 
                 EnsureMissionMarker(
                     worldObjects, markerDef, existing, live,

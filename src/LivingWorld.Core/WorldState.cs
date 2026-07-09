@@ -11,6 +11,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldConflict> _conflicts = new();
     private readonly Dictionary<(EntityId ConflictId, EntityId SettlementId), ConflictClaim> _conflictClaims = new();
     private readonly Dictionary<EntityId, WorldAnimalCohort> _animalCohorts = new();
+    private readonly Dictionary<EntityId, NamedAnimal> _namedAnimals = new();
     private readonly Dictionary<EntityId, AnimalBreedingProject> _animalBreedingProjects = new();
     private readonly Dictionary<(EntityId SettlementId, string CropKind), CropStrain> _cropStrains = new();
     private readonly Dictionary<EntityId, CropStrainProject> _cropStrainProjects = new();
@@ -77,6 +78,8 @@ public sealed class WorldState
     public IReadOnlyCollection<ConflictClaim> ConflictClaims => _conflictClaims.Values;
 
     public IReadOnlyCollection<WorldAnimalCohort> AnimalCohorts => _animalCohorts.Values;
+
+    public IReadOnlyCollection<NamedAnimal> NamedAnimals => _namedAnimals.Values;
 
     public IReadOnlyCollection<AnimalBreedingProject> AnimalBreedingProjects => _animalBreedingProjects.Values;
 
@@ -270,6 +273,9 @@ public sealed class WorldState
             AnimalCohorts = _animalCohorts.Values
                 .OrderBy(cohort => cohort.Id.Value)
                 .ToList(),
+            NamedAnimals = _namedAnimals.Values
+                .OrderBy(animal => animal.Id.Value)
+                .ToList(),
             AnimalBreedingProjects = _animalBreedingProjects.Values
                 .OrderBy(project => project.Id.Value)
                 .ToList(),
@@ -427,6 +433,12 @@ public sealed class WorldState
         {
             state._animalCohorts.Add(cohort.Id, Normalize(cohort));
             state.ReserveExistingId(cohort.Id);
+        }
+
+        foreach (var animal in snapshot.NamedAnimals)
+        {
+            state._namedAnimals.Add(animal.Id, Normalize(animal));
+            state.ReserveExistingId(animal.Id);
         }
 
         foreach (var project in snapshot.AnimalBreedingProjects)
@@ -1709,6 +1721,55 @@ public sealed class WorldState
             .OrderBy(cohort => cohort.AnimalKind, StringComparer.Ordinal)
             .ThenBy(cohort => cohort.Id.Value)
             .ToList();
+    }
+
+    public NamedAnimal? GetNamedAnimal(EntityId animalId)
+    {
+        return _namedAnimals.TryGetValue(animalId, out var animal)
+            ? animal
+            : null;
+    }
+
+    public IReadOnlyList<NamedAnimal> GetNamedAnimals(EntityId cohortId)
+    {
+        return _namedAnimals.Values
+            .Where(animal => animal.CohortId == cohortId)
+            .OrderBy(animal => animal.Name, StringComparer.Ordinal)
+            .ThenBy(animal => animal.Id.Value)
+            .ToList();
+    }
+
+    internal NamedAnimal CreateNamedAnimal(
+        EntityId cohortId,
+        string name,
+        NamedAnimalRole role,
+        string note,
+        int tick)
+    {
+        if (!_animalCohorts.ContainsKey(cohortId))
+        {
+            throw new InvalidOperationException($"Animal cohort {cohortId} does not exist.");
+        }
+
+        ThrowIfNullOrWhiteSpace(name, nameof(name));
+
+        var animal = Normalize(new NamedAnimal(
+            NextId(EntityKind.NamedAnimal),
+            cohortId,
+            name,
+            role,
+            NamedAnimalStatus.Active,
+            note ?? string.Empty,
+            tick,
+            tick));
+        _namedAnimals[animal.Id] = animal;
+        _owners[animal.Id] = cohortId;
+        AppendEvent(
+            WorldEventKind.NamedAnimalRegistered,
+            animal.Id,
+            $"Named animal {animal.Name} registered for cohort {cohortId}.");
+
+        return animal;
     }
 
     internal WorldAnimalCohort RecordAnimalCohortForSimulation(WorldAnimalCohort cohort)
@@ -3161,6 +3222,8 @@ public sealed class WorldState
             EntityKind.RaidIntelFact => _raidIntelFacts.ContainsKey(ownerId),
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(ownerId),
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(ownerId),
+            EntityKind.Animal => _animalCohorts.ContainsKey(ownerId),
+            EntityKind.NamedAnimal => _namedAnimals.ContainsKey(ownerId),
             EntityKind.Ruin => _ruins.ContainsKey(ownerId),
             EntityKind.Conflict => _conflicts.ContainsKey(ownerId),
             _ => false
@@ -3183,6 +3246,7 @@ public sealed class WorldState
             EntityKind.RaidPreparation => _raidPreparations.ContainsKey(assetId),
             EntityKind.MaterializationLease => _materializationLeases.ContainsKey(assetId),
             EntityKind.Animal => _animalCohorts.ContainsKey(assetId),
+            EntityKind.NamedAnimal => _namedAnimals.ContainsKey(assetId),
             EntityKind.SettlementFacility => _settlementFacilities.ContainsKey(assetId),
             EntityKind.SettlementProject => _settlementProjects.ContainsKey(assetId),
             EntityKind.Ruin => _ruins.ContainsKey(assetId),
@@ -3259,6 +3323,18 @@ public sealed class WorldState
             FertilityPercent = Math.Max(0, Math.Min(100, cohort.FertilityPercent)),
             CarryingCapacity = Math.Max(0, cohort.CarryingCapacity),
             LastUpdatedTick = Math.Max(0, cohort.LastUpdatedTick)
+        };
+    }
+
+    private static NamedAnimal Normalize(NamedAnimal animal)
+    {
+        var created = Math.Max(0, animal.CreatedTick);
+        return animal with
+        {
+            Name = string.IsNullOrWhiteSpace(animal.Name) ? "Unnamed animal" : animal.Name.Trim(),
+            Note = animal.Note ?? string.Empty,
+            CreatedTick = created,
+            LastUpdatedTick = Math.Max(created, animal.LastUpdatedTick)
         };
     }
 

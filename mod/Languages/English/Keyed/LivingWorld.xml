@@ -202,6 +202,13 @@
   <LW_MissionKind_Scout>scouts</LW_MissionKind_Scout>
   <LW_MissionKind_Settler>settlers</LW_MissionKind_Settler>
   <LW_MissionKind_Diplomat>diplomats</LW_MissionKind_Diplomat>
+  <LW_MapMarkerLegend>Living World map markers</LW_MapMarkerLegend>
+  <LW_MapMarkerLegendTip>Filters hide visual markers only; they do not stop the ledger simulation. Caravans, scouts, diplomats and armies keep moving.</LW_MapMarkerLegendTip>
+  <LW_MapMarkerFilter_Warband>Show warbands</LW_MapMarkerFilter_Warband>
+  <LW_MapMarkerFilter_Caravan>Show caravans</LW_MapMarkerFilter_Caravan>
+  <LW_MapMarkerFilter_Scout>Show scouts</LW_MapMarkerFilter_Scout>
+  <LW_MapMarkerFilter_Diplomat>Show diplomats</LW_MapMarkerFilter_Diplomat>
+  <LW_MapMarkerFilter_Settler>Show settlers</LW_MapMarkerFilter_Settler>
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>

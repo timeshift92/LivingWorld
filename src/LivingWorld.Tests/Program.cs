@@ -94,6 +94,11 @@ var tests = new List<(string Name, Action Test)>
     ("settlement map damage lowers facility condition", TestSettlementMapDamageLowersFacilityCondition),
     ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
     ("animal map fate sync keeps player-taken animals out of source cohorts", TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts),
+    ("tracks named animals without replacing lightweight cohorts", TestNamedAnimalRegistry),
+    ("summarizes daily world activity by domain", TestDailyActivitySummaryService),
+    ("central materialization policy classifies concrete use cases", TestMaterializationPolicyService),
+    ("peaceful settlement visits are explicit observer intents", TestPeacefulSettlementVisitPolicy),
+    ("biotech integration gates advanced adapters behind capability", TestBiotechIntegrationPolicy),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -281,6 +286,7 @@ var tests = new List<(string Name, Action Test)>
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
+    ("adds world-map marker filters and legend controls", TestRimWorldWorldMapMarkerControls),
     ("world action markers start at their origin tile", TestRimWorldWorldActionMarkersStartAtOrigin),
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
@@ -3157,6 +3163,174 @@ static void TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts()
     AssertEqual(
         declineEventsBefore + 1,
         state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined));
+}
+
+static void TestNamedAnimalRegistry()
+{
+    var state = new WorldState(99);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    var cohort = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 6,
+        healthPercent: 80,
+        fertilityPercent: 60,
+        carryingCapacity: 12,
+        tick: 100);
+
+    var registration = NamedAnimalRegistryService.Register(
+        state,
+        new NamedAnimalRegistrationRequest(
+            cohort.Id,
+            "Bluebell",
+            NamedAnimalRole.Breeding,
+            "elite wool line",
+            Tick: 120));
+
+    AssertEqual(NamedAnimalRegistrationStatus.Success, registration.Status);
+    AssertEqual(cohort.Id, registration.Animal!.CohortId);
+    AssertEqual("Bluebell", registration.Animal.Name);
+    AssertEqual(1, state.NamedAnimals.Count);
+    AssertEqual(6, state.GetAnimalCohort(cohort.Id)!.Count);
+
+    var missing = NamedAnimalRegistryService.Register(
+        state,
+        new NamedAnimalRegistrationRequest(
+            EntityId.Create(EntityKind.Animal, 404),
+            "Ghost",
+            NamedAnimalRole.Pack,
+            "missing cohort",
+            Tick: 121));
+    AssertEqual(NamedAnimalRegistrationStatus.UnknownCohort, missing.Status);
+}
+
+static void TestDailyActivitySummaryService()
+{
+    var state = new WorldState(123);
+    var settlement = state.CreateSettlement("town", "Town", "Outlander");
+    state.AdvanceToTick(60_000);
+    state.AddResource(settlement.Id, "Steel", 10);
+    state.RecordEvent(WorldEventKind.SettlementProjectStarted, settlement.Id, "building workshop");
+    state.RecordEvent(WorldEventKind.WarbandLaunched, settlement.Id, "warband left");
+    state.RecordEvent(WorldEventKind.AnimalHunted, settlement.Id, "hunted deer");
+    state.RecordEvent(WorldEventKind.TechnologyDiffused, settlement.Id, "learned batteries");
+
+    var summary = DailyActivitySummaryService.Summarize(
+        state,
+        new DailyActivitySummaryRequest(StartTick: 60_000, EndTick: 60_000, MaxEventsPerDomain: 4));
+
+    AssertEqual(5, summary.TotalEvents);
+    AssertEqual(1, summary.CountFor(DailyActivityDomain.Production));
+    AssertEqual(1, summary.CountFor(DailyActivityDomain.Construction));
+    AssertEqual(1, summary.CountFor(DailyActivityDomain.Military));
+    AssertEqual(1, summary.CountFor(DailyActivityDomain.Ecology));
+    AssertEqual(1, summary.CountFor(DailyActivityDomain.Technology));
+    AssertContains("ResourceAdded", summary.FormatCompact());
+}
+
+static void TestMaterializationPolicyService()
+{
+    var raid = MaterializationPolicyService.Evaluate(new MaterializationPolicyRequest(
+        MaterializationUseCase.Raid,
+        MaterializationVisibility.ActiveMap,
+        RequiresPawnIdentity: true,
+        RequiresResourceLease: true,
+        IsPlayerFacing: true));
+    AssertEqual(MaterializationPolicyDecision.LeaseAndMaterialize, raid.Decision);
+    AssertEqual(true, raid.RequiresLedgerSource);
+
+    var observer = MaterializationPolicyService.Evaluate(new MaterializationPolicyRequest(
+        MaterializationUseCase.PeacefulVisitObserver,
+        MaterializationVisibility.WorldMapUi,
+        RequiresPawnIdentity: false,
+        RequiresResourceLease: false,
+        IsPlayerFacing: true));
+    AssertEqual(MaterializationPolicyDecision.RecordIntelOnly, observer.Decision);
+
+    var schedule = MaterializationPolicyService.Evaluate(new MaterializationPolicyRequest(
+        MaterializationUseCase.PeacefulNpcSchedule,
+        MaterializationVisibility.ActiveMap,
+        RequiresPawnIdentity: true,
+        RequiresResourceLease: true,
+        IsPlayerFacing: true));
+    AssertEqual(MaterializationPolicyDecision.RequiresDedicatedScheduler, schedule.Decision);
+}
+
+static void TestPeacefulSettlementVisitPolicy()
+{
+    var state = new WorldState(777);
+    var settlement = state.CreateSettlement("market", "Market", "Outlander");
+
+    var result = PeacefulSettlementVisitService.PlanVisit(
+        state,
+        new PeacefulSettlementVisitRequest(
+            settlement.Id,
+            PeacefulVisitMode.Observer,
+            Tick: 100,
+            Reason: "player requested direct visit"));
+
+    AssertEqual(PeacefulSettlementVisitStatus.Success, result.Status);
+    AssertEqual(MaterializationPolicyDecision.RecordIntelOnly, result.Policy.Decision);
+    AssertEqual(IntelSourceKind.DirectVisit, state.GetKnownSettlementInfo(settlement.Id)!.SourceKind);
+    AssertEqual(true, state.GetKnownSettlementInfo(settlement.Id)!.ExactValuesVisible);
+}
+
+static void TestBiotechIntegrationPolicy()
+{
+    var disabled = BiotechIntegrationPolicy.Evaluate(new BiotechIntegrationRequest(
+        BiotechActive: false,
+        HasGeneLab: true,
+        HasIncubator: true,
+        RequestedAdapter: BiotechAdapterKind.Xenotype));
+    AssertEqual(BiotechIntegrationDecision.DisabledMissingBiotech, disabled.Decision);
+
+    var gated = BiotechIntegrationPolicy.Evaluate(new BiotechIntegrationRequest(
+        BiotechActive: true,
+        HasGeneLab: false,
+        HasIncubator: true,
+        RequestedAdapter: BiotechAdapterKind.Xenotype));
+    AssertEqual(BiotechIntegrationDecision.GatedByFacilities, gated.Decision);
+
+    var allowed = BiotechIntegrationPolicy.Evaluate(new BiotechIntegrationRequest(
+        BiotechActive: true,
+        HasGeneLab: true,
+        HasIncubator: true,
+        RequestedAdapter: BiotechAdapterKind.AnimalIncubation));
+    AssertEqual(BiotechIntegrationDecision.Allowed, allowed.Decision);
+}
+
+static void TestRimWorldWorldMapMarkerControls()
+{
+    var root = FindRepoRoot();
+    var controlsPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldMapMarkerControls.cs");
+    var settingsPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs");
+    var drawerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs");
+    var componentPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs");
+
+    AssertEqual(true, File.Exists(controlsPath));
+    var controls = File.ReadAllText(controlsPath);
+    AssertContains("LivingWorldWorldMapMarkerControls", controls);
+    AssertContains("LW_MapMarkerFilter_Warband", controls);
+    AssertContains("LW_MapMarkerFilter_Caravan", controls);
+    AssertContains("LW_MapMarkerFilter_Scout", controls);
+    AssertContains("LW_MapMarkerFilter_Diplomat", controls);
+    AssertContains("LW_MapMarkerFilter_Settler", controls);
+    AssertContains("LW_MapMarkerLegend", controls);
+    AssertContains("IsVisible", controls);
+
+    var settings = File.ReadAllText(settingsPath);
+    AssertContains("showWarbandMarkers", settings);
+    AssertContains("showCaravanMarkers", settings);
+    AssertContains("showScoutMarkers", settings);
+    AssertContains("showDiplomatMarkers", settings);
+    AssertContains("showSettlerMarkers", settings);
+
+    var drawer = File.ReadAllText(drawerPath);
+    AssertContains("LivingWorldWorldMapMarkerControls.DrawSettings", drawer);
+
+    var component = File.ReadAllText(componentPath);
+    AssertContains("LivingWorldWorldMapMarkerControls.IsVisible", component);
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()

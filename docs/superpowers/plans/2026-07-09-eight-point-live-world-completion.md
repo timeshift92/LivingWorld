@@ -43,12 +43,13 @@ and disrupt scout/diplomat missions before arrival.
 
 ## Task 3: Economy Movement And Daily Delta
 
-- [ ] Add a Core daily activity summary service that groups recent events into production, consumption, construction, military, trade, ecology and technology deltas.
+- [x] Add a Core daily activity summary service that groups recent events into production, consumption, construction, military, trade, ecology and technology deltas.
 - [x] Surface this in docs and, where safe, RimWorld observer UI.
 - [x] Ensure it uses bands unless exact knowledge is justified.
 
-Status: observer/debug visibility improved; a dedicated Core grouped summary remains useful
-future cleanup rather than a blocker.
+Status: observer/debug visibility improved and `DailyActivitySummaryService` now groups ledger
+events by domain (`Production`, `Consumption`, `Construction`, `Military`, `Trade`, `Ecology`,
+`Technology`, etc.) without exposing exact hidden settlement values by itself.
 
 ## Task 4: Settlement Materialization Roadmap
 
@@ -63,6 +64,10 @@ future cleanup rather than a blocker.
 - [x] Add tests around return/death/tamed outcomes.
 
 Status: cohort-stack fate sync is implemented for the attacked-settlement animal sample. Failed spawns return to cohorts, live departures return, dead animals remain lost, and player-taken/tamed animals are treated as lost to the source settlement rather than silently returned. Full named-animal identity remains a later quality layer.
+
+Update: the first named-animal identity layer now exists as a Core registry over lightweight
+cohorts. It does not replace cohorts with pawns; it records exceptional animals by name/role/status
+and persists them through the normal `WorldState` snapshot/codec.
 
 ## Task 6: Technology, Crop Strains And Diffusion
 
@@ -80,9 +85,13 @@ Status: exact observer details remain debug-only globally. A new direct settleme
 
 ## Task 8: World-Map UX And Review Closure
 
-- [ ] Keep marker filters/clustering as a UI task if not safe headless.
+- [x] Keep marker filters/clustering as a UI task if not safe headless.
 - [x] Update the task board with exact status.
 - [ ] Run full verification, push, install mod, store ICM summary.
+
+Status: world-map marker filters are now exposed in mod settings for warbands, caravans,
+scouts, diplomats and settlers. The filters affect marker reconciliation, so hidden marker types
+are removed from the map while the ledger simulation continues.
 
 ---
 

@@ -7,7 +7,7 @@ public static class LivingWorldSettingsDrawer
 {
     // Content height for the scrollable mod-settings page (the grouped sections do not fit a fixed
     // window, so LivingWorldMod scrolls this).
-    public const float PreferredHeight = 1020f;
+    public const float PreferredHeight = 1120f;
 
     // The world-generation screen only needs the one decision a player makes before the world
     // exists - whether Living World is active. Planet size and population are the vanilla planet
@@ -62,6 +62,7 @@ public static class LivingWorldSettingsDrawer
         DrawIntSlider(listing, "LW_Settings_WorldWarRaidCombatants".Translate(), ref settings.worldWarRaidCombatants, 1, 30);
         DrawIntSlider(listing, "LW_Settings_WorldWarCooldown".Translate(), ref settings.worldWarWarbandCooldownDays, 0, 30);
         DrawIntSlider(listing, "LW_Settings_WorldWarLetterCooldown".Translate(), ref settings.worldWarLetterCooldownDays, 0, 30);
+        LivingWorldWorldMapMarkerControls.DrawSettings(listing, settings);
 
         // Settlement Development — how NPC bases grow their infrastructure.
         DrawSectionHeader(listing, "LW_SettingsSection_Development");

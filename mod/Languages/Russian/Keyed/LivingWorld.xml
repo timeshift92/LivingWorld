@@ -202,6 +202,13 @@
   <LW_MissionKind_Scout>разведка</LW_MissionKind_Scout>
   <LW_MissionKind_Settler>поселенцы</LW_MissionKind_Settler>
   <LW_MissionKind_Diplomat>дипломаты</LW_MissionKind_Diplomat>
+  <LW_MapMarkerLegend>Маркеры живого мира на карте</LW_MapMarkerLegend>
+  <LW_MapMarkerLegendTip>Фильтры скрывают визуальные маркеры, но не останавливают симуляцию: караваны, разведка, дипломаты и войска продолжают идти по ledger-логике.</LW_MapMarkerLegendTip>
+  <LW_MapMarkerFilter_Warband>Показывать варбанды</LW_MapMarkerFilter_Warband>
+  <LW_MapMarkerFilter_Caravan>Показывать караваны</LW_MapMarkerFilter_Caravan>
+  <LW_MapMarkerFilter_Scout>Показывать разведку</LW_MapMarkerFilter_Scout>
+  <LW_MapMarkerFilter_Diplomat>Показывать дипломатов</LW_MapMarkerFilter_Diplomat>
+  <LW_MapMarkerFilter_Settler>Показывать поселенцев</LW_MapMarkerFilter_Settler>
   <LW_InspectThreatLine>Под угрозой: приближается варбанд - прибытие примерно через {days} дн.</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Открыть таблицу населения и экономики</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>

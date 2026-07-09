@@ -386,6 +386,20 @@ public static class WorldStateCodec
                             new XAttribute("carryingCapacity", cohort.CarryingCapacity),
                             new XAttribute("lastUpdatedTick", cohort.LastUpdatedTick)))),
                 new XElement(
+                    "NamedAnimals",
+                    snapshot.NamedAnimals.Select(animal =>
+                        new XElement(
+                            "NamedAnimal",
+                            IdAttributes(animal.Id),
+                            new XAttribute("cohortKind", animal.CohortId.Kind),
+                            new XAttribute("cohortId", animal.CohortId.Value),
+                            new XAttribute("name", animal.Name),
+                            new XAttribute("role", animal.Role),
+                            new XAttribute("status", animal.Status),
+                            new XAttribute("note", animal.Note),
+                            new XAttribute("createdTick", animal.CreatedTick),
+                            new XAttribute("lastUpdatedTick", animal.LastUpdatedTick)))),
+                new XElement(
                     "AnimalBreedingProjects",
                     snapshot.AnimalBreedingProjects.Select(project =>
                         new XElement(
@@ -877,6 +891,18 @@ public static class WorldStateCodec
                     RequiredInt(element, "healthPercent"),
                     RequiredInt(element, "fertilityPercent"),
                     RequiredInt(element, "carryingCapacity"),
+                    RequiredInt(element, "lastUpdatedTick")))
+                .ToList(),
+            NamedAnimals = OptionalContainer(root, "NamedAnimals")
+                .Elements("NamedAnimal")
+                .Select(element => new NamedAnimal(
+                    ReadId(element),
+                    ReadEntityId(element, "cohortKind", "cohortId"),
+                    RequiredString(element, "name"),
+                    RequiredEnum<NamedAnimalRole>(element, "role"),
+                    RequiredEnum<NamedAnimalStatus>(element, "status"),
+                    OptionalString(element, "note") ?? string.Empty,
+                    RequiredInt(element, "createdTick"),
                     RequiredInt(element, "lastUpdatedTick")))
                 .ToList(),
             AnimalBreedingProjects = OptionalContainer(root, "AnimalBreedingProjects")
