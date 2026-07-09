@@ -36,6 +36,15 @@ public static class FactionActionPlanner
 
     public static FactionActionPlan Plan(WorldState state, string factionId, int tick)
     {
+        return Plan(state, factionId, tick, Array.Empty<EntityId>());
+    }
+
+    private static FactionActionPlan Plan(
+        WorldState state,
+        string factionId,
+        int tick,
+        IReadOnlyCollection<EntityId> plannedTargets)
+    {
         if (state == null)
         {
             throw new ArgumentNullException(nameof(state));
@@ -47,8 +56,8 @@ public static class FactionActionPlanner
             return new FactionActionPlan(factionId, WarAction.None, null);
         }
 
-        var developmentTarget = FindDevelopmentTarget(state, factionId);
-        var target = FindEnemyTarget(state, factionId, tick);
+        var developmentTarget = FindDevelopmentTarget(state, factionId, plannedTargets);
+        var target = FindEnemyTarget(state, factionId, tick, plannedTargets);
 
         var action = profile.Behavior switch
         {
@@ -82,14 +91,28 @@ public static class FactionActionPlanner
             throw new ArgumentNullException(nameof(state));
         }
 
-        return state.Settlements
+        var plannedTargets = new List<EntityId>();
+        var plans = new List<FactionActionPlan>();
+        foreach (var factionId in state.Settlements
             .Where(settlement => settlement.IsActive)
             .Select(settlement => settlement.FactionId)
             .Distinct(StringComparer.Ordinal)
-            .OrderBy(factionId => factionId, StringComparer.Ordinal)
-            .Select(factionId => Plan(state, factionId, tick))
-            .Where(plan => plan.Action != WarAction.None)
-            .ToList();
+            .OrderBy(factionId => factionId, StringComparer.Ordinal))
+        {
+            var plan = Plan(state, factionId, tick, plannedTargets);
+            if (plan.Action == WarAction.None)
+            {
+                continue;
+            }
+
+            plans.Add(plan);
+            if (plan.TargetSettlementId.HasValue)
+            {
+                plannedTargets.Add(plan.TargetSettlementId.Value);
+            }
+        }
+
+        return plans;
     }
 
     private static int FactionPower(WorldState state, string factionId)
@@ -97,7 +120,11 @@ public static class FactionActionPlanner
         return state.GetFactionDerivedAggregate(factionId).Power.CombatPower;
     }
 
-    private static EntityId? FindEnemyTarget(WorldState state, string factionId, int tick)
+    private static EntityId? FindEnemyTarget(
+        WorldState state,
+        string factionId,
+        int tick,
+        IReadOnlyCollection<EntityId> plannedTargets)
     {
         var enemy = state.Settlements
             .Where(settlement => settlement.IsActive)
@@ -106,14 +133,18 @@ public static class FactionActionPlanner
             .Where(settlement => !ConflictService.IsTruceActive(state, factionId, settlement.FactionId, tick))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
             .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
-            .OrderBy(settlement => StableTargetScore("enemy", factionId, settlement.Id))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
+            .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("enemy", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
 
         return enemy?.Id;
     }
 
-    private static EntityId? FindDevelopmentTarget(WorldState state, string factionId)
+    private static EntityId? FindDevelopmentTarget(
+        WorldState state,
+        string factionId,
+        IReadOnlyCollection<EntityId> plannedTargets)
     {
         var settlement = state.Settlements
             .Where(candidate => candidate.IsActive)
@@ -125,38 +156,11 @@ public static class FactionActionPlanner
                 var housing = state.GetSettlementCapability(candidate.Id)?.HousingCapacity ?? 0;
                 return population > 0 && housing <= population;
             })
-            .OrderBy(candidate => StableTargetScore("develop", factionId, candidate.Id))
+            .OrderBy(candidate => WorldTargetPressureService.GetTargetPressure(state, candidate.Id, plannedTargets))
+            .ThenBy(candidate => WorldTargetPressureService.StableTargetScore("develop", factionId, candidate.Id))
             .ThenBy(candidate => candidate.Id.Value)
             .FirstOrDefault();
         return settlement?.Id;
-    }
-
-    private static ulong StableTargetScore(string purpose, string factionId, EntityId targetId)
-    {
-        unchecked
-        {
-            const ulong offsetBasis = 14695981039346656037UL;
-            const ulong prime = 1099511628211UL;
-            var hash = offsetBasis;
-
-            Append(purpose);
-            Append("|");
-            Append(factionId);
-            Append("|");
-            Append(targetId.Kind.ToString());
-            Append(":");
-            Append(targetId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            return hash;
-
-            void Append(string value)
-            {
-                foreach (var character in value ?? string.Empty)
-                {
-                    hash ^= character;
-                    hash *= prime;
-                }
-            }
-        }
     }
 
     private static WarAction DeterministicRandomAction(int tick, bool hasTarget)

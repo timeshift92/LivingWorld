@@ -28,7 +28,8 @@ internal static class WorldWarTargetSelector
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Hostile)
-            .OrderBy(settlement => settlement.Id.Value)
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }
 
@@ -38,7 +39,8 @@ internal static class WorldWarTargetSelector
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !state.HasFactionSettlementIntel(factionId, settlement.Id))
-            .OrderBy(settlement => settlement.Id.Value)
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }
 
@@ -54,13 +56,26 @@ internal static class WorldWarTargetSelector
     public static string? FindDiplomacyTargetFaction(WorldState state, string factionId)
     {
         return state.Settlements
-            .OrderBy(settlement => settlement.Id.Value)
+            .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+            .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
+            .Where(settlement => !state.IsFactionIrreconcilable(settlement.FactionId))
+            .Where(settlement => !state.IsFactionIrreconcilable(factionId))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .ThenBy(settlement => settlement.Id.Value)
             .Select(settlement => settlement.FactionId)
-            .Where(targetFaction => !string.Equals(targetFaction, factionId, StringComparison.Ordinal))
-            .Where(targetFaction => !state.IsPlayerFaction(targetFaction))
-            .Where(targetFaction => !state.IsFactionIrreconcilable(targetFaction))
-            .Where(targetFaction => !state.IsFactionIrreconcilable(factionId))
             .Distinct(StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    public static WorldSettlement? FindDiplomacyTargetSettlement(
+        WorldState state,
+        string factionId,
+        string targetFactionId)
+    {
+        return state.Settlements
+            .Where(settlement => string.Equals(settlement.FactionId, targetFactionId, StringComparison.Ordinal))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }
 }

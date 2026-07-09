@@ -159,9 +159,11 @@ var tests = new List<(string Name, Action Test)>
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
+    ("war planner avoids targets already under pressure", TestFactionActionPlannerAvoidsPressuredEnemyTargets),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
     ("non-combat world actions do not target the player faction", TestWorldWarNonCombatActionsSkipPlayerFaction),
+    ("scouting avoids targets already under pressure", TestWorldWarScoutingAvoidsPressuredTargets),
     ("cautious faction can choose deliberate development", TestFactionActionPlannerChoosesDevelop),
     ("action planner skips passive and powerless factions", TestFactionActionPlannerFiltersPassive),
     ("irreconcilable factions stay hostile despite goodwill", TestDiplomacyIrreconcilableStaysHostile),
@@ -4461,6 +4463,34 @@ static void TestFactionActionPlannerSpreadsEnemyTargets()
     AssertEqual(true, chosenTargets.Distinct().Count() > 1);
 }
 
+static void TestFactionActionPlannerAvoidsPressuredEnemyTargets()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var targetOne = state.CreateSettlement("target-one", "Target One", "TargetOneFaction");
+    var targetTwo = state.CreateSettlement("target-two", "Target Two", "TargetTwoFaction");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.RecordFactionSettlementIntel("Raiders", targetOne.Id, IntelSourceKind.Scout, 0, confidence: 80);
+    state.RecordFactionSettlementIntel("Raiders", targetTwo.Id, IntelSourceKind.Scout, 0, confidence: 80);
+
+    var firstChoice = FactionActionPlanner.Plan(state, "Raiders", 60_000).TargetSettlementId!.Value;
+    var alternate = firstChoice == targetOne.Id ? targetTwo.Id : targetOne.Id;
+
+    var rivalHome = state.CreateSettlement("rival-home", "Rival Home", "Rivals");
+    var rivalArmy = state.CreateArmy("Rival pressure", "Rivals", rivalHome.Id);
+    state.DispatchArmy(rivalArmy.Id, firstChoice, 5 * 60_000);
+
+    var pressured = FactionActionPlanner.Plan(state, "Raiders", 120_000);
+
+    AssertEqual(WarAction.Warband, pressured.Action);
+    AssertEqual(alternate, pressured.TargetSettlementId);
+}
+
 static void TestFactionActionPlannerSkipsAlliedTargets()
 {
     var state = new WorldState(4242);
@@ -4561,6 +4591,36 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
     state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
     WorldWarService.SimulateDay(state, new WorldWarRequest(300_000, TravelDays: 1, RaidCombatants: 3));
     AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", "Villagers"));
+}
+
+static void TestWorldWarScoutingAvoidsPressuredTargets()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("watch", "Watch", "Scouts");
+    for (var i = 0; i < 3; i++)
+    {
+        state.CreateCitizen("Scout " + i, 30, Sex.Male, "scout", scouts.Id);
+    }
+
+    var targetOne = state.CreateSettlement("target-one", "Target One", "TargetOneFaction");
+    var targetTwo = state.CreateSettlement("target-two", "Target Two", "TargetTwoFaction");
+    var rivalHome = state.CreateSettlement("rival-home", "Rival Home", "Rivals");
+    state.DispatchMission(
+        WorldMissionKind.Scout,
+        "Rivals",
+        rivalHome.Id,
+        targetOne.Id,
+        0,
+        5 * 60_000,
+        amount: 100);
+
+    state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+
+    var scoutMission = state.Missions.Single(mission =>
+        mission.Kind == WorldMissionKind.Scout
+        && string.Equals(mission.FactionId, "Scouts", StringComparison.Ordinal));
+    AssertEqual(targetTwo.Id, scoutMission.TargetSettlementId);
 }
 
 static void TestFactionActionPlannerChoosesDevelop()

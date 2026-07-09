@@ -16,10 +16,7 @@ internal static class DiplomacyActionExecutor
         }
 
         // The mission travels to a settlement of the target faction (for the world-map marker + tile).
-        var targetSettlement = state.Settlements
-            .Where(settlement => string.Equals(settlement.FactionId, targetFaction, StringComparison.Ordinal))
-            .OrderBy(settlement => settlement.Id.Value)
-            .FirstOrDefault();
+        var targetSettlement = WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, factionId, targetFaction);
         if (targetSettlement == null)
         {
             return false;
