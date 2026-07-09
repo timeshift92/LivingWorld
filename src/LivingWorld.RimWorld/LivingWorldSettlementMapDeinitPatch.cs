@@ -14,6 +14,10 @@ public static class LivingWorldSettlementMapDeinitPatch
             return;
         }
 
+        LivingWorldSettlementMapResourceTracker.ReconcileMap(
+            component.State,
+            map,
+            "settlement map deinit");
         LivingWorldSettlementMapFacilityTracker.ReconcileMap(
             component.State,
             map,

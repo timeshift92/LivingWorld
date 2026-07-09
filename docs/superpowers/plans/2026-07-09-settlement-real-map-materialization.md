@@ -4,7 +4,7 @@
 
 **Goal:** Make attacked NPC settlement maps show ledger-backed facilities, room shells, real stockpiles, bounded city infrastructure and reconcile spawned map consequences back into the ledger.
 
-**Architecture:** Core owns the deterministic settlement map payload: existing facilities become bounded map features, room shells, storage cells and city features with stable def names and layout slots. RimWorld consumes that payload on `MapGenerator.GenerateMap`, spawns real walls/doors/floors/things opportunistically without failing map generation, places spawned resource stacks into storage cells, tracks spawned settlement animals by cohort until they die or safely leave the map, and reconciles map-end facility consequences back into the ledger.
+**Architecture:** Core owns the deterministic settlement map payload: existing facilities become bounded map features, room shells, storage cells and city features with stable def names and layout slots. RimWorld consumes that payload on `MapGenerator.GenerateMap`, spawns real walls/doors/floors/things opportunistically without failing map generation, places spawned resource stacks into storage cells, tracks spawned settlement animals by cohort until they die or safely leave the map, and reconciles map-end resource/facility consequences back into the ledger.
 
 **Tech Stack:** C#/.NET, `LivingWorld.Core`, RimWorld/Verse Harmony patches, existing `LivingWorld.Tests` structural and behavior tests.
 
@@ -21,17 +21,17 @@
 - [x] Place ledger-backed resource payload stacks inside layout stockpile cells before falling back to generic spawn cells.
 - [x] Extend Core layout with bounded city features: beds, defenses, power props, work props and storage markers.
 - [x] Track spawned walls, doors and facility-bound props and translate destroyed/missing things into `SettlementFacility.ConditionPercent` damage on map deinit.
+- [x] Track spawned resource stacks and return only unlooted stacks to the settlement or active ruin ledger on map deinit.
 
 ## Non-Goals
 
 - Full generated town planning with vanilla-quality districts, faction-specific architecture, complete power grids and pawn schedules.
 - Persistent terrain/floor damage reconciliation. This slice tracks spawned things; terrain/floor state remains visual-only.
-- Map-end loot reconciliation that returns unlooted spawned resource stacks to the settlement or ruin ledger. Spawned stacks currently leave the ledger when materialized.
 - Full per-animal identity records. This slice tracks spawned animals by cohort stack, because animal cohorts are intentionally lightweight ledger records.
 
 ## Verification
 
-- [x] `dotnet run --project src/LivingWorld.Tests/LivingWorld.Tests.csproj` - 327 passed.
+- [x] `dotnet run --project src/LivingWorld.Tests/LivingWorld.Tests.csproj` - 320 passed.
 - [x] `dotnet build LivingWorld.sln` - 0 warnings, 0 errors.
 - [x] `git diff --check` - clean.
 - [x] `tools/install-rimworld-mod.ps1` - installed to `C:\Games\RimWorld\Mods\LivingWorld`.

@@ -312,6 +312,7 @@ var tests = new List<(string Name, Action Test)>
     ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
     ("materializes settlement rooms and stockpiles on attacked maps", TestRimWorldSettlementRoomsAndStockpilesMaterialization),
     ("tracks settlement map structures and reconciles facility damage", TestRimWorldSettlementMapFacilityDamageReconciliation),
+    ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -7503,7 +7504,7 @@ static void TestRimWorldSettlementRoomsAndStockpilesMaterialization()
     AssertContains("DoorThingDefName", service);
     AssertContains("WallStuffDefName", service);
     AssertContains("layout.StockpileCells", service);
-    AssertContains("TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
 }
@@ -7529,6 +7530,28 @@ static void TestRimWorldSettlementMapFacilityDamageReconciliation()
     AssertContains("LivingWorldSettlementMapFacilityTracker.Track", service);
     AssertContains("TrySpawnStructure(", service);
     AssertContains("new IntVec3", service);
+}
+
+static void TestRimWorldSettlementMapResourceReconciliation()
+{
+    var root = FindRepoRoot();
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapResourceTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("public static void Track", tracker);
+    AssertContains("public static int ReconcileMap", tracker);
+    AssertContains("thing.Spawned", tracker);
+    AssertContains("thing.Map != map", tracker);
+    AssertContains("ResolveReturnOwner", tracker);
+    AssertContains("ResourceLedgerService.AddResource", tracker);
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("LivingWorldSettlementMapResourceTracker.ReconcileMap", patch);
+
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("LivingWorldSettlementMapResourceTracker.Track", service);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a
