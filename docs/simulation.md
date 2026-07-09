@@ -376,9 +376,21 @@ Wildlife spawn на карте должен выбирать существую�
 NPC-поселений: `AnimalMapMaterializationService.WithdrawForSettlementMap`
 уменьшает существующие `WorldAnimalCohort`, RimWorld-слой создаёт реальные
 animal pawns через `PawnKindDef`/`PawnGenerator`, а failed spawn возвращается
-через `ReturnToCohorts`. Полная per-animal identity/materialization остаётся
-следующим слоем: тогда смерть, охота, приручение или уход конкретной животной
-пешки будут возвращаться обратно в ledger, а не списываться upfront.
+через `ReturnToCohorts`. Успешно созданные animal pawns регистрируются в
+`LivingWorldAnimalMapPawnTracker`: если животное погибло на карте, списание из
+cohort остаётся окончательным; если оно живым ушло/despawn-нулось, tracker
+возвращает единицу в исходный cohort через `AnimalMapFateSyncService`.
+
+Для атакуемых NPC-поселений facilities тоже материализуются из ledger, а не
+из воздуха. `SettlementMapLayoutService.BuildFacilityLayout` строит
+детерминированный payload из `SettlementFacility`: workshop создаёт
+machining table, clinic - hospital bed, farm - hydroponics basin,
+storage - shelf, power plant - battery. RimWorld-слой спавнит эти реальные
+things рядом с центром карты, если нашёл свободную клетку, и fail-open
+пропускает объект, если соответствующий `ThingDef` недоступен или карта занята.
+Это не полная генерация города с комнатами, расписаниями и power grid; это
+проверяемый слой, где второй заход на поселение уже видит следствия ledger:
+построенные facilities, потерянных защитников, ресурсы и судьбу животных.
 
 Если волков стало больше:
 

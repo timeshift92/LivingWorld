@@ -15,6 +15,11 @@ public static class LivingWorldPawnKillPatch
             return;
         }
 
+        if (LivingWorldAnimalMapPawnTracker.TryMarkDead(__instance, "settlement map animal killed"))
+        {
+            return;
+        }
+
         // CompLivingWorldIdentity is preferred; thingIDNumber remains an identity fallback.
         if (!LivingWorldPawnIdentityService.TryGetLedgerId(__instance, out var ledgerId))
         {

@@ -86,6 +86,8 @@ var tests = new List<(string Name, Action Test)>
     ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
     ("settlement defense materialization reserves defenders and resources", TestSettlementDefenseMaterializationReservesDefendersAndResources),
+    ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
+    ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -292,6 +294,7 @@ var tests = new List<(string Name, Action Test)>
     ("binds custom raid pawns to identity comp", TestRimWorldRaidPawnGenerationAttachesIdentity),
     ("materializes settlement visitors as ledger citizens via leases", TestRimWorldSettlementVisitMaterialization),
     ("materializes attacked settlement maps from ledger defense", TestRimWorldSettlementMapMaterialization),
+    ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -2716,6 +2719,93 @@ static void TestSettlementDefenseMaterializationReservesDefendersAndResources()
     AssertEqual(100, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
     AssertEqual(25, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
     AssertEqual(0, state.MaterializationLeases.Count(lease => lease.IsActive));
+}
+
+static void TestSettlementMapLayoutMaterializesRealFacilities()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    var workshop = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 1),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 2,
+        ConditionPercent: 80,
+        BuiltTick: 10_000));
+    var clinic = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 2),
+        settlement.Id,
+        SettlementFacilityKind.Clinic,
+        Level: 1,
+        ConditionPercent: 100,
+        BuiltTick: 11_000));
+
+    var layout = SettlementMapLayoutService.BuildFacilityLayout(
+        state,
+        new SettlementMapLayoutRequest(
+            settlement.Id,
+            CenterX: 50,
+            CenterZ: 50,
+            MaxFacilities: 4));
+
+    AssertEqual(SettlementMapLayoutStatus.Success, layout.Status);
+    AssertEqual(2, layout.Facilities.Count);
+    AssertEqual(workshop.Id, layout.Facilities[0].FacilityId);
+    AssertEqual(SettlementFacilityKind.Workshop, layout.Facilities[0].Kind);
+    AssertEqual("TableMachining", layout.Facilities[0].PrimaryThingDefName);
+    AssertEqual(80, layout.Facilities[0].ConditionPercent);
+    AssertEqual(clinic.Id, layout.Facilities[1].FacilityId);
+    AssertEqual("HospitalBed", layout.Facilities[1].PrimaryThingDefName);
+    if (layout.Facilities.Select(feature => (feature.AnchorX, feature.AnchorZ)).Distinct().Count() != 2)
+    {
+        throw new InvalidOperationException("Facility anchors should be deterministic and distinct.");
+    }
+}
+
+static void TestAnimalMapFateSyncReturnsOnlyLiveDepartures()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    var herd = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 5,
+        healthPercent: 80,
+        fertilityPercent: 60,
+        carryingCapacity: 12,
+        tick: 100);
+
+    var withdrawn = AnimalMapMaterializationService.WithdrawForSettlementMap(
+        state,
+        new AnimalMapMaterializationRequest(settlement.Id, MaxAnimals: 2, Tick: 200, PurposeKey: "map:ranch:1"));
+    AssertEqual(AnimalMapMaterializationStatus.Success, withdrawn.Status);
+    AssertEqual(3, state.GetAnimalCohort(herd.Id)!.Count);
+
+    var live = AnimalMapFateSyncService.Resolve(
+        state,
+        new AnimalMapFateSyncRequest(
+            withdrawn.Animals[0].CohortId,
+            withdrawn.Animals[0].AnimalKind,
+            withdrawn.Animals[0].Type,
+            Count: 1,
+            Fate: AnimalMapFateKind.Returned,
+            Tick: 300,
+            Reason: "animal left settlement map alive"));
+    var dead = AnimalMapFateSyncService.Resolve(
+        state,
+        new AnimalMapFateSyncRequest(
+            withdrawn.Animals[0].CohortId,
+            withdrawn.Animals[0].AnimalKind,
+            withdrawn.Animals[0].Type,
+            Count: 1,
+            Fate: AnimalMapFateKind.Dead,
+            Tick: 301,
+            Reason: "animal killed on settlement map"));
+
+    AssertEqual(AnimalMapFateSyncStatus.Success, live.Status);
+    AssertEqual(AnimalMapFateSyncStatus.Success, dead.Status);
+    AssertEqual(4, state.GetAnimalCohort(herd.Id)!.Count);
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()
@@ -6918,6 +7008,30 @@ static void TestRimWorldSettlementMapMaterialization()
     AssertContains("AnimalMapMaterializationService.ReturnToCohorts", service);
     AssertContains("SettlementMaterializationService.AbortDefense", service);
     AssertContains("IsInitialWorldSeedingActive", service);
+}
+
+static void TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization()
+{
+    var root = FindRepoRoot();
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+    AssertContains("SettlementMapLayoutService.BuildFacilityLayout", service);
+    AssertContains("SpawnFacilityLayout", service);
+    AssertContains("TrySpawnFacilityThing", service);
+    AssertContains("LivingWorldAnimalMapPawnTracker.Track", service);
+
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldAnimalMapPawnTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("AnimalMapFateSyncService.Resolve", tracker);
+    AssertContains("AnimalMapFateKind.Returned", tracker);
+    AssertContains("AnimalMapFateKind.Dead", tracker);
+
+    var killPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnKillPatch.cs"));
+    var exitPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
+    AssertContains("LivingWorldAnimalMapPawnTracker.TryMarkDead", killPatch);
+    AssertContains("LivingWorldAnimalMapPawnTracker.TryMarkReturned", exitPatch);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a

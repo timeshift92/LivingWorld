@@ -81,12 +81,14 @@ public static class LivingWorldSettlementMapMaterializationService
         ReleaseUnboundLeases(component.State, prepared.DefenderLeases);
         SpawnReservedResources(component.State, map, prepared);
         var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
+        var facilityCount = SpawnFacilityLayout(component.State, map, ledgerSettlement.Id, settlement.Faction);
 
         if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message(
                 $"[LivingWorld] materialized settlement map '{settlement.LabelCap}'"
                 + $" with {bound} ledger defender(s), {animalCount} animal(s),"
+                + $" {facilityCount} facility feature(s),"
                 + $" and {prepared.Resources.Sum(resource => resource.Quantity)} resource unit(s).");
         }
 
@@ -253,8 +255,9 @@ public static class LivingWorldSettlementMapMaterializationService
             var failedCount = 0;
             for (var i = 0; i < animal.Count; i++)
             {
-                if (TrySpawnAnimal(map, faction, animal.AnimalKind))
+                if (TrySpawnAnimal(map, faction, animal.AnimalKind, out var pawn))
                 {
+                    LivingWorldAnimalMapPawnTracker.Track(pawn, animal with { Count = 1 });
                     spawned++;
                 }
                 else
@@ -281,8 +284,9 @@ public static class LivingWorldSettlementMapMaterializationService
         return spawned;
     }
 
-    private static bool TrySpawnAnimal(Map map, Faction faction, string animalKind)
+    private static bool TrySpawnAnimal(Map map, Faction faction, string animalKind, out Pawn pawn)
     {
+        pawn = null!;
         if (!TryFindSpawnCell(map, out var cell))
         {
             return false;
@@ -303,9 +307,92 @@ public static class LivingWorldSettlementMapMaterializationService
             faction,
             PawnGenerationContext.NonPlayer,
             forceGenerateNewPawn: true);
-        var pawn = PawnGenerator.GeneratePawn(request);
+        pawn = PawnGenerator.GeneratePawn(request);
         GenSpawn.Spawn(pawn, cell, map);
         return true;
+    }
+
+    private static int SpawnFacilityLayout(WorldState state, Map map, EntityId settlementId, Faction faction)
+    {
+        var layout = SettlementMapLayoutService.BuildFacilityLayout(
+            state,
+            new SettlementMapLayoutRequest(
+                settlementId,
+                map.Center.x,
+                map.Center.z,
+                MaxFacilities: 8));
+        if (layout.Status != SettlementMapLayoutStatus.Success)
+        {
+            return 0;
+        }
+
+        var spawned = 0;
+        foreach (var feature in layout.Facilities)
+        {
+            if (TrySpawnFacilityThing(map, faction, feature))
+            {
+                spawned++;
+            }
+        }
+
+        return spawned;
+    }
+
+    private static bool TrySpawnFacilityThing(Map map, Faction faction, SettlementMapFacilityFeature feature)
+    {
+        if (!TryFindFacilityCell(map, feature, out var cell))
+        {
+            return false;
+        }
+
+        ThingDef def;
+        try
+        {
+            def = ThingDef.Named(feature.PrimaryThingDefName);
+        }
+        catch
+        {
+            return false;
+        }
+
+        try
+        {
+            var thing = ThingMaker.MakeThing(def);
+            if (thing is Building building && faction != null)
+            {
+                building.SetFactionDirect(faction);
+            }
+
+            GenSpawn.Spawn(thing, cell, map);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryFindFacilityCell(Map map, SettlementMapFacilityFeature feature, out IntVec3 cell)
+    {
+        var anchor = new IntVec3(feature.AnchorX, 0, feature.AnchorZ);
+        foreach (var candidate in map.AllCells
+            .OrderBy(candidate => candidate.DistanceToSquared(anchor))
+            .ThenBy(candidate => candidate.x)
+            .ThenBy(candidate => candidate.z))
+        {
+            if (candidate.InBounds(map)
+                && candidate.Standable(map)
+                && !candidate.Fogged(map)
+                && candidate.GetEdifice(map) == null
+                && candidate.GetFirstItem(map) == null)
+            {
+                cell = candidate;
+                return true;
+            }
+        }
+
+        cell = IntVec3.Invalid;
+        return false;
     }
 
     private static bool TryFindSpawnCell(Map map, out IntVec3 cell)

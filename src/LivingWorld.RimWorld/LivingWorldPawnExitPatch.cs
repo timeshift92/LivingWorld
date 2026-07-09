@@ -32,6 +32,11 @@ public static class LivingWorldPawnExitTracker
             return;
         }
 
+        if (LivingWorldAnimalMapPawnTracker.TryMarkReturned(pawn, reason))
+        {
+            return;
+        }
+
         // CompLivingWorldIdentity is preferred; thingIDNumber remains an identity fallback.
         if (!LivingWorldPawnIdentityService.TryGetLedgerId(pawn, out var ledgerId))
         {
