@@ -8,14 +8,5 @@
       <li>Map_PlayerHome</li>
     </targetTags>
     <workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldFactionRaid</workerClass>
-    <!--
-      Without a baseChance the storyteller never selects this incident (default 0), which left the
-      travelling-raid path dead: every enemy raid fell through to vanilla RaidEnemy (baseChance 7.4) and
-      spawned at the map edge with no world-map approach. Given a slightly higher weight so it becomes the
-      primary humanlike enemy raid and actually travels; pointsScaleable so it scales with threat points
-      like a real raid. Mechanoid raids still come through vanilla RaidEnemy (attributed to a cluster).
-    -->
-    <baseChance>9.0</baseChance>
-    <pointsScaleable>true</pointsScaleable>
   </IncidentDef>
 </Defs>
