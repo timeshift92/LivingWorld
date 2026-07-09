@@ -8518,6 +8518,12 @@ static void TestRimWorldFactionRaidIncidentDef()
     AssertContains("<category>ThreatBig</category>", xml);
     AssertContains("<workerClass>LivingWorld.RimWorld.IncidentWorker_LivingWorldFactionRaid</workerClass>", xml);
     AssertContains("<li>Map_PlayerHome</li>", xml);
+    // Must carry a non-zero baseChance or the storyteller never selects it (default 0) and the whole
+    // travelling-raid path stays dead — every enemy raid then falls through to vanilla RaidEnemy at the
+    // map edge. Regression guard for exactly that bug.
+    AssertContains("<baseChance>", xml);
+    AssertDoesNotContain("<baseChance>0</baseChance>", xml);
+    AssertContains("<pointsScaleable>true</pointsScaleable>", xml);
 }
 
 static void TestRimWorldFactionRaidWorker()
