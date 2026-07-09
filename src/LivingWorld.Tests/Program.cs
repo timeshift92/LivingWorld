@@ -36,6 +36,7 @@ var tests = new List<(string Name, Action Test)>
     ("technology diffusion upgrades lower tier settlements", TestTechnologyDiffusionUpgradesLowerTierSettlements),
     ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
+    ("seeds settlement population with deterministic variation", TestSettlementPopulationSeedingVariesBaseline),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
     ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
@@ -166,6 +167,7 @@ var tests = new List<(string Name, Action Test)>
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
+    ("war planner keeps scouts and diplomats visible even after attacks unlock", TestFactionActionPlannerDiversifiesVisibleActions),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("war planner avoids targets already under pressure", TestFactionActionPlannerAvoidsPressuredEnemyTargets),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
@@ -276,6 +278,7 @@ var tests = new List<(string Name, Action Test)>
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
+    ("world action markers start at their origin tile", TestRimWorldWorldActionMarkersStartAtOrigin),
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
@@ -321,6 +324,10 @@ var tests = new List<(string Name, Action Test)>
     ("gives settlements a deterministic economic character", TestEconomicCharacterVariation),
     ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
     ("gives mechanoid raids a world-map source", TestRimWorldMechClusters),
+    ("makes visitor groups travel across the world map", TestRimWorldApproachingVisitors),
+    ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
+    ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
+    ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
 
@@ -1269,6 +1276,31 @@ static void TestSettlementDailySimulationConsumesFoodAndBirths()
     AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
     AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Children);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
+}
+
+static void TestSettlementPopulationSeedingVariesBaseline()
+{
+    var counts = Enumerable.Range(1, 8)
+        .Select(id => SettlementPopulationSeedingService.CalculateAdultCount(
+            worldSeed: 12345,
+            settlementStableId: id,
+            configuredAdults: 57,
+            minAdults: 12,
+            maxAdults: 90))
+        .ToList();
+
+    AssertEqual(true, counts.All(count => count >= 12 && count <= 90));
+    AssertEqual(true, counts.Distinct().Count() > 1);
+
+    var first = SettlementPopulationSeedingService.CalculateAdultCount(12345, 4, 57, 12, 90);
+    var second = SettlementPopulationSeedingService.CalculateAdultCount(12345, 4, 57, 12, 90);
+    AssertEqual(first, second);
+
+    var ages = Enumerable.Range(0, 20)
+        .Select(index => SettlementPopulationSeedingService.CalculateAdultAge(12345, 4, index))
+        .ToList();
+    AssertEqual(true, ages.All(age => age >= 18 && age <= 88));
+    AssertEqual(true, ages.Any(age => age >= 70));
 }
 
 static void TestSettlementDailySimulationRecordsFoodShortage()
@@ -4716,6 +4748,32 @@ static void TestFactionActionPlannerScoutsBeforeUnknownWarTarget()
     AssertEqual(victim.Id, known.TargetSettlementId);
 }
 
+static void TestFactionActionPlannerDiversifiesVisibleActions()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var knownVictim = state.CreateSettlement("known-village", "Known Village", "KnownVictims");
+    state.CreateSettlement("unknown-village", "Unknown Village", "UnknownVictims");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.RecordFactionSettlementIntel("Raiders", knownVictim.Id, IntelSourceKind.Scout, 0, confidence: 80);
+
+    var attack = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+    var scout = FactionActionPlanner.Plan(state, "Raiders", 7 * 60_000);
+    var diplomat = FactionActionPlanner.Plan(state, "Raiders", 11 * 60_000);
+
+    AssertEqual(WarAction.Warband, attack.Action);
+    AssertEqual(knownVictim.Id, attack.TargetSettlementId);
+    AssertEqual(WarAction.ScoutingParty, scout.Action);
+    AssertEqual(null, scout.TargetSettlementId);
+    AssertEqual(WarAction.Diplomat, diplomat.Action);
+    AssertEqual(null, diplomat.TargetSettlementId);
+}
+
 static void TestFactionActionPlannerSpreadsEnemyTargets()
 {
     var state = new WorldState(4242);
@@ -8116,6 +8174,20 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_MissionKind_Trader>", ru);
 }
 
+static void TestRimWorldWorldActionMarkersStartAtOrigin()
+{
+    var root = FindRepoRoot();
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+
+    // The world object interpolates its draw position, but RimWorld still selects and lists it by
+    // Tile. Put new actions at their origin instead of immediately stacking them on the target
+    // settlement, otherwise scouts/caravans/diplomats can look absent until they are nearly done.
+    AssertContains("marker.Tile = originTile;", component);
+    AssertContains("marker.Tile = raid.OriginTile;", component);
+    AssertDoesNotContain("marker.Tile = targetTile;", component);
+    AssertDoesNotContain("marker.Tile = raid.TargetTile;", component);
+}
+
 // Task 5 RW-side, made live: destroyed settlements become REAL, lootable RimWorld sites (abandoned
 // settlements) the player can caravan to and clear for salvage — not display-only markers. Built once
 // per ruin (persisted), fail-open, via the reflection-verified SiteMaker API.
@@ -8811,6 +8883,143 @@ static void TestRimWorldEconomicDiversity()
     var russianXml = File.ReadAllText(
         Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     foreach (var key in new[] { "LW_Settings_EconomicDiversity", "LW_Settings_EconomicDiversityTip" })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
+}
+
+static void TestDrifterReservoirTakeForArrival()
+{
+    var state = new WorldState(1);
+    state.AddDrifterArrivalReservoir(5, "seed");
+    AssertEqual(5, state.DrifterArrivalReservoir);
+
+    // Takes what is asked while available, and reports the amount actually drawn.
+    AssertEqual(2, DrifterArrivalService.TakeForArrival(state, 2));
+    AssertEqual(3, state.DrifterArrivalReservoir);
+
+    // Non-positive requests are a no-op.
+    AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 0));
+    AssertEqual(3, state.DrifterArrivalReservoir);
+
+    // Cannot draw more than remain: clamps to what is left and empties the pool.
+    AssertEqual(3, DrifterArrivalService.TakeForArrival(state, 10));
+    AssertEqual(0, state.DrifterArrivalReservoir);
+
+    // An empty pool yields nobody.
+    AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 1));
+}
+
+static void TestRimWorldCaravanMeetingGate()
+{
+    var root = FindRepoRoot();
+
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanMeetingPatch.cs"));
+    // Meeting, ambush and demand caravan encounters share one gate: only fire near a settlement.
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanMeeting), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_Ambush_EnemyFaction), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanDemand), \"CanFireNowSub\")", patch);
+    AssertContains("GateByNearbySettlement", patch);
+    AssertContains("parms?.target is not Caravan caravan", patch);
+    AssertContains("ApproxDistanceInTiles", patch);
+    AssertContains("worldObjects.Settlements", patch);
+    // Gated by the arrivals setting; fail-open.
+    AssertContains("settings.arrivalsTravelEnabled", patch);
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_Ambush_EnemyFaction", "CanFireNowSub");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanDemand", "CanFireNowSub");
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanMeeting", "CanFireNowSub");
+}
+
+static void TestRimWorldSourcedWanderers()
+{
+    var root = FindRepoRoot();
+
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWandererSourcePatch.cs"));
+    // Gate the vanilla join behind reservoir availability, and draw one person on success.
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_WandererJoin), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_WandererJoin), \"TryExecuteWorker\")", patch);
+    AssertContains("DrifterArrivalReservoir < 1", patch);
+    AssertContains("DrifterArrivalService.TakeForArrival(component.State, 1)", patch);
+    // Gated by the existing drifter-flow setting; fail-open.
+    AssertContains("settings.drifterFlowEnabled", patch);
+
+    var service = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.Core", "DrifterArrivalService.cs"));
+    AssertContains("public static int TakeForArrival(", service);
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_WandererJoin", "CanFireNowSub");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_WandererJoin", "TryExecuteWorker");
+}
+
+static void TestRimWorldApproachingVisitors()
+{
+    var root = FindRepoRoot();
+
+    // Runtime + persisted pending-group model, and the re-entrancy guard for the arrival re-fire.
+    var runtimePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "ApproachingGroup.cs");
+    AssertFileExists(runtimePath);
+    var runtime = File.ReadAllText(runtimePath);
+    AssertContains("class PendingApproachingGroup : IExposable", runtime);
+    AssertContains("public static bool FiringArrival", runtime);
+    AssertContains("MarkerKeyPrefix", runtime);
+    AssertContains("TravelTicksFor", runtime);
+
+    // The visitor patch defers into a travelling group on first fire and lets the vanilla worker run on
+    // the arrival re-fire; additive Prefix, never loses the incident.
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldGroupTravelPatch.cs"));
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_VisitorGroup), \"TryExecuteWorker\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_TraderCaravanArrival), \"TryExecuteWorker\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_TravelerGroup), \"TryExecuteWorker\")", patch);
+    AssertContains("ApproachingGroupRuntime.FiringArrival", patch);
+    AssertContains("TryLaunchApproachingGroup", patch);
+
+    // The world component launches the travelling group, materializes it on arrival, and reconciles the
+    // markers separately from the ledger-driven army markers. Persisted and settings-gated.
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("public bool TryLaunchApproachingGroup(", component);
+    AssertContains("ProcessApproachingGroupArrivals(", component);
+    AssertContains("private void FireArrivedGroup(", component);
+    AssertContains("SyncApproachingGroupMarkers()", component);
+    AssertContains("ApproachingGroupRuntime.FiringArrival = true", component);
+    AssertContains("def.Worker.TryExecute(parms)", component);
+    AssertContains("livingWorld_approachingGroups", component);
+    AssertContains("settings.arrivalsTravelEnabled", component);
+
+    // Settings toggle wired and drawn.
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("arrivalsTravelEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_ArrivalsTravel", drawer);
+
+    // RimWorld API the feature depends on exists in this game version.
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_VisitorGroup", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_TraderCaravanArrival", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_TravelerGroup", "TryExecuteWorker");
+
+    // Localization present in both languages.
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_GroupApproachingLabel",
+        "LW_GroupApproachingText",
+        "LW_ArrivalKind_Visitors",
+        "LW_ArrivalKind_Traders",
+        "LW_ArrivalKind_Travelers",
+        "LW_MissionReason_Visit",
+        "LW_Settings_ArrivalsTravel",
+        "LW_Settings_ArrivalsTravelTip",
+    })
     {
         AssertContains($"<{key}>", englishXml);
         AssertContains($"<{key}>", russianXml);
