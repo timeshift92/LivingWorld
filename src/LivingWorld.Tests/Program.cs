@@ -9562,7 +9562,10 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("MobilizationOutfitService.Restore(pawn)", component);
     AssertContains("RememberPolicy", assignment);
     AssertContains("TakeRememberedPolicy", assignment);
-    AssertContains("previousPolicyIdByPawn", assignment);
+    AssertContains("previousPolicyIdByPawnId", assignment);
+    AssertContains("livingWorld_armoryPrevPolicyByPawnId", assignment);
+    AssertContains("LookMode.Value, LookMode.Value, ref policyKeysScratch", assignment);
+    AssertDoesNotContain("livingWorld_armoryPrevPolicyByPawn\",", assignment);
     AssertRimWorldMethodExists("RimWorld.OutfitDatabase", "MakeNewOutfit");
 
     // Rack labels are translated to Russian (DefInjected) so they are not left English / error.
