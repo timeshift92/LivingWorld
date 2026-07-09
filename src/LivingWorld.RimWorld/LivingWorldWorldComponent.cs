@@ -735,8 +735,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // Reconciles the world-map mission markers with the ledger's active travels: a marker per
     // marching warband and per traveling caravan, each with its own icon, dropping markers whose
     // travel has resolved and clearing everything when the world war is off or Rim War is driving
-    // factions. Positions animate every frame inside the marker's DrawPos, so this only manages
-    // membership.
+    // factions. The settler action asset ("World/LivingWorld_Settler") is intentionally not drawn
+    // here yet because Core expansion currently founds its destination immediately rather than
+    // dispatching a travelling settler expedition. Positions animate every frame inside the marker's
+    // DrawPos, so this only manages membership.
     private void SyncArmyWorldObjects()
     {
         var worldObjects = Find.WorldObjects;

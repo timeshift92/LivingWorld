@@ -240,6 +240,7 @@ var tests = new List<(string Name, Action Test)>
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
+    ("shows world activity trends instead of only static totals", TestRimWorldWorldActivityTrends),
     ("summarizes world conflicts in the main tab", TestRimWorldWorldConflictsSection),
     ("shows factions watching the player in the main tab", TestRimWorldWatchersSection),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
@@ -283,6 +284,7 @@ var tests = new List<(string Name, Action Test)>
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
+    ("shows world action marker legend and filters", TestRimWorldWorldActionMarkerLegendAndFilters),
     ("world action markers start at their origin tile", TestRimWorldWorldActionMarkersStartAtOrigin),
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
@@ -3114,6 +3116,9 @@ static void TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity()
     AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Light));
     AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.GuardPost));
     AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Activity));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Barracks));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.PerimeterWall));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Turret));
 }
 
 static void TestSettlementMapDamageLowersFacilityCondition()
@@ -8281,6 +8286,36 @@ static void TestRimWorldEconomyWindow()
     }
 }
 
+static void TestRimWorldWorldActivityTrends()
+{
+    var root = FindRepoRoot();
+    var economyWindow = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldEconomyWindow.cs"));
+    var observerWindow = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
+
+    AssertContains("LW_EconomyCol_PopTrend", economyWindow);
+    AssertContains("DailyPopulationChange", economyWindow);
+    AssertContains("WorldEventKind.CitizenBorn", economyWindow);
+    AssertContains("WorldEventKind.CitizenDied", economyWindow);
+    AssertContains("WorldEventKind.MigrationCompleted", economyWindow);
+    AssertContains("FormatSigned(data.DailyPopulationChange)", economyWindow);
+
+    AssertContains("LW_SettlementObserver_DailyTrend", observerWindow);
+    AssertContains("BuildDailyTrend", observerWindow);
+    AssertContains("WorldEventKind.SettlementProjectCompleted", observerWindow);
+    AssertContains("WorldEventKind.SettlementFacilityDamaged", observerWindow);
+    AssertContains("WorldEventKind.CaravanLaunched", observerWindow);
+    AssertContains("WorldEventKind.DiplomaticMissionSent", observerWindow);
+    AssertContains("ActiveTravelsForSettlement", observerWindow);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_EconomyCol_PopTrend", "LW_SettlementObserver_DailyTrend" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
 static void TestRimWorldSettlementObserverWindow()
 {
     var root = FindRepoRoot();
@@ -8489,6 +8524,38 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_MissionMarkerReasonLine>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
+}
+
+static void TestRimWorldWorldActionMarkerLegendAndFilters()
+{
+    var root = FindRepoRoot();
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+
+    AssertContains("LW_WorldActionsHeader", mainTab);
+    AssertContains("LW_WorldActionLegendLine", mainTab);
+    AssertContains("cachedWorldActionRows", mainTab);
+    AssertContains("BuildWorldActionRows", mainTab);
+    AssertContains("state.Caravans", mainTab);
+    AssertContains("state.Missions", mainTab);
+    AssertContains("WorldMissionKind.Scout", mainTab);
+    AssertContains("WorldMissionKind.Diplomat", mainTab);
+    AssertContains("ArmyMovementStatus.Traveling", mainTab);
+    AssertContains("CaravanStatus.Traveling", mainTab);
+    AssertContains("WorldMissionStatus.Traveling", mainTab);
+
+    // Expansion currently creates the colony in Core immediately; the UI must say that explicitly
+    // rather than pretending there is a settler marker that does not exist.
+    AssertContains("LW_WorldActionSettlersImmediate", mainTab);
+    AssertContains("World/LivingWorld_Settler", component);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_WorldActionsHeader", "LW_WorldActionLegendLine", "LW_WorldActionSettlersImmediate" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldWorldActionMarkersStartAtOrigin()

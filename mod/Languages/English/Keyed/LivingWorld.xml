@@ -208,10 +208,15 @@
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
   <LW_DirectVisitObserver>Observe Living World settlement</LW_DirectVisitObserver>
   <LW_DirectVisitObserverTooltip>Record a direct visit to this settlement and open its Living World ledger view. This reveals exact population, projects, animals and stores for this settlement only.</LW_DirectVisitObserverTooltip>
+  <LW_WorldActionsHeader>World actions</LW_WorldActionsHeader>
+  <LW_WorldActionLegendLine>Visible markers: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}. Click a marker on the world map to see faction, target, cargo/strength and reason.</LW_WorldActionLegendLine>
+  <LW_WorldActionSettlersImmediate>Settlers: expansion currently founds a new ledger settlement immediately; no fake travelling settler marker is drawn yet.</LW_WorldActionSettlersImmediate>
+  <LW_WorldActionRow>{kind}: {faction} to {target}, about {days} day(s)</LW_WorldActionRow>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>
   <LW_EconomyCol_Population>Population</LW_EconomyCol_Population>
+  <LW_EconomyCol_PopTrend>Pop/day</LW_EconomyCol_PopTrend>
   <LW_EconomyCol_Tier>Top tier</LW_EconomyCol_Tier>
   <LW_EconomyCol_Output>Output/day</LW_EconomyCol_Output>
   <LW_EconomyCol_Change>Change/day</LW_EconomyCol_Change>
@@ -223,6 +228,7 @@
   <LW_SettlementObserver_Overview>Status {status} | tier {tier} | population {total} (adults {adults}, children {children}, elders {elderly}) | wealth {wealth}</LW_SettlementObserver_Overview>
   <LW_SettlementObserver_Production>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_SettlementObserver_Production>
   <LW_SettlementObserver_FoodMigration>Food {food}, daily need {need}, days left {days} | migration pressure {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
+  <LW_SettlementObserver_DailyTrend>Last day: births +{births}, losses -{losses}, migration {moves}, building {builds}, damage/repair {damage}, resources {resources}, animals {animals}, active travel {travels}</LW_SettlementObserver_DailyTrend>
   <LW_SettlementObserver_Projects>Projects</LW_SettlementObserver_Projects>
   <LW_SettlementObserver_NoActiveProject>No active construction or repair project.</LW_SettlementObserver_NoActiveProject>
   <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_ProjectProgress>

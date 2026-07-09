@@ -208,10 +208,15 @@
   <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>
   <LW_DirectVisitObserver>Осмотреть поселение Living World</LW_DirectVisitObserver>
   <LW_DirectVisitObserverTooltip>Записать прямой визит в это поселение и открыть его ledger-просмотр Living World. Это раскрывает точное население, проекты, животных и склады только для этого поселения.</LW_DirectVisitObserverTooltip>
+  <LW_WorldActionsHeader>Действия мира</LW_WorldActionsHeader>
+  <LW_WorldActionLegendLine>Видимые маркеры: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}. Клик по маркеру на карте мира покажет фракцию, цель, груз/силу и причину.</LW_WorldActionLegendLine>
+  <LW_WorldActionSettlersImmediate>Поселенцы: расширение сейчас сразу создаёт новое ledger-поселение; фальшивый движущийся маркер поселенцев пока не рисуется.</LW_WorldActionSettlersImmediate>
+  <LW_WorldActionRow>{kind}: {faction} к {target}, около {days} дн.</LW_WorldActionRow>
   <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Фракция</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Поселения</LW_EconomyCol_Settlements>
   <LW_EconomyCol_Population>Население</LW_EconomyCol_Population>
+  <LW_EconomyCol_PopTrend>Нас./день</LW_EconomyCol_PopTrend>
   <LW_EconomyCol_Tier>Макс. уровень</LW_EconomyCol_Tier>
   <LW_EconomyCol_Output>Выпуск/день</LW_EconomyCol_Output>
   <LW_EconomyCol_Change>Изм./день</LW_EconomyCol_Change>
@@ -223,6 +228,7 @@
   <LW_SettlementObserver_Overview>Статус {status} | уровень {tier} | население {total} (взрослые {adults}, дети {children}, старики {elderly}) | богатство {wealth}</LW_SettlementObserver_Overview>
   <LW_SettlementObserver_Production>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_SettlementObserver_Production>
   <LW_SettlementObserver_FoodMigration>Еда {food}, расход/день {need}, дней запаса {days} | давление миграции {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
+  <LW_SettlementObserver_DailyTrend>За сутки: рождения +{births}, потери -{losses}, миграция {moves}, стройка {builds}, урон/ремонт {damage}, ресурсы {resources}, животные {animals}, активных движений {travels}</LW_SettlementObserver_DailyTrend>
   <LW_SettlementObserver_Projects>Проекты</LW_SettlementObserver_Projects>
   <LW_SettlementObserver_NoActiveProject>Нет активной стройки или ремонта.</LW_SettlementObserver_NoActiveProject>
   <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, готово {progress}%, осталось около {days} дн.</LW_SettlementObserver_ProjectProgress>

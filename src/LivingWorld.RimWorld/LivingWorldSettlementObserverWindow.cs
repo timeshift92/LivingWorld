@@ -184,6 +184,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             food.FoodDays.Named("days"),
             migration.Pressure.Named("pressure"),
             migration.PrimaryReason.Named("reason")).ToString()));
+        lines.Add(Line(BuildDailyTrend(state, settlement, currentTick), 42f));
 
         lines.Add(Header("LW_SettlementObserver_Projects".Translate().ToString()));
         var activeProjects = state.SettlementProjects
@@ -327,6 +328,110 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             project.FacilityKind.Named("facility"),
             progress.Named("progress"),
             daysLeft.Named("days")).ToString();
+    }
+
+    private static string BuildDailyTrend(WorldState state, WorldSettlement settlement, int currentTick)
+    {
+        var effectiveTick = Math.Max(currentTick, state.CurrentTick);
+        var cutoff = Math.Max(0, effectiveTick - TicksPerDay);
+        var facilityIds = new HashSet<EntityId>(state.GetSettlementFacilities(settlement.Id).Select(facility => facility.Id));
+        var animalIds = new HashSet<EntityId>(state.GetAnimalCohorts(settlement.Id).Select(cohort => cohort.Id));
+        var projectIds = new HashSet<EntityId>(state.SettlementProjects
+            .Where(project => project.SettlementId == settlement.Id)
+            .Select(project => project.Id));
+
+        var births = 0;
+        var losses = 0;
+        var moves = 0;
+        var builds = 0;
+        var damage = 0;
+        var resources = 0;
+        var animals = 0;
+
+        foreach (var worldEvent in state.Events.Where(worldEvent => worldEvent.Tick >= cutoff))
+        {
+            var subjectId = worldEvent.SubjectId;
+            var citizen = subjectId.HasValue ? state.GetCitizen(subjectId.Value) : null;
+            var citizenBelongsHere = citizen?.SettlementId == settlement.Id;
+            var directSettlement = subjectId == settlement.Id;
+            var facilityBelongsHere = subjectId.HasValue && facilityIds.Contains(subjectId.Value);
+            var projectBelongsHere = subjectId.HasValue && projectIds.Contains(subjectId.Value);
+            var animalBelongsHere = subjectId.HasValue && animalIds.Contains(subjectId.Value);
+
+            switch (worldEvent.Kind)
+            {
+                case WorldEventKind.CitizenBorn when citizenBelongsHere:
+                    births++;
+                    break;
+                case WorldEventKind.CitizenDied when citizenBelongsHere:
+                case WorldEventKind.RaidPawnCaptured when citizenBelongsHere:
+                case WorldEventKind.RaidPawnMissing when citizenBelongsHere:
+                    losses++;
+                    break;
+                case WorldEventKind.MigrationCompleted when citizenBelongsHere:
+                case WorldEventKind.MigrationStarted when directSettlement:
+                case WorldEventKind.RefugeeCreated when citizenBelongsHere:
+                    moves++;
+                    break;
+                case WorldEventKind.SettlementProjectStarted when directSettlement || projectBelongsHere:
+                case WorldEventKind.SettlementProjectCompleted when directSettlement || projectBelongsHere:
+                case WorldEventKind.SettlementFacilityBuilt when directSettlement || facilityBelongsHere:
+                case WorldEventKind.SettlementDeveloped when directSettlement:
+                    builds++;
+                    break;
+                case WorldEventKind.SettlementFacilityDamaged when directSettlement || facilityBelongsHere:
+                case WorldEventKind.SettlementFacilityRepaired when directSettlement || facilityBelongsHere:
+                    damage++;
+                    break;
+                case WorldEventKind.ResourceAdded when directSettlement:
+                case WorldEventKind.ResourceConsumed when directSettlement:
+                case WorldEventKind.SettlementProductionUpdated when directSettlement:
+                case WorldEventKind.SettlementTradeRecorded when directSettlement:
+                case WorldEventKind.CaravanLaunched when directSettlement:
+                case WorldEventKind.CaravanArrived when directSettlement:
+                    resources++;
+                    break;
+                case WorldEventKind.AnimalCohortCreated when directSettlement || animalBelongsHere:
+                case WorldEventKind.AnimalCohortGrew when directSettlement || animalBelongsHere:
+                case WorldEventKind.AnimalCohortDeclined when directSettlement || animalBelongsHere:
+                case WorldEventKind.AnimalProductsHarvested when directSettlement || animalBelongsHere:
+                case WorldEventKind.AnimalHunted when directSettlement || animalBelongsHere:
+                case WorldEventKind.AnimalBreedingProjectStarted when directSettlement:
+                case WorldEventKind.AnimalBreedingProjectCompleted when directSettlement:
+                case WorldEventKind.AnimalCohortIncubated when directSettlement:
+                    animals++;
+                    break;
+                case WorldEventKind.DiplomaticMissionSent when directSettlement:
+                    moves++;
+                    break;
+            }
+        }
+
+        var activeTravels = ActiveTravelsForSettlement(state, settlement.Id);
+        return "LW_SettlementObserver_DailyTrend".Translate(
+            births.Named("births"),
+            losses.Named("losses"),
+            moves.Named("moves"),
+            builds.Named("builds"),
+            damage.Named("damage"),
+            resources.Named("resources"),
+            animals.Named("animals"),
+            activeTravels.Named("travels")).ToString();
+    }
+
+    private static int ActiveTravelsForSettlement(WorldState state, EntityId settlementId)
+    {
+        var armies = state.ArmyMovements.Count(movement =>
+            movement.Status == ArmyMovementStatus.Traveling
+            && (movement.TargetSettlementId == settlementId
+                || state.GetArmy(movement.ArmyId)?.SourceSettlementId == settlementId));
+        var caravans = state.Caravans.Count(caravan =>
+            caravan.Status == CaravanStatus.Traveling
+            && (caravan.SourceSettlementId == settlementId || caravan.TargetSettlementId == settlementId));
+        var missions = state.Missions.Count(mission =>
+            mission.Status == WorldMissionStatus.Traveling
+            && (mission.OriginSettlementId == settlementId || mission.TargetSettlementId == settlementId));
+        return armies + caravans + missions;
     }
 
     private static string FormatBreedingProject(WorldState state, AnimalBreedingProject project, int currentTick)

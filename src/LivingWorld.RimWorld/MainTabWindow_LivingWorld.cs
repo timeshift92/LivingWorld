@@ -33,7 +33,10 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedCitizenCount = -1;
     private int cachedProductionProfileCount = -1;
     private int cachedArmyMovementCount = -1;
+    private int cachedCaravanCount = -1;
+    private int cachedMissionCount = -1;
     private List<string> cachedActiveWarbandRows = new();
+    private List<string> cachedWorldActionRows = new();
     private List<(string FactionId, string Text, float Fill)> cachedFactionStrengthRows = new();
     private List<string> cachedWarHistoryRows = new();
     private List<(string FactionId, string Text, float Fill)> cachedFactionEconomyRows = new();
@@ -123,6 +126,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedFactionCollapseRows.Count * 30f)
             + (cachedDrifterRows.Count * 30f)
             + 90f
+            + 30f
+            + (cachedWorldActionRows.Count * 26f)
             + (cachedActiveWarbandRows.Count * 26f)
             + (cachedFactionStrengthRows.Count * 26f)
             + (cachedWarHistoryRows.Count * 24f)
@@ -213,6 +218,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         if (component.IsEmpireActive)
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 24f), "LW_EmpireActiveNote".Translate());
+            y += 26f;
+        }
+
+        Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_WorldActionsHeader".Translate());
+        y += 30f;
+
+        foreach (var row in cachedWorldActionRows)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
             y += 26f;
         }
 
@@ -324,6 +338,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             && cachedCitizenCount == state.Citizens.Count
             && cachedProductionProfileCount == state.ProductionProfiles.Count
             && cachedArmyMovementCount == state.ArmyMovements.Count
+            && cachedCaravanCount == state.Caravans.Count
+            && cachedMissionCount == state.Missions.Count
             && currentTick - cachedAtTick < CacheRefreshIntervalTicks)
         {
             return;
@@ -339,6 +355,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         cachedEventCount = state.Events.Count;
         cachedCitizenCount = state.Citizens.Count;
         cachedProductionProfileCount = state.ProductionProfiles.Count;
+        cachedCaravanCount = state.Caravans.Count;
+        cachedMissionCount = state.Missions.Count;
         cachedSettlementRows = state.Settlements
             .OrderBy(settlement => settlement.Id.Value)
             .Take(MaxSettlementRows)
@@ -454,6 +472,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .ToList();
 
         cachedArmyMovementCount = state.ArmyMovements.Count;
+        cachedWorldActionRows = BuildWorldActionRows(state);
         cachedActiveWarbandRows = state.ArmyMovements
             .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
             .OrderBy(movement => movement.ArrivalTick)
@@ -599,6 +618,88 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 }
             }
         }
+    }
+
+    private static List<string> BuildWorldActionRows(WorldState state)
+    {
+        var warbands = state.ArmyMovements
+            .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
+            .OrderBy(movement => movement.ArrivalTick)
+            .ThenBy(movement => movement.ArmyId.Value)
+            .ToList();
+        var caravans = state.Caravans
+            .Where(caravan => caravan.Status == CaravanStatus.Traveling)
+            .OrderBy(caravan => caravan.ArrivalTick)
+            .ThenBy(caravan => caravan.Id.Value)
+            .ToList();
+        var scouts = state.Missions
+            .Where(mission => mission.Status == WorldMissionStatus.Traveling && mission.Kind == WorldMissionKind.Scout)
+            .OrderBy(mission => mission.ArrivalTick)
+            .ThenBy(mission => mission.Id.Value)
+            .ToList();
+        var diplomats = state.Missions
+            .Where(mission => mission.Status == WorldMissionStatus.Traveling && mission.Kind == WorldMissionKind.Diplomat)
+            .OrderBy(mission => mission.ArrivalTick)
+            .ThenBy(mission => mission.Id.Value)
+            .ToList();
+
+        var rows = new List<string>
+        {
+            "LW_WorldActionLegendLine".Translate(
+                warbands.Count.Named("warbands"),
+                caravans.Count.Named("caravans"),
+                scouts.Count.Named("scouts"),
+                diplomats.Count.Named("diplomats")).ToString(),
+            "LW_WorldActionSettlersImmediate".Translate().ToString(),
+        };
+
+        rows.AddRange(warbands.Take(4).Select(movement =>
+        {
+            var army = state.GetArmy(movement.ArmyId);
+            var target = state.GetSettlement(movement.TargetSettlementId);
+            return "LW_WorldActionRow".Translate(
+                "LW_MissionKind_Warband".Translate().Named("kind"),
+                (army?.FactionId ?? "?").Named("faction"),
+                (target?.Name ?? "?").Named("target"),
+                DaysUntil(movement.ArrivalTick, state.CurrentTick).Named("days")).ToString();
+        }));
+
+        rows.AddRange(caravans.Take(4).Select(caravan =>
+        {
+            var target = state.GetSettlement(caravan.TargetSettlementId);
+            return "LW_WorldActionRow".Translate(
+                "LW_MissionKind_Trader".Translate().Named("kind"),
+                caravan.FactionId.Named("faction"),
+                (target?.Name ?? "?").Named("target"),
+                DaysUntil(caravan.ArrivalTick, state.CurrentTick).Named("days")).ToString();
+        }));
+
+        rows.AddRange(scouts.Take(3).Select(mission =>
+        {
+            var target = state.GetSettlement(mission.TargetSettlementId);
+            return "LW_WorldActionRow".Translate(
+                "LW_MissionKind_Scout".Translate().Named("kind"),
+                mission.FactionId.Named("faction"),
+                (target?.Name ?? "?").Named("target"),
+                DaysUntil(mission.ArrivalTick, state.CurrentTick).Named("days")).ToString();
+        }));
+
+        rows.AddRange(diplomats.Take(3).Select(mission =>
+        {
+            var target = state.GetSettlement(mission.TargetSettlementId);
+            return "LW_WorldActionRow".Translate(
+                "LW_MissionKind_Diplomat".Translate().Named("kind"),
+                mission.FactionId.Named("faction"),
+                (target?.Name ?? "?").Named("target"),
+                DaysUntil(mission.ArrivalTick, state.CurrentTick).Named("days")).ToString();
+        }));
+
+        return rows;
+    }
+
+    private static int DaysUntil(int arrivalTick, int currentTick)
+    {
+        return System.Math.Max(0, (int)System.Math.Ceiling((arrivalTick - currentTick) / 60_000d));
     }
 
     // Offer an alliance with a neutral, not-yet-allied faction against its current enemy. Irreconcilable

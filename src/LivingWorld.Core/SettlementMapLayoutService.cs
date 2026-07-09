@@ -89,7 +89,10 @@ public enum SettlementMapCityFeatureKind
     PowerGenerator,
     Light,
     GuardPost,
-    Activity
+    Activity,
+    Barracks,
+    PerimeterWall,
+    Turret
 }
 
 public sealed record SettlementMapCityFeature(
@@ -432,6 +435,8 @@ public static class SettlementMapLayoutService
     {
         var order = 0;
         var population = state.GetSettlementPopulation(settlementId);
+        var capability = state.GetSettlementCapability(settlementId);
+        var wealth = state.GetSettlementWealth(settlementId)?.TotalWealth ?? 0;
         var housingRoom = rooms.FirstOrDefault(room => room.Kind == SettlementFacilityKind.Clinic)
             ?? rooms.First();
         var bedCount = Math.Max(2, Math.Min(16, (population.Total + 1) / 2));
@@ -576,6 +581,38 @@ public static class SettlementMapLayoutService
                     cell.Z,
                     order++);
             }
+
+            var perimeterCount = Math.Max(10, Math.Min(32, 8 + rooms.Count * 3 + population.Adults / 5));
+            foreach (var cell in SettlementPerimeter(districts).Take(perimeterCount))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.PerimeterWall,
+                    "Wall",
+                    securityDistrict.WallStuffDefName,
+                    null,
+                    cell.X,
+                    cell.Z,
+                    order++);
+            }
+
+            if (techScore >= 3
+                && ((capability?.PowerCapacity ?? 0) > 0
+                    || (capability?.MechanicalCapacity ?? 0) > 0
+                    || wealth >= 5_000))
+            {
+                var turretCount = Math.Max(1, Math.Min(4, 1 + (capability?.PowerCapacity ?? 0) / 3 + wealth / 12_000));
+                foreach (var cell in DistrictRing(securityDistrict).Skip(1).Take(turretCount))
+                {
+                    yield return new SettlementMapCityFeature(
+                        SettlementMapCityFeatureKind.Turret,
+                        "MiniTurret",
+                        "Steel",
+                        null,
+                        cell.X,
+                        cell.Z,
+                        order++);
+                }
+            }
         }
 
         var commonsDistrict = districts.FirstOrDefault(district => district.Kind == SettlementMapDistrictKind.Commons);
@@ -586,6 +623,23 @@ public static class SettlementMapLayoutService
                 yield return new SettlementMapCityFeature(
                     SettlementMapCityFeatureKind.Activity,
                     techScore >= 3 ? "TableShort" : "Campfire",
+                    techScore >= 3 ? "Steel" : "WoodLog",
+                    null,
+                    cell.X,
+                    cell.Z,
+                    order++);
+            }
+        }
+
+        var housingDistrict = districts.FirstOrDefault(district => district.Kind == SettlementMapDistrictKind.Housing);
+        if (housingDistrict != null)
+        {
+            var barracksCount = Math.Max(2, Math.Min(8, population.Adults / 6));
+            foreach (var cell in DistrictInterior(housingDistrict, margin: 2).Skip(1).Take(barracksCount))
+            {
+                yield return new SettlementMapCityFeature(
+                    SettlementMapCityFeatureKind.Barracks,
+                    techScore >= 3 ? "EndTable" : "TorchLamp",
                     techScore >= 3 ? "Steel" : "WoodLog",
                     null,
                     cell.X,
@@ -657,6 +711,31 @@ public static class SettlementMapLayoutService
         }
 
         for (var z = minZ + 3; z <= maxZ - 3; z += 3)
+        {
+            yield return (minX, z);
+            yield return (maxX, z);
+        }
+    }
+
+    private static IEnumerable<(int X, int Z)> SettlementPerimeter(IReadOnlyList<SettlementMapDistrict> districts)
+    {
+        if (districts.Count == 0)
+        {
+            yield break;
+        }
+
+        var minX = districts.Min(district => district.MinX) - 3;
+        var maxX = districts.Max(district => district.MinX + district.Width) + 2;
+        var minZ = districts.Min(district => district.MinZ) - 3;
+        var maxZ = districts.Max(district => district.MinZ + district.Height) + 2;
+
+        for (var x = minX; x <= maxX; x += 4)
+        {
+            yield return (x, minZ);
+            yield return (x, maxZ);
+        }
+
+        for (var z = minZ + 4; z <= maxZ - 4; z += 4)
         {
             yield return (minX, z);
             yield return (maxX, z);
