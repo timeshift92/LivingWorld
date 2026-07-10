@@ -8504,10 +8504,18 @@ static void TestRimWorldDirectSettlementObserver()
     AssertContains("HarmonyPatch(typeof(Settlement), \"GetGizmos\")", patch);
     AssertContains("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
     AssertContains("new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true)", patch);
+    AssertContains("Prefs.DevMode", patch);
+    AssertContains("LW_DebugOpenRealSettlementMap", patch);
+    AssertContains("MapGenerator.GenerateMap", patch);
+    AssertContains("worldObject.MapGeneratorDef", patch);
+    AssertContains("worldObject.ExtraGenStepDefs", patch);
+    AssertContains("Current.Game.CurrentMap = map", patch);
+    AssertContains("CameraJumper.TryJump(map.Center, map)", patch);
     AssertContains("Faction.OfPlayer", patch);
     AssertContains("LW_DirectVisitObserver", patch);
     AssertContains("LW_DirectVisitObserverTooltip", patch);
     AssertRimWorldMethodExists("RimWorld.Planet.WorldObject", "GetGizmos");
+    AssertRimWorldMethodExists("Verse.MapGenerator", "GenerateMap");
 
     var window = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
     AssertContains("LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)", window);
@@ -8516,7 +8524,13 @@ static void TestRimWorldDirectSettlementObserver()
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    foreach (var key in new[] { "LW_DirectVisitObserver", "LW_DirectVisitObserverTooltip" })
+    foreach (var key in new[]
+    {
+        "LW_DirectVisitObserver",
+        "LW_DirectVisitObserverTooltip",
+        "LW_DebugOpenRealSettlementMap",
+        "LW_DebugOpenRealSettlementMapTooltip"
+    })
     {
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);

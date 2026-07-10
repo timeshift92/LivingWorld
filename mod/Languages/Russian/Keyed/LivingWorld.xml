@@ -224,6 +224,8 @@
   <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>
   <LW_DirectVisitObserver>Осмотреть поселение Living World</LW_DirectVisitObserver>
   <LW_DirectVisitObserverTooltip>Записать прямой визит в это поселение и открыть его ledger-просмотр Living World. Это раскрывает точное население, проекты, животных и склады только для этого поселения.</LW_DirectVisitObserverTooltip>
+  <LW_DebugOpenRealSettlementMap>DEV: открыть реальную карту базы LW</LW_DebugOpenRealSettlementMap>
+  <LW_DebugOpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует там комнаты, склады, защитников и животных. Это создаёт реальную карту в сохранении и предназначено для проверки.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>Действия мира</LW_WorldActionsHeader>
   <LW_WorldActionLegendLine>Видимые маркеры: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}. Клик по маркеру на карте мира покажет фракцию, цель, груз/силу и причину.</LW_WorldActionLegendLine>
   <LW_WorldActionSettlersImmediate>Поселенцы: расширение сейчас сразу создаёт новое ledger-поселение; фальшивый движущийся маркер поселенцев пока не рисуется.</LW_WorldActionSettlersImmediate>

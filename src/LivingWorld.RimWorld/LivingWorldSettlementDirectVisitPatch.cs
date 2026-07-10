@@ -25,18 +25,30 @@ public static class LivingWorldSettlementDirectVisitPatch
             yield return gizmo;
         }
 
-        Command_Action? command = null;
+        Command_Action? observerCommand = null;
+        Command_Action? realBaseCommand = null;
         try
         {
             if (TryResolveLedgerSettlement(__instance, out var settlementId))
             {
-                command = new Command_Action
+                observerCommand = new Command_Action
                 {
                     defaultLabel = "LW_DirectVisitObserver".Translate(),
                     defaultDesc = "LW_DirectVisitObserverTooltip".Translate(),
                     icon = TexButton.Search,
                     action = () => OpenDirectObserver(settlementId),
                 };
+
+                if (Prefs.DevMode)
+                {
+                    realBaseCommand = new Command_Action
+                    {
+                        defaultLabel = "LW_DebugOpenRealSettlementMap".Translate(),
+                        defaultDesc = "LW_DebugOpenRealSettlementMapTooltip".Translate(),
+                        icon = TexButton.Info,
+                        action = () => OpenRealSettlementMap(__instance, settlementId),
+                    };
+                }
             }
         }
         catch (Exception ex)
@@ -44,9 +56,14 @@ public static class LivingWorldSettlementDirectVisitPatch
             Log.Warning($"[LivingWorld] Direct settlement observer gizmo skipped safely: {ex.Message}");
         }
 
-        if (command != null)
+        if (observerCommand != null)
         {
-            yield return command;
+            yield return observerCommand;
+        }
+
+        if (realBaseCommand != null)
+        {
+            yield return realBaseCommand;
         }
     }
 
@@ -63,6 +80,40 @@ public static class LivingWorldSettlementDirectVisitPatch
             settlementId,
             "player directly inspected the settlement");
         Find.WindowStack.Add(new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true));
+    }
+
+    private static void OpenRealSettlementMap(Settlement worldObject, EntityId settlementId)
+    {
+        var component = LivingWorldWorldComponent.Instance;
+        if (component == null || worldObject == null)
+        {
+            return;
+        }
+
+        PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+            component.State,
+            settlementId,
+            "player dev-opened the real settlement map");
+
+        LongEventHandler.QueueLongEvent(
+            () =>
+            {
+                var map = worldObject.Map;
+                if (map == null)
+                {
+                    map = MapGenerator.GenerateMap(
+                        new IntVec3(120, 1, 120),
+                        worldObject,
+                        worldObject.MapGeneratorDef,
+                        worldObject.ExtraGenStepDefs);
+                }
+
+                Current.Game.CurrentMap = map;
+                CameraJumper.TryJump(map.Center, map);
+            },
+            "GeneratingMap",
+            false,
+            GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
     }
 
     private static bool TryResolveLedgerSettlement(Settlement worldObject, out EntityId settlementId)

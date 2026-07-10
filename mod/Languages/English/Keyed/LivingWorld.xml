@@ -224,6 +224,8 @@
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
   <LW_DirectVisitObserver>Observe Living World settlement</LW_DirectVisitObserver>
   <LW_DirectVisitObserverTooltip>Record a direct visit to this settlement and open its Living World ledger view. This reveals exact population, projects, animals and stores for this settlement only.</LW_DirectVisitObserverTooltip>
+  <LW_DebugOpenRealSettlementMap>DEV: open real LW base map</LW_DebugOpenRealSettlementMap>
+  <LW_DebugOpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World will materialize rooms, stores, defenders and animals there. This creates a real save-map and is meant for testing.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>World actions</LW_WorldActionsHeader>
   <LW_WorldActionLegendLine>Visible markers: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}. Click a marker on the world map to see faction, target, cargo/strength and reason.</LW_WorldActionLegendLine>
   <LW_WorldActionSettlersImmediate>Settlers: expansion currently founds a new ledger settlement immediately; no fake travelling settler marker is drawn yet.</LW_WorldActionSettlersImmediate>
