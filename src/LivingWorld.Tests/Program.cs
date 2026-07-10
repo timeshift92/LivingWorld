@@ -9814,11 +9814,16 @@ static void TestRimWorldMechClusters()
     AssertContains("SyncMechClusterMarkers()", component);
     AssertContains("EnsureMechClusterSites()", component);
     AssertContains("SiteMaker.MakeSite", component);
-    AssertContains("SleepingMechanoids", component);
+    AssertContains("MechClusterForceNoConditionCauser", component);
+    AssertDoesNotContain("GetNamedSilentFail(\"SleepingMechanoids\")", component);
+    AssertDoesNotContain("WorldObjectMaker.MakeWorldObject(def)", component);
     AssertContains("MechClusterThreatPoints(", component);
     AssertContains("livingWorld_mechClusterSiteNodeIds", component);
     AssertContains("livingWorld_mechClusterSiteWorldObjectIds", component);
     AssertContains("HasMechClusterSite(cluster.Id)", component);
+    AssertContains("PruneMissingMechClusterSites", component);
+    AssertContains("IsMechClusterSite(worldObject)", component);
+    AssertContains("worldObjects.Remove(worldObject)", component);
     AssertContains("TryFindMechClusterTile(", component);
     AssertContains("wealthWatcher", component);
     AssertContains("livingWorld_mechClusters", component);

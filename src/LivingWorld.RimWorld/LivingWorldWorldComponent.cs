@@ -1385,8 +1385,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         if (Current.ProgramState == ProgramState.Playing)
         {
-            var marker = FindMechClusterMarker(cluster.Id);
-            var look = marker != null ? new LookTargets(marker) : new LookTargets((PlanetTile)cluster.Tile);
+            var site = FindMechClusterSite(cluster.Id);
+            var look = site != null ? new LookTargets(site) : new LookTargets((PlanetTile)cluster.Tile);
             Find.LetterStack?.ReceiveLetter(
                 "LW_MechClusterAwakenLabel".Translate(),
                 "LW_MechClusterAwakenText".Translate(),
@@ -1488,7 +1488,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
-        var sitePart = DefDatabase<SitePartDef>.GetNamedSilentFail("SleepingMechanoids");
+        var sitePart = ResolveMechClusterSitePart();
         if (sitePart == null)
         {
             return;
@@ -1524,6 +1524,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
     }
 
+    private static SitePartDef? ResolveMechClusterSitePart()
+    {
+        return DefDatabase<SitePartDef>.GetNamedSilentFail("MechClusterForceNoConditionCauser")
+            ?? DefDatabase<SitePartDef>.GetNamedSilentFail("MechCluster");
+    }
+
     private static float MechClusterThreatPoints(MechClusterNode cluster)
     {
         var pressureBonus = Math.Min(600f, Math.Max(0f, cluster.Pressure) * 0.35f);
@@ -1542,10 +1548,17 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             var siteObjectId = i < mechClusterSiteWorldObjectIds.Count
                 ? mechClusterSiteWorldObjectIds[i]
                 : -1;
-            var stillExists = siteObjectId >= 0
-                && worldObjects.AllWorldObjects.Any(worldObject => worldObject.ID == siteObjectId);
+            var worldObject = siteObjectId >= 0
+                ? worldObjects.AllWorldObjects.FirstOrDefault(candidate => candidate.ID == siteObjectId)
+                : null;
+            var stillExists = worldObject != null && IsMechClusterSite(worldObject);
             if (!stillExists)
             {
+                if (worldObject != null)
+                {
+                    worldObjects.Remove(worldObject);
+                }
+
                 mechClusterSiteNodeIds.RemoveAt(i);
                 if (i < mechClusterSiteWorldObjectIds.Count)
                 {
@@ -1560,9 +1573,28 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
     }
 
-    // Reconciles the fallback world-map markers for mechanoid complexes with the ledger of clusters. When
-    // a real vanilla site exists for a cluster, the marker is removed so the actionable site is the only
-    // thing the player sees.
+    private static bool IsMechClusterSite(WorldObject worldObject)
+    {
+        if (worldObject is not Site site)
+        {
+            return false;
+        }
+
+        var partsField = typeof(Site).GetField(
+            "parts",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        if (partsField?.GetValue(site) is not IEnumerable<SitePart> parts)
+        {
+            return false;
+        }
+
+        return parts.Any(part =>
+            string.Equals(part.def?.defName, "MechClusterForceNoConditionCauser", StringComparison.Ordinal)
+            || string.Equals(part.def?.defName, "MechCluster", StringComparison.Ordinal));
+    }
+
+    // Removes legacy fallback markers for mechanoid complexes. A mech cluster must be a real vanilla site
+    // with a MechCluster gen step; if that cannot be created, we do not show a fake clickable marker.
     private void SyncMechClusterMarkers()
     {
         var worldObjects = Find.WorldObjects;
@@ -1573,56 +1605,22 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         PruneMissingMechClusterSites(worldObjects);
 
-        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
-        var def = settings.mechClustersEnabled
-            ? DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_MechCluster")
-            : null;
-
-        var existing = new Dictionary<int, WorldObject_MechCluster>();
-        foreach (var worldObject in worldObjects.AllWorldObjects)
+        foreach (var marker in worldObjects.AllWorldObjects.OfType<WorldObject_MechCluster>().ToList())
         {
-            if (worldObject is WorldObject_MechCluster marker)
-            {
-                existing[marker.NodeId] = marker;
-            }
-        }
-
-        var live = new HashSet<int>();
-        if (def != null)
-        {
-            foreach (var cluster in mechClusters)
-            {
-                if (cluster.Tile < 0 || HasMechClusterSite(cluster.Id))
-                {
-                    continue;
-                }
-
-                live.Add(cluster.Id);
-                var isNew = !existing.TryGetValue(cluster.Id, out var marker);
-                marker ??= (WorldObject_MechCluster)WorldObjectMaker.MakeWorldObject(def);
-                marker.Tile = cluster.Tile;
-                marker.Configure(cluster.Id, cluster.Awake);
-                if (isNew)
-                {
-                    worldObjects.Add(marker);
-                }
-            }
-        }
-
-        foreach (var pair in existing)
-        {
-            if (!live.Contains(pair.Key))
-            {
-                worldObjects.Remove(pair.Value);
-            }
+            worldObjects.Remove(marker);
         }
     }
 
-    private WorldObject_MechCluster? FindMechClusterMarker(int nodeId)
+    private WorldObject? FindMechClusterSite(int nodeId)
     {
-        return Find.WorldObjects?.AllWorldObjects
-            .OfType<WorldObject_MechCluster>()
-            .FirstOrDefault(marker => marker.NodeId == nodeId);
+        var index = mechClusterSiteNodeIds.IndexOf(nodeId);
+        if (index < 0 || index >= mechClusterSiteWorldObjectIds.Count)
+        {
+            return null;
+        }
+
+        var siteObjectId = mechClusterSiteWorldObjectIds[index];
+        return Find.WorldObjects?.AllWorldObjects.FirstOrDefault(worldObject => worldObject.ID == siteObjectId);
     }
 
     // Called by the group-travel patch when the storyteller fires a neutral group arrival (visitors, and
