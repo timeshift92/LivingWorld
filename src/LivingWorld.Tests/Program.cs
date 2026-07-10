@@ -9504,18 +9504,6 @@ static void TestArmoryLoadoutSelection()
     // Configurable threshold (exposed as a mod setting): same skills, different cutoff.
     AssertEqual(true, LoadoutSelectionService.IsCombatEligible(3, 3, 2));
     AssertEqual(false, LoadoutSelectionService.IsCombatEligible(5, 5, 6));
-
-    // Weapon pick: ranged preferred; melee only when it beats shooting by the advantage; best value wins.
-    var pistol = new WeaponOption("Pistol", true, 100);
-    var rifle = new WeaponOption("Rifle", true, 300);
-    var sword = new WeaponOption("Sword", false, 250);
-    var pool = new[] { pistol, rifle, sword };
-    AssertEqual("Rifle", LoadoutSelectionService.SelectWeapon(8, 8, 5, pool)!.DefName);   // equal -> ranged, best
-    AssertEqual("Rifle", LoadoutSelectionService.SelectWeapon(3, 7, 5, pool)!.DefName);   // melee +4 < 5 -> still ranged
-    AssertEqual("Sword", LoadoutSelectionService.SelectWeapon(3, 8, 5, pool)!.DefName);   // melee +5 -> melee
-    AssertEqual("Sword", LoadoutSelectionService.SelectWeapon(2, 12, 5, new[] { sword })!.DefName); // only melee
-    AssertEqual("Rifle", LoadoutSelectionService.SelectWeapon(2, 12, 5, new[] { rifle })!.DefName);  // no melee -> best of any
-    AssertEqual(true, LoadoutSelectionService.SelectWeapon(5, 5, 5, System.Array.Empty<WeaponOption>()) == null);
 }
 
 static void TestRimWorldOutfitStandDriver()
@@ -9531,13 +9519,6 @@ static void TestRimWorldOutfitStandDriver()
     AssertContains("public static void EquipFromStand(Pawn pawn)", driver);
     AssertContains("public static void ReturnToStand(Pawn pawn)", driver);
     AssertContains("OutfitStandsPlus_JobReturnToStand", driver);
-    // Weapon is auto-picked from the colony by skill (best available), dropped on stand-down.
-    AssertContains("public static void EquipBestWeapon(Pawn pawn, int meleeAdvantage)", driver);
-    AssertContains("LoadoutSelectionService.SelectWeapon", driver);
-    AssertContains("ThingRequestGroup.Weapon", driver);
-    AssertContains("JobDefOf.Equip", driver);
-    AssertContains("public static void DropWeapon(Pawn pawn)", driver);
-    AssertRimWorldMethodExists("Verse.ListerThings", "ThingsInGroup");
 
     // Mobilization drives the stands (equip on mobilize, return on stand-down) and needs Odyssey.
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
@@ -9614,13 +9595,11 @@ static void TestRimWorldArmoryMobilization()
     AssertContains("Scribe_Values.Look(ref debugLogging, \"debugLogging\", false)", settings);
     AssertContains("armoryMobilizationEnabled = true", settings);
     AssertContains("mobilizationSkillThreshold = 4", settings);
-    AssertContains("mobilizationMeleeAdvantage = 5", settings);
     AssertContains("autoDraftOnThreat = true", settings);
     var drawer = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
     AssertContains("LW_Settings_ArmoryMobilization", drawer);
     AssertContains("LW_Settings_MobilizationSkill", drawer);
-    AssertContains("LW_Settings_MeleeAdvantage", drawer);
     AssertContains("LW_Settings_AutoDraft", drawer);
 
     // RimWorld APIs the feature depends on exist in this game version.
@@ -9638,7 +9617,6 @@ static void TestRimWorldArmoryMobilization()
         "LW_Settings_ArmoryMobilization",
         "LW_Settings_ArmoryMobilizationTip",
         "LW_Settings_MobilizationSkill",
-        "LW_Settings_MeleeAdvantage",
         "LW_Settings_AutoDraft",
         "LW_Settings_AutoDraftTip",
     })

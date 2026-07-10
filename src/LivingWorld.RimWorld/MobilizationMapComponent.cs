@@ -205,7 +205,9 @@ public sealed class MobilizationMapComponent : MapComponent
 
                 if (mobilized)
                 {
-                    if (!LoadoutAdapter.IsMobilizationCandidate(pawn))
+                    // Send eligible colonists with a stand to equip their combat kit. EquipFromStand is
+                    // idempotent (only swaps toward combat), so we can retry each recheck until they are armed.
+                    if (!LoadoutAdapter.IsMobilizationCandidate(pawn) || !OutfitStandDriver.HasStand(pawn))
                     {
                         continue;
                     }
@@ -215,33 +217,21 @@ public sealed class MobilizationMapComponent : MapComponent
                         mobilizedByUs.Add(pawn);
                     }
 
-                    // One action per recheck: get the best colony weapon first (while unarmed), then swap into
-                    // combat armour at the stand. Both are idempotent, so we retry until fully kitted.
-                    if (OutfitStandDriver.HasWeaponToPick(pawn))
-                    {
-                        OutfitStandDriver.EquipBestWeapon(pawn, settings.mobilizationMeleeAdvantage);
-                    }
-                    else
-                    {
-                        OutfitStandDriver.EquipFromStand(pawn);
-                    }
+                    OutfitStandDriver.EquipFromStand(pawn);
                 }
                 else
                 {
-                    // Stand down only colonists we mobilized: drop the weapon first, then swap back into
-                    // civvies at the stand, then forget them. Never touches a pawn we did not mobilize.
+                    // Stand down only colonists we mobilized: send them back to their stand until they are
+                    // out of the combat kit, then forget them. ReturnToStand is idempotent (only swaps toward
+                    // civvies), so retrying is safe and never disarms a pawn we did not mobilize.
                     if (!mobilizedByUs.Contains(pawn))
                     {
                         continue;
                     }
 
-                    if (LoadoutAdapter.IsArmed(pawn))
+                    OutfitStandDriver.ReturnToStand(pawn);
+                    if (!LoadoutAdapter.IsArmed(pawn))
                     {
-                        OutfitStandDriver.DropWeapon(pawn);
-                    }
-                    else
-                    {
-                        OutfitStandDriver.ReturnToStand(pawn);
                         mobilizedByUs.Remove(pawn);
                     }
                 }
