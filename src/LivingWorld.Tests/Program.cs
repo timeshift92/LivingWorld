@@ -8221,6 +8221,11 @@ static void TestRimWorldTradeIntelPatch()
     AssertContains("SettlementTradeLedgerRequest", source);
     AssertContains("SettlementTradeDirection", source);
     AssertContains("cachedTradeables", source);
+    AssertContains("GetRepresentativeThingDef", source);
+    AssertContains("thingsColony", source);
+    AssertContains("thingsTrader", source);
+    AssertDoesNotContain("HasAnyThing", source);
+    AssertDoesNotContain("AnyThing", source);
 }
 
 static void TestRimWorldMainButtonDef()
@@ -8501,10 +8506,14 @@ static void TestRimWorldDirectSettlementObserver()
     var patch = File.ReadAllText(patchPath);
 
     AssertContains("HarmonyPatch(typeof(Settlement), \"GetGizmos\")", patch);
+    AssertContains("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", patch);
+    AssertContains("CaravanArrivalAction_LivingWorldVisitSettlement", patch);
+    AssertContains("CaravanArrivalActionUtility.GetFloatMenuOptions", patch);
+    AssertContains("Scribe_References.Look(ref settlement, \"settlement\")", patch);
     AssertContains("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
     AssertContains("new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true)", patch);
-    AssertContains("Prefs.DevMode", patch);
-    AssertContains("LW_DebugOpenRealSettlementMap", patch);
+    AssertDoesNotContain("Prefs.DevMode", patch);
+    AssertContains("LW_OpenRealSettlementMap", patch);
     AssertContains("MapGenerator.GenerateMap", patch);
     AssertContains("worldObject.MapGeneratorDef", patch);
     AssertContains("worldObject.ExtraGenStepDefs", patch);
@@ -8527,8 +8536,9 @@ static void TestRimWorldDirectSettlementObserver()
     {
         "LW_DirectVisitObserver",
         "LW_DirectVisitObserverTooltip",
-        "LW_DebugOpenRealSettlementMap",
-        "LW_DebugOpenRealSettlementMapTooltip"
+        "LW_OpenRealSettlementMap",
+        "LW_OpenRealSettlementMapTooltip",
+        "LW_OpenRealSettlementMapFloatMenu"
     })
     {
         AssertContains($"<{key}>", en);
@@ -8734,11 +8744,17 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("!savedLords.Contains(lord)", cleaner);
     AssertContains("thing.Destroy(DestroyMode.Vanish)", cleaner);
     AssertContains("CleanOrphanedLordOwnedPawns", cleaner);
+    AssertContains("CleanOrphanedDirectPawnRelations", cleaner);
+    AssertContains("AccessTools.Field(relation.GetType(), \"otherPawn\")", cleaner);
+    AssertContains("directRelations.RemoveAt(index)", cleaner);
+    AssertContains("IsPawnSavedAnywhere", cleaner);
+    AssertContains("WorldObjects?.Caravans", cleaner);
     AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
     AssertContains("ownedPawns.RemoveAt(index)", cleaner);
     AssertContains("IsPawnDeepSavedByMap", cleaner);
     AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
+    AssertContains("Scribe.mode == LoadSaveMode.Saving", component);
     AssertContains("currentTick % 250 == 0", component);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
 }

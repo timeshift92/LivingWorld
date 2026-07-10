@@ -39,16 +39,13 @@ public static class LivingWorldSettlementDirectVisitPatch
                     action = () => OpenDirectObserver(settlementId),
                 };
 
-                if (Prefs.DevMode)
+                realBaseCommand = new Command_Action
                 {
-                    realBaseCommand = new Command_Action
-                    {
-                        defaultLabel = "LW_DebugOpenRealSettlementMap".Translate(),
-                        defaultDesc = "LW_DebugOpenRealSettlementMapTooltip".Translate(),
-                        icon = TexButton.Info,
-                        action = () => OpenRealSettlementMap(__instance, settlementId),
-                    };
-                }
+                    defaultLabel = "LW_OpenRealSettlementMap".Translate(),
+                    defaultDesc = "LW_OpenRealSettlementMapTooltip".Translate(),
+                    icon = TexButton.Info,
+                    action = () => OpenRealSettlementMap(__instance, settlementId),
+                };
             }
         }
         catch (Exception ex)
@@ -82,7 +79,7 @@ public static class LivingWorldSettlementDirectVisitPatch
         Find.WindowStack.Add(new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true));
     }
 
-    private static void OpenRealSettlementMap(Settlement worldObject, EntityId settlementId)
+    internal static void OpenRealSettlementMap(Settlement worldObject, EntityId settlementId)
     {
         var component = LivingWorldWorldComponent.Instance;
         if (component == null || worldObject == null)
@@ -116,7 +113,7 @@ public static class LivingWorldSettlementDirectVisitPatch
             GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
     }
 
-    private static bool TryResolveLedgerSettlement(Settlement worldObject, out EntityId settlementId)
+    internal static bool TryResolveLedgerSettlement(Settlement worldObject, out EntityId settlementId)
     {
         settlementId = default;
         var component = LivingWorldWorldComponent.Instance;
@@ -150,5 +147,93 @@ public static class LivingWorldSettlementDirectVisitPatch
         var defName = obj.def?.defName ?? obj.GetType().Name;
         var factionId = obj.Faction?.def?.defName ?? "UnknownFaction";
         return $"worldobject:{defName}:{obj.Tile}:{factionId}";
+    }
+}
+
+[HarmonyPatch(typeof(Settlement), "GetFloatMenuOptions")]
+public static class LivingWorldSettlementCaravanVisitPatch
+{
+    public static IEnumerable<FloatMenuOption> Postfix(IEnumerable<FloatMenuOption> __result, Settlement __instance, Caravan caravan)
+    {
+        foreach (var option in __result)
+        {
+            yield return option;
+        }
+
+        if (__instance == null
+            || caravan == null
+            || !LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement(__instance, out _))
+        {
+            yield break;
+        }
+
+        foreach (var option in CaravanArrivalActionUtility.GetFloatMenuOptions(
+            () => CanVisit(__instance),
+            () => new CaravanArrivalAction_LivingWorldVisitSettlement(__instance),
+            "LW_OpenRealSettlementMapFloatMenu".Translate(__instance.Label),
+            caravan,
+            __instance.Tile,
+            __instance))
+        {
+            yield return option;
+        }
+    }
+
+    private static FloatMenuAcceptanceReport CanVisit(Settlement settlement)
+    {
+        return settlement != null
+            && settlement.Spawned
+            && LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement(settlement, out _);
+    }
+}
+
+public sealed class CaravanArrivalAction_LivingWorldVisitSettlement : CaravanArrivalAction
+{
+    private Settlement? settlement;
+
+    public CaravanArrivalAction_LivingWorldVisitSettlement()
+    {
+    }
+
+    public CaravanArrivalAction_LivingWorldVisitSettlement(Settlement settlement)
+    {
+        this.settlement = settlement;
+    }
+
+    public override string Label => settlement == null
+        ? "LW_OpenRealSettlementMap".Translate()
+        : "LW_OpenRealSettlementMapFloatMenu".Translate(settlement.Label);
+
+    public override string ReportString => Label;
+
+    public override FloatMenuAcceptanceReport StillValid(Caravan caravan, PlanetTile destinationTile)
+    {
+        var baseReport = base.StillValid(caravan, destinationTile);
+        if (!baseReport)
+        {
+            return baseReport;
+        }
+
+        return settlement != null
+            && settlement.Tile == destinationTile
+            && LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement(settlement, out _);
+    }
+
+    public override void Arrived(Caravan caravan)
+    {
+        if (settlement == null
+            || !LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement(settlement, out var settlementId))
+        {
+            Messages.Message("MessageCaravanArrivalActionNoLongerValid".Translate(Label), caravan, MessageTypeDefOf.RejectInput, false);
+            return;
+        }
+
+        LivingWorldSettlementDirectVisitPatch.OpenRealSettlementMap(settlement, settlementId);
+    }
+
+    public override void ExposeData()
+    {
+        base.ExposeData();
+        Scribe_References.Look(ref settlement, "settlement");
     }
 }

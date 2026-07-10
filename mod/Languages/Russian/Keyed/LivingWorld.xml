@@ -233,6 +233,9 @@
   <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>
   <LW_DirectVisitObserver>Осмотреть поселение Living World</LW_DirectVisitObserver>
   <LW_DirectVisitObserverTooltip>Записать прямой визит в это поселение и открыть его ledger-просмотр Living World. Это раскрывает точное население, проекты, животных и склады только для этого поселения.</LW_DirectVisitObserverTooltip>
+  <LW_OpenRealSettlementMap>Посетить базу Living World</LW_OpenRealSettlementMap>
+  <LW_OpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует комнаты, склады, защитников и животных, а последствия сохраняются для следующих визитов.</LW_OpenRealSettlementMapTooltip>
+  <LW_OpenRealSettlementMapFloatMenu>Посетить базу Living World в {0}</LW_OpenRealSettlementMapFloatMenu>
   <LW_DebugOpenRealSettlementMap>DEV: открыть реальную карту базы LW</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует там комнаты, склады, защитников и животных. Это создаёт реальную карту в сохранении и предназначено для проверки.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>Действия мира</LW_WorldActionsHeader>

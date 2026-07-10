@@ -36,6 +36,7 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
 
         var cleaned = 0;
         cleaned += CleanOrphanedLordOwnedPawns(map);
+        cleaned += CleanOrphanedDirectPawnRelations(map);
         foreach (var thing in map.listerThings.AllThings
             .Where(IsDormancyWakeUpSignal)
             .ToList())
@@ -59,6 +60,52 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         if (cleaned > 0 && (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message($"[LivingWorld] Removed {cleaned} orphaned dormancy wake-up signal(s) with unsaved Lord references from map {map.uniqueID}.");
+        }
+
+        return cleaned;
+    }
+
+    private static int CleanOrphanedDirectPawnRelations(Map map)
+    {
+        var pawns = map.mapPawns?.AllPawns;
+        if (pawns == null || pawns.Count == 0)
+        {
+            return 0;
+        }
+
+        var cleaned = 0;
+        foreach (var pawn in pawns.ToList())
+        {
+            var directRelations = pawn?.relations?.DirectRelations;
+            if (directRelations == null || directRelations.Count == 0)
+            {
+                continue;
+            }
+
+            for (var index = directRelations.Count - 1; index >= 0; index--)
+            {
+                var relation = directRelations[index];
+                if (relation == null)
+                {
+                    directRelations.RemoveAt(index);
+                    cleaned++;
+                    continue;
+                }
+
+                var otherPawnField = AccessTools.Field(relation.GetType(), "otherPawn");
+                if (otherPawnField?.GetValue(relation) is not Pawn otherPawn)
+                {
+                    continue;
+                }
+
+                if (IsPawnSavedAnywhere(otherPawn))
+                {
+                    continue;
+                }
+
+                directRelations.RemoveAt(index);
+                cleaned++;
+            }
         }
 
         return cleaned;
@@ -139,5 +186,26 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         }
 
         return map.mapPawns?.AllPawns?.Contains(pawn) == true;
+    }
+
+    private static bool IsPawnSavedAnywhere(Pawn pawn)
+    {
+        if (pawn.Destroyed || pawn.Discarded)
+        {
+            return false;
+        }
+
+        if (Find.Maps?.Any(map => IsPawnDeepSavedByMap(map, pawn)) == true)
+        {
+            return true;
+        }
+
+        if (Find.WorldPawns?.Contains(pawn) == true)
+        {
+            return true;
+        }
+
+        return Find.WorldObjects?.Caravans?.Any(caravan =>
+            caravan?.PawnsListForReading?.Contains(pawn) == true) == true;
     }
 }

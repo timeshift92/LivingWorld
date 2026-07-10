@@ -39,9 +39,9 @@ public static class LivingWorldTradeIntelPatch
         }
 
         var transfers = new Dictionary<(string ResourceKey, SettlementTradeDirection Direction), TradeTransferAccumulator>();
-        foreach (var tradeable in tradeables.Where(item => item != null && item.HasAnyThing))
+        foreach (var tradeable in tradeables.Where(item => item != null && item.CountToTransfer != 0))
         {
-            var thingDef = tradeable.ThingDef;
+            var thingDef = GetRepresentativeThingDef(tradeable);
             if (thingDef == null || thingDef == ThingDefOf.Silver)
             {
                 continue;
@@ -91,6 +91,28 @@ public static class LivingWorldTradeIntelPatch
         return countToTransfer < 0
             ? SettlementTradeDirection.SettlementReceives
             : SettlementTradeDirection.SettlementProvides;
+    }
+
+    private static ThingDef? GetRepresentativeThingDef(Tradeable tradeable)
+    {
+        return GetFirstThingDef(tradeable, "thingsColony")
+            ?? GetFirstThingDef(tradeable, "thingsTrader");
+    }
+
+    private static ThingDef? GetFirstThingDef(Tradeable tradeable, string fieldName)
+    {
+        try
+        {
+            var things = Traverse
+                .Create(tradeable)
+                .Field(fieldName)
+                .GetValue<IEnumerable<Thing>>();
+            return things?.FirstOrDefault(thing => thing?.def != null)?.def;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool IsSensitiveGood(ThingDef thingDef)

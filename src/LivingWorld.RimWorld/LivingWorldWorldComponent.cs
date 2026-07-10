@@ -2100,6 +2100,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         if (Scribe.mode == LoadSaveMode.Saving)
         {
+            LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
             serializedState = WorldStateCodec.Serialize(State);
         }
 
