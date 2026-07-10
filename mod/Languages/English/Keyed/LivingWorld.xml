@@ -157,6 +157,7 @@
   <LW_Settings_ArmoryMobilization>Colony armory / mobilization</LW_Settings_ArmoryMobilization>
   <LW_Settings_ArmoryMobilizationTip>When on, colonists work in civvies and arm up from the armory only when mobilized - manually via the Mobilize toggle, or automatically while enemies are on the map.</LW_Settings_ArmoryMobilizationTip>
   <LW_Settings_MobilizationSkill>Mobilization combat-skill threshold</LW_Settings_MobilizationSkill>
+  <LW_Settings_MeleeAdvantage>Melee-over-ranged advantage</LW_Settings_MeleeAdvantage>
   <LW_Settings_AutoDraft>Auto-draft combat colonists on a raid</LW_Settings_AutoDraft>
   <LW_Settings_AutoDraftTip>When on, combat-capable armed colonists are automatically woken and drafted while a real enemy is on the map, so they do not sleep or work through a raid. You still position them, and undrafting one sticks. Never triggers on the manual mobilize toggle.</LW_Settings_AutoDraftTip>
   <LW_MobilizeToggle>Mobilize colony</LW_MobilizeToggle>

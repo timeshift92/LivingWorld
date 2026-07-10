@@ -59,6 +59,7 @@ public static class LivingWorldSettingsDrawer
         listing.CheckboxLabeled("LW_Settings_ArrivalsTravel".Translate(), ref settings.arrivalsTravelEnabled, "LW_Settings_ArrivalsTravelTip".Translate());
         listing.CheckboxLabeled("LW_Settings_ArmoryMobilization".Translate(), ref settings.armoryMobilizationEnabled, "LW_Settings_ArmoryMobilizationTip".Translate());
         DrawIntSlider(listing, "LW_Settings_MobilizationSkill".Translate(), ref settings.mobilizationSkillThreshold, 0, 20);
+        DrawIntSlider(listing, "LW_Settings_MeleeAdvantage".Translate(), ref settings.mobilizationMeleeAdvantage, 1, 20);
         listing.CheckboxLabeled("LW_Settings_AutoDraft".Translate(), ref settings.autoDraftOnThreat, "LW_Settings_AutoDraftTip".Translate());
         DrawIntSlider(listing, "LW_Settings_WorldWarTravelDays".Translate(), ref settings.worldWarTravelDays, 1, 15);
         DrawIntSlider(listing, "LW_Settings_WorldWarRaidCombatants".Translate(), ref settings.worldWarRaidCombatants, 1, 30);
