@@ -9521,6 +9521,12 @@ static void TestRimWorldOutfitStandDriver()
         AssertEqual(false, File.Exists(Path.Combine(root, "src", "LivingWorld.RimWorld", gone)));
     }
 
+    // Dev-only action to spawn test gear for stocking outfit stands.
+    var debug = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "OutfitStandDebugActions.cs"));
+    AssertContains("[DebugAction(\"LivingWorld\"", debug);
+    AssertContains("ThingMaker.MakeThing", debug);
+    AssertContains("GenPlace.TryPlaceThing", debug);
+
     // RimWorld APIs the driver depends on exist in this game version.
     AssertRimWorldMethodExists("Verse.ModsConfig", "get_OdysseyActive");
     AssertRimWorldMethodExists("RimWorld.CompAssignableToPawn", "get_AssignedPawnsForReading");
