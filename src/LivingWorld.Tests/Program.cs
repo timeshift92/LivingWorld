@@ -337,6 +337,10 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: stand-down switches to the civilian policy", TestMobPlanSetCivilianPolicy),
     ("mob plan: stand-down returns the kit to the stand", TestMobPlanReturnKit),
     ("mob plan: a stood-down civilian holds steady", TestMobPlanSteadyCivilian),
+    ("loadout: best skill at threshold is combat eligible", TestLoadoutEligibleAtThreshold),
+    ("loadout: best skill below threshold is not eligible", TestLoadoutNotEligibleBelowThreshold),
+    ("loadout: a strong melee skill qualifies", TestLoadoutMeleeQualifies),
+    ("loadout: the parameterless overload uses the tuning threshold", TestLoadoutDefaultThreshold),
 };
 
 var failures = new List<string>();
@@ -9360,4 +9364,25 @@ static void TestMobPlanSteadyCivilian()
         IsCandidate = true, PolicyIsCivilian = true, HasStand = true, InCombatKit = false,
     };
     AssertEqual(MobPhase.SteadyCivilian, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestLoadoutEligibleAtThreshold()
+{
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(4, 2, 4));
+}
+
+static void TestLoadoutNotEligibleBelowThreshold()
+{
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(3, 3, 4));
+}
+
+static void TestLoadoutMeleeQualifies()
+{
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(1, 6, 4));
+}
+
+static void TestLoadoutDefaultThreshold()
+{
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(MobilizationTuning.CombatSkillThreshold, 0));
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(MobilizationTuning.CombatSkillThreshold - 1, 0));
 }
