@@ -293,6 +293,8 @@ var tests = new List<(string Name, Action Test)>
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
     ("opens a direct settlement observer from the world map", TestRimWorldDirectSettlementObserver),
     ("defines a dedicated settlement visit site foundation", TestRimWorldSettlementVisitSiteFoundation),
+    ("routes caravan settlement visits through a dedicated visit site", TestRimWorldSettlementVisitCaravanRoute),
+    ("materializes dedicated settlement visit sites from the ledger", TestRimWorldSettlementVisitSiteMaterializationRoute),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -8627,6 +8629,78 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     {
         "LW_SettlementVisitSiteLabel",
         "LW_SettlementVisitSiteInspect"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldSettlementVisitCaravanRoute()
+{
+    var root = FindRepoRoot();
+
+    var floatMenuPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitFloatMenuPatch.cs");
+    AssertFileExists(floatMenuPath);
+    var floatMenu = File.ReadAllText(floatMenuPath);
+
+    AssertContains("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", floatMenu);
+    AssertContains("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", floatMenu);
+    AssertContains("CaravanArrivalActionUtility.GetFloatMenuOptions", floatMenu);
+    AssertContains("new CaravanArrivalAction_LivingWorldSettlementVisitSite(__instance)", floatMenu);
+    AssertContains("LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement", floatMenu);
+    AssertContains("LW_SettlementVisitSiteFloatMenu", floatMenu);
+    AssertDoesNotContain("CaravanArrivalAction_LivingWorldVisitSettlement", floatMenu);
+    AssertDoesNotContain("OpenRealSettlementMap", floatMenu);
+    AssertDoesNotContain("Find.WorldObjects.PlayerControlledCaravanAt", floatMenu);
+
+    var actionPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "CaravanArrivalAction_LivingWorldSettlementVisitSite.cs");
+    AssertFileExists(actionPath);
+    var action = File.ReadAllText(actionPath);
+    AssertContains("class CaravanArrivalAction_LivingWorldSettlementVisitSite : CaravanArrivalAction", action);
+    AssertContains("LivingWorldSettlementVisitSiteService.TryCreateOrReuse", action);
+    AssertContains("LivingWorldSettlementVisitMapEntryService.OpenOrEnter", action);
+    AssertContains("LW_SettlementVisitSiteUnavailable", action);
+    AssertContains("Scribe_References.Look(ref sourceSettlement", action);
+    AssertContains("StillValid(Caravan caravan, PlanetTile destinationTile)", action);
+    AssertDoesNotContain("OpenRealSettlementMap", action);
+    AssertDoesNotContain("MapGenerator.GenerateMap", action);
+}
+
+static void TestRimWorldSettlementVisitSiteMaterializationRoute()
+{
+    var root = FindRepoRoot();
+
+    var entryPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitMapEntryService.cs");
+    AssertFileExists(entryPath);
+    var entry = File.ReadAllText(entryPath);
+    AssertContains("static class LivingWorldSettlementVisitMapEntryService", entry);
+    AssertContains("OpenOrEnter(WorldObject_LivingWorldSettlementVisitSite visitSite, Caravan caravan)", entry);
+    AssertContains("LongEventHandler.QueueLongEvent", entry);
+    AssertContains("MapGenerator.GenerateMap", entry);
+    AssertContains("visitSite,", entry);
+    AssertContains("LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite)", entry);
+    AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, visitSite)", entry);
+    AssertContains("CaravanEnterMapUtility.Enter", entry);
+    AssertContains("CameraJumper.TryJump", entry);
+    AssertDoesNotContain("Settlement worldObject", entry);
+    AssertDoesNotContain("worldObject.Map", entry);
+
+    var materializerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    var materializer = File.ReadAllText(materializerPath);
+    AssertContains("TryBuildMaterializationContext", materializer);
+    AssertContains("parent is WorldObject_LivingWorldSettlementVisitSite visitSite", materializer);
+    AssertContains("state.GetSettlement(settlementId.Value)", materializer);
+    AssertContains("visitSite.MarkMaterialized", materializer);
+    AssertContains("LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite)", materializer);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_SettlementVisitSiteFloatMenu",
+        "LW_SettlementVisitSiteUnavailable",
+        "LW_SettlementVisitSiteOpened"
     })
     {
         AssertContains($"<{key}>", en);

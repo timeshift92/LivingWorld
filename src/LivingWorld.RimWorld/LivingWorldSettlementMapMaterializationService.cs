@@ -15,12 +15,7 @@ public static class LivingWorldSettlementMapMaterializationService
 
     public static int MaterializeSettlementMap(Map map, MapParent parent)
     {
-        if (map == null || parent is not Settlement settlement || settlement.Faction == null)
-        {
-            return 0;
-        }
-
-        if (settlement.Faction == Faction.OfPlayer)
+        if (map == null || parent == null)
         {
             return 0;
         }
@@ -31,51 +26,62 @@ public static class LivingWorldSettlementMapMaterializationService
             return 0;
         }
 
-        var factionDefName = settlement.Faction.def?.defName;
-        if (string.IsNullOrEmpty(factionDefName))
+        if (!TryBuildMaterializationContext(component.State, parent, out var context))
         {
             return 0;
         }
 
-        var ledgerSettlement = ResolveLedgerSettlement(component.State, settlement, factionDefName!);
-        if (ledgerSettlement == null)
+        var visitMapComponent = context.VisitSite == null
+            ? null
+            : LivingWorldSettlementVisitMapComponent.For(map);
+        if (context.VisitSite != null)
         {
-            return 0;
+            visitMapComponent?.ConfigureFrom(context.VisitSite);
+            if (context.VisitSite.MaterializedVersion > 0
+                || (visitMapComponent?.MaterializedVersion ?? 0) > 0)
+            {
+                return 0;
+            }
+
+            PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+                component.State,
+                context.LedgerSettlement.Id,
+                "player visited a real Living World settlement map");
         }
 
         var layout = SettlementMapLayoutService.BuildFacilityLayout(
             component.State,
             new SettlementMapLayoutRequest(
-                ledgerSettlement.Id,
+                context.LedgerSettlement.Id,
                 map.Center.x,
                 map.Center.z,
                 MaxFacilities: 8));
         var cityTerrainCount = SpawnDistrictTerrain(map, layout);
-        var roomCount = SpawnSettlementRooms(map, settlement.Faction, layout);
-        var facilityCount = SpawnFacilityLayout(map, settlement.Faction, layout);
-        var cityFeatureCount = SpawnCityFeatures(map, settlement.Faction, layout);
+        var roomCount = SpawnSettlementRooms(map, context.Faction, layout);
+        var facilityCount = SpawnFacilityLayout(map, context.Faction, layout);
+        var cityFeatureCount = SpawnCityFeatures(map, context.Faction, layout);
 
         var bindableDefenders = map.mapPawns.AllPawnsSpawned
             .Where(pawn =>
                 pawn != null
                 && !pawn.Dead
-                && pawn.Faction == settlement.Faction
+                && pawn.Faction == context.Faction
                 && pawn.RaceProps?.Humanlike == true
                 && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId != true)
             .OrderBy(pawn => pawn.thingIDNumber)
             .ToList();
 
-        var purposeKey = $"settlement-defense:{settlement.ID}:{map.uniqueID}";
+        var purposeKey = $"{context.PurposeKey}:{map.uniqueID}";
         var requestedDefenders = bindableDefenders.Count > 0
             ? bindableDefenders.Count
-            : EstimateDefenderCount(component.State, ledgerSettlement.Id);
+            : EstimateDefenderCount(component.State, context.LedgerSettlement.Id);
         var prepared = SettlementMaterializationService.PrepareDefense(
             component.State,
             new SettlementDefenseMaterializationRequest(
-                ledgerSettlement.Id,
+                context.LedgerSettlement.Id,
                 requestedDefenders,
                 DefenseLeaseLifetimeTicks,
-                BuildResourceRequest(component.State, ledgerSettlement.Id),
+                BuildResourceRequest(component.State, context.LedgerSettlement.Id),
                 purposeKey));
         var bound = 0;
         var spawnedDefenders = 0;
@@ -86,7 +92,7 @@ public static class LivingWorldSettlementMapMaterializationService
             spawnedDefenders = SpawnGeneratedDefenders(
                 component.State,
                 map,
-                settlement.Faction,
+                context.Faction,
                 prepared.DefenderLeases.Skip(bound).ToList());
 
             if (bound + spawnedDefenders == 0)
@@ -104,19 +110,93 @@ public static class LivingWorldSettlementMapMaterializationService
             }
         }
 
-        var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
+        var animalCount = SpawnSettlementAnimals(component.State, map, context.LedgerSettlement.Id, context.Faction, purposeKey);
+
+        var materializedScore = bound + spawnedDefenders + facilityCount + roomCount + cityFeatureCount;
+        var visitSite = context.VisitSite;
+        if (visitSite != null)
+        {
+            visitSite.MarkMaterialized(visitSite.MaterializedVersion + 1);
+            LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite);
+            LivingWorldSettlementVisitMapComponent.For(map)?.MarkMaterialized(visitSite.MaterializedVersion);
+        }
 
         if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message(
-                $"[LivingWorld] materialized settlement map '{settlement.LabelCap}'"
+                $"[LivingWorld] materialized settlement map '{context.Label}'"
                 + $" with {bound + spawnedDefenders} ledger defender(s), {animalCount} animal(s),"
                 + $" {facilityCount} facility feature(s), {roomCount} room shell(s),"
                 + $" {cityFeatureCount} city feature(s), {cityTerrainCount} district/path terrain cell(s),"
                 + $" and {reservedResources} resource unit(s).");
         }
 
-        return bound + spawnedDefenders + facilityCount + roomCount + cityFeatureCount;
+        return materializedScore;
+    }
+
+    private static bool TryBuildMaterializationContext(
+        WorldState state,
+        MapParent parent,
+        out SettlementMapMaterializationContext context)
+    {
+        context = null!;
+        if (parent is Settlement settlement)
+        {
+            if (settlement.Faction == null || settlement.Faction == Faction.OfPlayer)
+            {
+                return false;
+            }
+
+            var factionDefName = settlement.Faction.def?.defName;
+            if (string.IsNullOrEmpty(factionDefName))
+            {
+                return false;
+            }
+
+            var ledgerSettlement = ResolveLedgerSettlement(state, settlement, factionDefName!);
+            if (ledgerSettlement == null)
+            {
+                return false;
+            }
+
+            context = new SettlementMapMaterializationContext(
+                ledgerSettlement,
+                settlement.Faction,
+                settlement.LabelCap,
+                $"settlement-defense:{settlement.ID}",
+                VisitSite: null);
+            return true;
+        }
+
+        if (parent is WorldObject_LivingWorldSettlementVisitSite visitSite)
+        {
+            if (visitSite.Faction == null || visitSite.Faction == Faction.OfPlayer)
+            {
+                return false;
+            }
+
+            var settlementId = visitSite.SettlementId;
+            if (!settlementId.HasValue)
+            {
+                return false;
+            }
+
+            var ledgerSettlement = state.GetSettlement(settlementId.Value);
+            if (ledgerSettlement == null || !ledgerSettlement.IsActive)
+            {
+                return false;
+            }
+
+            context = new SettlementMapMaterializationContext(
+                ledgerSettlement,
+                visitSite.Faction,
+                visitSite.LabelCap,
+                $"settlement-visit:{visitSite.ID}:{ledgerSettlement.Id.Value}",
+                visitSite);
+            return true;
+        }
+
+        return false;
     }
 
     private static int BindDefenders(WorldState state, IReadOnlyList<MaterializationLease> leases, IReadOnlyList<Pawn> pawns)
@@ -825,4 +905,11 @@ public static class LivingWorldSettlementMapMaterializationService
             && string.Equals(candidate.FactionId, factionId, StringComparison.Ordinal)
             && candidate.Slug.Contains(tileToken));
     }
+
+    private sealed record SettlementMapMaterializationContext(
+        WorldSettlement LedgerSettlement,
+        Faction Faction,
+        string Label,
+        string PurposeKey,
+        WorldObject_LivingWorldSettlementVisitSite? VisitSite);
 }

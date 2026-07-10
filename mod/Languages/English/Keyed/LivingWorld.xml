@@ -234,6 +234,9 @@
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
   <LW_DirectVisitObserver>Observe Living World settlement</LW_DirectVisitObserver>
   <LW_DirectVisitObserverTooltip>Record a direct visit to this settlement and open its Living World ledger view. This reveals exact population, projects, animals and stores for this settlement only.</LW_DirectVisitObserverTooltip>
+  <LW_SettlementVisitSiteFloatMenu>Visit Living World base at {0}</LW_SettlementVisitSiteFloatMenu>
+  <LW_SettlementVisitSiteUnavailable>Living World settlement visit unavailable: {0}</LW_SettlementVisitSiteUnavailable>
+  <LW_SettlementVisitSiteOpened>Opened {0}</LW_SettlementVisitSiteOpened>
   <LW_OpenRealSettlementMap>Visit Living World base</LW_OpenRealSettlementMap>
   <LW_OpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World materializes rooms, stores, defenders and animals there, and later visits keep the map consequences.</LW_OpenRealSettlementMapTooltip>
   <LW_OpenRealSettlementMapFloatMenu>Visit Living World base at {0}</LW_OpenRealSettlementMapFloatMenu>
