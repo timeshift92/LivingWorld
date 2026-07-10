@@ -44,7 +44,14 @@ public static class MobilizationCandidates
     // True once the pawn is carrying a weapon (its combat kit is on).
     public static bool IsArmed(Pawn pawn)
     {
-        return pawn?.equipment?.Primary != null;
+        try
+        {
+            return pawn?.equipment?.Primary != null;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // On a life-or-base-saving job we must not yank them off: firefighting, tending a patient, rescuing downed.

@@ -21,9 +21,31 @@ public static class MobilizationPolicyService
 
     public static void ApplyCivilian(Pawn pawn) => SetPolicy(pawn, CivilianLabel, allowArmor: false);
 
-    public static bool IsCombatPolicy(Pawn pawn) => pawn?.outfits?.CurrentApparelPolicy?.label == CombatLabel;
+    public static bool IsCombatPolicy(Pawn pawn)
+    {
+        try
+        {
+            return pawn?.outfits?.CurrentApparelPolicy?.label == CombatLabel;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Armory apparel-policy read failed safely: {ex.Message}");
+            return false;
+        }
+    }
 
-    public static bool IsCivilianPolicy(Pawn pawn) => pawn?.outfits?.CurrentApparelPolicy?.label == CivilianLabel;
+    public static bool IsCivilianPolicy(Pawn pawn)
+    {
+        try
+        {
+            return pawn?.outfits?.CurrentApparelPolicy?.label == CivilianLabel;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Armory apparel-policy read failed safely: {ex.Message}");
+            return false;
+        }
+    }
 
     private static void SetPolicy(Pawn pawn, string label, bool allowArmor)
     {
