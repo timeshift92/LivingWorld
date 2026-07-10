@@ -8511,39 +8511,30 @@ static void TestRimWorldDirectSettlementObserver()
     var patch = File.ReadAllText(patchPath);
 
     AssertContains("HarmonyPatch(typeof(Settlement), \"GetGizmos\")", patch);
-    AssertContains("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", patch);
     AssertContains("public static void Postfix(Settlement __instance, ref IEnumerable<Gizmo> __result)", patch);
-    AssertContains("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", patch);
     AssertContains("ResolveLedgerSettlement(component.State, worldObject, factionId)", patch);
     AssertContains("string.Equals(settlement.Name, label, StringComparison.Ordinal)", patch);
-    AssertContains("CaravanArrivalAction_LivingWorldVisitSettlement", patch);
-    AssertContains("CaravanArrivalActionUtility.GetFloatMenuOptions", patch);
-    AssertContains("Scribe_References.Look(ref settlement, \"settlement\")", patch);
     AssertContains("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
     AssertContains("new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true)", patch);
     AssertDoesNotContain("Prefs.DevMode", patch);
-    AssertContains("LW_OpenRealSettlementMap", patch);
-    AssertContains("MapGenerator.GenerateMap", patch);
-    AssertContains("ResolveEnteringCaravan(worldObject, caravan)", patch);
-    AssertContains("Find.WorldObjects.PlayerControlledCaravanAt(worldObject.Tile)", patch);
-    AssertContains("CaravanEnterMapUtility.Enter", patch);
-    AssertContains("CaravanEnterMode.Edge", patch);
-    AssertContains("CaravanDropInventoryMode.DoNotDrop", patch);
-    AssertContains("HasLivingWorldSettlementFootprint", patch);
-    AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, worldObject)", patch);
-    AssertContains("ResolveLivingWorldMapGenerator()", patch);
-    AssertContains("DefDatabase<MapGeneratorDef>.GetNamedSilentFail(\"Base_Player\")", patch);
-    AssertContains("Enumerable.Empty<GenStepWithParams>()", patch);
+    AssertDoesNotContain("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", patch);
+    AssertDoesNotContain("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", patch);
+    AssertDoesNotContain("CaravanArrivalAction_LivingWorldVisitSettlement", patch);
+    AssertDoesNotContain("CaravanArrivalActionUtility.GetFloatMenuOptions", patch);
+    AssertDoesNotContain("Scribe_References.Look(ref settlement, \"settlement\")", patch);
+    AssertDoesNotContain("LW_OpenRealSettlementMap", patch);
+    AssertDoesNotContain("MapGenerator.GenerateMap", patch);
+    AssertDoesNotContain("Find.WorldObjects.PlayerControlledCaravanAt(worldObject.Tile)", patch);
+    AssertDoesNotContain("CaravanEnterMapUtility.Enter", patch);
+    AssertDoesNotContain("HasLivingWorldSettlementFootprint", patch);
+    AssertDoesNotContain("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, worldObject)", patch);
+    AssertDoesNotContain("ResolveLivingWorldMapGenerator()", patch);
     AssertDoesNotContain("worldObject.MapGeneratorDef", patch);
     AssertDoesNotContain("worldObject.ExtraGenStepDefs", patch);
-    AssertContains("Current.Game.CurrentMap = map", patch);
-    AssertContains("CameraJumper.TryJump(map.Center, map)", patch);
     AssertContains("Faction.OfPlayer", patch);
     AssertContains("LW_DirectVisitObserver", patch);
     AssertContains("LW_DirectVisitObserverTooltip", patch);
-    AssertRimWorldMethodExists("RimWorld.Planet.Settlement", "GetFloatMenuOptions");
     AssertRimWorldMethodExists("RimWorld.Planet.WorldObject", "GetGizmos");
-    AssertRimWorldMethodExists("Verse.MapGenerator", "GenerateMap");
 
     var window = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
     AssertContains("LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)", window);
@@ -8555,10 +8546,7 @@ static void TestRimWorldDirectSettlementObserver()
     foreach (var key in new[]
     {
         "LW_DirectVisitObserver",
-        "LW_DirectVisitObserverTooltip",
-        "LW_OpenRealSettlementMap",
-        "LW_OpenRealSettlementMapTooltip",
-        "LW_OpenRealSettlementMapFloatMenu"
+        "LW_DirectVisitObserverTooltip"
     })
     {
         AssertContains($"<{key}>", en);
