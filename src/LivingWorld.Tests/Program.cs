@@ -9596,6 +9596,17 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("<LivingWorld_ArmorRack.label>", racksRu);
     AssertContains("<LivingWorld_ApparelRack.label>", racksRu);
 
+    // Dev-only debug action to stock the racks with a test kit (weapons, full armour, summer/winter civvies).
+    var debug = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmoryDebugActions.cs"));
+    AssertContains("[DebugAction(\"LivingWorld\"", debug);
+    AssertContains("AllowedGameStates.PlayingOnMap", debug);
+    AssertContains("Building_ArmoryRack", debug);
+    AssertContains("ThingMaker.MakeThing", debug);
+    AssertContains("GenPlace.TryPlaceThing", debug);
+    AssertContains("GetNamedSilentFail", debug);
+    AssertRimWorldMethodExists("Verse.ThingMaker", "MakeThing");
+    AssertRimWorldMethodExists("RimWorld.GenStuff", "DefaultStuffFor");
+
     // RimWorld APIs the equip/job path depends on.
     AssertRimWorldMethodExists("Verse.Pawn_EquipmentTracker", "AddEquipment");
     AssertRimWorldMethodExists("RimWorld.Pawn_ApparelTracker", "Wear");
