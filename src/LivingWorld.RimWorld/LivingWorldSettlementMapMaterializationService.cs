@@ -43,42 +43,6 @@ public static class LivingWorldSettlementMapMaterializationService
             return 0;
         }
 
-        var bindableDefenders = map.mapPawns.AllPawnsSpawned
-            .Where(pawn =>
-                pawn != null
-                && !pawn.Dead
-                && pawn.Faction == settlement.Faction
-                && pawn.RaceProps?.Humanlike == true
-                && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId != true)
-            .OrderBy(pawn => pawn.thingIDNumber)
-            .ToList();
-        if (bindableDefenders.Count == 0)
-        {
-            return 0;
-        }
-
-        var purposeKey = $"settlement-defense:{settlement.ID}:{map.uniqueID}";
-        var prepared = SettlementMaterializationService.PrepareDefense(
-            component.State,
-            new SettlementDefenseMaterializationRequest(
-                ledgerSettlement.Id,
-                bindableDefenders.Count,
-                DefenseLeaseLifetimeTicks,
-                BuildResourceRequest(component.State, ledgerSettlement.Id),
-                purposeKey));
-        if (prepared.Status != SettlementDefenseMaterializationStatus.Success)
-        {
-            return 0;
-        }
-
-        var bound = BindDefenders(component.State, prepared.DefenderLeases, bindableDefenders);
-        if (bound == 0)
-        {
-            SettlementMaterializationService.AbortDefense(component.State, purposeKey, "settlement map had no bindable defenders");
-            return 0;
-        }
-
-        ReleaseUnboundLeases(component.State, prepared.DefenderLeases);
         var layout = SettlementMapLayoutService.BuildFacilityLayout(
             component.State,
             new SettlementMapLayoutRequest(
@@ -88,22 +52,71 @@ public static class LivingWorldSettlementMapMaterializationService
                 MaxFacilities: 8));
         var cityTerrainCount = SpawnDistrictTerrain(map, layout);
         var roomCount = SpawnSettlementRooms(map, settlement.Faction, layout);
-        SpawnReservedResources(component.State, map, prepared, layout);
-        var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
         var facilityCount = SpawnFacilityLayout(map, settlement.Faction, layout);
         var cityFeatureCount = SpawnCityFeatures(map, settlement.Faction, layout);
+
+        var bindableDefenders = map.mapPawns.AllPawnsSpawned
+            .Where(pawn =>
+                pawn != null
+                && !pawn.Dead
+                && pawn.Faction == settlement.Faction
+                && pawn.RaceProps?.Humanlike == true
+                && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId != true)
+            .OrderBy(pawn => pawn.thingIDNumber)
+            .ToList();
+
+        var purposeKey = $"settlement-defense:{settlement.ID}:{map.uniqueID}";
+        var requestedDefenders = bindableDefenders.Count > 0
+            ? bindableDefenders.Count
+            : EstimateDefenderCount(component.State, ledgerSettlement.Id);
+        var prepared = SettlementMaterializationService.PrepareDefense(
+            component.State,
+            new SettlementDefenseMaterializationRequest(
+                ledgerSettlement.Id,
+                requestedDefenders,
+                DefenseLeaseLifetimeTicks,
+                BuildResourceRequest(component.State, ledgerSettlement.Id),
+                purposeKey));
+        var bound = 0;
+        var spawnedDefenders = 0;
+        var reservedResources = 0;
+        if (prepared.Status == SettlementDefenseMaterializationStatus.Success)
+        {
+            bound = BindDefenders(component.State, prepared.DefenderLeases, bindableDefenders);
+            spawnedDefenders = SpawnGeneratedDefenders(
+                component.State,
+                map,
+                settlement.Faction,
+                prepared.DefenderLeases.Skip(bound).ToList());
+
+            if (bound + spawnedDefenders == 0)
+            {
+                SettlementMaterializationService.AbortDefense(
+                    component.State,
+                    purposeKey,
+                    "settlement map had no bindable or spawnable defenders");
+            }
+            else
+            {
+                ReleaseUnboundLeases(component.State, prepared.DefenderLeases);
+                SpawnReservedResources(component.State, map, prepared, layout);
+                reservedResources = prepared.Resources.Sum(resource => resource.Quantity);
+            }
+        }
+
+        var animalCount = SpawnSettlementAnimals(component.State, map, ledgerSettlement.Id, settlement.Faction, purposeKey);
 
         if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
             Log.Message(
                 $"[LivingWorld] materialized settlement map '{settlement.LabelCap}'"
-                + $" with {bound} ledger defender(s), {animalCount} animal(s),"
+                + $" with {bound + spawnedDefenders} ledger defender(s), {animalCount} animal(s),"
                 + $" {facilityCount} facility feature(s), {roomCount} room shell(s),"
                 + $" {cityFeatureCount} city feature(s), {cityTerrainCount} district/path terrain cell(s),"
-                + $" and {prepared.Resources.Sum(resource => resource.Quantity)} resource unit(s).");
+                + $" and {reservedResources} resource unit(s).");
         }
 
-        return bound;
+        return bound + spawnedDefenders + facilityCount + roomCount + cityFeatureCount;
     }
 
     private static int BindDefenders(WorldState state, IReadOnlyList<MaterializationLease> leases, IReadOnlyList<Pawn> pawns)
@@ -119,18 +132,104 @@ public static class LivingWorldSettlementMapMaterializationService
                 continue;
             }
 
-            var identity = pawn.GetComp<CompLivingWorldIdentity>();
-            if (identity == null)
-            {
-                identity = new CompLivingWorldIdentity { parent = pawn };
-                pawn.AllComps.Add(identity);
-            }
-
-            identity.SetLedgerId(lease.CitizenId);
+            StampIdentity(pawn, lease.CitizenId);
             bound++;
         }
 
         return bound;
+    }
+
+    private static int EstimateDefenderCount(WorldState state, EntityId settlementId)
+    {
+        var population = state.GetSettlementPopulation(settlementId);
+        if (population.Adults <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Min(12, Math.Max(3, population.Adults / 8));
+    }
+
+    private static int SpawnGeneratedDefenders(
+        WorldState state,
+        Map map,
+        Faction faction,
+        IReadOnlyList<MaterializationLease> leases)
+    {
+        var spawned = 0;
+        foreach (var lease in leases)
+        {
+            if (!TrySpawnDefender(state, map, faction, lease, out var pawn))
+            {
+                continue;
+            }
+
+            var bind = MaterializationLeaseService.BindPawn(state, lease.Id, pawn.thingIDNumber);
+            if (bind.Status != MaterializationLeaseBindStatus.Success)
+            {
+                pawn.Destroy();
+                continue;
+            }
+
+            StampIdentity(pawn, lease.CitizenId);
+            spawned++;
+        }
+
+        return spawned;
+    }
+
+    private static bool TrySpawnDefender(
+        WorldState state,
+        Map map,
+        Faction faction,
+        MaterializationLease lease,
+        out Pawn pawn)
+    {
+        pawn = null!;
+        if (!TryFindSpawnCell(map, out var cell))
+        {
+            return false;
+        }
+
+        var pawnKind = faction.RandomPawnKind();
+        if (pawnKind == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(
+                pawnKind,
+                faction,
+                PawnGenerationContext.NonPlayer,
+                forceGenerateNewPawn: true));
+
+            var citizen = state.GetCitizen(lease.CitizenId);
+            if (citizen != null && !string.IsNullOrWhiteSpace(citizen.Name))
+            {
+                pawn.Name = new NameSingle(citizen.Name);
+            }
+
+            GenSpawn.Spawn(pawn, cell, map);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void StampIdentity(Pawn pawn, EntityId citizenId)
+    {
+        var identity = pawn.GetComp<CompLivingWorldIdentity>();
+        if (identity == null)
+        {
+            identity = new CompLivingWorldIdentity { parent = pawn };
+            pawn.AllComps.Add(identity);
+        }
+
+        identity.SetLedgerId(citizenId);
     }
 
     private static void ReleaseUnboundLeases(WorldState state, IReadOnlyList<MaterializationLease> leases)

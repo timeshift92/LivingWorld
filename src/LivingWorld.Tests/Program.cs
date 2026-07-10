@@ -7857,7 +7857,12 @@ static void TestRimWorldSettlementMapMaterialization()
     var service = File.ReadAllText(servicePath);
     AssertContains("SettlementMaterializationService.PrepareDefense", service);
     AssertContains("MaterializationLeaseService.BindPawn", service);
-    AssertContains("identity.SetLedgerId(lease.CitizenId)", service);
+    AssertContains("StampIdentity(pawn, lease.CitizenId)", service);
+    AssertContains("identity.SetLedgerId(citizenId)", service);
+    AssertContains("SpawnGeneratedDefenders", service);
+    AssertContains("faction.RandomPawnKind()", service);
+    AssertContains("new NameSingle(citizen.Name)", service);
+    AssertContains("EstimateDefenderCount", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("GenSpawn.Spawn", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
@@ -8519,6 +8524,11 @@ static void TestRimWorldDirectSettlementObserver()
     AssertDoesNotContain("Prefs.DevMode", patch);
     AssertContains("LW_OpenRealSettlementMap", patch);
     AssertContains("MapGenerator.GenerateMap", patch);
+    AssertContains("CaravanEnterMapUtility.Enter", patch);
+    AssertContains("CaravanEnterMode.Edge", patch);
+    AssertContains("CaravanDropInventoryMode.DoNotDrop", patch);
+    AssertContains("HasLivingWorldSettlementFootprint", patch);
+    AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, worldObject)", patch);
     AssertContains("ResolveLivingWorldMapGenerator()", patch);
     AssertContains("DefDatabase<MapGeneratorDef>.GetNamedSilentFail(\"Base_Player\")", patch);
     AssertContains("Enumerable.Empty<GenStepWithParams>()", patch);

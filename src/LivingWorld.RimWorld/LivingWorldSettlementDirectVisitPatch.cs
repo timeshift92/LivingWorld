@@ -49,7 +49,7 @@ public static class LivingWorldSettlementDirectVisitPatch
                     defaultLabel = "LW_OpenRealSettlementMap".Translate(),
                     defaultDesc = "LW_OpenRealSettlementMapTooltip".Translate(),
                     icon = TexButton.Info,
-                    action = () => OpenRealSettlementMap(__instance, settlementId),
+                    action = () => OpenRealSettlementMap(__instance, settlementId, caravan: null),
                 };
             }
         }
@@ -84,7 +84,7 @@ public static class LivingWorldSettlementDirectVisitPatch
         Find.WindowStack.Add(new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true));
     }
 
-    internal static void OpenRealSettlementMap(Settlement worldObject, EntityId settlementId)
+    internal static void OpenRealSettlementMap(Settlement worldObject, EntityId settlementId, Caravan? caravan)
     {
         var component = LivingWorldWorldComponent.Instance;
         if (component == null || worldObject == null)
@@ -109,13 +109,38 @@ public static class LivingWorldSettlementDirectVisitPatch
                         ResolveLivingWorldMapGenerator(),
                         Enumerable.Empty<GenStepWithParams>());
                 }
+                else if (!HasLivingWorldSettlementFootprint(map, worldObject.Faction))
+                {
+                    LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, worldObject);
+                }
 
                 Current.Game.CurrentMap = map;
+                if (caravan != null && !caravan.Destroyed)
+                {
+                    CaravanEnterMapUtility.Enter(
+                        caravan,
+                        map,
+                        CaravanEnterMode.Edge,
+                        CaravanDropInventoryMode.DoNotDrop,
+                        draftColonists: false,
+                        extraCellValidator: null);
+                }
+
                 CameraJumper.TryJump(map.Center, map);
             },
             "GeneratingMap",
             false,
             GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
+    }
+
+    private static bool HasLivingWorldSettlementFootprint(Map map, Faction faction)
+    {
+        return map.mapPawns.AllPawnsSpawned.Any(pawn =>
+            pawn != null
+            && !pawn.Dead
+            && pawn.Faction == faction
+            && pawn.RaceProps?.Humanlike == true
+            && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId == true);
     }
 
     private static MapGeneratorDef ResolveLivingWorldMapGenerator()
@@ -272,7 +297,7 @@ public sealed class CaravanArrivalAction_LivingWorldVisitSettlement : CaravanArr
             return;
         }
 
-        LivingWorldSettlementDirectVisitPatch.OpenRealSettlementMap(settlement, settlementId);
+        LivingWorldSettlementDirectVisitPatch.OpenRealSettlementMap(settlement, settlementId, caravan);
     }
 
     public override void ExposeData()
