@@ -9525,6 +9525,8 @@ static void TestRimWorldOutfitStandDriver()
     AssertContains("OutfitStandDriver.EquipFromStand(pawn)", component);
     AssertContains("OutfitStandDriver.ReturnToStand(pawn)", component);
     AssertContains("ModsConfig.OdysseyActive", component);
+    // Peacetime reconciliation: a stand-owner must never be left armoured while stood down.
+    AssertContains("Peacetime reconciliation", component);
 
     // Caravan arming now goes through the stands too.
     var caravan = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanArmoryPatch.cs"));

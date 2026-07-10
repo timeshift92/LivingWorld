@@ -221,16 +221,21 @@ public sealed class MobilizationMapComponent : MapComponent
                 }
                 else
                 {
-                    // Stand down only colonists we mobilized: send them back to their stand until they are
-                    // out of the combat kit, then forget them. ReturnToStand is idempotent (only swaps toward
-                    // civvies), so retrying is safe and never disarms a pawn we did not mobilize.
-                    if (!mobilizedByUs.Contains(pawn))
+                    // Peacetime reconciliation: a combat colonist who owns a stand must not be walking around
+                    // in their combat kit while stood down. Send any such colonist back to their stand to swap
+                    // into civvies. This covers the ones we mobilized and also stray cases — a save reloaded
+                    // mid-swap, a manual equip — so nobody accidentally stays armoured in peacetime.
+                    if (!OutfitStandDriver.HasStand(pawn))
                     {
+                        mobilizedByUs.Remove(pawn);
                         continue;
                     }
 
-                    OutfitStandDriver.ReturnToStand(pawn);
-                    if (!LoadoutAdapter.IsArmed(pawn))
+                    if (LoadoutAdapter.IsArmed(pawn))
+                    {
+                        OutfitStandDriver.ReturnToStand(pawn);
+                    }
+                    else
                     {
                         mobilizedByUs.Remove(pawn);
                     }
