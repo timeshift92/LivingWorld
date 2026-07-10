@@ -148,6 +148,8 @@
   <LW_MechClusterLabel>Механоидный комплекс</LW_MechClusterLabel>
   <LW_MechClusterDormant>Механоидный комплекс — спящий. Заброшенный мех-объект, пока неактивен. Просыпается, когда рядом богатеет колония.</LW_MechClusterDormant>
   <LW_MechClusterActive>Механоидный комплекс — АКТИВЕН. Пробудившиеся механоиды шлют отсюда рейды на твою колонию.</LW_MechClusterActive>
+  <LW_MechClusterDetails>Сведения о механоидном комплексе</LW_MechClusterDetails>
+  <LW_MechClusterFallbackDetails>{0}\n\nLiving World обычно превращает этот комплекс в обычный посещаемый объект RimWorld. Если ты всё ещё видишь запасной маркер, дай мировой симуляции пройти один тик или перезагрузи сохранение; маркер заменится, когда site сможет быть создан.</LW_MechClusterFallbackDetails>
   <LW_MechClusterAwakenLabel>Механоидный комплекс активировался</LW_MechClusterAwakenLabel>
   <LW_MechClusterAwakenText>Спящий механоидный комплекс запитался, разбуженный растущим богатством твоей колонии и близостью. Жди механоидных вторжений оттуда — это не случайная атака. Следи за ним на карте мира.</LW_MechClusterAwakenText>
   <LW_Settings_ArrivalsTravel>Нейтральные группы идут по карте мира</LW_Settings_ArrivalsTravel>

@@ -47,6 +47,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int nextApproachRaidId;
     private List<MechClusterNode> mechClusters = new();
     private int nextMechClusterId;
+    private List<int> mechClusterSiteNodeIds = new();
+    private List<int> mechClusterSiteWorldObjectIds = new();
     private List<PendingApproachingGroup> approachingGroups = new();
     private int nextApproachGroupId;
     private List<string> notifiedPlayerCaravanMarkerContacts = new();
@@ -159,6 +161,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncArmyWorldObjects();
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
+        EnsureMechClusterSites();
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
         LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
@@ -1292,6 +1295,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         try
         {
             EnsureMechClusters();
+            EnsureMechClusterSites();
 
             var playerMap = Find.AnyPlayerHomeMap;
             var grid = Find.WorldGrid;
@@ -1335,6 +1339,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
 
         EnsureMechClusters();
+        EnsureMechClusterSites();
         if (mechClusters.Count == 0 || mechClusters.Any(cluster => cluster.Awake))
         {
             return;
@@ -1368,6 +1373,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         if (nearest != null)
         {
             AwakenMechCluster(nearest, Find.TickManager?.TicksGame ?? 0);
+            EnsureMechClusterSites();
             SyncMechClusterMarkers();
         }
     }
@@ -1468,8 +1474,95 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         return false;
     }
 
-    // Reconciles the world-map markers for mechanoid complexes with the ledger of clusters: one marker per
-    // complex (recoloured when it awakens), removed if the cluster is gone or the feature is off.
+    private void EnsureMechClusterSites()
+    {
+        var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        if (!settings.mechClustersEnabled)
+        {
+            return;
+        }
+
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var sitePart = DefDatabase<SitePartDef>.GetNamedSilentFail("SleepingMechanoids");
+        if (sitePart == null)
+        {
+            return;
+        }
+
+        PruneMissingMechClusterSites(worldObjects);
+
+        foreach (var cluster in mechClusters)
+        {
+            if (cluster.Tile < 0 || HasMechClusterSite(cluster.Id))
+            {
+                continue;
+            }
+
+            try
+            {
+                var site = SiteMaker.MakeSite(
+                    sitePart,
+                    cluster.Tile,
+                    faction: null,
+                    ifHostileThenMustRemainHostile: false,
+                    threatPoints: MechClusterThreatPoints(cluster),
+                    worldObjectDef: null);
+                site.Tile = cluster.Tile;
+                worldObjects.Add(site);
+                mechClusterSiteNodeIds.Add(cluster.Id);
+                mechClusterSiteWorldObjectIds.Add(site.ID);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"[LivingWorld] Could not create actionable mechanoid complex site at tile {cluster.Tile}: {ex.Message}");
+            }
+        }
+    }
+
+    private static float MechClusterThreatPoints(MechClusterNode cluster)
+    {
+        var pressureBonus = Math.Min(600f, Math.Max(0f, cluster.Pressure) * 0.35f);
+        return Math.Max(400f, (cluster.Awake ? 850f : 450f) + pressureBonus);
+    }
+
+    private bool HasMechClusterSite(int nodeId)
+    {
+        return mechClusterSiteNodeIds.Contains(nodeId);
+    }
+
+    private void PruneMissingMechClusterSites(WorldObjectsHolder worldObjects)
+    {
+        for (var i = mechClusterSiteNodeIds.Count - 1; i >= 0; i--)
+        {
+            var siteObjectId = i < mechClusterSiteWorldObjectIds.Count
+                ? mechClusterSiteWorldObjectIds[i]
+                : -1;
+            var stillExists = siteObjectId >= 0
+                && worldObjects.AllWorldObjects.Any(worldObject => worldObject.ID == siteObjectId);
+            if (!stillExists)
+            {
+                mechClusterSiteNodeIds.RemoveAt(i);
+                if (i < mechClusterSiteWorldObjectIds.Count)
+                {
+                    mechClusterSiteWorldObjectIds.RemoveAt(i);
+                }
+            }
+        }
+
+        while (mechClusterSiteWorldObjectIds.Count > mechClusterSiteNodeIds.Count)
+        {
+            mechClusterSiteWorldObjectIds.RemoveAt(mechClusterSiteWorldObjectIds.Count - 1);
+        }
+    }
+
+    // Reconciles the fallback world-map markers for mechanoid complexes with the ledger of clusters. When
+    // a real vanilla site exists for a cluster, the marker is removed so the actionable site is the only
+    // thing the player sees.
     private void SyncMechClusterMarkers()
     {
         var worldObjects = Find.WorldObjects;
@@ -1477,6 +1570,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             return;
         }
+
+        PruneMissingMechClusterSites(worldObjects);
 
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
         var def = settings.mechClustersEnabled
@@ -1497,7 +1592,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             foreach (var cluster in mechClusters)
             {
-                if (cluster.Tile < 0)
+                if (cluster.Tile < 0 || HasMechClusterSite(cluster.Id))
                 {
                     continue;
                 }
@@ -2046,6 +2141,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref mechClusters, "livingWorld_mechClusters", LookMode.Deep);
         mechClusters ??= new List<MechClusterNode>();
         Scribe_Values.Look(ref nextMechClusterId, "livingWorld_nextMechClusterId", 0);
+        Scribe_Collections.Look(ref mechClusterSiteNodeIds, "livingWorld_mechClusterSiteNodeIds", LookMode.Value);
+        mechClusterSiteNodeIds ??= new List<int>();
+        Scribe_Collections.Look(ref mechClusterSiteWorldObjectIds, "livingWorld_mechClusterSiteWorldObjectIds", LookMode.Value);
+        mechClusterSiteWorldObjectIds ??= new List<int>();
         Scribe_Collections.Look(ref approachingGroups, "livingWorld_approachingGroups", LookMode.Deep);
         approachingGroups ??= new List<PendingApproachingGroup>();
         Scribe_Values.Look(ref nextApproachGroupId, "livingWorld_nextApproachGroupId", 0);

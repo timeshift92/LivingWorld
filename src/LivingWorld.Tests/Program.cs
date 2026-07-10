@@ -9999,7 +9999,10 @@ static void TestRimWorldMechClusters()
 
     var markerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_MechCluster.cs");
     AssertFileExists(markerPath);
-    AssertContains("class WorldObject_MechCluster : WorldObject", File.ReadAllText(markerPath));
+    var marker = File.ReadAllText(markerPath);
+    AssertContains("class WorldObject_MechCluster : WorldObject", marker);
+    AssertContains("public override IEnumerable<Gizmo> GetGizmos()", marker);
+    AssertContains("Dialog_MessageBox", marker);
     var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_MechCluster.xml");
     AssertFileExists(defPath);
     AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_MechCluster</worldObjectClass>", File.ReadAllText(defPath));
@@ -10018,6 +10021,13 @@ static void TestRimWorldMechClusters()
     AssertContains("EnsureMechClusters(", component);
     AssertContains("AwakenMechCluster(", component);
     AssertContains("SyncMechClusterMarkers()", component);
+    AssertContains("EnsureMechClusterSites()", component);
+    AssertContains("SiteMaker.MakeSite", component);
+    AssertContains("SleepingMechanoids", component);
+    AssertContains("MechClusterThreatPoints(", component);
+    AssertContains("livingWorld_mechClusterSiteNodeIds", component);
+    AssertContains("livingWorld_mechClusterSiteWorldObjectIds", component);
+    AssertContains("HasMechClusterSite(cluster.Id)", component);
     AssertContains("TryFindMechClusterTile(", component);
     AssertContains("wealthWatcher", component);
     AssertContains("livingWorld_mechClusters", component);
@@ -10041,6 +10051,8 @@ static void TestRimWorldMechClusters()
         "LW_MechClusterLabel",
         "LW_MechClusterDormant",
         "LW_MechClusterActive",
+        "LW_MechClusterDetails",
+        "LW_MechClusterFallbackDetails",
         "LW_MechClusterAwakenLabel",
         "LW_MechClusterAwakenText",
         "LW_Settings_MechClusters",

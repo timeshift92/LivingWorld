@@ -148,6 +148,8 @@
   <LW_MechClusterLabel>Mechanoid complex</LW_MechClusterLabel>
   <LW_MechClusterDormant>Mechanoid complex - dormant. A derelict mechanoid site, inactive for now. It stirs as a nearby colony grows wealthy.</LW_MechClusterDormant>
   <LW_MechClusterActive>Mechanoid complex - ACTIVE. Roused mechanoids are launching raids from here against your colony.</LW_MechClusterActive>
+  <LW_MechClusterDetails>Mechanoid complex details</LW_MechClusterDetails>
+  <LW_MechClusterFallbackDetails>{0}\n\nLiving World normally turns this complex into an explorable vanilla site. If you still see this fallback marker, let the world simulation tick once or reload the save; the marker will be replaced when the site can be created.</LW_MechClusterFallbackDetails>
   <LW_MechClusterAwakenLabel>Mechanoid complex activated</LW_MechClusterAwakenLabel>
   <LW_MechClusterAwakenText>A dormant mechanoid complex has powered up, roused by your colony's growing wealth and its proximity. Expect mechanoid incursions from it - this is no random attack. Track it on the world map.</LW_MechClusterAwakenText>
   <LW_Settings_ArrivalsTravel>Neutral groups travel across the world</LW_Settings_ArrivalsTravel>
