@@ -9569,15 +9569,19 @@ static void TestRimWorldArmoryEquipAndJobs()
             Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml")));
     }
 
-    // Clothing handled via vanilla apparel policies: an auto-created combat policy on arm, the pawn's own
-    // policy restored on stand-down. The delicate dressing/undressing/hauling is left to the game.
+    // Clothing handled via vanilla apparel policies: a combat policy (allows armour) on arm, and a civilian
+    // policy (forbids armour) on stand-down so vanilla actually strips the armour and re-dresses in civvies.
     var outfit = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationOutfitService.cs"));
     AssertContains("public static void ToCombat(Pawn pawn)", outfit);
-    AssertContains("public static void Restore(Pawn pawn)", outfit);
+    AssertContains("public static void ToCivilian(Pawn pawn)", outfit);
+    AssertContains("CivilianPolicy()", outfit);
+    // Civilian policy must forbid armour, otherwise stand-down leaves it on / re-equips it.
+    AssertContains("allowArmor: false", outfit);
+    AssertContains("ThingCategoryDefOf.ApparelArmor", outfit);
     AssertContains("outfitDatabase", outfit);
     AssertContains("CurrentApparelPolicy", outfit);
     AssertContains("MobilizationOutfitService.ToCombat(pawn)", component);
-    AssertContains("MobilizationOutfitService.Restore(pawn)", component);
+    AssertContains("MobilizationOutfitService.ToCivilian(pawn)", component);
     AssertContains("RememberPolicy", assignment);
     AssertContains("TakeRememberedPolicy", assignment);
     AssertContains("previousPolicyIdByPawnId", assignment);

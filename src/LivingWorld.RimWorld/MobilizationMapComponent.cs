@@ -246,9 +246,10 @@ public sealed class MobilizationMapComponent : MapComponent
                 }
                 else
                 {
-                    // Restore the pre-mobilization apparel policy (also covers pawns who never found a
-                    // weapon); once the combat armour is off, vanilla re-dresses them in civvies.
-                    MobilizationOutfitService.Restore(pawn);
+                    // Move colonists we mobilized to the civilian policy (also covers pawns who never found a
+                    // weapon): the policy forbids armour, so vanilla strips the combat armour to the racks and
+                    // re-dresses them in civvies instead of putting the armour straight back on.
+                    MobilizationOutfitService.ToCivilian(pawn);
 
                     // Stand down only colonists this system armed; leave the player's own armed pawns alone.
                     if (!LoadoutAdapter.IsArmed(pawn)
