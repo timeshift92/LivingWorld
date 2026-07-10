@@ -983,7 +983,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     "LW_PlayerCaravanMarkerContactLabel".Translate(),
                     "LW_PlayerCaravanMarkerContactText".Translate(details.Named("details")),
                     LetterDefOf.NeutralEvent,
-                    new LookTargets(marker));
+                    new LookTargets((PlanetTile)marker.Tile));
                 if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
                 {
                     Log.Message($"[LivingWorld] Player caravan {caravan.ID} contacted world marker {marker.MarkerKey}: {details}");
@@ -1046,10 +1046,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             if (Current.ProgramState == ProgramState.Playing)
             {
                 var days = Mathf.Max(1, Mathf.RoundToInt(travelTicks / (float)TicksPerDay));
-                var marker = FindApproachMarker(pending.MarkerKey);
-                var look = marker != null
-                    ? new LookTargets(marker)
-                    : new LookTargets((PlanetTile)targetTile);
                 Find.LetterStack?.ReceiveLetter(
                     "LW_RaidApproachingLabel".Translate(),
                     "LW_RaidApproachingText".Translate(
@@ -1057,7 +1053,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                         pending.TargetLabel.Named("colony"),
                         days.Named("days")),
                     LetterDefOf.NegativeEvent,
-                    look);
+                    new LookTargets((PlanetTile)originTile));
             }
 
             return true;
@@ -1385,13 +1381,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         if (Current.ProgramState == ProgramState.Playing)
         {
-            var site = FindMechClusterSite(cluster.Id);
-            var look = site != null ? new LookTargets(site) : new LookTargets((PlanetTile)cluster.Tile);
             Find.LetterStack?.ReceiveLetter(
                 "LW_MechClusterAwakenLabel".Translate(),
                 "LW_MechClusterAwakenText".Translate(),
                 LetterDefOf.ThreatSmall,
-                look);
+                new LookTargets((PlanetTile)cluster.Tile));
         }
     }
 
@@ -1681,10 +1675,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             if (Current.ProgramState == ProgramState.Playing)
             {
                 var days = Mathf.Max(1, Mathf.RoundToInt(travelTicks / (float)TicksPerDay));
-                var marker = FindApproachGroupMarker(pending.MarkerKey);
-                var look = marker != null
-                    ? new LookTargets(marker)
-                    : new LookTargets((PlanetTile)targetTile);
                 Find.LetterStack?.ReceiveLetter(
                     "LW_GroupApproachingLabel".Translate(),
                     "LW_GroupApproachingText".Translate(
@@ -1693,7 +1683,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                         pending.TargetLabel.Named("colony"),
                         days.Named("days")),
                     LetterDefOf.NeutralEvent,
-                    look);
+                    new LookTargets((PlanetTile)originTile));
             }
 
             return true;
@@ -2022,7 +2012,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                         "LW_RuinSiteLetterLabel".Translate(),
                         "LW_RuinSiteLetterText".Translate(ResolveFactionLabel(ruin.FormerFactionId).Named("faction")),
                         LetterDefOf.PositiveEvent,
-                        new LookTargets(site));
+                        new LookTargets((PlanetTile)tile));
                 }
 
                 if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)

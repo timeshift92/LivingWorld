@@ -9836,6 +9836,9 @@ static void TestRimWorldMechClusters()
     AssertContains("wealthWatcher", component);
     AssertContains("livingWorld_mechClusters", component);
     AssertContains("settings.mechClustersEnabled", component);
+    AssertDoesNotContain("new LookTargets(marker)", component);
+    AssertDoesNotContain("new LookTargets(site)", component);
+    AssertContains("new LookTargets((PlanetTile)", component);
 
     var settings = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
