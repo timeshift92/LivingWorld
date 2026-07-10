@@ -321,6 +321,22 @@ var tests = new List<(string Name, Action Test)>
     ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
     ("gives mechanoid raids a world-map source", TestRimWorldMechClusters),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
+    ("mob plan: non-candidate is left alone when mobilized", TestMobPlanNonCandidateMobilized),
+    ("mob plan: non-candidate is left alone when stood down", TestMobPlanNonCandidateStandDown),
+    ("mob plan: a candidate on an urgent job is not yanked", TestMobPlanBusyUrgent),
+    ("mob plan: a sleeping candidate is woken first", TestMobPlanWake),
+    ("mob plan: an awake candidate is switched to the combat policy", TestMobPlanSetCombatPolicy),
+    ("mob plan: a combat-policy candidate with a stand equips the kit", TestMobPlanEquip),
+    ("mob plan: an equipped candidate engages via CAI when available", TestMobPlanEngage),
+    ("mob plan: an already-engaged candidate holds steady", TestMobPlanSteadyCombatDuty),
+    ("mob plan: without CAI an equipped candidate is drafted", TestMobPlanDraftFallback),
+    ("mob plan: a drafted candidate without CAI holds steady", TestMobPlanSteadyCombatDrafted),
+    ("mob plan: a standless candidate still engages so it does not idle", TestMobPlanStandlessEngages),
+    ("mob plan: stand-down clears our CAI duty first", TestMobPlanStandDownClearsDuty),
+    ("mob plan: stand-down undrafts a pawn we drafted", TestMobPlanStandDownClearsDraft),
+    ("mob plan: stand-down switches to the civilian policy", TestMobPlanSetCivilianPolicy),
+    ("mob plan: stand-down returns the kit to the stand", TestMobPlanReturnKit),
+    ("mob plan: a stood-down civilian holds steady", TestMobPlanSteadyCivilian),
 };
 
 var failures = new List<string>();
@@ -9216,4 +9232,132 @@ static void AssertEqual<T>(T expected, T actual)
     {
         throw new InvalidOperationException($"Expected '{expected}', got '{actual}'.");
     }
+}
+
+static void TestMobPlanNonCandidateMobilized()
+{
+    var s = new PawnMobState { IsCandidate = false };
+    AssertEqual(MobPhase.None, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanNonCandidateStandDown()
+{
+    var s = new PawnMobState { IsCandidate = false };
+    AssertEqual(MobPhase.None, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestMobPlanBusyUrgent()
+{
+    var s = new PawnMobState { IsCandidate = true, IsBusyUrgent = true, Asleep = true };
+    AssertEqual(MobPhase.None, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanWake()
+{
+    var s = new PawnMobState { IsCandidate = true, Asleep = true };
+    AssertEqual(MobPhase.Wake, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanSetCombatPolicy()
+{
+    var s = new PawnMobState { IsCandidate = true, Asleep = false, PolicyIsCombat = false };
+    AssertEqual(MobPhase.SetCombatPolicy, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanEquip()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = false,
+    };
+    AssertEqual(MobPhase.Equip, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanEngage()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
+        CaiAvailable = true, HasLwDuty = false,
+    };
+    AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanSteadyCombatDuty()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
+        CaiAvailable = true, HasLwDuty = true,
+    };
+    AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanDraftFallback()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
+        CaiAvailable = false, Drafted = false,
+    };
+    AssertEqual(MobPhase.Draft, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanSteadyCombatDrafted()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
+        CaiAvailable = false, Drafted = true,
+    };
+    AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanStandlessEngages()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = false, InCombatKit = false,
+        CaiAvailable = true, HasLwDuty = false,
+    };
+    AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanStandDownClearsDuty()
+{
+    var s = new PawnMobState { IsCandidate = true, HasLwDuty = true, PolicyIsCivilian = false };
+    AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestMobPlanStandDownClearsDraft()
+{
+    var s = new PawnMobState { IsCandidate = true, DraftedByUs = true, PolicyIsCivilian = false };
+    AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestMobPlanSetCivilianPolicy()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, HasLwDuty = false, DraftedByUs = false, PolicyIsCivilian = false,
+    };
+    AssertEqual(MobPhase.SetCivilianPolicy, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestMobPlanReturnKit()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCivilian = true, HasStand = true, InCombatKit = true,
+    };
+    AssertEqual(MobPhase.ReturnKit, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestMobPlanSteadyCivilian()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCivilian = true, HasStand = true, InCombatKit = false,
+    };
+    AssertEqual(MobPhase.SteadyCivilian, MobilizationPlan.NextAction(mobilized: false, s));
 }
