@@ -2,7 +2,7 @@ namespace LivingWorld.Core;
 
 internal sealed record WorldWarActionExecutionResult(
     int WarbandsLaunched,
-    int ColoniesFounded,
+    int SettlerExpeditionsLaunched,
     int CaravansLaunched,
     int ScoutingReports,
     int DiplomaticMissions,
@@ -16,7 +16,7 @@ internal static class WorldWarActionDispatcher
         IReadOnlyList<FactionActionPlan> plans)
     {
         var launched = 0;
-        var founded = 0;
+        var settlerExpeditions = 0;
         var caravans = 0;
         var scoutingReports = 0;
         var diplomaticMissions = 0;
@@ -33,9 +33,9 @@ internal static class WorldWarActionDispatcher
                     }
                     break;
                 case WarAction.Settler:
-                    if (SettlementExpansionExecutor.Execute(state, plan.FactionId, request.SettlerCount))
+                    if (SettlementExpansionExecutor.Execute(state, plan.FactionId, request))
                     {
-                        founded++;
+                        settlerExpeditions++;
                     }
                     break;
                 case WarAction.Caravan:
@@ -68,7 +68,7 @@ internal static class WorldWarActionDispatcher
 
         return new WorldWarActionExecutionResult(
             launched,
-            founded,
+            settlerExpeditions,
             caravans,
             scoutingReports,
             diplomaticMissions,

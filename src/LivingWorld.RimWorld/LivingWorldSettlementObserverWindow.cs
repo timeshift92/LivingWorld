@@ -23,8 +23,21 @@ public sealed class LivingWorldSettlementObserverWindow : Window
     private Vector2 settlementScroll;
     private Vector2 detailScroll;
     private EntityId? selectedSettlementId;
+    private readonly EntityId? scopedSettlementId;
+    private readonly bool allowExactWithoutDebug;
 
     public override Vector2 InitialSize => new Vector2(920f, 620f);
+
+    public LivingWorldSettlementObserverWindow()
+    {
+    }
+
+    public LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)
+    {
+        this.scopedSettlementId = scopedSettlementId;
+        this.selectedSettlementId = scopedSettlementId;
+        this.allowExactWithoutDebug = allowExactWithoutDebug;
+    }
 
     public override void DoWindowContents(Rect inRect)
     {
@@ -36,7 +49,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         }
 
         var debugLogging = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
-        if (!debugLogging)
+        if (!debugLogging && !allowExactWithoutDebug)
         {
             Widgets.Label(inRect, "LW_SettlementObserver_DebugOnly".Translate());
             var debugCloseRect = new Rect(inRect.center.x - 80f, inRect.yMax - 38f, 160f, 34f);
@@ -74,6 +87,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
 
         var settlements = state.Settlements
             .Where(settlement => settlement.IsActive)
+            .Where(settlement => !scopedSettlementId.HasValue || settlement.Id == scopedSettlementId.Value)
             .OrderBy(settlement => settlement.Name, StringComparer.Ordinal)
             .ThenBy(settlement => settlement.Id.Value)
             .Take(MaxSettlementRows)
@@ -170,6 +184,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             food.FoodDays.Named("days"),
             migration.Pressure.Named("pressure"),
             migration.PrimaryReason.Named("reason")).ToString()));
+        lines.Add(Line(BuildDailyTrend(state, settlement, currentTick), 42f));
 
         lines.Add(Header("LW_SettlementObserver_Projects".Translate().ToString()));
         var activeProjects = state.SettlementProjects
@@ -313,6 +328,51 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             project.FacilityKind.Named("facility"),
             progress.Named("progress"),
             daysLeft.Named("days")).ToString();
+    }
+
+    private static string BuildDailyTrend(WorldState state, WorldSettlement settlement, int currentTick)
+    {
+        var effectiveTick = Math.Max(currentTick, state.CurrentTick);
+        var cutoff = Math.Max(0, effectiveTick - TicksPerDay);
+        var summary = WorldActivitySummaryService.Summarize(
+            state,
+            new WorldActivitySummaryRequest(effectiveTick, TicksPerDay, settlement.Id));
+        var births = Math.Max(0, summary.PopulationDelta);
+        var losses = Math.Max(0, -summary.PopulationDelta);
+        var damage = 0;
+        var facilityIds = new HashSet<EntityId>(state.GetSettlementFacilities(settlement.Id).Select(facility => facility.Id));
+        damage += state.Events.Count(worldEvent =>
+            worldEvent.Tick >= cutoff
+            && (worldEvent.Kind == WorldEventKind.SettlementFacilityDamaged
+                || worldEvent.Kind == WorldEventKind.SettlementFacilityRepaired)
+            && (worldEvent.SubjectId == settlement.Id
+                || (worldEvent.SubjectId.HasValue && facilityIds.Contains(worldEvent.SubjectId.Value))));
+
+        var activeTravels = ActiveTravelsForSettlement(state, settlement.Id);
+        return "LW_SettlementObserver_DailyTrend".Translate(
+            births.Named("births"),
+            losses.Named("losses"),
+            summary.TradeEvents.Named("moves"),
+            summary.ConstructionEvents.Named("builds"),
+            damage.Named("damage"),
+            summary.EconomyEvents.Named("resources"),
+            summary.EcologyEvents.Named("animals"),
+            activeTravels.Named("travels")).ToString();
+    }
+
+    private static int ActiveTravelsForSettlement(WorldState state, EntityId settlementId)
+    {
+        var armies = state.ArmyMovements.Count(movement =>
+            movement.Status == ArmyMovementStatus.Traveling
+            && (movement.TargetSettlementId == settlementId
+                || state.GetArmy(movement.ArmyId)?.SourceSettlementId == settlementId));
+        var caravans = state.Caravans.Count(caravan =>
+            caravan.Status == CaravanStatus.Traveling
+            && (caravan.SourceSettlementId == settlementId || caravan.TargetSettlementId == settlementId));
+        var missions = state.Missions.Count(mission =>
+            mission.Status == WorldMissionStatus.Traveling
+            && (mission.OriginSettlementId == settlementId || mission.TargetSettlementId == settlementId));
+        return armies + caravans + missions;
     }
 
     private static string FormatBreedingProject(WorldState state, AnimalBreedingProject project, int currentTick)

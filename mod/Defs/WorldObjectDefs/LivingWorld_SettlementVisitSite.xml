@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef>
+    <defName>LivingWorld_SettlementVisitSite</defName>
+    <label>settlement visit</label>
+    <description>A controlled Living World proxy site used to enter a real NPC settlement map without mutating the vanilla settlement world object directly.</description>
+    <worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldSettlementVisitSite</worldObjectClass>
+    <texture>World/LivingWorld_Scout</texture>
+    <selectable>true</selectable>
+    <canHaveFaction>true</canHaveFaction>
+  </WorldObjectDef>
+</Defs>

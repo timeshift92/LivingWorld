@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using LivingWorld.Core;
+using RimWorld;
 using Verse;
 
 namespace LivingWorld.RimWorld;
@@ -34,6 +35,11 @@ public static class LivingWorldAnimalMapPawnTracker
         if (pawn?.Dead == true)
         {
             return false;
+        }
+
+        if (pawn?.Faction == Faction.OfPlayer || pawn?.Faction?.IsPlayer == true)
+        {
+            return TryResolve(pawn, AnimalMapFateKind.TakenByPlayer, reason);
         }
 
         return TryResolve(pawn, AnimalMapFateKind.Returned, reason);

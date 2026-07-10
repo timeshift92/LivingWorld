@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Patch>
+  <Operation Class="PatchOperationConditional" MayRequire="Ludeon.RimWorld.Royalty">
+    <xpath>/Defs/SitePartDef[defName="MechCluster"]/expandingIconTexture</xpath>
+    <match Class="PatchOperationReplace">
+      <xpath>/Defs/SitePartDef[defName="MechCluster"]/expandingIconTexture</xpath>
+      <value>
+        <expandingIconTexture>World/LivingWorld_Warband</expandingIconTexture>
+      </value>
+    </match>
+    <nomatch Class="PatchOperationAdd">
+      <xpath>/Defs/SitePartDef[defName="MechCluster"]</xpath>
+      <value>
+        <expandingIconTexture>World/LivingWorld_Warband</expandingIconTexture>
+      </value>
+    </nomatch>
+  </Operation>
+
+  <Operation Class="PatchOperationConditional" MayRequire="Ludeon.RimWorld.Royalty">
+    <xpath>/Defs/SitePartDef[defName="MechClusterForceNoConditionCauser"]/expandingIconTexture</xpath>
+    <match Class="PatchOperationReplace">
+      <xpath>/Defs/SitePartDef[defName="MechClusterForceNoConditionCauser"]/expandingIconTexture</xpath>
+      <value>
+        <expandingIconTexture>World/LivingWorld_Warband</expandingIconTexture>
+      </value>
+    </match>
+    <nomatch Class="PatchOperationAdd">
+      <xpath>/Defs/SitePartDef[defName="MechClusterForceNoConditionCauser"]</xpath>
+      <value>
+        <expandingIconTexture>World/LivingWorld_Warband</expandingIconTexture>
+      </value>
+    </nomatch>
+  </Operation>
+</Patch>

@@ -1161,6 +1161,168 @@ public sealed class WorldState
         return colony;
     }
 
+    public WorldMigrationGroup StartSettlementExpedition(
+        EntityId sourceSettlementId,
+        string slug,
+        string name,
+        int settlerCount,
+        int createdTick,
+        int arrivalTick)
+    {
+        ThrowIfNullOrWhiteSpace(slug, nameof(slug));
+        ThrowIfNullOrWhiteSpace(name, nameof(name));
+
+        if (settlerCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(settlerCount), "Expansion requires at least one settler.");
+        }
+
+        if (!_settlements.TryGetValue(sourceSettlementId, out var source))
+        {
+            throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
+        }
+
+        if (_settlements.Values.Any(settlement => string.Equals(settlement.Slug, slug, StringComparison.Ordinal))
+            || _migrationGroups.Values.Any(group =>
+                group.Status == MigrationGroupStatus.Traveling
+                && string.Equals(group.PlannedSettlementSlug, slug, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException($"Settlement slug {slug} already exists or is already planned.");
+        }
+
+        var settlers = _citizens.Values
+            .Where(citizen => citizen.SettlementId == sourceSettlementId
+                && citizen.Status == CitizenStatus.Alive
+                && citizen.IsAdult
+                && GetOwner(citizen.Id) == sourceSettlementId)
+            .OrderBy(citizen => citizen.Id.Value)
+            .Take(settlerCount)
+            .ToList();
+
+        if (settlers.Count < settlerCount)
+        {
+            throw new InvalidOperationException(
+                $"Settlement {sourceSettlementId} has {settlers.Count} available adult settlers but expansion requested {settlerCount}.");
+        }
+
+        var group = CreateMigrationGroup(
+            sourceSettlementId: sourceSettlementId,
+            targetSettlementId: null,
+            factionId: source.FactionId,
+            createdTick: createdTick,
+            arrivalTick: arrivalTick,
+            reason: MigrationService.ReasonSettlementFounding) with
+        {
+            PlannedSettlementSlug = slug,
+            PlannedSettlementName = name
+        };
+        _migrationGroups[group.Id] = group;
+
+        foreach (var settler in settlers)
+        {
+            _citizens[settler.Id] = settler with { Status = CitizenStatus.Migrating };
+            _owners[settler.Id] = group.Id;
+        }
+
+        MoveResourceIfAvailable(sourceSettlementId, group.Id, "PackagedSurvivalMeal", settlerCount * 3, "settler expedition supplies");
+        MoveResourceIfAvailable(sourceSettlementId, group.Id, "Steel", settlerCount * 10, "settler expedition materials");
+        MarkDerivedAggregatesDirty();
+
+        return group;
+    }
+
+    public WorldSettlement CompleteSettlementExpedition(EntityId groupId)
+    {
+        if (!_migrationGroups.TryGetValue(groupId, out var group))
+        {
+            throw new InvalidOperationException($"Migration group {groupId} does not exist.");
+        }
+
+        if (group.Status == MigrationGroupStatus.Arrived)
+        {
+            var existing = _settlements.Values.FirstOrDefault(settlement =>
+                string.Equals(settlement.Slug, group.PlannedSettlementSlug, StringComparison.Ordinal));
+            if (existing != null)
+            {
+                return existing;
+            }
+        }
+
+        if (!string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(group.PlannedSettlementSlug)
+            || string.IsNullOrWhiteSpace(group.PlannedSettlementName))
+        {
+            throw new InvalidOperationException($"Migration group {groupId} is not a settlement expedition.");
+        }
+
+        var slug = UniqueSettlementSlug(group.PlannedSettlementSlug);
+        var colony = CreateSettlement(slug, group.PlannedSettlementName, group.FactionId);
+        var settlers = _citizens.Values
+            .Where(citizen => citizen.Status == CitizenStatus.Migrating && GetOwner(citizen.Id) == group.Id)
+            .OrderBy(citizen => citizen.Id.Value)
+            .ToList();
+
+        foreach (var settler in settlers)
+        {
+            CompleteCitizenMigration(settler.Id, colony.Id, "settler expedition arrived");
+        }
+
+        foreach (var resource in ResourcesForOwner(group.Id).ToList())
+        {
+            var transfer = TransferResource(
+                group.Id,
+                colony.Id,
+                resource.ResourceKey,
+                resource.Quantity,
+                "settler expedition arrived");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+        }
+
+        MarkMigrationGroupArrived(group.Id);
+        AppendEvent(
+            WorldEventKind.SettlementFounded,
+            colony.Id,
+            $"Settlement {colony.Id} founded by {group.FactionId} with {settlers.Count} settlers from expedition {group.Id}.");
+        return colony;
+    }
+
+    private void MoveResourceIfAvailable(EntityId fromOwnerId, EntityId toOwnerId, string resourceKey, int requestedQuantity, string reason)
+    {
+        var available = GetOwnedResourceQuantity(fromOwnerId, resourceKey);
+        var moved = Math.Min(available, Math.Max(0, requestedQuantity));
+        if (moved <= 0)
+        {
+            return;
+        }
+
+        var transfer = TransferResource(fromOwnerId, toOwnerId, resourceKey, moved, reason);
+        if (transfer.Status != OwnershipTransferStatus.Success)
+        {
+            throw new InvalidOperationException(transfer.Reason);
+        }
+    }
+
+    private string UniqueSettlementSlug(string desiredSlug)
+    {
+        if (!_settlements.Values.Any(settlement => string.Equals(settlement.Slug, desiredSlug, StringComparison.Ordinal)))
+        {
+            return desiredSlug;
+        }
+
+        var suffix = 2;
+        var candidate = $"{desiredSlug}-{suffix}";
+        while (_settlements.Values.Any(settlement => string.Equals(settlement.Slug, candidate, StringComparison.Ordinal)))
+        {
+            suffix++;
+            candidate = $"{desiredSlug}-{suffix}";
+        }
+
+        return candidate;
+    }
+
     public void AssignFactionBehavior(string factionId, FactionBehavior behavior)
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));

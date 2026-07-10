@@ -41,6 +41,8 @@
   <LW_AllianceOfferDecline>Decline</LW_AllianceOfferDecline>
   <LW_RuinSiteLetterLabel>Ruins to salvage</LW_RuinSiteLetterLabel>
   <LW_RuinSiteLetterText>A {faction} settlement has fallen to ruin. Its remains lie abandoned nearby — send a caravan to clear them for salvage.</LW_RuinSiteLetterText>
+  <LW_SettlementVisitSiteLabel>Settlement visit</LW_SettlementVisitSiteLabel>
+  <LW_SettlementVisitSiteInspect>Living World settlement visit: {visitKind}. Materialized version {version}. Reconciled: {reconciled}.</LW_SettlementVisitSiteInspect>
   <LW_RaidWarningWellArmed>This is a wealthy, well-armed faction — expect a hard-hitting raid.</LW_RaidWarningWellArmed>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>
@@ -148,8 +150,46 @@
   <LW_MechClusterLabel>Mechanoid complex</LW_MechClusterLabel>
   <LW_MechClusterDormant>Mechanoid complex - dormant. A derelict mechanoid site, inactive for now. It stirs as a nearby colony grows wealthy.</LW_MechClusterDormant>
   <LW_MechClusterActive>Mechanoid complex - ACTIVE. Roused mechanoids are launching raids from here against your colony.</LW_MechClusterActive>
+  <LW_MechClusterDetails>Mechanoid complex details</LW_MechClusterDetails>
+  <LW_MechClusterFallbackDetails>{0}\n\nLiving World normally turns this complex into an explorable vanilla site. If you still see this fallback marker, let the world simulation tick once or reload the save; the marker will be replaced when the site can be created.</LW_MechClusterFallbackDetails>
   <LW_MechClusterAwakenLabel>Mechanoid complex activated</LW_MechClusterAwakenLabel>
   <LW_MechClusterAwakenText>A dormant mechanoid complex has powered up, roused by your colony's growing wealth and its proximity. Expect mechanoid incursions from it - this is no random attack. Track it on the world map.</LW_MechClusterAwakenText>
+  <LW_Settings_ArrivalsTravel>Neutral groups travel across the world</LW_Settings_ArrivalsTravel>
+  <LW_Settings_ArrivalsTravelTip>When on, faction visitors, trade caravans and travellers set out from one of their settlements and cross the world map to your colony - you see them coming - instead of appearing at the map edge. Turn off to have them arrive instantly. Orbital traders are unaffected.</LW_Settings_ArrivalsTravelTip>
+  <LW_Settings_ArmoryMobilization>Colony armory / mobilization</LW_Settings_ArmoryMobilization>
+  <LW_Settings_ArmoryMobilizationTip>When on, colonists work in civvies and arm up from the armory only when mobilized - manually via the Mobilize toggle, or automatically while enemies are on the map.</LW_Settings_ArmoryMobilizationTip>
+  <LW_Settings_MobilizationSkill>Mobilization combat-skill threshold</LW_Settings_MobilizationSkill>
+  <LW_Settings_AutoDraft>Auto-draft combat colonists on a raid</LW_Settings_AutoDraft>
+  <LW_Settings_AutoDraftTip>When on, combat-capable armed colonists are automatically woken and drafted while a real enemy is on the map, so they do not sleep or work through a raid. You still position them, and undrafting one sticks. Never triggers on the manual mobilize toggle.</LW_Settings_AutoDraftTip>
+  <LW_Settings_MobilizationDiagnostics>Mobilization diagnostics logging</LW_Settings_MobilizationDiagnostics>
+  <LW_Settings_MobilizationDiagnosticsTip>When on, logs one line per colonist each time mobilization changes their state (woken, policy, equip, engage/draft, stand-down), plus the derived phase shown by the "Dump mobilization phases" dev action. Use it to debug why a colonist is not gearing up.</LW_Settings_MobilizationDiagnosticsTip>
+  <LW_ArmoryRole>Armory role: {0}</LW_ArmoryRole>
+  <LW_ArmoryRoleTooltip>Designate this storage as an armory source the mobilization system draws from. Choose whether it holds weapons, armour or civilian clothing — this lets you use any shelf, outfit stand or storage mod as an armory rack.</LW_ArmoryRoleTooltip>
+  <LW_ArmoryRoleOff>off</LW_ArmoryRoleOff>
+  <LW_ArmoryRoleWeapon>weapons</LW_ArmoryRoleWeapon>
+  <LW_ArmoryRoleArmor>armour</LW_ArmoryRoleArmor>
+  <LW_ArmoryRoleApparel>clothing</LW_ArmoryRoleApparel>
+  <LW_AssignKit>Assign combat kit</LW_AssignKit>
+  <LW_AssignKitTooltip>Remember this colonist's current weapon and armour as their combat kit. On mobilization they will always take exactly this kit from the racks (if available) instead of a skill-based pick. Equip them as you want first, then assign.</LW_AssignKitTooltip>
+  <LW_ClearKit>Clear combat kit</LW_ClearKit>
+  <LW_ClearKitTooltip>Forget this colonist's assigned kit. On mobilization they will take a skill-appropriate weapon and armour from the racks instead.</LW_ClearKitTooltip>
+  <LW_ConfigureKit>Configure combat kit</LW_ConfigureKit>
+  <LW_ConfigureKitTooltip>Open a window to pick this colonist's exact mobilization weapon and armour pieces from what is stocked on the armory racks. Anything left unset is chosen automatically by skill.</LW_ConfigureKitTooltip>
+  <LW_LoadoutTitle>Combat loadout: {0}</LW_LoadoutTitle>
+  <LW_LoadoutAuto>Auto (by skill)</LW_LoadoutAuto>
+  <LW_LoadoutWeapon>Weapon</LW_LoadoutWeapon>
+  <LW_LoadoutArmor>Armour set</LW_LoadoutArmor>
+  <LW_LoadoutChange>Change...</LW_LoadoutChange>
+  <LW_LoadoutRemove>Remove</LW_LoadoutRemove>
+  <LW_LoadoutAddArmor>Add armour piece...</LW_LoadoutAddArmor>
+  <LW_LoadoutClear>Clear (auto everything)</LW_LoadoutClear>
+  <LW_LoadoutNothingStocked>(nothing suitable on the racks)</LW_LoadoutNothingStocked>
+  <LW_GroupApproachingLabel>A group is approaching</LW_GroupApproachingLabel>
+  <LW_GroupApproachingText>A group of {kind} from {faction} has set out toward {colony}. They should reach you in about {days} day(s). Track them on the world map.</LW_GroupApproachingText>
+  <LW_ArrivalKind_Visitors>visitors</LW_ArrivalKind_Visitors>
+  <LW_ArrivalKind_Traders>traders</LW_ArrivalKind_Traders>
+  <LW_ArrivalKind_Travelers>travellers</LW_ArrivalKind_Travelers>
+  <LW_MissionReason_Visit>heading to your colony</LW_MissionReason_Visit>
   <LW_Settings_WorldWarTravelDays>Army/mission travel days</LW_Settings_WorldWarTravelDays>
   <LW_Settings_WorldWarRaidCombatants>Warband combatants</LW_Settings_WorldWarRaidCombatants>
   <LW_Settings_WorldWarCooldown>Warband cooldown (days)</LW_Settings_WorldWarCooldown>
@@ -164,6 +204,9 @@
   <LW_MissionMarkerStrengthLine>Force: {combatants} people, strength {strength}</LW_MissionMarkerStrengthLine>
   <LW_MissionMarkerResourceLine>Cargo/supplies: {resources}</LW_MissionMarkerResourceLine>
   <LW_MissionMarkerReasonLine>Purpose: {reason}</LW_MissionMarkerReasonLine>
+  <LW_MissionMarkerDetails>Details</LW_MissionMarkerDetails>
+  <LW_PlayerCaravanMarkerContactLabel>Caravan contact</LW_PlayerCaravanMarkerContactLabel>
+  <LW_PlayerCaravanMarkerContactText>Your caravan crossed paths with a Living World group.\n\n{details}\n\nThis is currently an informational contact; combat, trade and negotiation choices will build on this marker contact.</LW_PlayerCaravanMarkerContactText>
   <LW_MissionReason_Warband>military action ordered by its faction</LW_MissionReason_Warband>
   <LW_MissionReason_Caravan>moving real goods between settlements</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>gathering intel for future action (value {amount})</LW_MissionReason_Scout>
@@ -189,10 +232,25 @@
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
+  <LW_DirectVisitObserver>Observe Living World settlement</LW_DirectVisitObserver>
+  <LW_DirectVisitObserverTooltip>Record a direct visit to this settlement and open its Living World ledger view. This reveals exact population, projects, animals and stores for this settlement only.</LW_DirectVisitObserverTooltip>
+  <LW_SettlementVisitSiteFloatMenu>Visit Living World base at {0}</LW_SettlementVisitSiteFloatMenu>
+  <LW_SettlementVisitSiteUnavailable>Living World settlement visit unavailable: {0}</LW_SettlementVisitSiteUnavailable>
+  <LW_SettlementVisitSiteOpened>Opened {0}</LW_SettlementVisitSiteOpened>
+  <LW_OpenRealSettlementMap>Visit Living World base</LW_OpenRealSettlementMap>
+  <LW_OpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World materializes rooms, stores, defenders and animals there, and later visits keep the map consequences.</LW_OpenRealSettlementMapTooltip>
+  <LW_OpenRealSettlementMapFloatMenu>Visit Living World base at {0}</LW_OpenRealSettlementMapFloatMenu>
+  <LW_DebugOpenRealSettlementMap>DEV: open real LW base map</LW_DebugOpenRealSettlementMap>
+  <LW_DebugOpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World will materialize rooms, stores, defenders and animals there. This creates a real save-map and is meant for testing.</LW_DebugOpenRealSettlementMapTooltip>
+  <LW_WorldActionsHeader>World actions</LW_WorldActionsHeader>
+  <LW_WorldActionLegendLine>Visible markers: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}. Click a marker on the world map to see faction, target, cargo/strength and reason.</LW_WorldActionLegendLine>
+  <LW_WorldActionSettlersImmediate>Settlers: expansion currently founds a new ledger settlement immediately; no fake travelling settler marker is drawn yet.</LW_WorldActionSettlersImmediate>
+  <LW_WorldActionRow>{kind}: {faction} to {target}, about {days} day(s)</LW_WorldActionRow>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>
   <LW_EconomyCol_Population>Population</LW_EconomyCol_Population>
+  <LW_EconomyCol_PopTrend>Pop/day</LW_EconomyCol_PopTrend>
   <LW_EconomyCol_Tier>Top tier</LW_EconomyCol_Tier>
   <LW_EconomyCol_Output>Output/day</LW_EconomyCol_Output>
   <LW_EconomyCol_Change>Change/day</LW_EconomyCol_Change>
@@ -204,6 +262,7 @@
   <LW_SettlementObserver_Overview>Status {status} | tier {tier} | population {total} (adults {adults}, children {children}, elders {elderly}) | wealth {wealth}</LW_SettlementObserver_Overview>
   <LW_SettlementObserver_Production>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_SettlementObserver_Production>
   <LW_SettlementObserver_FoodMigration>Food {food}, daily need {need}, days left {days} | migration pressure {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
+  <LW_SettlementObserver_DailyTrend>Last day: births +{births}, losses -{losses}, migration {moves}, building {builds}, damage/repair {damage}, resources {resources}, animals {animals}, active travel {travels}</LW_SettlementObserver_DailyTrend>
   <LW_SettlementObserver_Projects>Projects</LW_SettlementObserver_Projects>
   <LW_SettlementObserver_NoActiveProject>No active construction or repair project.</LW_SettlementObserver_NoActiveProject>
   <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_ProjectProgress>

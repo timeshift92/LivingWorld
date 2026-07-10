@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
@@ -29,10 +30,11 @@ public sealed class LivingWorldEconomyWindow : Window
     // Column left edges as a fraction of the table width, plus the wealth column that fills the rest.
     private const float ColSettlementsPct = 0.34f;
     private const float ColPopulationPct = 0.46f;
-    private const float ColTierPct = 0.56f;
-    private const float ColOutputPct = 0.67f;
-    private const float ColChangePct = 0.78f;
-    private const float ColWealthPct = 0.89f;
+    private const float ColPopTrendPct = 0.55f;
+    private const float ColTierPct = 0.63f;
+    private const float ColOutputPct = 0.72f;
+    private const float ColChangePct = 0.81f;
+    private const float ColWealthPct = 0.90f;
 
     private readonly List<EconomyRow> cachedRows = new();
     private Vector2 scrollPosition;
@@ -47,6 +49,7 @@ public sealed class LivingWorldEconomyWindow : Window
             string factionId,
             int settlements,
             int population,
+            int dailyPopulationChange,
             SettlementTier topTier,
             int dailyOutputValue,
             int dailyWealthChange,
@@ -56,6 +59,7 @@ public sealed class LivingWorldEconomyWindow : Window
             FactionId = factionId;
             Settlements = settlements;
             Population = population;
+            DailyPopulationChange = dailyPopulationChange;
             TopTier = topTier;
             DailyOutputValue = dailyOutputValue;
             DailyWealthChange = dailyWealthChange;
@@ -66,6 +70,7 @@ public sealed class LivingWorldEconomyWindow : Window
         public string FactionId { get; }
         public int Settlements { get; }
         public int Population { get; }
+        public int DailyPopulationChange { get; }
         public SettlementTier TopTier { get; }
         public int DailyOutputValue { get; }
         public int DailyWealthChange { get; }
@@ -117,6 +122,7 @@ public sealed class LivingWorldEconomyWindow : Window
     {
         var xSettlements = rect.x + (rect.width * ColSettlementsPct);
         var xPopulation = rect.x + (rect.width * ColPopulationPct);
+        var xPopTrend = rect.x + (rect.width * ColPopTrendPct);
         var xTier = rect.x + (rect.width * ColTierPct);
         var xOutput = rect.x + (rect.width * ColOutputPct);
         var xChange = rect.x + (rect.width * ColChangePct);
@@ -126,7 +132,8 @@ public sealed class LivingWorldEconomyWindow : Window
         {
             Widgets.Label(new Rect(rect.x, rect.y, xSettlements - rect.x, rect.height), "LW_EconomyCol_Faction".Translate());
             Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), "LW_EconomyCol_Settlements".Translate());
-            Widgets.Label(new Rect(xPopulation, rect.y, xTier - xPopulation, rect.height), "LW_EconomyCol_Population".Translate());
+            Widgets.Label(new Rect(xPopulation, rect.y, xPopTrend - xPopulation, rect.height), "LW_EconomyCol_Population".Translate());
+            Widgets.Label(new Rect(xPopTrend, rect.y, xTier - xPopTrend, rect.height), "LW_EconomyCol_PopTrend".Translate());
             Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), "LW_EconomyCol_Tier".Translate());
             Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height), "LW_EconomyCol_Output".Translate());
             Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), "LW_EconomyCol_Change".Translate());
@@ -158,7 +165,8 @@ public sealed class LivingWorldEconomyWindow : Window
         var wealth = debugExact ? data.Wealth.ToString() : WealthBand(data.Wealth);
 
         Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), data.Settlements.ToString());
-        Widgets.Label(new Rect(xPopulation, rect.y, xTier - xPopulation, rect.height), population);
+        Widgets.Label(new Rect(xPopulation, rect.y, xPopTrend - xPopulation, rect.height), population);
+        Widgets.Label(new Rect(xPopTrend, rect.y, xTier - xPopTrend, rect.height), FormatSigned(data.DailyPopulationChange));
         Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), TierLabel(data.TopTier));
         Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height), FormatSigned(data.DailyOutputValue));
         Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), FormatSigned(data.DailyWealthChange));
@@ -199,6 +207,7 @@ public sealed class LivingWorldEconomyWindow : Window
             {
                 var settlements = group.ToList();
                 var population = settlements.Sum(settlement => state.GetSettlementPopulation(settlement.Id).Total);
+                var dailyPopulationChange = DailyPopulationChange(state, settlements, currentTick);
                 var topTier = settlements
                     .Select(settlement => SettlementDevelopmentService.GetTier(state, settlement.Id))
                     .DefaultIfEmpty(SettlementTier.Camp)
@@ -210,6 +219,7 @@ public sealed class LivingWorldEconomyWindow : Window
                     FactionId: group.Key,
                     Settlements: settlements.Count,
                     Population: population,
+                    DailyPopulationChange: dailyPopulationChange,
                     TopTier: topTier,
                     DailyOutputValue: dailyOutputValue,
                     DailyWealthChange: dailyOutputValue - dailyFoodCost,
@@ -228,6 +238,7 @@ public sealed class LivingWorldEconomyWindow : Window
                 row.FactionId,
                 row.Settlements,
                 row.Population,
+                row.DailyPopulationChange,
                 row.TopTier,
                 row.DailyOutputValue,
                 row.DailyWealthChange,
@@ -249,6 +260,41 @@ public sealed class LivingWorldEconomyWindow : Window
             + (production.SteelPerDay * prices.PriceOf("Steel"))
             + (production.MedicinePerDay * prices.PriceOf("MedicineIndustrial"))
             + (production.ComponentsPerDay * prices.PriceOf("ComponentIndustrial"));
+    }
+
+    private static int DailyPopulationChange(WorldState state, List<WorldSettlement> settlements, int currentTick)
+    {
+        var effectiveTick = Math.Max(currentTick, state.CurrentTick);
+        var cutoff = Math.Max(0, effectiveTick - 60_000);
+        var settlementIds = new HashSet<EntityId>(settlements.Select(settlement => settlement.Id));
+        var change = 0;
+        foreach (var worldEvent in state.Events.Where(worldEvent => worldEvent.Tick >= cutoff))
+        {
+            if (!worldEvent.SubjectId.HasValue)
+            {
+                continue;
+            }
+
+            var citizen = state.GetCitizen(worldEvent.SubjectId.Value);
+            if (citizen == null || !settlementIds.Contains(citizen.SettlementId))
+            {
+                continue;
+            }
+
+            change += worldEvent.Kind switch
+            {
+                WorldEventKind.CitizenBorn => 1,
+                WorldEventKind.MigrationCompleted => 1,
+                WorldEventKind.DrifterAssimilated => 1,
+                WorldEventKind.CitizenDied => -1,
+                WorldEventKind.RefugeeCreated => -1,
+                WorldEventKind.RaidPawnCaptured => -1,
+                WorldEventKind.RaidPawnMissing => -1,
+                _ => 0,
+            };
+        }
+
+        return change;
     }
 
     private static int DailyFoodCost(WorldState state, List<WorldSettlement> settlements)

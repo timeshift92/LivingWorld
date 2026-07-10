@@ -36,6 +36,9 @@ var tests = new List<(string Name, Action Test)>
     ("technology diffusion upgrades lower tier settlements", TestTechnologyDiffusionUpgradesLowerTierSettlements),
     ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
+    ("seeds settlement population with deterministic variation", TestSettlementPopulationSeedingVariesBaseline),
+    ("seeds settlement population with children and stable-key variation", TestSettlementPopulationSeedingAddsChildrenAndStableKeyVariation),
+    ("bootstrap primer creates visible settlement dynamics before first daily tick", TestSettlementBootstrapPrimerCreatesVisibleDynamics),
     ("records food shortage and blocks births during starvation", TestSettlementDailySimulationRecordsFoodShortage),
     ("blocks births when housing is full", TestSettlementDailySimulationBlocksBirthsWhenHousingIsFull),
     ("ages citizens and records natural deaths", TestDemographyServiceAgesAndKillsElders),
@@ -45,6 +48,7 @@ var tests = new List<(string Name, Action Test)>
     ("deep production uses archetype labor scale and complexity", TestSettlementProductionUsesDepthModifiers),
     ("virtual trade conserves goods and silver", TestVirtualTradeTransfersGoodsAndSilver),
     ("produces owned resources every day from settlement profile", TestSettlementProductionAddsOwnedResources),
+    ("summarizes recent world activity by domain", TestWorldActivitySummaryGroupsRecentEvents),
     ("settlement facilities modify production output", TestSettlementFacilitiesModifyProductionOutput),
     ("settlement production status reports effective daily output", TestSettlementProductionStatusUsesEffectiveOutput),
     ("settlement projects consume resources and complete facilities", TestSettlementProjectsConsumeResourcesAndCompleteFacilities),
@@ -89,8 +93,10 @@ var tests = new List<(string Name, Action Test)>
     ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
     ("settlement map layout builds rooms and stockpile slots from ledger facilities", TestSettlementMapLayoutBuildsRoomsAndStockpiles),
     ("settlement map layout builds city housing defense power and work features", TestSettlementMapLayoutBuildsCityInfrastructure),
+    ("settlement map layout builds districts roads style power network and activity points", TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity),
     ("settlement map damage lowers facility condition", TestSettlementMapDamageLowersFacilityCondition),
     ("animal map fate sync returns only live departures", TestAnimalMapFateSyncReturnsOnlyLiveDepartures),
+    ("animal map fate sync keeps player-taken animals out of source cohorts", TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
@@ -166,8 +172,10 @@ var tests = new List<(string Name, Action Test)>
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
+    ("war planner keeps scouts and diplomats visible even after attacks unlock", TestFactionActionPlannerDiversifiesVisibleActions),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("war planner avoids targets already under pressure", TestFactionActionPlannerAvoidsPressuredEnemyTargets),
+    ("war planner scouts instead of dogpiling a saturated target", TestFactionActionPlannerAbstainsWhenTargetSaturated),
     ("warmonger does not target allied settlements", TestFactionActionPlannerSkipsAlliedTargets),
     ("warmonger does not target the player faction", TestFactionActionPlannerSkipsPlayerFactionTarget),
     ("non-combat world actions do not target the player faction", TestWorldWarNonCombatActionsSkipPlayerFaction),
@@ -191,9 +199,10 @@ var tests = new List<(string Name, Action Test)>
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
     ("war refugees enter finite population flow", TestWarRefugeesEnterFinitePopulationFlow),
     ("warband cooldown paces a faction's attacks", TestWorldWarWarbandCooldownThrottlesLaunches),
-    ("expansionist faction founds a colony from its population", TestWorldWarExpansionistFoundsColony),
+    ("expansionist faction launches a real settler expedition before founding", TestWorldWarExpansionistLaunchesSettlerExpeditionBeforeFounding),
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
-    ("expansion creates unique colony slugs", TestWorldWarExpansionUsesUniqueColonySlugs),
+    ("settler expedition creates unique colony slugs on arrival", TestSettlerExpeditionUsesUniqueColonySlugsOnArrival),
+    ("settler expedition survives save load before founding", TestSettlerExpeditionSurvivesSaveLoadBeforeFounding),
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
     ("world war caravan reserves and returns real crew", TestWorldWarCaravanReservesAndReturnsRealCrew),
     ("world war target selector skips inactive settlements", TestWorldWarTargetSelectorSkipsInactiveSettlements),
@@ -233,6 +242,7 @@ var tests = new List<(string Name, Action Test)>
     ("adds a safe world-map speed test override", TestRimWorldWorldMapSpeedTestOverride),
     ("detects Empire and surfaces the interop note", TestRimWorldEmpireInterop),
     ("shows world economy bands in the main tab", TestRimWorldWorldEconomyMainTab),
+    ("shows world activity trends instead of only static totals", TestRimWorldWorldActivityTrends),
     ("summarizes world conflicts in the main tab", TestRimWorldWorldConflictsSection),
     ("shows factions watching the player in the main tab", TestRimWorldWatchersSection),
     ("draws faction icons in the main tab", TestRimWorldMainTabFactionIcons),
@@ -276,13 +286,21 @@ var tests = new List<(string Name, Action Test)>
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
+    ("shows world action marker legend and filters", TestRimWorldWorldActionMarkerLegendAndFilters),
+    ("world action markers start at their origin tile", TestRimWorldWorldActionMarkersStartAtOrigin),
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
+    ("opens a direct settlement observer from the world map", TestRimWorldDirectSettlementObserver),
+    ("defines a dedicated settlement visit site foundation", TestRimWorldSettlementVisitSiteFoundation),
+    ("routes caravan settlement visits through a dedicated visit site", TestRimWorldSettlementVisitCaravanRoute),
+    ("materializes dedicated settlement visit sites from the ledger", TestRimWorldSettlementVisitSiteMaterializationRoute),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
     ("uses RimWorld world seed for deterministic state", TestWorldComponentUsesRimWorldWorldSeed),
+    ("primes RimWorld bootstrap with immediate visible dynamics", TestRimWorldBootstrapPrimesImmediateDynamics),
+    ("migrates legacy saves to visible settlement dynamics", TestWorldComponentMigratesLegacyVisibleDynamics),
     ("catches up missed daily simulations with a cap", TestWorldComponentCatchesUpMissedSimulationDays),
     ("marks bootstrap as initial world seeding", TestWorldComponentUsesInitialWorldSeedingBoundary),
     ("suppresses noisy bootstrap citizen events", TestWorldComponentSuppressesBootstrapEventSpam),
@@ -312,6 +330,10 @@ var tests = new List<(string Name, Action Test)>
     ("materializes settlement facilities and tracks animal fate on maps", TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization),
     ("materializes settlement rooms and stockpiles on attacked maps", TestRimWorldSettlementRoomsAndStockpilesMaterialization),
     ("tracks settlement map structures and reconciles facility damage", TestRimWorldSettlementMapFacilityDamageReconciliation),
+    ("tracks settlement map floors and reconciles facility damage", TestRimWorldSettlementMapFloorDamageReconciliation),
+    ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
+    ("materializes full npc city layout surface", TestRimWorldSettlementMapFullCitySurface),
+    ("cleans orphaned lord references before save", TestRimWorldCleansOrphanedLordReferences),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -320,6 +342,13 @@ var tests = new List<(string Name, Action Test)>
     ("gives settlements a deterministic economic character", TestEconomicCharacterVariation),
     ("wires economic diversity into seeding and settings", TestRimWorldEconomicDiversity),
     ("gives mechanoid raids a world-map source", TestRimWorldMechClusters),
+    ("makes visitor groups travel across the world map", TestRimWorldApproachingVisitors),
+    ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
+    ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
+    ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
+    ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
+    ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
+    ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
     ("mob plan: non-candidate is left alone when mobilized", TestMobPlanNonCandidateMobilized),
     ("mob plan: non-candidate is left alone when stood down", TestMobPlanNonCandidateStandDown),
@@ -1291,6 +1320,94 @@ static void TestSettlementDailySimulationConsumesFoodAndBirths()
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
 }
 
+static void TestSettlementPopulationSeedingVariesBaseline()
+{
+    var counts = Enumerable.Range(1, 8)
+        .Select(id => SettlementPopulationSeedingService.CalculateAdultCount(
+            worldSeed: 12345,
+            settlementStableId: id,
+            configuredAdults: 57,
+            minAdults: 12,
+            maxAdults: 90))
+        .ToList();
+
+    AssertEqual(true, counts.All(count => count >= 12 && count <= 90));
+    AssertEqual(true, counts.Distinct().Count() > 1);
+
+    var first = SettlementPopulationSeedingService.CalculateAdultCount(12345, 4, 57, 12, 90);
+    var second = SettlementPopulationSeedingService.CalculateAdultCount(12345, 4, 57, 12, 90);
+    AssertEqual(first, second);
+
+    var ages = Enumerable.Range(0, 20)
+        .Select(index => SettlementPopulationSeedingService.CalculateAdultAge(12345, 4, index))
+        .ToList();
+    AssertEqual(true, ages.All(age => age >= 18 && age <= 88));
+    AssertEqual(true, ages.Any(age => age >= 70));
+}
+
+static void TestSettlementPopulationSeedingAddsChildrenAndStableKeyVariation()
+{
+    var stableKeys = new[] { "settlement:tile:101", "settlement:tile:207", "settlement:tile:313", "settlement:tile:419" };
+    var adultCounts = stableKeys
+        .Select(key => SettlementPopulationSeedingService.CalculateAdultCount(
+            worldSeed: 98765,
+            settlementStableId: SettlementPopulationSeedingService.StableSettlementSeed(key),
+            configuredAdults: 57,
+            minAdults: 12,
+            maxAdults: 90))
+        .ToList();
+    var childCounts = adultCounts
+        .Select((adults, index) => SettlementPopulationSeedingService.CalculateChildCount(
+            worldSeed: 98765,
+            settlementStableId: SettlementPopulationSeedingService.StableSettlementSeed(stableKeys[index]),
+            adultCount: adults))
+        .ToList();
+
+    AssertEqual(true, adultCounts.Distinct().Count() > 1);
+    AssertEqual(true, childCounts.All(count => count > 0));
+    AssertEqual(true, childCounts.Distinct().Count() > 1);
+
+    var childAges = Enumerable.Range(0, 12)
+        .Select(index => SettlementPopulationSeedingService.CalculateChildAge(98765, 101, index))
+        .ToList();
+    AssertEqual(true, childAges.All(age => age >= 0 && age <= 17));
+    AssertEqual(true, childAges.Distinct().Count() > 1);
+}
+
+static void TestSettlementBootstrapPrimerCreatesVisibleDynamics()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("lee", "Lee", "Empire");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            "TemperateSwamp",
+            "SmallHills",
+            "Spacer",
+            GrowingDays: 40,
+            Rainfall: 900,
+            AverageTemperature: 14)));
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 200);
+    state.AddResource(settlement.Id, "Steel", 300);
+    state.AddResource(settlement.Id, "Silver", 1200);
+
+    var result = SettlementBootstrapPrimer.PrimeSettlement(
+        state,
+        new SettlementBootstrapPrimerRequest(
+            Tick: 0,
+            SettlementId: settlement.Id,
+            FoodResourceKey: "PackagedSurvivalMeal",
+            SteelResourceKey: "Steel",
+            ComponentResourceKey: "ComponentIndustrial"));
+
+    AssertEqual(1, result.FacilitiesSeeded);
+    AssertEqual(true, result.AnimalCohortsSeeded > 0);
+    AssertEqual(true, result.WealthSnapshot.TotalWealth > 0);
+    AssertEqual(true, state.GetSettlementFacilities(settlement.Id).Count > 0);
+    AssertEqual(true, state.GetAnimalCohorts(settlement.Id).Count > 0);
+    AssertEqual(true, state.GetSettlementWealth(settlement.Id)!.TotalWealth > 0);
+}
+
 static void TestSettlementDailySimulationRecordsFoodShortage()
 {
     var state = new WorldState(12345);
@@ -1571,6 +1688,38 @@ static void TestSettlementProductionAddsOwnedResources()
     AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "MedicineIndustrial"));
     AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementProductionUpdated));
+}
+
+static void TestWorldActivitySummaryGroupsRecentEvents()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("town", "Town", "Settlers");
+    var target = state.CreateSettlement("target", "Target", "Visitors");
+    var citizen = state.CreateCitizen("Ada", 30, Sex.Female, "farmer", settlement.Id);
+
+    state.AdvanceToTick(10_000);
+    state.AddResource(settlement.Id, "Steel", 20);
+    state.RecordEvent(WorldEventKind.SettlementProjectCompleted, settlement.Id, "workshop completed");
+    state.RecordEvent(WorldEventKind.CaravanLaunched, settlement.Id, "caravan departed");
+    state.RecordEvent(WorldEventKind.DiplomaticMissionSent, settlement.Id, "envoys departed");
+    state.RecordEvent(WorldEventKind.AnimalHunted, settlement.Id, "hunted muffalo");
+    state.RecordEvent(WorldEventKind.TechnologyDiffused, settlement.Id, "industrial farming diffused");
+    state.RecordEvent(WorldEventKind.WarbandLaunched, target.Id, "unrelated warband");
+    state.RecordEvent(WorldEventKind.CitizenDied, citizen.Id, "Ada died");
+
+    var summary = WorldActivitySummaryService.Summarize(
+        state,
+        new WorldActivitySummaryRequest(CurrentTick: 10_000, LookbackTicks: 60_000, SettlementId: settlement.Id));
+
+    AssertEqual(-1, summary.PopulationDelta);
+    AssertEqual(1, summary.EconomyEvents);
+    AssertEqual(1, summary.ConstructionEvents);
+    AssertEqual(0, summary.MilitaryEvents);
+    AssertEqual(1, summary.TradeEvents);
+    AssertEqual(1, summary.DiplomacyEvents);
+    AssertEqual(1, summary.EcologyEvents);
+    AssertEqual(1, summary.TechnologyEvents);
+    AssertEqual(7, summary.TotalEvents);
 }
 
 static void TestSettlementFacilitiesModifyProductionOutput()
@@ -2929,6 +3078,105 @@ static void TestSettlementMapLayoutBuildsCityInfrastructure()
     AssertContains("Table", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
 }
 
+static void TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("zenith-dock", "Zenith Dock", "Outlander");
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment(
+            Biome: "AridShrubland",
+            Hilliness: "SmallHills",
+            TechLevel: "Industrial",
+            GrowingDays: 40,
+            Rainfall: 420,
+            AverageTemperature: 24)) with
+        {
+            Archetype = ProductionArchetype.Warrior
+        });
+    state.RecordSettlementCapability(new SettlementCapability(
+        settlement.Id,
+        HousingCapacity: 40,
+        FoodStorageCapacity: 500,
+        MedicineStorageCapacity: 60,
+        PowerCapacity: 6,
+        LaboratoryCapacity: 1,
+        AnimalCapacity: 10,
+        CropCapacity: 2,
+        ResearchCapacity: 1,
+        MechanicalCapacity: 2,
+        PollutionHandling: 0));
+    for (var i = 0; i < 24; i++)
+    {
+        state.CreateCitizen($"Citizen {i}", 18 + i, i % 2 == 0 ? Sex.Male : Sex.Female, "worker", settlement.Id);
+    }
+
+    var storage = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 40),
+        settlement.Id,
+        SettlementFacilityKind.Storage,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    var workshop = state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 41),
+        settlement.Id,
+        SettlementFacilityKind.Workshop,
+        Level: 3,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 42),
+        settlement.Id,
+        SettlementFacilityKind.PowerPlant,
+        Level: 2,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+    state.RecordSettlementFacility(new SettlementFacility(
+        EntityId.Create(EntityKind.SettlementFacility, 43),
+        settlement.Id,
+        SettlementFacilityKind.Clinic,
+        Level: 1,
+        ConditionPercent: 100,
+        BuiltTick: 10_000));
+
+    var layout = SettlementMapLayoutService.BuildFacilityLayout(
+        state,
+        new SettlementMapLayoutRequest(
+            settlement.Id,
+            CenterX: 120,
+            CenterZ: 120,
+            MaxFacilities: 8));
+
+    AssertEqual(SettlementMapLayoutStatus.Success, layout.Status);
+    AssertEqual("arid-industrial-warrior", layout.Style.StyleKey);
+    AssertEqual("SandstoneBlocks", layout.Style.WallStuffDefName);
+    AssertEqual("Concrete", layout.Style.RoadTerrainDefName);
+    if (layout.Districts.Count < 5)
+    {
+        throw new InvalidOperationException("NPC city layout should include facility districts plus housing/security/common districts.");
+    }
+
+    AssertEqual(storage.Id, layout.Districts.First(district => district.Kind == SettlementMapDistrictKind.Storage).FacilityId);
+    AssertEqual(workshop.Id, layout.Districts.First(district => district.Kind == SettlementMapDistrictKind.Industry).FacilityId);
+    AssertEqual(true, layout.Districts.Any(district => district.Kind == SettlementMapDistrictKind.Housing));
+    AssertEqual(true, layout.Districts.Any(district => district.Kind == SettlementMapDistrictKind.Security));
+    AssertEqual(true, layout.Districts.Any(district => district.Kind == SettlementMapDistrictKind.Commons));
+    if (layout.PathCells.Count < layout.Districts.Count * 2)
+    {
+        throw new InvalidOperationException("NPC city layout should connect districts with deterministic roads.");
+    }
+
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.PowerConduit));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.PowerGenerator));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Light));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.GuardPost));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Activity));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Barracks));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.PerimeterWall));
+    AssertEqual(true, layout.CityFeatures.Any(feature => feature.Kind == SettlementMapCityFeatureKind.Turret));
+}
+
 static void TestSettlementMapDamageLowersFacilityCondition()
 {
     var state = new WorldState(4242);
@@ -2999,6 +3247,45 @@ static void TestAnimalMapFateSyncReturnsOnlyLiveDepartures()
     AssertEqual(AnimalMapFateSyncStatus.Success, live.Status);
     AssertEqual(AnimalMapFateSyncStatus.Success, dead.Status);
     AssertEqual(4, state.GetAnimalCohort(herd.Id)!.Count);
+}
+
+static void TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts()
+{
+    var state = new WorldState(4243);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    var herd = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 4,
+        healthPercent: 80,
+        fertilityPercent: 60,
+        carryingCapacity: 12,
+        tick: 100);
+
+    var withdrawn = AnimalMapMaterializationService.WithdrawForSettlementMap(
+        state,
+        new AnimalMapMaterializationRequest(settlement.Id, MaxAnimals: 1, Tick: 200, PurposeKey: "map:ranch:2"));
+    AssertEqual(AnimalMapMaterializationStatus.Success, withdrawn.Status);
+    AssertEqual(3, state.GetAnimalCohort(herd.Id)!.Count);
+    var declineEventsBefore = state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined);
+
+    var taken = AnimalMapFateSyncService.Resolve(
+        state,
+        new AnimalMapFateSyncRequest(
+            withdrawn.Animals[0].CohortId,
+            withdrawn.Animals[0].AnimalKind,
+            withdrawn.Animals[0].Type,
+            Count: 1,
+            Fate: AnimalMapFateKind.TakenByPlayer,
+            Tick: 300,
+            Reason: "animal tamed or taken by the player"));
+
+    AssertEqual(AnimalMapFateSyncStatus.Success, taken.Status);
+    AssertEqual(3, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(
+        declineEventsBefore + 1,
+        state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.AnimalCohortDeclined));
 }
 
 static void TestTradeLedgerSettlementReceivesSoldGoods()
@@ -4736,6 +5023,32 @@ static void TestFactionActionPlannerScoutsBeforeUnknownWarTarget()
     AssertEqual(victim.Id, known.TargetSettlementId);
 }
 
+static void TestFactionActionPlannerDiversifiesVisibleActions()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    var knownVictim = state.CreateSettlement("known-village", "Known Village", "KnownVictims");
+    state.CreateSettlement("unknown-village", "Unknown Village", "UnknownVictims");
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.RecordFactionSettlementIntel("Raiders", knownVictim.Id, IntelSourceKind.Scout, 0, confidence: 80);
+
+    var attack = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+    var scout = FactionActionPlanner.Plan(state, "Raiders", 7 * 60_000);
+    var diplomat = FactionActionPlanner.Plan(state, "Raiders", 11 * 60_000);
+
+    AssertEqual(WarAction.Warband, attack.Action);
+    AssertEqual(knownVictim.Id, attack.TargetSettlementId);
+    AssertEqual(WarAction.ScoutingParty, scout.Action);
+    AssertEqual(null, scout.TargetSettlementId);
+    AssertEqual(WarAction.Diplomat, diplomat.Action);
+    AssertEqual(null, diplomat.TargetSettlementId);
+}
+
 static void TestFactionActionPlannerSpreadsEnemyTargets()
 {
     var state = new WorldState(4242);
@@ -4807,6 +5120,38 @@ static void TestFactionActionPlannerAvoidsPressuredEnemyTargets()
 
     AssertEqual(WarAction.Warband, pressured.Action);
     AssertEqual(alternate, pressured.TargetSettlementId);
+}
+
+static void TestFactionActionPlannerAbstainsWhenTargetSaturated()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", home.Id);
+    }
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+
+    // The faction knows exactly one enemy settlement.
+    var onlyTarget = state.CreateSettlement("target-one", "Target One", "TargetOneFaction");
+    state.RecordFactionSettlementIntel("Raiders", onlyTarget.Id, IntelSourceKind.Scout, 0, confidence: 80);
+
+    // With no pressure it would march on that single known target.
+    AssertEqual(WarAction.Warband, FactionActionPlanner.Plan(state, "Raiders", 60_000).Action);
+
+    // Saturate that target with rival armies (each in-flight army is x3 pressure) up to the cap.
+    var rivalHome = state.CreateSettlement("rival-home", "Rival Home", "Rivals");
+    var rivalA = state.CreateArmy("Rival A", "Rivals", rivalHome.Id);
+    var rivalB = state.CreateArmy("Rival B", "Rivals", rivalHome.Id);
+    state.DispatchArmy(rivalA.Id, onlyTarget.Id, 5 * 60_000);
+    state.DispatchArmy(rivalB.Id, onlyTarget.Id, 5 * 60_000);
+
+    // Its only known target is now saturated, so it does not dogpile — it falls through to scouting,
+    // which is how it gathers the intel to diversify its targets in later rounds.
+    var plan = FactionActionPlanner.Plan(state, "Raiders", 120_000);
+    AssertEqual(WarAction.ScoutingParty, plan.Action);
+    AssertEqual(true, plan.TargetSettlementId == null);
 }
 
 static void TestFactionActionPlannerSkipsAlliedTargets()
@@ -5454,7 +5799,7 @@ static void TestWorldWarWarbandCooldownThrottlesLaunches()
     AssertEqual(1, totalLaunched);
 }
 
-static void TestWorldWarExpansionistFoundsColony()
+static void TestWorldWarExpansionistLaunchesSettlerExpeditionBeforeFounding()
 {
     var state = new WorldState(4242);
     var home = state.CreateSettlement("home", "Home", "Settlers");
@@ -5472,14 +5817,33 @@ static void TestWorldWarExpansionistFoundsColony()
         state,
         new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
 
-    AssertEqual(1, result.ColoniesFounded);
+    AssertEqual(0, result.ColoniesFounded);
+    AssertEqual(1, result.SettlerExpeditionsLaunched);
+    AssertEqual(settlementsBefore, state.Settlements.Count);
+    AssertEqual(totalCitizens, state.Citizens.Count);
+    AssertEqual(1, state.MigrationGroups.Count(group => group.Reason == MigrationService.ReasonSettlementFounding));
+
+    var expedition = state.MigrationGroups.Single(group => group.Reason == MigrationService.ReasonSettlementFounding);
+    AssertEqual(MigrationGroupStatus.Traveling, expedition.Status);
+    AssertEqual(null, expedition.TargetSettlementId);
+    AssertEqual("Settlers-colony-2", expedition.PlannedSettlementSlug);
+    AssertEqual(6, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == expedition.Id));
+    AssertEqual(24, state.GetSettlementPopulation(home.Id).Adults);
+
+    var arrival = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(180_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, arrival.ColoniesFounded);
     AssertEqual(settlementsBefore + 1, state.Settlements.Count);
-    // Population is conserved: the settlers relocated, none were created from nothing.
     AssertEqual(totalCitizens, state.Citizens.Count);
 
     var colony = state.Settlements.First(settlement => settlement.Id != home.Id);
     AssertEqual(6, state.GetSettlementPopulation(colony.Id).Adults);
     AssertEqual("Settlers", state.GetSettlement(colony.Id)!.FactionId);
+    AssertEqual(MigrationGroupStatus.Arrived, state.GetMigrationGroup(expedition.Id)!.Status);
+    AssertEqual(0, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == expedition.Id));
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestExpandSettlementRejectsEmptyOrInsufficientSettlers()
@@ -5496,7 +5860,7 @@ static void TestExpandSettlementRejectsEmptyOrInsufficientSettlers()
     AssertEqual(1, state.GetSettlementPopulation(home.Id).Adults);
 }
 
-static void TestWorldWarExpansionUsesUniqueColonySlugs()
+static void TestSettlerExpeditionUsesUniqueColonySlugsOnArrival()
 {
     var state = new WorldState(4242);
     var home = state.CreateSettlement("home", "Home", "Settlers");
@@ -5517,9 +5881,50 @@ static void TestWorldWarExpansionUsesUniqueColonySlugs()
         state,
         new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
 
-    AssertEqual(1, result.ColoniesFounded);
+    AssertEqual(0, result.ColoniesFounded);
+    AssertEqual(1, result.SettlerExpeditionsLaunched);
+    AssertEqual(false, state.Settlements.Any(settlement => settlement.Slug == "Settlers-colony-4"));
+
+    var arrival = WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(180_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, arrival.ColoniesFounded);
     AssertEqual(true, state.Settlements.Any(settlement => settlement.Slug == "Settlers-colony-4"));
     AssertEqual(false, state.Validate().Any(error => error.Contains("Duplicate settlement slug", StringComparison.Ordinal)));
+}
+
+static void TestSettlerExpeditionSurvivesSaveLoadBeforeFounding()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("home", "Home", "Settlers");
+    for (var i = 0; i < 30; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "settler", home.Id);
+    }
+
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Expansionist);
+
+    WorldWarService.SimulateDay(
+        state,
+        new WorldWarRequest(60_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    var expedition = state.MigrationGroups.Single(group => group.Reason == MigrationService.ReasonSettlementFounding);
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredExpedition = restored.GetMigrationGroup(expedition.Id)!;
+
+    AssertEqual(MigrationGroupStatus.Traveling, restoredExpedition.Status);
+    AssertEqual("Settlers-colony-2", restoredExpedition.PlannedSettlementSlug);
+    AssertEqual(6, restored.Citizens.Count(citizen => restored.GetOwner(citizen.Id) == restoredExpedition.Id));
+    AssertEqual(1, restored.Settlements.Count);
+
+    var arrival = WorldWarService.SimulateDay(
+        restored,
+        new WorldWarRequest(180_000, TravelDays: 2, RaidCombatants: 6, SettlerCount: 6));
+
+    AssertEqual(1, arrival.ColoniesFounded);
+    AssertEqual(2, restored.Settlements.Count);
+    AssertEqual(0, restored.Validate().Count());
 }
 
 static void TestWorldWarCaravanTransfersRealGoods()
@@ -5782,9 +6187,10 @@ static void TestDerivedAggregatesTrackCaptureAndExpansion()
     AssertFactionAggregateMatchesFullScan(state, "Settlers");
     AssertAggregateMatchesFullScan(state, settler.Id);
 
-    // Expansion moves adults to a new colony — the source settlement aggregate must track the drop.
+    // Expansion now starts as a travelling settler expedition — the source aggregate must track
+    // the drop before the new colony is founded.
     AssertAggregateMatchesFullScan(state, raider.Id);
-    state.ExpandSettlement(raider.Id, "a-colony", "A Colony", 6);
+    state.StartSettlementExpedition(raider.Id, "a-colony", "A Colony", 6, 60_000, 120_000);
     AssertAggregateMatchesFullScan(state, raider.Id);
     AssertFactionAggregateMatchesFullScan(state, "Raiders");
 }
@@ -7473,7 +7879,12 @@ static void TestRimWorldSettlementMapMaterialization()
     var service = File.ReadAllText(servicePath);
     AssertContains("SettlementMaterializationService.PrepareDefense", service);
     AssertContains("MaterializationLeaseService.BindPawn", service);
-    AssertContains("identity.SetLedgerId(lease.CitizenId)", service);
+    AssertContains("StampIdentity(pawn, lease.CitizenId)", service);
+    AssertContains("identity.SetLedgerId(citizenId)", service);
+    AssertContains("SpawnGeneratedDefenders", service);
+    AssertContains("faction.RandomPawnKind()", service);
+    AssertContains("new NameSingle(citizen.Name)", service);
+    AssertContains("EstimateDefenderCount", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("GenSpawn.Spawn", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
@@ -7503,6 +7914,7 @@ static void TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization()
     AssertContains("AnimalMapFateSyncService.Resolve", tracker);
     AssertContains("AnimalMapFateKind.Returned", tracker);
     AssertContains("AnimalMapFateKind.Dead", tracker);
+    AssertContains("AnimalMapFateKind.TakenByPlayer", tracker);
 
     var killPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnKillPatch.cs"));
     var exitPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
@@ -7524,7 +7936,7 @@ static void TestRimWorldSettlementRoomsAndStockpilesMaterialization()
     AssertContains("DoorThingDefName", service);
     AssertContains("WallStuffDefName", service);
     AssertContains("layout.StockpileCells", service);
-    AssertContains("TrySpawnResourceStack(map, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
 }
@@ -7550,6 +7962,68 @@ static void TestRimWorldSettlementMapFacilityDamageReconciliation()
     AssertContains("LivingWorldSettlementMapFacilityTracker.Track", service);
     AssertContains("TrySpawnStructure(", service);
     AssertContains("new IntVec3", service);
+}
+
+static void TestRimWorldSettlementMapFloorDamageReconciliation()
+{
+    var root = FindRepoRoot();
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapFloorTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("public static void Track", tracker);
+    AssertContains("public static int ReconcileMap", tracker);
+    AssertContains("map.terrainGrid.TerrainAt", tracker);
+    AssertContains("SettlementMapDamageService.ReconcileFacilityDamage", tracker);
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("LivingWorldSettlementMapFloorTracker.ReconcileMap", patch);
+
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+    AssertContains("LivingWorldSettlementMapFloorTracker.Track", service);
+    AssertContains("room.FacilityId", service);
+    AssertContains("room.FloorTerrainDefName", service);
+}
+
+static void TestRimWorldSettlementMapResourceReconciliation()
+{
+    var root = FindRepoRoot();
+    var trackerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapResourceTracker.cs");
+    AssertFileExists(trackerPath);
+    var tracker = File.ReadAllText(trackerPath);
+    AssertContains("public static void Track", tracker);
+    AssertContains("public static int ReconcileMap", tracker);
+    AssertContains("thing.Spawned", tracker);
+    AssertContains("thing.Map != map", tracker);
+    AssertContains("ResolveReturnOwner", tracker);
+    AssertContains("ResourceLedgerService.AddResource", tracker);
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
+    var patch = File.ReadAllText(patchPath);
+    AssertContains("LivingWorldSettlementMapResourceTracker.ReconcileMap", patch);
+
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("LivingWorldSettlementMapResourceTracker.Track", service);
+}
+
+static void TestRimWorldSettlementMapFullCitySurface()
+{
+    var root = FindRepoRoot();
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+
+    AssertContains("SpawnDistrictTerrain", service);
+    AssertContains("layout.Districts", service);
+    AssertContains("layout.PathCells", service);
+    AssertContains("RoadTerrainDefName", service);
+    AssertContains("PowerConduit", service);
+    AssertContains("PowerGenerator", service);
+    AssertContains("GuardPost", service);
+    AssertContains("Activity", service);
+    AssertContains("TrySetTerrain", service);
+    AssertContains("LivingWorldSettlementMapFacilityTracker.Track", service);
 }
 
 // Task 3: the full settlement-visit lease lifecycle resolves through the shared sync service, so a
@@ -7774,6 +8248,11 @@ static void TestRimWorldTradeIntelPatch()
     AssertContains("SettlementTradeLedgerRequest", source);
     AssertContains("SettlementTradeDirection", source);
     AssertContains("cachedTradeables", source);
+    AssertContains("GetRepresentativeThingDef", source);
+    AssertContains("thingsColony", source);
+    AssertContains("thingsTrader", source);
+    AssertDoesNotContain("HasAnyThing", source);
+    AssertDoesNotContain("AnyThing", source);
 }
 
 static void TestRimWorldMainButtonDef()
@@ -7934,6 +8413,39 @@ static void TestRimWorldEconomyWindow()
     }
 }
 
+static void TestRimWorldWorldActivityTrends()
+{
+    var root = FindRepoRoot();
+    var economyWindow = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldEconomyWindow.cs"));
+    var observerWindow = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
+
+    AssertContains("LW_EconomyCol_PopTrend", economyWindow);
+    AssertContains("DailyPopulationChange", economyWindow);
+    AssertContains("WorldEventKind.CitizenBorn", economyWindow);
+    AssertContains("WorldEventKind.CitizenDied", economyWindow);
+    AssertContains("WorldEventKind.MigrationCompleted", economyWindow);
+    AssertContains("FormatSigned(data.DailyPopulationChange)", economyWindow);
+
+    AssertContains("LW_SettlementObserver_DailyTrend", observerWindow);
+    AssertContains("BuildDailyTrend", observerWindow);
+    AssertContains("WorldActivitySummaryService.Summarize", observerWindow);
+    AssertContains("WorldActivitySummaryRequest", observerWindow);
+    AssertContains("summary.TradeEvents", observerWindow);
+    AssertContains("summary.ConstructionEvents", observerWindow);
+    AssertContains("summary.EconomyEvents", observerWindow);
+    AssertContains("summary.EcologyEvents", observerWindow);
+    AssertContains("WorldEventKind.SettlementFacilityDamaged", observerWindow);
+    AssertContains("ActiveTravelsForSettlement", observerWindow);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_EconomyCol_PopTrend", "LW_SettlementObserver_DailyTrend" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
 static void TestRimWorldSettlementObserverWindow()
 {
     var root = FindRepoRoot();
@@ -8012,6 +8524,209 @@ static void TestRimWorldSettlementObserverWindow()
     }
 }
 
+static void TestRimWorldDirectSettlementObserver()
+{
+    var root = FindRepoRoot();
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementDirectVisitPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    AssertContains("HarmonyPatch(typeof(Settlement), \"GetGizmos\")", patch);
+    AssertContains("public static void Postfix(Settlement __instance, ref IEnumerable<Gizmo> __result)", patch);
+    AssertContains("ResolveLedgerSettlement(component.State, worldObject, factionId)", patch);
+    AssertContains("string.Equals(settlement.Name, label, StringComparison.Ordinal)", patch);
+    AssertContains("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
+    AssertContains("new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true)", patch);
+    AssertDoesNotContain("Prefs.DevMode", patch);
+    AssertDoesNotContain("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", patch);
+    AssertDoesNotContain("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", patch);
+    AssertDoesNotContain("CaravanArrivalAction_LivingWorldVisitSettlement", patch);
+    AssertDoesNotContain("CaravanArrivalActionUtility.GetFloatMenuOptions", patch);
+    AssertDoesNotContain("Scribe_References.Look(ref settlement, \"settlement\")", patch);
+    AssertDoesNotContain("LW_OpenRealSettlementMap", patch);
+    AssertDoesNotContain("MapGenerator.GenerateMap", patch);
+    AssertDoesNotContain("Find.WorldObjects.PlayerControlledCaravanAt(worldObject.Tile)", patch);
+    AssertDoesNotContain("CaravanEnterMapUtility.Enter", patch);
+    AssertDoesNotContain("HasLivingWorldSettlementFootprint", patch);
+    AssertDoesNotContain("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, worldObject)", patch);
+    AssertDoesNotContain("ResolveLivingWorldMapGenerator()", patch);
+    AssertDoesNotContain("worldObject.MapGeneratorDef", patch);
+    AssertDoesNotContain("worldObject.ExtraGenStepDefs", patch);
+    AssertContains("Faction.OfPlayer", patch);
+    AssertContains("LW_DirectVisitObserver", patch);
+    AssertContains("LW_DirectVisitObserverTooltip", patch);
+    AssertRimWorldMethodExists("RimWorld.Planet.WorldObject", "GetGizmos");
+
+    var window = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
+    AssertContains("LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)", window);
+    AssertContains("if (!debugLogging && !allowExactWithoutDebug)", window);
+    AssertContains("!scopedSettlementId.HasValue || settlement.Id == scopedSettlementId.Value", window);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_DirectVisitObserver",
+        "LW_DirectVisitObserverTooltip"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldSettlementVisitSiteFoundation()
+{
+    var root = FindRepoRoot();
+
+    var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_SettlementVisitSite.xml");
+    AssertFileExists(defPath);
+    var defXml = File.ReadAllText(defPath);
+    AssertContains("<defName>LivingWorld_SettlementVisitSite</defName>", defXml);
+    AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldSettlementVisitSite</worldObjectClass>", defXml);
+    AssertContains("<texture>World/LivingWorld_Scout</texture>", defXml);
+    AssertContains("<selectable>true</selectable>", defXml);
+    AssertContains("<canHaveFaction>true</canHaveFaction>", defXml);
+
+    var sitePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldSettlementVisitSite.cs");
+    AssertFileExists(sitePath);
+    var site = File.ReadAllText(sitePath);
+    AssertContains("class WorldObject_LivingWorldSettlementVisitSite : MapParent", site);
+    AssertContains("private long settlementIdValue", site);
+    AssertContains("private int sourceSettlementWorldObjectId", site);
+    AssertContains("private int sourceTile", site);
+    AssertContains("private string visitKind", site);
+    AssertContains("private int materializedVersion", site);
+    AssertContains("private bool reconciled", site);
+    AssertContains("public EntityId? SettlementId", site);
+    AssertContains("public void Configure(", site);
+    AssertContains("Scribe_Values.Look(ref settlementIdValue", site);
+    AssertContains("Scribe_Values.Look(ref sourceSettlementWorldObjectId", site);
+    AssertContains("Scribe_Values.Look(ref sourceTile", site);
+    AssertContains("Scribe_Values.Look(ref visitKind", site);
+    AssertContains("Scribe_Values.Look(ref materializedVersion", site);
+    AssertContains("Scribe_Values.Look(ref reconciled", site);
+    AssertContains("LW_SettlementVisitSiteInspect", site);
+    AssertDoesNotContain("MapGenerator.GenerateMap", site);
+    AssertDoesNotContain("CaravanEnterMapUtility.Enter", site);
+
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitSiteService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+    AssertContains("static class LivingWorldSettlementVisitSiteService", service);
+    AssertContains("TryCreateOrReuse(", service);
+    AssertContains("DefDatabase<WorldObjectDef>.GetNamedSilentFail(\"LivingWorld_SettlementVisitSite\")", service);
+    AssertContains("WorldObjectMaker.MakeWorldObject(def)", service);
+    AssertContains("Find.WorldObjects.Add(site)", service);
+    AssertContains("FindExisting(", service);
+    AssertContains("OfType<WorldObject_LivingWorldSettlementVisitSite>()", service);
+    AssertContains("candidate.SettlementId == settlementId", service);
+    AssertContains("candidate.SourceSettlementWorldObjectId == sourceSettlement.ID", service);
+    AssertContains("site.Configure(", service);
+    AssertContains("site.SetFaction(sourceSettlement.Faction)", service);
+    AssertDoesNotContain("MapGenerator.GenerateMap", service);
+    AssertDoesNotContain("CaravanEnterMapUtility.Enter", service);
+
+    var mapComponentPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitMapComponent.cs");
+    AssertFileExists(mapComponentPath);
+    var mapComponent = File.ReadAllText(mapComponentPath);
+    AssertContains("class LivingWorldSettlementVisitMapComponent : MapComponent", mapComponent);
+    AssertContains("ConfigureFrom(WorldObject_LivingWorldSettlementVisitSite visitSite)", mapComponent);
+    AssertContains("private long settlementIdValue", mapComponent);
+    AssertContains("private int visitSiteWorldObjectId", mapComponent);
+    AssertContains("private int materializedVersion", mapComponent);
+    AssertContains("private bool reconciled", mapComponent);
+    AssertContains("Scribe_Values.Look(ref settlementIdValue", mapComponent);
+    AssertContains("Scribe_Values.Look(ref visitSiteWorldObjectId", mapComponent);
+    AssertContains("Scribe_Values.Look(ref materializedVersion", mapComponent);
+    AssertContains("Scribe_Values.Look(ref reconciled", mapComponent);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_SettlementVisitSiteLabel",
+        "LW_SettlementVisitSiteInspect"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldSettlementVisitCaravanRoute()
+{
+    var root = FindRepoRoot();
+
+    var floatMenuPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitFloatMenuPatch.cs");
+    AssertFileExists(floatMenuPath);
+    var floatMenu = File.ReadAllText(floatMenuPath);
+
+    AssertContains("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", floatMenu);
+    AssertContains("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", floatMenu);
+    AssertContains("CaravanArrivalActionUtility.GetFloatMenuOptions", floatMenu);
+    AssertContains("new CaravanArrivalAction_LivingWorldSettlementVisitSite(__instance)", floatMenu);
+    AssertContains("LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement", floatMenu);
+    AssertContains("LW_SettlementVisitSiteFloatMenu", floatMenu);
+    AssertDoesNotContain("CaravanArrivalAction_LivingWorldVisitSettlement", floatMenu);
+    AssertDoesNotContain("OpenRealSettlementMap", floatMenu);
+    AssertDoesNotContain("Find.WorldObjects.PlayerControlledCaravanAt", floatMenu);
+
+    var actionPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "CaravanArrivalAction_LivingWorldSettlementVisitSite.cs");
+    AssertFileExists(actionPath);
+    var action = File.ReadAllText(actionPath);
+    AssertContains("class CaravanArrivalAction_LivingWorldSettlementVisitSite : CaravanArrivalAction", action);
+    AssertContains("LivingWorldSettlementVisitSiteService.TryCreateOrReuse", action);
+    AssertContains("LivingWorldSettlementVisitMapEntryService.OpenOrEnter", action);
+    AssertContains("LW_SettlementVisitSiteUnavailable", action);
+    AssertContains("Scribe_References.Look(ref sourceSettlement", action);
+    AssertContains("StillValid(Caravan caravan, PlanetTile destinationTile)", action);
+    AssertDoesNotContain("OpenRealSettlementMap", action);
+    AssertDoesNotContain("MapGenerator.GenerateMap", action);
+}
+
+static void TestRimWorldSettlementVisitSiteMaterializationRoute()
+{
+    var root = FindRepoRoot();
+
+    var entryPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitMapEntryService.cs");
+    AssertFileExists(entryPath);
+    var entry = File.ReadAllText(entryPath);
+    AssertContains("static class LivingWorldSettlementVisitMapEntryService", entry);
+    AssertContains("OpenOrEnter(WorldObject_LivingWorldSettlementVisitSite visitSite, Caravan caravan)", entry);
+    AssertContains("LongEventHandler.QueueLongEvent", entry);
+    AssertContains("MapGenerator.GenerateMap", entry);
+    AssertContains("visitSite,", entry);
+    AssertContains("LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite)", entry);
+    AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, visitSite)", entry);
+    AssertContains("CaravanEnterMapUtility.Enter", entry);
+    AssertContains("CameraJumper.TryJump", entry);
+    AssertDoesNotContain("Settlement worldObject", entry);
+    AssertDoesNotContain("worldObject.Map", entry);
+
+    var materializerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs");
+    var materializer = File.ReadAllText(materializerPath);
+    AssertContains("TryBuildMaterializationContext", materializer);
+    AssertContains("parent is WorldObject_LivingWorldSettlementVisitSite visitSite", materializer);
+    AssertContains("state.GetSettlement(settlementId.Value)", materializer);
+    AssertContains("visitSite.MarkMaterialized", materializer);
+    AssertContains("LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite)", materializer);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_SettlementVisitSiteFloatMenu",
+        "LW_SettlementVisitSiteUnavailable",
+        "LW_SettlementVisitSiteOpened"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
 static void TestRimWorldWorldArmyMarker()
 {
     var root = FindRepoRoot();
@@ -8051,6 +8766,9 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("LW_MissionMarkerStrengthLine", marker);
     AssertContains("LW_MissionMarkerResourceLine", marker);
     AssertContains("LW_MissionMarkerReasonLine", marker);
+    AssertContains("public override IEnumerable<Gizmo> GetGizmos()", marker);
+    AssertContains("LW_MissionMarkerDetails", marker);
+    AssertContains("Dialog_MessageBox", marker);
     AssertContains("combatants.Named(\"combatants\")", marker);
     AssertContains("strength.Named(\"strength\")", marker);
     AssertContains("resourceSummary.Named(\"resources\")", marker);
@@ -8076,6 +8794,11 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("BuildWarbandMarkerDetails", component);
     AssertContains("BuildCaravanMarkerDetails", component);
     AssertContains("BuildMissionMarkerDetails", component);
+    AssertContains("CheckPlayerCaravanMarkerContacts", component);
+    AssertContains("WorldObject_LivingWorldArmy", component);
+    AssertContains("Caravan", component);
+    AssertContains("LW_PlayerCaravanMarkerContactLabel", component);
+    AssertContains("LW_PlayerCaravanMarkerContactText", component);
     AssertContains("ResourceLedgerService.GetResources", component);
     AssertContains("existing.TryGetValue(key", component);
     // Scout and diplomat missions are rendered too, each with its own icon.
@@ -8110,8 +8833,60 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_MissionMarkerResourceLine>", ru);
     AssertContains("<LW_MissionMarkerReasonLine>", en);
     AssertContains("<LW_MissionMarkerReasonLine>", ru);
+    AssertContains("<LW_MissionMarkerDetails>", en);
+    AssertContains("<LW_MissionMarkerDetails>", ru);
+    AssertContains("<LW_PlayerCaravanMarkerContactLabel>", en);
+    AssertContains("<LW_PlayerCaravanMarkerContactLabel>", ru);
+    AssertContains("<LW_PlayerCaravanMarkerContactText>", en);
+    AssertContains("<LW_PlayerCaravanMarkerContactText>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
+}
+
+static void TestRimWorldWorldActionMarkerLegendAndFilters()
+{
+    var root = FindRepoRoot();
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+
+    AssertContains("LW_WorldActionsHeader", mainTab);
+    AssertContains("LW_WorldActionLegendLine", mainTab);
+    AssertContains("cachedWorldActionRows", mainTab);
+    AssertContains("BuildWorldActionRows", mainTab);
+    AssertContains("state.Caravans", mainTab);
+    AssertContains("state.Missions", mainTab);
+    AssertContains("WorldMissionKind.Scout", mainTab);
+    AssertContains("WorldMissionKind.Diplomat", mainTab);
+    AssertContains("ArmyMovementStatus.Traveling", mainTab);
+    AssertContains("CaravanStatus.Traveling", mainTab);
+    AssertContains("WorldMissionStatus.Traveling", mainTab);
+
+    // Expansion currently creates the colony in Core immediately; the UI must say that explicitly
+    // rather than pretending there is a settler marker that does not exist.
+    AssertContains("LW_WorldActionSettlersImmediate", mainTab);
+    AssertContains("World/LivingWorld_Settler", component);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_WorldActionsHeader", "LW_WorldActionLegendLine", "LW_WorldActionSettlersImmediate" })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldWorldActionMarkersStartAtOrigin()
+{
+    var root = FindRepoRoot();
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+
+    // The world object interpolates its draw position, but RimWorld still selects and lists it by
+    // Tile. Put new actions at their origin instead of immediately stacking them on the target
+    // settlement, otherwise scouts/caravans/diplomats can look absent until they are nearly done.
+    AssertContains("marker.Tile = originTile;", component);
+    AssertContains("marker.Tile = raid.OriginTile;", component);
+    AssertDoesNotContain("marker.Tile = targetTile;", component);
+    AssertDoesNotContain("marker.Tile = raid.TargetTile;", component);
 }
 
 // Task 5 RW-side, made live: destroyed settlements become REAL, lootable RimWorld sites (abandoned
@@ -8135,6 +8910,34 @@ static void TestRimWorldRuinSites()
     AssertContains("ruin site creation failed safely", component);
     // The real RimWorld site-building API exists in this build.
     AssertRimWorldMethodExists("RimWorld.Planet.SiteMaker", "MakeSite");
+}
+
+static void TestRimWorldCleansOrphanedLordReferences()
+{
+    var root = FindRepoRoot();
+    var cleaner = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldOrphanedLordReferenceCleaner.cs"));
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    var mapGeneration = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationPatch.cs"));
+
+    AssertContains("SignalAction_DormancyWakeUp", cleaner);
+    AssertContains("AccessTools.Field(thing.GetType(), \"lord\")", cleaner);
+    AssertContains("map.lordManager?.lords", cleaner);
+    AssertContains("!savedLords.Contains(lord)", cleaner);
+    AssertContains("thing.Destroy(DestroyMode.Vanish)", cleaner);
+    AssertContains("CleanOrphanedLordOwnedPawns", cleaner);
+    AssertContains("CleanOrphanedDirectPawnRelations", cleaner);
+    AssertContains("AccessTools.Field(relation.GetType(), \"otherPawn\")", cleaner);
+    AssertContains("directRelations.RemoveAt(index)", cleaner);
+    AssertContains("IsPawnSavedAnywhere", cleaner);
+    AssertContains("WorldObjects?.Caravans", cleaner);
+    AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
+    AssertContains("ownedPawns.RemoveAt(index)", cleaner);
+    AssertContains("IsPawnDeepSavedByMap", cleaner);
+    AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
+    AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
+    AssertContains("Scribe.mode == LoadSaveMode.Saving", component);
+    AssertContains("currentTick % 250 == 0", component);
+    AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
 }
 
 static void TestRimWorldDrifterFlowSettings()
@@ -8213,6 +9016,42 @@ static void TestWorldComponentUsesRimWorldWorldSeed()
     AssertContains("world.info.seedString", source);
     AssertContains("StableSeedFromString", source);
     AssertContains("new WorldState(ResolveWorldSeed", source);
+}
+
+static void TestRimWorldBootstrapPrimesImmediateDynamics()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+
+    var source = File.ReadAllText(componentPath);
+
+    AssertContains("SettlementPopulationSeedingService.StableSettlementSeed(settlement.StableKey)", source);
+    AssertContains("SettlementPopulationSeedingService.CalculateChildCount", source);
+    AssertContains("SettlementPopulationSeedingService.CalculateChildAge", source);
+    AssertContains("SettlementBootstrapPrimer.PrimeSettlement", source);
+    AssertContains("SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook)", source);
+}
+
+static void TestWorldComponentMigratesLegacyVisibleDynamics()
+{
+    var componentPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs");
+
+    var source = File.ReadAllText(componentPath);
+
+    AssertContains("livingWorld_migratedVisibleDynamics", source);
+    AssertContains("MigrateVisibleDynamicsForLegacySave();", source);
+    AssertContains("private void MigrateVisibleDynamicsForLegacySave()", source);
+    AssertContains("State.RunInitialWorldSeeding(() =>", source);
+    AssertContains("SettlementBootstrapPrimer.PrimeSettlement", source);
+    AssertContains("AddMissingLegacyPopulation", source);
+    AssertContains("SettlementWealthService.RefreshAll(State, SettlementWealthService.DefaultPriceBook)", source);
 }
 
 static void TestWorldComponentCatchesUpMissedSimulationDays()
@@ -8815,6 +9654,210 @@ static void TestRimWorldEconomicDiversity()
     }
 }
 
+static void TestDrifterReservoirTakeForArrival()
+{
+    var state = new WorldState(1);
+    state.AddDrifterArrivalReservoir(5, "seed");
+    AssertEqual(5, state.DrifterArrivalReservoir);
+
+    // Takes what is asked while available, and reports the amount actually drawn.
+    AssertEqual(2, DrifterArrivalService.TakeForArrival(state, 2));
+    AssertEqual(3, state.DrifterArrivalReservoir);
+
+    // Non-positive requests are a no-op.
+    AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 0));
+    AssertEqual(3, state.DrifterArrivalReservoir);
+
+    // Cannot draw more than remain: clamps to what is left and empties the pool.
+    AssertEqual(3, DrifterArrivalService.TakeForArrival(state, 10));
+    AssertEqual(0, state.DrifterArrivalReservoir);
+
+    // An empty pool yields nobody.
+    AssertEqual(0, DrifterArrivalService.TakeForArrival(state, 1));
+}
+
+static void TestArmoryLoadoutSelection()
+{
+    // Eligibility: best combat skill must reach the threshold.
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(3, 3));
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(4, 0));
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(0, 7));
+    // Configurable threshold (exposed as a mod setting): same skills, different cutoff.
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(3, 3, 2));
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(5, 5, 6));
+}
+
+static void TestRimWorldCaravanArmoryPreparation()
+{
+    var root = FindRepoRoot();
+
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanArmoryPatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    // ExitMapAndCreateCaravan is overloaded, so the bare [HarmonyPatch(type, name)] form is an ambiguous
+    // match that throws at mod load. The patch must instead resolve explicit signatures via TargetMethods.
+    AssertDoesNotContain("HarmonyPatch(typeof(CaravanExitMapUtility), \"ExitMapAndCreateCaravan\")", patch);
+    AssertContains("public static IEnumerable<MethodBase> TargetMethods()", patch);
+    AssertContains("AccessTools.Method(", patch);
+    AssertContains("CaravanArmoryService.ArmDepartingPawns(pawns)", patch);
+    AssertContains("settings.armoryMobilizationEnabled", patch);
+    AssertContains("MobilizationCandidates.IsCandidate", patch);
+    AssertContains("OutfitStandKit.PushEquip(pawn)", patch);
+    AssertContains("MobilizationCandidates.IsArmed", patch);
+    AssertContains("ModsConfig.OdysseyActive", patch);
+    AssertContains("Log.Warning", patch);
+    AssertRimWorldMethodExists("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan");
+    // Proof the bare form really is ambiguous: the method has more than one overload in this game version.
+    AssertEqual(true, RimWorldMethodOverloadCount("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan") >= 2);
+    // Both explicit signatures the patch targets must each resolve to exactly one real overload.
+    AssertEqual(1, RimWorldMethodMatchCount(
+        "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
+        new[] { "IEnumerable`1", "Faction", "PlanetTile", "PlanetTile", "PlanetTile", "Boolean" }));
+    AssertEqual(1, RimWorldMethodMatchCount(
+        "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
+        new[] { "IEnumerable`1", "Faction", "PlanetTile", "Direction8Way", "PlanetTile", "Boolean" }));
+}
+
+static void TestLiveVisitAnimalCaravanDocs()
+{
+    var root = FindRepoRoot();
+
+    var taskBoard = File.ReadAllText(
+        Path.Combine(root, "docs", "superpowers", "plans", "2026-07-08-next-systems-task-board.md"));
+    AssertContains("Direct observer slice landed", taskBoard);
+    AssertContains("player-taken/tamed animals stay out of the source cohort", taskBoard);
+
+    var armoryPlan = File.ReadAllText(
+        Path.Combine(root, "docs", "superpowers", "plans", "2026-07-09-armory-mobilization.md"));
+    AssertContains("patch `CaravanExitMapUtility.ExitMapAndCreateCaravan`", armoryPlan);
+    AssertContains("Live tuning still needs an actual caravan formation test", armoryPlan);
+
+    var completionPlan = File.ReadAllText(
+        Path.Combine(root, "docs", "superpowers", "plans", "2026-07-09-eight-point-live-world-completion.md"));
+    AssertContains("cohort-stack fate sync is implemented", completionPlan);
+    AssertContains("direct settlement observer action records `DirectVisit` intel", completionPlan);
+
+    var simulation = File.ReadAllText(Path.Combine(root, "docs", "simulation.md"));
+    AssertContains("world-map command on NPC settlements", simulation);
+    AssertContains("player-taken", simulation);
+}
+
+static void TestRimWorldCaravanMeetingGate()
+{
+    var root = FindRepoRoot();
+
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanMeetingPatch.cs"));
+    // Meeting, ambush and demand caravan encounters share one gate: only fire near a settlement.
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanMeeting), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_Ambush_EnemyFaction), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_CaravanDemand), \"CanFireNowSub\")", patch);
+    AssertContains("GateByNearbySettlement", patch);
+    AssertContains("parms?.target is not Caravan caravan", patch);
+    AssertContains("ApproxDistanceInTiles", patch);
+    AssertContains("worldObjects.Settlements", patch);
+    // Gated by the arrivals setting; fail-open.
+    AssertContains("settings.arrivalsTravelEnabled", patch);
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_Ambush_EnemyFaction", "CanFireNowSub");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanDemand", "CanFireNowSub");
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_CaravanMeeting", "CanFireNowSub");
+}
+
+static void TestRimWorldSourcedWanderers()
+{
+    var root = FindRepoRoot();
+
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWandererSourcePatch.cs"));
+    // Gate the vanilla join behind reservoir availability, and draw one person on success.
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_WandererJoin), \"CanFireNowSub\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_WandererJoin), \"TryExecuteWorker\")", patch);
+    AssertContains("DrifterArrivalReservoir < 1", patch);
+    AssertContains("DrifterArrivalService.TakeForArrival(component.State, 1)", patch);
+    // Gated by the existing drifter-flow setting; fail-open.
+    AssertContains("settings.drifterFlowEnabled", patch);
+
+    var service = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.Core", "DrifterArrivalService.cs"));
+    AssertContains("public static int TakeForArrival(", service);
+
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_WandererJoin", "CanFireNowSub");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_WandererJoin", "TryExecuteWorker");
+}
+
+static void TestRimWorldApproachingVisitors()
+{
+    var root = FindRepoRoot();
+
+    // Runtime + persisted pending-group model, and the re-entrancy guard for the arrival re-fire.
+    var runtimePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "ApproachingGroup.cs");
+    AssertFileExists(runtimePath);
+    var runtime = File.ReadAllText(runtimePath);
+    AssertContains("class PendingApproachingGroup : IExposable", runtime);
+    AssertContains("public static bool FiringArrival", runtime);
+    AssertContains("MarkerKeyPrefix", runtime);
+    AssertContains("TravelTicksFor", runtime);
+
+    // The visitor patch defers into a travelling group on first fire and lets the vanilla worker run on
+    // the arrival re-fire; additive Prefix, never loses the incident.
+    var patch = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldGroupTravelPatch.cs"));
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_VisitorGroup), \"TryExecuteWorker\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_TraderCaravanArrival), \"TryExecuteWorker\")", patch);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_TravelerGroup), \"TryExecuteWorker\")", patch);
+    AssertContains("ApproachingGroupRuntime.FiringArrival", patch);
+    AssertContains("TryLaunchApproachingGroup", patch);
+
+    // The world component launches the travelling group, materializes it on arrival, and reconciles the
+    // markers separately from the ledger-driven army markers. Persisted and settings-gated.
+    var component = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("public bool TryLaunchApproachingGroup(", component);
+    AssertContains("ProcessApproachingGroupArrivals(", component);
+    AssertContains("private void FireArrivedGroup(", component);
+    AssertContains("SyncApproachingGroupMarkers()", component);
+    AssertContains("ApproachingGroupRuntime.FiringArrival = true", component);
+    AssertContains("def.Worker.TryExecute(parms)", component);
+    AssertContains("livingWorld_approachingGroups", component);
+    AssertContains("settings.arrivalsTravelEnabled", component);
+
+    // Settings toggle wired and drawn.
+    var settings = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("arrivalsTravelEnabled = true", settings);
+    var drawer = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    AssertContains("LW_Settings_ArrivalsTravel", drawer);
+
+    // RimWorld API the feature depends on exists in this game version.
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_VisitorGroup", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_TraderCaravanArrival", "TryExecuteWorker");
+    AssertRimWorldMethodExists("RimWorld.IncidentWorker_TravelerGroup", "TryExecuteWorker");
+
+    // Localization present in both languages.
+    var englishXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(
+        Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_GroupApproachingLabel",
+        "LW_GroupApproachingText",
+        "LW_ArrivalKind_Visitors",
+        "LW_ArrivalKind_Traders",
+        "LW_ArrivalKind_Travelers",
+        "LW_MissionReason_Visit",
+        "LW_Settings_ArrivalsTravel",
+        "LW_Settings_ArrivalsTravelTip",
+    })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
+}
+
 static void TestRimWorldMechClusters()
 {
     var root = FindRepoRoot();
@@ -8832,10 +9875,21 @@ static void TestRimWorldMechClusters()
 
     var markerPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_MechCluster.cs");
     AssertFileExists(markerPath);
-    AssertContains("class WorldObject_MechCluster : WorldObject", File.ReadAllText(markerPath));
+    var marker = File.ReadAllText(markerPath);
+    AssertContains("class WorldObject_MechCluster : WorldObject", marker);
+    AssertContains("public override IEnumerable<Gizmo> GetGizmos()", marker);
+    AssertContains("Dialog_MessageBox", marker);
     var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_MechCluster.xml");
     AssertFileExists(defPath);
     AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_MechCluster</worldObjectClass>", File.ReadAllText(defPath));
+    var iconPatchPath = Path.Combine(root, "mod", "Patches", "LivingWorld_MechClusterIconPatch.xml");
+    AssertFileExists(iconPatchPath);
+    var iconPatch = File.ReadAllText(iconPatchPath);
+    AssertContains("MayRequire=\"Ludeon.RimWorld.Royalty\"", iconPatch);
+    AssertContains("defName=\"MechCluster\"]/expandingIconTexture", iconPatch);
+    AssertContains("defName=\"MechClusterForceNoConditionCauser\"]/expandingIconTexture", iconPatch);
+    AssertContains("World/LivingWorld_Warband", iconPatch);
+    AssertDoesNotContain("World/WorldObjects/Expanding/Sites/MechCluster", iconPatch);
 
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMechRaidPatch.cs");
     AssertFileExists(patchPath);
@@ -8851,10 +9905,25 @@ static void TestRimWorldMechClusters()
     AssertContains("EnsureMechClusters(", component);
     AssertContains("AwakenMechCluster(", component);
     AssertContains("SyncMechClusterMarkers()", component);
+    AssertContains("EnsureMechClusterSites()", component);
+    AssertContains("SiteMaker.MakeSite", component);
+    AssertContains("MechClusterForceNoConditionCauser", component);
+    AssertDoesNotContain("GetNamedSilentFail(\"SleepingMechanoids\")", component);
+    AssertDoesNotContain("WorldObjectMaker.MakeWorldObject(def)", component);
+    AssertContains("MechClusterThreatPoints(", component);
+    AssertContains("livingWorld_mechClusterSiteNodeIds", component);
+    AssertContains("livingWorld_mechClusterSiteWorldObjectIds", component);
+    AssertContains("HasMechClusterSite(cluster.Id)", component);
+    AssertContains("PruneMissingMechClusterSites", component);
+    AssertContains("IsMechClusterSite(worldObject)", component);
+    AssertContains("worldObjects.Remove(worldObject)", component);
     AssertContains("TryFindMechClusterTile(", component);
     AssertContains("wealthWatcher", component);
     AssertContains("livingWorld_mechClusters", component);
     AssertContains("settings.mechClustersEnabled", component);
+    AssertDoesNotContain("new LookTargets(marker)", component);
+    AssertDoesNotContain("new LookTargets(site)", component);
+    AssertContains("new LookTargets((PlanetTile)", component);
 
     var settings = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
@@ -8874,6 +9943,8 @@ static void TestRimWorldMechClusters()
         "LW_MechClusterLabel",
         "LW_MechClusterDormant",
         "LW_MechClusterActive",
+        "LW_MechClusterDetails",
+        "LW_MechClusterFallbackDetails",
         "LW_MechClusterAwakenLabel",
         "LW_MechClusterAwakenText",
         "LW_Settings_MechClusters",
@@ -9229,6 +10300,46 @@ static void AssertRimWorldMethodExists(string typeName, string methodName)
     {
         throw new InvalidOperationException($"Expected RimWorld type '{typeName}' to declare method '{methodName}'.");
     }
+}
+
+static int RimWorldMethodOverloadCount(string typeName, string methodName)
+{
+    var managedPath = Path.Combine("C:\\Games\\RimWorld", "RimWorldWin64_Data", "Managed");
+    var assemblyPath = Path.Combine(managedPath, "Assembly-CSharp.dll");
+    AssertFileExists(assemblyPath);
+
+    var assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
+    var type = assembly.GetType(typeName)
+        ?? throw new InvalidOperationException($"Expected RimWorld type '{typeName}' to exist.");
+    var flags = System.Reflection.BindingFlags.Public
+        | System.Reflection.BindingFlags.NonPublic
+        | System.Reflection.BindingFlags.Instance
+        | System.Reflection.BindingFlags.Static
+        | System.Reflection.BindingFlags.DeclaredOnly;
+
+    return type.GetMethods(flags).Count(method => method.Name == methodName);
+}
+
+// Counts overloads of a method whose parameter types (by simple type name, order-sensitive) match exactly.
+// Used to prove the explicit Harmony target signatures resolve to one method each (no ambiguity, no typo).
+static int RimWorldMethodMatchCount(string typeName, string methodName, string[] paramTypeNames)
+{
+    var managedPath = Path.Combine("C:\\Games\\RimWorld", "RimWorldWin64_Data", "Managed");
+    var assemblyPath = Path.Combine(managedPath, "Assembly-CSharp.dll");
+    AssertFileExists(assemblyPath);
+
+    var assembly = System.Reflection.Assembly.LoadFrom(assemblyPath);
+    var type = assembly.GetType(typeName)
+        ?? throw new InvalidOperationException($"Expected RimWorld type '{typeName}' to exist.");
+    var flags = System.Reflection.BindingFlags.Public
+        | System.Reflection.BindingFlags.NonPublic
+        | System.Reflection.BindingFlags.Instance
+        | System.Reflection.BindingFlags.Static
+        | System.Reflection.BindingFlags.DeclaredOnly;
+
+    return type.GetMethods(flags).Count(method =>
+        method.Name == methodName
+        && method.GetParameters().Select(p => p.ParameterType.Name).SequenceEqual(paramTypeNames));
 }
 
 static void AssertEqual<T>(T expected, T actual)

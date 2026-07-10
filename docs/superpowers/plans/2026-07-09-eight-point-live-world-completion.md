@@ -58,12 +58,11 @@ future cleanup rather than a blocker.
 
 ## Task 5: Animal Fate Sync Next Slice
 
-- [ ] Add Core contract for map-spawned animal fate reconciliation.
+- [x] Add Core contract for map-spawned animal fate reconciliation.
 - [x] Keep current spawned animals deducted upfront until a stable RimWorld identity link exists.
-- [ ] Add tests around return/death/tamed/missing outcomes if implemented.
+- [x] Add tests around return/death/tamed outcomes.
 
-Status: documented as deferred; current safe behavior is upfront deduction plus failed-spawn
-return, not per-animal identity.
+Status: cohort-stack fate sync is implemented for the attacked-settlement animal sample. Failed spawns return to cohorts, live departures return, dead animals remain lost, and player-taken/tamed animals are treated as lost to the source settlement rather than silently returned. Full named-animal identity remains a later quality layer.
 
 ## Task 6: Technology, Crop Strains And Diffusion
 
@@ -73,12 +72,11 @@ return, not per-animal identity.
 
 ## Task 7: Fog-Of-War Audit
 
-- [ ] Review main tab, economy table, settlement inspect and observer for exact values.
+- [x] Review main tab, economy table, settlement inspect and observer for exact values.
 - [x] Keep exact values only for direct visit/debug; otherwise show bands and source labels.
-- [ ] Add structural tests for suspicious exact-value leaks.
+- [x] Add structural tests for suspicious exact-value leaks.
 
-Status: existing UI already has several fog gates; current crop/tech observer remains
-debug/observer-style and does not expose player raid/economy exact intel. Full audit remains.
+Status: exact observer details remain debug-only globally. A new direct settlement observer action records `DirectVisit` intel and opens exact data for that one settlement only, preserving the "learn through visit/scout/trader" rule.
 
 ## Task 8: World-Map UX And Review Closure
 

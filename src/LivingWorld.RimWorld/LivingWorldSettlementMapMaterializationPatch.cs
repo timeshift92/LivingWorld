@@ -10,5 +10,6 @@ public static class LivingWorldSettlementMapMaterializationPatch
     public static void Postfix(Map __result, MapParent parent)
     {
         LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(__result, parent);
+        LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result);
     }
 }

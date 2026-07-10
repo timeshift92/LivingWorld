@@ -158,7 +158,13 @@ public static class WorldStateCodec
                             new XAttribute("createdTick", group.CreatedTick),
                             new XAttribute("arrivalTick", group.ArrivalTick),
                             new XAttribute("status", group.Status),
-                            new XAttribute("reason", group.Reason)))),
+                            new XAttribute("reason", group.Reason),
+                            string.IsNullOrWhiteSpace(group.PlannedSettlementSlug)
+                                ? null
+                                : new XAttribute("plannedSettlementSlug", group.PlannedSettlementSlug),
+                            string.IsNullOrWhiteSpace(group.PlannedSettlementName)
+                                ? null
+                                : new XAttribute("plannedSettlementName", group.PlannedSettlementName)))),
                 new XElement(
                     "IntelReports",
                     snapshot.IntelReports.Select(report =>
@@ -608,7 +614,11 @@ public static class WorldStateCodec
                     RequiredInt(element, "createdTick"),
                     RequiredInt(element, "arrivalTick"),
                     RequiredEnum<MigrationGroupStatus>(element, "status"),
-                    RequiredString(element, "reason")))
+                    RequiredString(element, "reason"))
+                {
+                    PlannedSettlementSlug = OptionalString(element, "plannedSettlementSlug") ?? string.Empty,
+                    PlannedSettlementName = OptionalString(element, "plannedSettlementName") ?? string.Empty
+                })
                 .ToList(),
             OptionalContainer(root, "IntelReports")
                 .Elements("IntelReport")

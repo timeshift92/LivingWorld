@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
 using Verse;
@@ -5,9 +7,9 @@ using Verse;
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// Display-only world-map marker for a mechanoid complex (see <see cref="MechClusterNode"/>). Static —
-/// it never moves — and reconciled from the ledger of clusters by the world component. Dormant complexes
-/// read dim; an awakened one reads as an active threat.
+/// Fallback world-map marker for a mechanoid complex (see <see cref="MechClusterNode"/>). The normal
+/// path materializes complexes as vanilla sites; this marker remains only when site creation is not
+/// available yet, so the player still gets inspect/gizmo context instead of a silent dot.
 /// </summary>
 public sealed class WorldObject_MechCluster : WorldObject
 {
@@ -51,6 +53,23 @@ public sealed class WorldObject_MechCluster : WorldObject
         return awake
             ? "LW_MechClusterActive".Translate()
             : "LW_MechClusterDormant".Translate();
+    }
+
+    public override IEnumerable<Gizmo> GetGizmos()
+    {
+        foreach (var gizmo in base.GetGizmos())
+        {
+            yield return gizmo;
+        }
+
+        var details = "LW_MechClusterFallbackDetails".Translate(GetInspectString()).ToString();
+        yield return new Command_Action
+        {
+            defaultLabel = "LW_MechClusterDetails".Translate(),
+            defaultDesc = details,
+            icon = TexButton.Info,
+            action = () => Find.WindowStack?.Add(new Dialog_MessageBox(details)),
+        };
     }
 
     public override void ExposeData()
