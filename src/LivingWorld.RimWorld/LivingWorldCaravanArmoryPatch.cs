@@ -53,7 +53,7 @@ public static class CaravanArmoryService
     public static int ArmDepartingPawns(IEnumerable<Pawn>? pawns)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
-        if (!settings.armoryMobilizationEnabled || pawns == null)
+        if (!settings.armoryMobilizationEnabled || !ModsConfig.OdysseyActive || pawns == null)
         {
             return 0;
         }
@@ -63,18 +63,13 @@ public static class CaravanArmoryService
         {
             foreach (var pawn in pawns.Where(LoadoutAdapter.IsMobilizationCandidate))
             {
-                if (pawn.Map == null || LoadoutAdapter.IsArmed(pawn))
+                if (pawn.Map == null || LoadoutAdapter.IsArmed(pawn) || !OutfitStandDriver.HasStand(pawn))
                 {
                     continue;
                 }
 
-                var (weapon, armor) = LoadoutAdapter.ResolveKit(pawn, pawn.Map);
-                if (weapon == null && armor.Count == 0)
-                {
-                    continue;
-                }
-
-                LoadoutAdapter.EquipKit(pawn, weapon, armor);
+                // Send them to their outfit stand to gear up before the caravan forms.
+                OutfitStandDriver.EquipFromStand(pawn);
                 armed++;
             }
         }

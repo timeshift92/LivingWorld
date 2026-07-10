@@ -153,37 +153,25 @@ public sealed class MobilizationMapComponent : MapComponent
         }
     }
 
-    // Autonomous armory behaviour without touching the vanilla think tree (which would risk breaking all
-    // colonist AI): on each throttled tick we push a fetch-kit job to eligible undrafted colonists who are
-    // not yet armed while mobilized, and a return-kit job to armed ones once stood down. Pushed as ordered
-    // jobs so they stick; fail-safe (any error just skips this tick, and a job that can't run ends and the
-    // pawn resumes normal behaviour). Only acts when armory racks exist on the map.
+    // Drives each combat colonist's Odyssey Outfit Stand: on mobilize, send them to their stand to equip
+    // their kit; on stand-down, send them back to return it. We act once per colonist per alert (tracked in
+    // mobilizedByUs), so we never re-trigger the swap every recheck. Fail-safe; only runs with Odyssey active.
     private void PushMobilizationJobs()
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
-        if (!settings.armoryMobilizationEnabled)
+        if (!settings.armoryMobilizationEnabled || !ModsConfig.OdysseyActive)
         {
             return;
         }
 
         try
         {
-            var sources = ArmorySources.All(map);
-            if (sources.Count == 0)
-            {
-                return;
-            }
-
             var mobilized = IsMobilized;
             var colonists = map?.mapPawns?.FreeColonistsSpawned;
             if (colonists == null)
             {
                 return;
             }
-
-            // Nothing to arm with means every fetch would end unarmed and re-fire next tick — don't thrash.
-            var weaponAvailable = ArmorySources.Items(map, ArmoryRackKind.Weapon)
-                .Any(thing => thing?.def != null && thing.def.IsWeapon);
 
             mobilizedByUs.RemoveAll(pawn => pawn == null);
 
@@ -192,17 +180,17 @@ public sealed class MobilizationMapComponent : MapComponent
             {
                 loggedMobilized = mobilized;
                 var eligible = colonists.Count(LoadoutAdapter.IsMobilizationCandidate);
-                var armed = colonists.Count(pawn => pawn != null && LoadoutAdapter.IsArmed(pawn));
+                var withStand = colonists.Count(pawn => pawn != null && OutfitStandDriver.HasStand(pawn));
                 if (mobilized)
                 {
                     var reason = ManualMobilized ? "manual" : "threat";
-                    Log.Message($"[LivingWorld] Mobilization ON ({reason}): {eligible} eligible, {armed} already armed, "
-                                + $"weapons on racks: {(weaponAvailable ? "yes" : "no")}.");
+                    Log.Message($"[LivingWorld] Mobilization ON ({reason}): {eligible} eligible, "
+                                + $"{withStand} with an outfit stand.");
                 }
                 else
                 {
-                    Log.Message($"[LivingWorld] Mobilization OFF: standing down {mobilizedByUs.Count} armed by us "
-                                + $"({armed} armed in total).");
+                    Log.Message($"[LivingWorld] Mobilization OFF: standing down "
+                                + $"{mobilizedByUs.Count} colonist(s) we mobilized.");
                 }
             }
 
@@ -213,57 +201,29 @@ public sealed class MobilizationMapComponent : MapComponent
                     continue;
                 }
 
-                // Once a pawn is no longer armed its kit is back — forget it, so we never disarm a colonist
-                // we did not arm (a hunter, or someone the player armed on purpose).
-                if (!LoadoutAdapter.IsArmed(pawn))
-                {
-                    mobilizedByUs.Remove(pawn);
-                }
-
                 if (mobilized)
                 {
-                    if (!LoadoutAdapter.IsMobilizationCandidate(pawn)
-                        || LoadoutAdapter.IsArmed(pawn)
-                        || !weaponAvailable
-                        || pawn.CurJobDef == LivingWorldArmoryJobDefOf.LivingWorld_FetchKit)
+                    // Send eligible colonists with a stand to equip their kit — once each per alert.
+                    if (mobilizedByUs.Contains(pawn)
+                        || !LoadoutAdapter.IsMobilizationCandidate(pawn)
+                        || !OutfitStandDriver.HasStand(pawn))
                     {
                         continue;
                     }
 
-                    var rack = ArmorySources.Nearest(map, pawn.Position, ArmoryRackKind.Weapon) ?? sources[0].building;
-                    if (rack != null)
-                    {
-                        if (!mobilizedByUs.Contains(pawn))
-                        {
-                            mobilizedByUs.Add(pawn);
-                        }
-
-                        // Move to the combat apparel policy so vanilla keeps the armour on during the alert.
-                        MobilizationOutfitService.ToCombat(pawn);
-                        PushArmoryJob(pawn, LivingWorldArmoryJobDefOf.LivingWorld_FetchKit, rack);
-                    }
+                    mobilizedByUs.Add(pawn);
+                    OutfitStandDriver.EquipFromStand(pawn);
                 }
                 else
                 {
-                    // Move colonists we mobilized to the civilian policy (also covers pawns who never found a
-                    // weapon): the policy forbids armour, so vanilla strips the combat armour to the racks and
-                    // re-dresses them in civvies instead of putting the armour straight back on.
-                    MobilizationOutfitService.ToCivilian(pawn);
-
-                    // Stand down only colonists this system armed; leave the player's own armed pawns alone.
-                    if (!LoadoutAdapter.IsArmed(pawn)
-                        || !mobilizedByUs.Contains(pawn)
-                        || pawn.CurJobDef == LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit)
+                    // Stand down only colonists we mobilized: send them back to their stand.
+                    if (!mobilizedByUs.Contains(pawn))
                     {
                         continue;
                     }
 
-                    // Return to a weapon source so the kit lands next to its storage, not across the base.
-                    var rack = ArmorySources.Nearest(map, pawn.Position, ArmoryRackKind.Weapon) ?? sources[0].building;
-                    if (rack != null)
-                    {
-                        PushArmoryJob(pawn, LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit, rack);
-                    }
+                    mobilizedByUs.Remove(pawn);
+                    OutfitStandDriver.ReturnToStand(pawn);
                 }
             }
         }
@@ -271,23 +231,6 @@ public sealed class MobilizationMapComponent : MapComponent
         {
             Log.Warning($"[LivingWorld] Mobilization job push failed safely: {ex.Message}");
         }
-    }
-
-    // Push a forced armory job. Mobilization is meant to be reacted to at once, so a sleeping colonist is
-    // woken first (the forced order alone would interrupt sleep, but we make it explicit and certain).
-    private static void PushArmoryJob(Pawn pawn, JobDef jobDef, Building_Storage rack)
-    {
-        if (pawn?.jobs == null)
-        {
-            return;
-        }
-
-        if (!RestUtility.Awake(pawn))
-        {
-            RestUtility.WakeUp(pawn, startNewJob: false);
-        }
-
-        pawn.jobs.TryTakeOrderedJob(JobMaker.MakeJob(jobDef, rack), JobTag.Misc);
     }
 
     public override void ExposeData()

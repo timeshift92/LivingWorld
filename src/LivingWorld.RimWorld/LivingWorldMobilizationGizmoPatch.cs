@@ -38,36 +38,6 @@ public static class LivingWorldMobilizationGizmoPatch
                         isActive = () => component.ManualMobilized,
                         toggleAction = () => component.ToggleManual(),
                     });
-
-                    var assignments = ArmoryAssignmentComponent.Instance;
-                    if (assignments != null)
-                    {
-                        var pawn = __instance;
-                        gizmos.Add(new Command_Action
-                        {
-                            defaultLabel = "LW_ConfigureKit".Translate(),
-                            defaultDesc = "LW_ConfigureKitTooltip".Translate(),
-                            icon = TexCommand.Attack,
-                            action = () => Find.WindowStack.Add(new Dialog_ArmoryLoadout(pawn)),
-                        });
-                        gizmos.Add(new Command_Action
-                        {
-                            defaultLabel = "LW_AssignKit".Translate(),
-                            defaultDesc = "LW_AssignKitTooltip".Translate(),
-                            icon = TexCommand.Draft,
-                            action = () => assignments.AssignFromCurrent(pawn),
-                        });
-                        if (assignments.HasAssignment(pawn))
-                        {
-                            gizmos.Add(new Command_Action
-                            {
-                                defaultLabel = "LW_ClearKit".Translate(),
-                                defaultDesc = "LW_ClearKitTooltip".Translate(),
-                                icon = TexCommand.Draft,
-                                action = () => assignments.Clear(pawn),
-                            });
-                        }
-                    }
                 }
             }
         }

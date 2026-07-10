@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<LanguageData>
-  <LivingWorld_RepairArmoryGear.label>починить снаряжение арсенала</LivingWorld_RepairArmoryGear.label>
-  <LivingWorld_RepairArmoryGear.description>Восстановить прочность самого повреждённого оружия или брони на стойках арсенала, потратив сталь. Поставьте на повтор, чтобы держать арсенал в исправности.</LivingWorld_RepairArmoryGear.description>
-  <LivingWorld_RepairArmoryGear.jobString>Починка снаряжения арсенала.</LivingWorld_RepairArmoryGear.jobString>
-</LanguageData>

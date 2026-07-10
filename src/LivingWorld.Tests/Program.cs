@@ -344,11 +344,9 @@ var tests = new List<(string Name, Action Test)>
     ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
     ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
     ("tracks colony mobilization state and toggle", TestRimWorldArmoryMobilization),
-    ("selects armory loadout by skill", TestArmoryLoadoutSelection),
-    ("wires armory racks, equip adapter and fetch jobs", TestRimWorldArmoryEquipAndJobs),
-    ("arms caravan expeditions from the colony armory before departure", TestRimWorldCaravanArmoryPreparation),
-    ("repairs armory gear at the repair bench", TestRimWorldArmoryRepair),
-    ("draws armory gear from any designated storage", TestRimWorldArmoryStorageRoles),
+    ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
+    ("drives per-pawn outfit stands on mobilization", TestRimWorldOutfitStandDriver),
+    ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
@@ -9490,167 +9488,43 @@ static void TestArmoryLoadoutSelection()
     // Configurable threshold (exposed as a mod setting): same skills, different cutoff.
     AssertEqual(true, LoadoutSelectionService.IsCombatEligible(3, 3, 2));
     AssertEqual(false, LoadoutSelectionService.IsCombatEligible(5, 5, 6));
-
-    var pistol = new WeaponOption("Pistol", true, 100);
-    var rifle = new WeaponOption("Rifle", true, 300);
-    var sword = new WeaponOption("Sword", false, 200);
-    var pool = new[] { pistol, rifle, sword };
-
-    AssertEqual("Rifle", LoadoutSelectionService.SelectWeapon(10, 2, null, pool)!.DefName);   // shooter -> best ranged
-    AssertEqual("Sword", LoadoutSelectionService.SelectWeapon(2, 10, null, pool)!.DefName);   // brawler -> melee
-    AssertEqual("Pistol", LoadoutSelectionService.SelectWeapon(10, 2, pistol, pool)!.DefName); // assigned wins
-    AssertEqual("Sword", LoadoutSelectionService.SelectWeapon(10, 2, null, new[] { sword })!.DefName); // no ranged -> best of any
-    AssertEqual(true, LoadoutSelectionService.SelectWeapon(10, 2, null, Array.Empty<WeaponOption>()) == null);
-
-    var duster = new ArmorOption("Duster", 100, false);
-    var flak = new ArmorOption("Flak", 300, true);
-    var armorPool = new[] { duster, flak };
-    // RankArmor returns the wear priority (most protective first); the adapter dons a full non-conflicting
-    // set from this order, honouring an assigned piece first.
-    AssertEqual("Flak", LoadoutSelectionService.RankArmor(2, 10, null, armorPool)[0].DefName);   // brawler -> heavy first
-    AssertEqual("Flak", LoadoutSelectionService.RankArmor(10, 2, null, armorPool)[0].DefName);   // more protection first
-    AssertEqual(2, LoadoutSelectionService.RankArmor(5, 5, null, armorPool).Count);               // ranks the whole pool
-    AssertEqual("Duster",
-        LoadoutSelectionService.RankArmor(5, 5, new ArmorOption("Duster", 100, false), armorPool)[0].DefName); // assigned first
-    AssertEqual(0, LoadoutSelectionService.RankArmor(5, 5, null, Array.Empty<ArmorOption>()).Count);
 }
 
-static void TestRimWorldArmoryEquipAndJobs()
+static void TestRimWorldOutfitStandDriver()
 {
     var root = FindRepoRoot();
 
-    // Three storage-building racks routed through our Building_ArmoryRack.
-    var racksXml = File.ReadAllText(
-        Path.Combine(root, "mod", "Defs", "ThingDefs_Armory", "LivingWorld_ArmoryRacks.xml"));
-    AssertContains("<defName>LivingWorld_WeaponRack</defName>", racksXml);
-    AssertContains("<defName>LivingWorld_ArmorRack</defName>", racksXml);
-    AssertContains("<defName>LivingWorld_ApparelRack</defName>", racksXml);
-    AssertContains("LivingWorld.RimWorld.Building_ArmoryRack", racksXml);
-    AssertContains("class Building_ArmoryRack : Building_Storage",
-        File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "Building_ArmoryRack.cs")));
+    // The driver sends a colonist to their own Odyssey outfit stand and pushes the vanilla use-stand job.
+    var driver = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "OutfitStandDriver.cs"));
+    AssertContains("public static class OutfitStandDriver", driver);
+    AssertContains("AllBuildingsColonistOfClass<Building_OutfitStand>", driver);
+    AssertContains("GetComp<CompAssignableToPawn>()?.AssignedPawnsForReading", driver);
+    AssertContains("JobDefOf.UseOutfitStand", driver);
+    AssertContains("public static void EquipFromStand(Pawn pawn)", driver);
+    AssertContains("public static void ReturnToStand(Pawn pawn)", driver);
+    AssertContains("OutfitStandsPlus_JobReturnToStand", driver);
 
-    // Adapter equips the skill-chosen kit and dons a full protective armour set (auto-dropping civvies),
-    // and on stand-down stows the gear directly onto a free rack cell instead of dropping it on the floor.
-    var adapter = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LoadoutAdapter.cs"));
-    AssertContains("public static void EquipKit(", adapter);
-    AssertContains("public static void ReturnKit(", adapter);
-    AssertContains("LoadoutSelectionService.SelectWeapon", adapter);
-    AssertContains("LoadoutSelectionService.RankArmor", adapter);
-    AssertContains("mobilizationSkillThreshold", adapter);
-    // Never mobilize violence-incapable (pacifist) or non-draftable colonists.
-    AssertContains("WorkTagIsDisabled(WorkTags.Violent)", adapter);
-    AssertContains("pawn.drafter == null", adapter);
-    AssertRimWorldMethodExists("Verse.Pawn", "WorkTagIsDisabled");
-    AssertContains("ApparelUtility.CanWearTogether(", adapter);
-    AssertContains("pawn.apparel.Wear(", adapter);
-    AssertContains("FreeRackCell(", adapter);
-    AssertContains("source.building.Accepts(item)", adapter);
-    // Gear is read through ArmorySources so any designated storage counts, not just the built-in racks.
-    AssertContains("ArmorySources.Items(map", adapter);
-    // On arm, clashing civvies are stowed on the clothing rack (not the floor) so vanilla re-dresses later.
-    AssertContains("ArmoryRackKind.Apparel", adapter);
-    AssertRimWorldMethodExists("RimWorld.ApparelUtility", "CanWearTogether");
-    AssertRimWorldMethodExists("RimWorld.Building_Storage", "Accepts");
+    // Mobilization drives the stands (equip on mobilize, return on stand-down) and needs Odyssey.
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
+    AssertContains("OutfitStandDriver.EquipFromStand(pawn)", component);
+    AssertContains("OutfitStandDriver.ReturnToStand(pawn)", component);
+    AssertContains("ModsConfig.OdysseyActive", component);
 
-    // Walk-to-armory jobs and the autonomous driver that pushes them (no think-tree injection).
-    var jobs = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "JobDriver_ArmoryKit.cs"));
-    AssertContains("class JobDriver_FetchKit : JobDriver", jobs);
-    AssertContains("class JobDriver_ReturnKit : JobDriver", jobs);
-    AssertContains("Toils_Goto.GotoThing", jobs);
-    var jobDefs = File.ReadAllText(
-        Path.Combine(root, "mod", "Defs", "JobDefs_Armory", "LivingWorld_ArmoryJobs.xml"));
-    AssertContains("<defName>LivingWorld_FetchKit</defName>", jobDefs);
-    AssertContains("<defName>LivingWorld_ReturnKit</defName>", jobDefs);
-    var component = File.ReadAllText(
-        Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
-    AssertContains("PushMobilizationJobs", component);
-    AssertContains("TryTakeOrderedJob", component);
-    // Only disarm colonists this system armed (never the colony hunter), and don't push fetch with no
-    // weapon on the racks (would thrash every recheck).
-    AssertContains("mobilizedByUs", component);
-    AssertContains("var weaponAvailable", component);
-    AssertContains("Scribe_Collections.Look(ref mobilizedByUs", component);
-    // Mobilization reacts at once: a sleeping colonist is explicitly woken before the forced armory job.
-    AssertContains("RestUtility.WakeUp(pawn", component);
-    AssertRimWorldMethodExists("RimWorld.RestUtility", "WakeUp");
+    // Caravan arming now goes through the stands too.
+    var caravan = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanArmoryPatch.cs"));
+    AssertContains("OutfitStandDriver.EquipFromStand(pawn)", caravan);
 
-    // Hybrid: per-colonist assigned kit stored in a GameComponent, captured from current gear, and used by
-    // the adapter (assigned wins over the skill pick).
-    var assignment = File.ReadAllText(
-        Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmoryAssignmentComponent.cs"));
-    AssertContains("class ArmoryAssignmentComponent : GameComponent", assignment);
-    AssertContains("public void AssignFromCurrent(Pawn pawn)", assignment);
-    AssertContains("Scribe_Collections.Look(", assignment);
-    AssertContains("ArmoryAssignmentComponent.Instance", adapter);
-    AssertContains("SelectWeapon(shooting, melee, assignedWeapon, weaponPool)", adapter);
-    var gizmoPatch = File.ReadAllText(
-        Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMobilizationGizmoPatch.cs"));
-    AssertContains("assignments.AssignFromCurrent(pawn)", gizmoPatch);
-    AssertContains("assignments.Clear(pawn)", gizmoPatch);
-
-    // Per-colonist loadout configuration window: opened from a gizmo, picks weapon/armour from the racks,
-    // stored as an explicit loadout the adapter honours over the skill pick.
-    AssertContains("new Dialog_ArmoryLoadout(pawn)", gizmoPatch);
-    var loadoutUi = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "Dialog_ArmoryLoadout.cs"));
-    AssertContains("class Dialog_ArmoryLoadout : Window", loadoutUi);
-    AssertContains("public override void DoWindowContents(Rect inRect)", loadoutUi);
-    AssertContains("ArmorySources.Items(map", loadoutUi);
-    AssertContains("comp.SetLoadout(", loadoutUi);
-    AssertContains("SetLoadout", assignment);
-    AssertContains("AssignedArmorDefs", assignment);
-    AssertContains("AssignedArmorDefs", adapter);
-    AssertRimWorldMethodExists("Verse.Window", "DoWindowContents");
-    AssertRimWorldMethodExists("Verse.Widgets", "ButtonText");
-    foreach (var loadoutKey in new[] { "LW_ConfigureKit", "LW_LoadoutTitle", "LW_LoadoutWeapon", "LW_LoadoutAddArmor" })
+    // The retired shared-rack files are gone.
+    foreach (var gone in new[] { "Building_ArmoryRack.cs", "ArmorySources.cs", "MobilizationOutfitService.cs",
+                                 "Dialog_ArmoryLoadout.cs", "RecipeWorker_RepairArmoryGear.cs", "JobDriver_ArmoryKit.cs" })
     {
-        AssertContains($"<{loadoutKey}>", File.ReadAllText(
-            Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml")));
-        AssertContains($"<{loadoutKey}>", File.ReadAllText(
-            Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml")));
+        AssertEqual(false, File.Exists(Path.Combine(root, "src", "LivingWorld.RimWorld", gone)));
     }
 
-    // Clothing handled via vanilla apparel policies: a combat policy (allows armour) on arm, and a civilian
-    // policy (forbids armour) on stand-down so vanilla actually strips the armour and re-dresses in civvies.
-    var outfit = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationOutfitService.cs"));
-    AssertContains("public static void ToCombat(Pawn pawn)", outfit);
-    AssertContains("public static void ToCivilian(Pawn pawn)", outfit);
-    AssertContains("CivilianPolicy()", outfit);
-    // Civilian policy must forbid armour, otherwise stand-down leaves it on / re-equips it.
-    AssertContains("allowArmor: false", outfit);
-    AssertContains("ThingCategoryDefOf.ApparelArmor", outfit);
-    AssertContains("outfitDatabase", outfit);
-    AssertContains("CurrentApparelPolicy", outfit);
-    AssertContains("MobilizationOutfitService.ToCombat(pawn)", component);
-    AssertContains("MobilizationOutfitService.ToCivilian(pawn)", component);
-    AssertContains("RememberPolicy", assignment);
-    AssertContains("TakeRememberedPolicy", assignment);
-    AssertContains("previousPolicyIdByPawnId", assignment);
-    AssertContains("livingWorld_armoryPrevPolicyByPawnId", assignment);
-    AssertContains("LookMode.Value, LookMode.Value, ref policyKeysScratch", assignment);
-    AssertDoesNotContain("livingWorld_armoryPrevPolicyByPawn\",", assignment);
-    AssertRimWorldMethodExists("RimWorld.OutfitDatabase", "MakeNewOutfit");
-
-    // Rack labels are translated to Russian (DefInjected) so they are not left English / error.
-    var racksRu = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "DefInjected", "ThingDef", "LivingWorld_ArmoryRacks.xml"));
-    AssertContains("<LivingWorld_WeaponRack.label>", racksRu);
-    AssertContains("<LivingWorld_ArmorRack.label>", racksRu);
-    AssertContains("<LivingWorld_ApparelRack.label>", racksRu);
-
-    // Dev-only debug action to stock the racks with a test kit (weapons, full armour, summer/winter civvies).
-    var debug = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmoryDebugActions.cs"));
-    AssertContains("[DebugAction(\"LivingWorld\"", debug);
-    AssertContains("AllowedGameStates.PlayingOnMap", debug);
-    AssertContains("Building_ArmoryRack", debug);
-    AssertContains("ThingMaker.MakeThing", debug);
-    AssertContains("GenPlace.TryPlaceThing", debug);
-    AssertContains("GetNamedSilentFail", debug);
-    AssertRimWorldMethodExists("Verse.ThingMaker", "MakeThing");
-    AssertRimWorldMethodExists("RimWorld.GenStuff", "DefaultStuffFor");
-
-    // RimWorld APIs the equip/job path depends on.
-    AssertRimWorldMethodExists("Verse.Pawn_EquipmentTracker", "AddEquipment");
-    AssertRimWorldMethodExists("RimWorld.Pawn_ApparelTracker", "Wear");
-    AssertRimWorldMethodExists("Verse.AI.Toils_Goto", "GotoThing");
+    // RimWorld APIs the driver depends on exist in this game version.
+    AssertRimWorldMethodExists("Verse.ModsConfig", "get_OdysseyActive");
+    AssertRimWorldMethodExists("RimWorld.CompAssignableToPawn", "get_AssignedPawnsForReading");
+    AssertRimWorldMethodExists("RimWorld.Building_OutfitStand", "get_HeldItems");
 }
 
 static void TestRimWorldArmoryMobilization()
@@ -9744,9 +9618,9 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertContains("CaravanArmoryService.ArmDepartingPawns(pawns)", patch);
     AssertContains("settings.armoryMobilizationEnabled", patch);
     AssertContains("LoadoutAdapter.IsMobilizationCandidate", patch);
-    AssertContains("LoadoutAdapter.ResolveKit", patch);
-    AssertContains("LoadoutAdapter.EquipKit", patch);
+    AssertContains("OutfitStandDriver.EquipFromStand(pawn)", patch);
     AssertContains("LoadoutAdapter.IsArmed", patch);
+    AssertContains("ModsConfig.OdysseyActive", patch);
     AssertContains("Log.Warning", patch);
     AssertRimWorldMethodExists("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan");
     // Proof the bare form really is ambiguous: the method has more than one overload in this game version.
@@ -9758,89 +9632,6 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertEqual(1, RimWorldMethodMatchCount(
         "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
         new[] { "IEnumerable`1", "Faction", "PlanetTile", "Direction8Way", "PlanetTile", "Boolean" }));
-}
-
-static void TestRimWorldArmoryRepair()
-{
-    var root = FindRepoRoot();
-
-    // Recipe worker restores the most-damaged rack gear to full HP (vanilla has no repair). Fail-safe.
-    var worker = File.ReadAllText(
-        Path.Combine(root, "src", "LivingWorld.RimWorld", "RecipeWorker_RepairArmoryGear.cs"));
-    AssertContains("class RecipeWorker_RepairArmoryGear : RecipeWorker", worker);
-    AssertContains("public override void Notify_IterationCompleted(Pawn billDoer, List<Thing> ingredients)", worker);
-    AssertContains("HitPoints = ", worker);
-    AssertContains("ArmorySources", worker);
-    AssertContains("Log.Warning", worker);
-
-    // Repair bench building: a vanilla work table with a bills tab, buildable under Production.
-    var bench = File.ReadAllText(
-        Path.Combine(root, "mod", "Defs", "ThingDefs_Armory", "LivingWorld_RepairBench.xml"));
-    AssertContains("<defName>LivingWorld_RepairBench</defName>", bench);
-    AssertContains("<thingClass>Building_WorkTable</thingClass>", bench);
-    AssertContains("ITab_Bills", bench);
-    AssertContains("<designationCategory>Production</designationCategory>", bench);
-
-    // Repair recipe routed through the custom worker, on the repair bench, costing steel.
-    var recipe = File.ReadAllText(
-        Path.Combine(root, "mod", "Defs", "RecipeDefs_Armory", "LivingWorld_RepairRecipe.xml"));
-    AssertContains("<defName>LivingWorld_RepairArmoryGear</defName>", recipe);
-    AssertContains("<workerClass>LivingWorld.RimWorld.RecipeWorker_RepairArmoryGear</workerClass>", recipe);
-    AssertContains("<li>LivingWorld_RepairBench</li>", recipe);
-    AssertContains("<li>Steel</li>", recipe);
-
-    // Russian translations exist so the bench and recipe are not left English / error.
-    var benchRu = File.ReadAllText(Path.Combine(
-        root, "mod", "Languages", "Russian", "DefInjected", "ThingDef", "LivingWorld_RepairBench.xml"));
-    AssertContains("<LivingWorld_RepairBench.label>", benchRu);
-    var recipeRu = File.ReadAllText(Path.Combine(
-        root, "mod", "Languages", "Russian", "DefInjected", "RecipeDef", "LivingWorld_RepairRecipe.xml"));
-    AssertContains("<LivingWorld_RepairArmoryGear.label>", recipeRu);
-
-    // RimWorld APIs the repair path depends on exist in this game version.
-    AssertRimWorldMethodExists("Verse.RecipeWorker", "Notify_IterationCompleted");
-    AssertRimWorldMethodExists("Verse.Thing", "set_HitPoints");
-}
-
-static void TestRimWorldArmoryStorageRoles()
-{
-    var root = FindRepoRoot();
-
-    // ArmorySources unifies the mod's own racks with any player-designated Building_Storage.
-    var sources = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmorySources.cs"));
-    AssertContains("public static class ArmorySources", sources);
-    AssertContains("AllBuildingsColonistOfClass<Building_ArmoryRack>", sources);
-    AssertContains("AllBuildingsColonistOfClass<Building_Storage>", sources);
-    AssertContains("ArmoryStorageRolesComponent.For(map)", sources);
-    AssertContains("TryGetRole(storage, out var kind)", sources);
-
-    // Per-map roles component, keyed by building id (plain-value scribe, no cross-ref).
-    var roles = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmoryStorageRolesComponent.cs"));
-    AssertContains("class ArmoryStorageRolesComponent : MapComponent", roles);
-    AssertContains("public void SetRole(Building building, ArmoryRackKind? kind)", roles);
-    AssertContains("building.thingIDNumber", roles);
-    AssertContains("LookMode.Value, LookMode.Value", roles);
-
-    // Gizmo on any player storage (not our own racks) to pick its armory role.
-    var gizmo = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldArmoryRoleGizmoPatch.cs"));
-    AssertContains("HarmonyPatch(typeof(Building_Storage), \"GetGizmos\")", gizmo);
-    AssertContains("is not Building_ArmoryRack", gizmo);
-    AssertContains("roles.SetRole(building, ArmoryRackKind.Weapon)", gizmo);
-    AssertRimWorldMethodExists("RimWorld.Building_Storage", "GetGizmos");
-
-    // The whole gear-reading path goes through ArmorySources now, not the rack class directly.
-    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
-    AssertContains("ArmorySources.All(map)", component);
-    AssertContains("ArmorySources.Items(map, ArmoryRackKind.Weapon)", component);
-
-    // Localisation for the role gizmo (EN + RU).
-    var englishXml = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
-    var russianXml = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    foreach (var key in new[] { "LW_ArmoryRole", "LW_ArmoryRoleOff", "LW_ArmoryRoleWeapon", "LW_ArmoryRoleArmor", "LW_ArmoryRoleApparel" })
-    {
-        AssertContains($"<{key}>", englishXml);
-        AssertContains($"<{key}>", russianXml);
-    }
 }
 
 static void TestLiveVisitAnimalCaravanDocs()
