@@ -9535,13 +9535,19 @@ static void TestRimWorldOutfitStandDriver()
     AssertContains("ModsConfig.OdysseyActive", component);
     // Peacetime reconciliation: a stand-owner must never be left armoured while stood down.
     AssertContains("Peacetime reconciliation", component);
+    // Apparel policy forbids armour in peace (no flak vest from storage), allows it while mobilized.
+    AssertContains("MobilizationOutfitService.ToCivilian(pawn)", component);
+    AssertContains("MobilizationOutfitService.ToCombat(pawn)", component);
+    var policy = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationOutfitService.cs"));
+    AssertContains("ThingCategoryDefOf.ApparelArmor", policy);
+    AssertContains("CurrentApparelPolicy", policy);
 
     // Caravan arming now goes through the stands too.
     var caravan = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCaravanArmoryPatch.cs"));
     AssertContains("OutfitStandDriver.EquipFromStand(pawn)", caravan);
 
     // The retired shared-rack files are gone.
-    foreach (var gone in new[] { "Building_ArmoryRack.cs", "ArmorySources.cs", "MobilizationOutfitService.cs",
+    foreach (var gone in new[] { "Building_ArmoryRack.cs", "ArmorySources.cs",
                                  "Dialog_ArmoryLoadout.cs", "RecipeWorker_RepairArmoryGear.cs", "JobDriver_ArmoryKit.cs" })
     {
         AssertEqual(false, File.Exists(Path.Combine(root, "src", "LivingWorld.RimWorld", gone)));

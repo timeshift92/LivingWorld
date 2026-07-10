@@ -224,6 +224,8 @@ public sealed class MobilizationMapComponent : MapComponent
                         mobilizedByUs.Add(pawn);
                     }
 
+                    // Allow armour so vanilla keeps the stand's kit on, then equip it.
+                    MobilizationOutfitService.ToCombat(pawn);
                     OutfitStandDriver.EquipFromStand(pawn);
                 }
                 else
@@ -237,6 +239,10 @@ public sealed class MobilizationMapComponent : MapComponent
                         mobilizedByUs.Remove(pawn);
                         continue;
                     }
+
+                    // Forbid armour in peacetime so vanilla apparel optimization never dresses them in a flak
+                    // vest (or any armour) grabbed from storage — combat armour lives on the stand only.
+                    MobilizationOutfitService.ToCivilian(pawn);
 
                     if (LoadoutAdapter.IsArmed(pawn))
                     {
