@@ -250,4 +250,6 @@
   <LW_RaidWarningSource_Refugee>беженцы принесли весть о вас</LW_RaidWarningSource_Refugee>
   <LW_RaidWarningSource_DirectVisit>вас разведали во время визита</LW_RaidWarningSource_DirectVisit>
   <LW_RaidWarningSource_Public>репутация вашей колонии опережает вас</LW_RaidWarningSource_Public>
+  <LW_MobilizeToggle>Мобилизовать колонию</LW_MobilizeToggle>
+  <LW_MobilizeTooltip>Отправить боеспособных колонистов к их манекену — экипироваться и в бой. Колония также мобилизуется сама, пока на карте опасность, и после отбоя возвращается к гражданской одежде.</LW_MobilizeTooltip>
 </LanguageData>
