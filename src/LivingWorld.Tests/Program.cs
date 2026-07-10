@@ -9575,6 +9575,8 @@ static void TestRimWorldArmoryMobilization()
     // Settings toggle wired and drawn.
     var settings = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    AssertContains("debugLogging = false", settings);
+    AssertContains("Scribe_Values.Look(ref debugLogging, \"debugLogging\", false)", settings);
     AssertContains("armoryMobilizationEnabled = true", settings);
     AssertContains("mobilizationSkillThreshold = 4", settings);
     AssertContains("autoDraftOnThreat = true", settings);
