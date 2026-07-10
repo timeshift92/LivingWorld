@@ -8524,6 +8524,8 @@ static void TestRimWorldDirectSettlementObserver()
     AssertDoesNotContain("Prefs.DevMode", patch);
     AssertContains("LW_OpenRealSettlementMap", patch);
     AssertContains("MapGenerator.GenerateMap", patch);
+    AssertContains("ResolveEnteringCaravan(worldObject, caravan)", patch);
+    AssertContains("Find.WorldObjects.PlayerControlledCaravanAt(worldObject.Tile)", patch);
     AssertContains("CaravanEnterMapUtility.Enter", patch);
     AssertContains("CaravanEnterMode.Edge", patch);
     AssertContains("CaravanDropInventoryMode.DoNotDrop", patch);

@@ -115,10 +115,11 @@ public static class LivingWorldSettlementDirectVisitPatch
                 }
 
                 Current.Game.CurrentMap = map;
-                if (caravan != null && !caravan.Destroyed)
+                var enteringCaravan = ResolveEnteringCaravan(worldObject, caravan);
+                if (enteringCaravan != null)
                 {
                     CaravanEnterMapUtility.Enter(
-                        caravan,
+                        enteringCaravan,
                         map,
                         CaravanEnterMode.Edge,
                         CaravanDropInventoryMode.DoNotDrop,
@@ -131,6 +132,16 @@ public static class LivingWorldSettlementDirectVisitPatch
             "GeneratingMap",
             false,
             GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
+    }
+
+    private static Caravan? ResolveEnteringCaravan(Settlement worldObject, Caravan? requestedCaravan)
+    {
+        if (requestedCaravan != null && !requestedCaravan.Destroyed)
+        {
+            return requestedCaravan;
+        }
+
+        return Find.WorldObjects.PlayerControlledCaravanAt(worldObject.Tile);
     }
 
     private static bool HasLivingWorldSettlementFootprint(Map map, Faction faction)
