@@ -39,7 +39,7 @@
 - `src/LivingWorld.Tests/Program.cs` — register + implement Task 1's unit tests.
 - `mod/Languages/English/Keyed/LivingWorld.xml` and `mod/Languages/Russian/Keyed/LivingWorld.xml` — add the two gizmo keys.
 
-**Reuse note:** `LivingWorld.Core/ArmoryLoadout.cs` (`MobilizationTuning`, `LoadoutSelectionService`) already exists on the current branch tree and is kept as-is; several tasks paste proven code from prior arsenal branches (`claude-policy-armor`, `a72c27b`) verbatim so the implementer has complete code even reading tasks out of order.
+**Reuse note:** `LivingWorld.Core/ArmoryLoadout.cs` (`MobilizationTuning`, `LoadoutSelectionService`) and the mobilization settings fields are NOT on this branch (the branch was cut from `main`, which held only the design spec). Task 1b ports them first. Several tasks paste proven code from prior arsenal branches (`claude-policy-armor`, `a72c27b`) verbatim so the implementer has complete code even reading tasks out of order.
 
 ---
 
@@ -371,6 +371,136 @@ Expected: PASS — final line `335 test(s) passed.` (319 existing + 16 new).
 git add src/LivingWorld.Core/MobilizationPlan.cs src/LivingWorld.Tests/Program.cs
 git commit -m "feat(arsenal): pure mobilization phase machine with unit tests"
 ```
+
+---
+
+### Task 1b: Mobilization foundations (Core eligibility logic + settings fields)
+
+**Why this exists:** Task 2, 6, 7, 8 all consume `LivingWorld.Core.LoadoutSelectionService` / `MobilizationTuning` and `LivingWorldSettings.mobilizationSkillThreshold` (and the other three mobilization settings). Neither is on this branch. This task ports them so downstream tasks build.
+
+**Files:**
+- Create: `src/LivingWorld.Core/ArmoryLoadout.cs`
+- Modify: `src/LivingWorld.RimWorld/LivingWorldSettings.cs` (add four fields + Scribe)
+- Test: `src/LivingWorld.Tests/Program.cs` (append eligibility tests)
+
+**Interfaces:**
+- Produces:
+  - `static class LivingWorld.Core.MobilizationTuning` with `const int CombatSkillThreshold = 4`
+  - `static bool LivingWorld.Core.LoadoutSelectionService.IsCombatEligible(int shootingSkill, int meleeSkill, int threshold)`
+  - `static bool LivingWorld.Core.LoadoutSelectionService.IsCombatEligible(int shootingSkill, int meleeSkill)` (uses `CombatSkillThreshold`)
+  - `LivingWorldSettings` fields: `bool armoryMobilizationEnabled = true`, `int mobilizationSkillThreshold = 4`, `bool autoMobilizeOnThreat = true`, `bool mobilizationDiagnostics = false`, each Scribed.
+
+- [ ] **Step 1: Write the failing eligibility tests**
+
+Append to the `tests` list initializer in `src/LivingWorld.Tests/Program.cs` (after the last tuple; `using LivingWorld.Core;` is already at the top of the file):
+
+```csharp
+    ("loadout: best skill at threshold is combat eligible", TestLoadoutEligibleAtThreshold),
+    ("loadout: best skill below threshold is not eligible", TestLoadoutNotEligibleBelowThreshold),
+    ("loadout: a strong melee skill qualifies", TestLoadoutMeleeQualifies),
+    ("loadout: the parameterless overload uses the tuning threshold", TestLoadoutDefaultThreshold),
+```
+
+Append these methods at the end of `src/LivingWorld.Tests/Program.cs`:
+
+```csharp
+static void TestLoadoutEligibleAtThreshold()
+{
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(4, 2, 4));
+}
+
+static void TestLoadoutNotEligibleBelowThreshold()
+{
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(3, 3, 4));
+}
+
+static void TestLoadoutMeleeQualifies()
+{
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(1, 6, 4));
+}
+
+static void TestLoadoutDefaultThreshold()
+{
+    AssertEqual(true, LoadoutSelectionService.IsCombatEligible(MobilizationTuning.CombatSkillThreshold, 0));
+    AssertEqual(false, LoadoutSelectionService.IsCombatEligible(MobilizationTuning.CombatSkillThreshold - 1, 0));
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `dotnet run --project src/LivingWorld.Tests -c Debug`
+Expected: FAIL — compile error `The type or namespace name 'LoadoutSelectionService'/'MobilizationTuning' could not be found`.
+
+- [ ] **Step 3: Create the Core logic**
+
+Create `src/LivingWorld.Core/ArmoryLoadout.cs`:
+
+```csharp
+namespace LivingWorld.Core;
+
+public static class MobilizationTuning
+{
+    /// <summary>A colonist mobilizes only if their best combat skill reaches this. Below it they keep working.</summary>
+    public const int CombatSkillThreshold = 4;
+}
+
+/// <summary>
+/// Pure, deterministic combat-eligibility check for the mobilization system: given a colonist's shooting and
+/// melee skills and a threshold, decide whether they are a combat colonist. No RimWorld types, no side
+/// effects — unit-tested in isolation.
+/// </summary>
+public static class LoadoutSelectionService
+{
+    public static bool IsCombatEligible(int shootingSkill, int meleeSkill, int threshold)
+    {
+        return System.Math.Max(shootingSkill, meleeSkill) >= threshold;
+    }
+
+    public static bool IsCombatEligible(int shootingSkill, int meleeSkill)
+    {
+        return IsCombatEligible(shootingSkill, meleeSkill, MobilizationTuning.CombatSkillThreshold);
+    }
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `dotnet run --project src/LivingWorld.Tests -c Debug`
+Expected: PASS — final line `339 test(s) passed.` (335 from Task 1 + 4 new).
+
+- [ ] **Step 5: Add the settings fields**
+
+In `src/LivingWorld.RimWorld/LivingWorldSettings.cs`, add these four fields alongside the other `public` fields (e.g. immediately after the `worldWarEnabled` / mech-cluster block near the top of the class):
+
+```csharp
+    public bool armoryMobilizationEnabled = true;
+    public int mobilizationSkillThreshold = 4;
+    public bool autoMobilizeOnThreat = true;
+    public bool mobilizationDiagnostics = false;
+```
+
+In the same file's `ExposeData()`, add alongside the other `Scribe_Values.Look` calls:
+
+```csharp
+        Scribe_Values.Look(ref armoryMobilizationEnabled, "armoryMobilizationEnabled", true);
+        Scribe_Values.Look(ref mobilizationSkillThreshold, "mobilizationSkillThreshold", 4);
+        Scribe_Values.Look(ref autoMobilizeOnThreat, "autoMobilizeOnThreat", true);
+        Scribe_Values.Look(ref mobilizationDiagnostics, "mobilizationDiagnostics", false);
+```
+
+- [ ] **Step 6: Build the RimWorld project to verify zero warnings**
+
+Run: `dotnet build src/LivingWorld.RimWorld/LivingWorld.RimWorld.csproj -c Debug`
+Expected: `Предупреждений: 0` / `Ошибок: 0`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/LivingWorld.Core/ArmoryLoadout.cs src/LivingWorld.Tests/Program.cs src/LivingWorld.RimWorld/LivingWorldSettings.cs
+git commit -m "feat(arsenal): port combat-eligibility Core logic and mobilization settings fields"
+```
+
+> **Note for Task 8:** the four settings fields are added here; Task 8's settings step becomes a verification that they exist (leave them as-is) and focuses on the gizmo patch + translations.
 
 ---
 
