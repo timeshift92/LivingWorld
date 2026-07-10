@@ -8507,6 +8507,10 @@ static void TestRimWorldDirectSettlementObserver()
 
     AssertContains("HarmonyPatch(typeof(Settlement), \"GetGizmos\")", patch);
     AssertContains("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", patch);
+    AssertContains("public static void Postfix(Settlement __instance, ref IEnumerable<Gizmo> __result)", patch);
+    AssertContains("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", patch);
+    AssertContains("ResolveLedgerSettlement(component.State, worldObject, factionId)", patch);
+    AssertContains("string.Equals(settlement.Name, label, StringComparison.Ordinal)", patch);
     AssertContains("CaravanArrivalAction_LivingWorldVisitSettlement", patch);
     AssertContains("CaravanArrivalActionUtility.GetFloatMenuOptions", patch);
     AssertContains("Scribe_References.Look(ref settlement, \"settlement\")", patch);
@@ -8522,6 +8526,7 @@ static void TestRimWorldDirectSettlementObserver()
     AssertContains("Faction.OfPlayer", patch);
     AssertContains("LW_DirectVisitObserver", patch);
     AssertContains("LW_DirectVisitObserverTooltip", patch);
+    AssertRimWorldMethodExists("RimWorld.Planet.Settlement", "GetFloatMenuOptions");
     AssertRimWorldMethodExists("RimWorld.Planet.WorldObject", "GetGizmos");
     AssertRimWorldMethodExists("Verse.MapGenerator", "GenerateMap");
 

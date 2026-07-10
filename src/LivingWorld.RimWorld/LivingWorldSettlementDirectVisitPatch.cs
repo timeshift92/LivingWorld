@@ -18,9 +18,14 @@ namespace LivingWorld.RimWorld;
 [HarmonyPatch(typeof(Settlement), "GetGizmos")]
 public static class LivingWorldSettlementDirectVisitPatch
 {
-    public static IEnumerable<Gizmo> Postfix(IEnumerable<Gizmo> __result, Settlement __instance)
+    public static void Postfix(Settlement __instance, ref IEnumerable<Gizmo> __result)
     {
-        foreach (var gizmo in __result)
+        __result = AppendLivingWorldGizmos(__result, __instance);
+    }
+
+    private static IEnumerable<Gizmo> AppendLivingWorldGizmos(IEnumerable<Gizmo> baseGizmos, Settlement __instance)
+    {
+        foreach (var gizmo in baseGizmos)
         {
             yield return gizmo;
         }
@@ -126,13 +131,7 @@ public static class LivingWorldSettlementDirectVisitPatch
         }
 
         var factionId = worldObject.Faction.def?.defName ?? "UnknownFaction";
-        var stableKey = BuildStableKey(worldObject);
-        var bySlug = component.State.Settlements.FirstOrDefault(settlement =>
-            settlement.IsActive && settlement.Slug == stableKey);
-        var ledgerSettlement = bySlug ?? component.State.Settlements.FirstOrDefault(settlement =>
-            settlement.IsActive
-            && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal)
-            && settlement.Slug.Contains($":{worldObject.Tile}:"));
+        var ledgerSettlement = ResolveLedgerSettlement(component.State, worldObject, factionId);
         if (ledgerSettlement == null)
         {
             return false;
@@ -140,6 +139,37 @@ public static class LivingWorldSettlementDirectVisitPatch
 
         settlementId = ledgerSettlement.Id;
         return true;
+    }
+
+    private static WorldSettlement? ResolveLedgerSettlement(WorldState state, Settlement worldObject, string factionId)
+    {
+        var stableKey = BuildStableKey(worldObject);
+        var bySlug = state.Settlements.FirstOrDefault(settlement =>
+            settlement.IsActive
+            && string.Equals(settlement.Slug, stableKey, StringComparison.Ordinal));
+        if (bySlug != null)
+        {
+            return bySlug;
+        }
+
+        var label = worldObject.LabelCap;
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            var byNameAndFaction = state.Settlements.FirstOrDefault(settlement =>
+                settlement.IsActive
+                && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal)
+                && string.Equals(settlement.Name, label, StringComparison.Ordinal));
+            if (byNameAndFaction != null)
+            {
+                return byNameAndFaction;
+            }
+        }
+
+        var tileToken = $":{worldObject.Tile}:";
+        return state.Settlements.FirstOrDefault(settlement =>
+            settlement.IsActive
+            && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal)
+            && settlement.Slug.Contains(tileToken));
     }
 
     private static string BuildStableKey(WorldObject obj)
@@ -153,9 +183,17 @@ public static class LivingWorldSettlementDirectVisitPatch
 [HarmonyPatch(typeof(Settlement), "GetFloatMenuOptions")]
 public static class LivingWorldSettlementCaravanVisitPatch
 {
-    public static IEnumerable<FloatMenuOption> Postfix(IEnumerable<FloatMenuOption> __result, Settlement __instance, Caravan caravan)
+    public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)
     {
-        foreach (var option in __result)
+        __result = AppendLivingWorldVisitOptions(__result, __instance, caravan);
+    }
+
+    private static IEnumerable<FloatMenuOption> AppendLivingWorldVisitOptions(
+        IEnumerable<FloatMenuOption> baseOptions,
+        Settlement __instance,
+        Caravan caravan)
+    {
+        foreach (var option in baseOptions)
         {
             yield return option;
         }
