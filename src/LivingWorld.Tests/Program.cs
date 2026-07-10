@@ -8519,8 +8519,11 @@ static void TestRimWorldDirectSettlementObserver()
     AssertDoesNotContain("Prefs.DevMode", patch);
     AssertContains("LW_OpenRealSettlementMap", patch);
     AssertContains("MapGenerator.GenerateMap", patch);
-    AssertContains("worldObject.MapGeneratorDef", patch);
-    AssertContains("worldObject.ExtraGenStepDefs", patch);
+    AssertContains("ResolveLivingWorldMapGenerator()", patch);
+    AssertContains("DefDatabase<MapGeneratorDef>.GetNamedSilentFail(\"Base_Player\")", patch);
+    AssertContains("Enumerable.Empty<GenStepWithParams>()", patch);
+    AssertDoesNotContain("worldObject.MapGeneratorDef", patch);
+    AssertDoesNotContain("worldObject.ExtraGenStepDefs", patch);
     AssertContains("Current.Game.CurrentMap = map", patch);
     AssertContains("CameraJumper.TryJump(map.Center, map)", patch);
     AssertContains("Faction.OfPlayer", patch);

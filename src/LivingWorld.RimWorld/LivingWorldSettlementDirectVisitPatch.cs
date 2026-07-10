@@ -106,8 +106,8 @@ public static class LivingWorldSettlementDirectVisitPatch
                     map = MapGenerator.GenerateMap(
                         new IntVec3(120, 1, 120),
                         worldObject,
-                        worldObject.MapGeneratorDef,
-                        worldObject.ExtraGenStepDefs);
+                        ResolveLivingWorldMapGenerator(),
+                        Enumerable.Empty<GenStepWithParams>());
                 }
 
                 Current.Game.CurrentMap = map;
@@ -116,6 +116,12 @@ public static class LivingWorldSettlementDirectVisitPatch
             "GeneratingMap",
             false,
             GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
+    }
+
+    private static MapGeneratorDef ResolveLivingWorldMapGenerator()
+    {
+        return DefDatabase<MapGeneratorDef>.GetNamedSilentFail("Base_Player")
+            ?? DefDatabase<MapGeneratorDef>.AllDefsListForReading.First();
     }
 
     internal static bool TryResolveLedgerSettlement(Settlement worldObject, out EntityId settlementId)
