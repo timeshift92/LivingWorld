@@ -9805,6 +9805,14 @@ static void TestRimWorldMechClusters()
     var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_MechCluster.xml");
     AssertFileExists(defPath);
     AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_MechCluster</worldObjectClass>", File.ReadAllText(defPath));
+    var iconPatchPath = Path.Combine(root, "mod", "Patches", "LivingWorld_MechClusterIconPatch.xml");
+    AssertFileExists(iconPatchPath);
+    var iconPatch = File.ReadAllText(iconPatchPath);
+    AssertContains("MayRequire=\"Ludeon.RimWorld.Royalty\"", iconPatch);
+    AssertContains("defName=\"MechCluster\"]/expandingIconTexture", iconPatch);
+    AssertContains("defName=\"MechClusterForceNoConditionCauser\"]/expandingIconTexture", iconPatch);
+    AssertContains("World/LivingWorld_Warband", iconPatch);
+    AssertDoesNotContain("World/WorldObjects/Expanding/Sites/MechCluster", iconPatch);
 
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldMechRaidPatch.cs");
     AssertFileExists(patchPath);
