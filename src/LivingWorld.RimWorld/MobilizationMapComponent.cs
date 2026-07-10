@@ -168,8 +168,8 @@ public sealed class MobilizationMapComponent : MapComponent
 
         try
         {
-            var racks = map?.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList();
-            if (racks == null || racks.Count == 0)
+            var sources = ArmorySources.All(map);
+            if (sources.Count == 0)
             {
                 return;
             }
@@ -182,9 +182,8 @@ public sealed class MobilizationMapComponent : MapComponent
             }
 
             // Nothing to arm with means every fetch would end unarmed and re-fire next tick — don't thrash.
-            var weaponAvailable = racks.Any(rack =>
-                rack != null && rack.Spawned && rack.Kind == ArmoryRackKind.Weapon
-                && rack.StoredItems.Any(thing => thing?.def != null && thing.def.IsWeapon));
+            var weaponAvailable = ArmorySources.Items(map, ArmoryRackKind.Weapon)
+                .Any(thing => thing?.def != null && thing.def.IsWeapon);
 
             mobilizedByUs.RemoveAll(pawn => pawn == null);
 
@@ -231,7 +230,7 @@ public sealed class MobilizationMapComponent : MapComponent
                         continue;
                     }
 
-                    var rack = NearestRack(pawn, racks, ArmoryRackKind.Weapon) ?? racks[0];
+                    var rack = ArmorySources.Nearest(map, pawn.Position, ArmoryRackKind.Weapon) ?? sources[0].building;
                     if (rack != null)
                     {
                         if (!mobilizedByUs.Contains(pawn))
@@ -259,8 +258,8 @@ public sealed class MobilizationMapComponent : MapComponent
                         continue;
                     }
 
-                    // Return to the weapon rack so the kit lands next to its storage, not across the base.
-                    var rack = NearestRack(pawn, racks, ArmoryRackKind.Weapon) ?? racks[0];
+                    // Return to a weapon source so the kit lands next to its storage, not across the base.
+                    var rack = ArmorySources.Nearest(map, pawn.Position, ArmoryRackKind.Weapon) ?? sources[0].building;
                     if (rack != null)
                     {
                         PushArmoryJob(pawn, LivingWorldArmoryJobDefOf.LivingWorld_ReturnKit, rack);
@@ -276,7 +275,7 @@ public sealed class MobilizationMapComponent : MapComponent
 
     // Push a forced armory job. Mobilization is meant to be reacted to at once, so a sleeping colonist is
     // woken first (the forced order alone would interrupt sleep, but we make it explicit and certain).
-    private static void PushArmoryJob(Pawn pawn, JobDef jobDef, Building_ArmoryRack rack)
+    private static void PushArmoryJob(Pawn pawn, JobDef jobDef, Building_Storage rack)
     {
         if (pawn?.jobs == null)
         {
@@ -289,14 +288,6 @@ public sealed class MobilizationMapComponent : MapComponent
         }
 
         pawn.jobs.TryTakeOrderedJob(JobMaker.MakeJob(jobDef, rack), JobTag.Misc);
-    }
-
-    private static Building_ArmoryRack? NearestRack(Pawn pawn, List<Building_ArmoryRack> racks, ArmoryRackKind kind)
-    {
-        return racks
-            .Where(rack => rack != null && rack.Spawned && rack.Kind == kind)
-            .OrderBy(rack => pawn.Position.DistanceToSquared(rack.Position))
-            .FirstOrDefault();
     }
 
     public override void ExposeData()

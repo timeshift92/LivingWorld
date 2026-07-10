@@ -159,6 +159,12 @@
   <LW_Settings_AutoDraftTip>When on, combat-capable armed colonists are automatically woken and drafted while a real enemy is on the map, so they do not sleep or work through a raid. You still position them, and undrafting one sticks. Never triggers on the manual mobilize toggle.</LW_Settings_AutoDraftTip>
   <LW_MobilizeToggle>Mobilize colony</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Toggle colony mobilization. When on, combat-capable colonists arm up from the armory racks; the colony also mobilizes automatically while enemies are on the map. Off returns them to work and civvies.</LW_MobilizeTooltip>
+  <LW_ArmoryRole>Armory role: {0}</LW_ArmoryRole>
+  <LW_ArmoryRoleTooltip>Designate this storage as an armory source the mobilization system draws from. Choose whether it holds weapons, armour or civilian clothing — this lets you use any shelf, outfit stand or storage mod as an armory rack.</LW_ArmoryRoleTooltip>
+  <LW_ArmoryRoleOff>off</LW_ArmoryRoleOff>
+  <LW_ArmoryRoleWeapon>weapons</LW_ArmoryRoleWeapon>
+  <LW_ArmoryRoleArmor>armour</LW_ArmoryRoleArmor>
+  <LW_ArmoryRoleApparel>clothing</LW_ArmoryRoleApparel>
   <LW_AssignKit>Assign combat kit</LW_AssignKit>
   <LW_AssignKitTooltip>Remember this colonist's current weapon and armour as their combat kit. On mobilization they will always take exactly this kit from the racks (if available) instead of a skill-based pick. Equip them as you want first, then assign.</LW_AssignKitTooltip>
   <LW_ClearKit>Clear combat kit</LW_ClearKit>

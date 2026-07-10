@@ -348,6 +348,7 @@ var tests = new List<(string Name, Action Test)>
     ("wires armory racks, equip adapter and fetch jobs", TestRimWorldArmoryEquipAndJobs),
     ("arms caravan expeditions from the colony armory before departure", TestRimWorldCaravanArmoryPreparation),
     ("repairs armory gear at the repair bench", TestRimWorldArmoryRepair),
+    ("draws armory gear from any designated storage", TestRimWorldArmoryStorageRoles),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
     ("documents custom raid primary path and legacy fallback", TestRaidPrimaryPathAndFallbackContract),
 };
@@ -9543,7 +9544,9 @@ static void TestRimWorldArmoryEquipAndJobs()
     AssertContains("ApparelUtility.CanWearTogether(", adapter);
     AssertContains("pawn.apparel.Wear(", adapter);
     AssertContains("FreeRackCell(", adapter);
-    AssertContains("rack.Accepts(item)", adapter);
+    AssertContains("source.building.Accepts(item)", adapter);
+    // Gear is read through ArmorySources so any designated storage counts, not just the built-in racks.
+    AssertContains("ArmorySources.Items(map", adapter);
     // On arm, clashing civvies are stowed on the clothing rack (not the floor) so vanilla re-dresses later.
     AssertContains("ArmoryRackKind.Apparel", adapter);
     AssertRimWorldMethodExists("RimWorld.ApparelUtility", "CanWearTogether");
@@ -9591,7 +9594,7 @@ static void TestRimWorldArmoryEquipAndJobs()
     var loadoutUi = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "Dialog_ArmoryLoadout.cs"));
     AssertContains("class Dialog_ArmoryLoadout : Window", loadoutUi);
     AssertContains("public override void DoWindowContents(Rect inRect)", loadoutUi);
-    AssertContains("Building_ArmoryRack", loadoutUi);
+    AssertContains("ArmorySources.Items(map", loadoutUi);
     AssertContains("comp.SetLoadout(", loadoutUi);
     AssertContains("SetLoadout", assignment);
     AssertContains("AssignedArmorDefs", assignment);
@@ -9767,7 +9770,7 @@ static void TestRimWorldArmoryRepair()
     AssertContains("class RecipeWorker_RepairArmoryGear : RecipeWorker", worker);
     AssertContains("public override void Notify_IterationCompleted(Pawn billDoer, List<Thing> ingredients)", worker);
     AssertContains("HitPoints = ", worker);
-    AssertContains("Building_ArmoryRack", worker);
+    AssertContains("ArmorySources", worker);
     AssertContains("Log.Warning", worker);
 
     // Repair bench building: a vanilla work table with a bills tab, buildable under Production.
@@ -9797,6 +9800,47 @@ static void TestRimWorldArmoryRepair()
     // RimWorld APIs the repair path depends on exist in this game version.
     AssertRimWorldMethodExists("Verse.RecipeWorker", "Notify_IterationCompleted");
     AssertRimWorldMethodExists("Verse.Thing", "set_HitPoints");
+}
+
+static void TestRimWorldArmoryStorageRoles()
+{
+    var root = FindRepoRoot();
+
+    // ArmorySources unifies the mod's own racks with any player-designated Building_Storage.
+    var sources = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmorySources.cs"));
+    AssertContains("public static class ArmorySources", sources);
+    AssertContains("AllBuildingsColonistOfClass<Building_ArmoryRack>", sources);
+    AssertContains("AllBuildingsColonistOfClass<Building_Storage>", sources);
+    AssertContains("ArmoryStorageRolesComponent.For(map)", sources);
+    AssertContains("TryGetRole(storage, out var kind)", sources);
+
+    // Per-map roles component, keyed by building id (plain-value scribe, no cross-ref).
+    var roles = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "ArmoryStorageRolesComponent.cs"));
+    AssertContains("class ArmoryStorageRolesComponent : MapComponent", roles);
+    AssertContains("public void SetRole(Building building, ArmoryRackKind? kind)", roles);
+    AssertContains("building.thingIDNumber", roles);
+    AssertContains("LookMode.Value, LookMode.Value", roles);
+
+    // Gizmo on any player storage (not our own racks) to pick its armory role.
+    var gizmo = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldArmoryRoleGizmoPatch.cs"));
+    AssertContains("HarmonyPatch(typeof(Building_Storage), \"GetGizmos\")", gizmo);
+    AssertContains("is not Building_ArmoryRack", gizmo);
+    AssertContains("roles.SetRole(building, ArmoryRackKind.Weapon)", gizmo);
+    AssertRimWorldMethodExists("RimWorld.Building_Storage", "GetGizmos");
+
+    // The whole gear-reading path goes through ArmorySources now, not the rack class directly.
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MobilizationMapComponent.cs"));
+    AssertContains("ArmorySources.All(map)", component);
+    AssertContains("ArmorySources.Items(map, ArmoryRackKind.Weapon)", component);
+
+    // Localisation for the role gizmo (EN + RU).
+    var englishXml = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var russianXml = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[] { "LW_ArmoryRole", "LW_ArmoryRoleOff", "LW_ArmoryRoleWeapon", "LW_ArmoryRoleArmor", "LW_ArmoryRoleApparel" })
+    {
+        AssertContains($"<{key}>", englishXml);
+        AssertContains($"<{key}>", russianXml);
+    }
 }
 
 static void TestLiveVisitAnimalCaravanDocs()

@@ -62,17 +62,10 @@ public static class LoadoutAdapter
                 return (null, new List<Apparel>());
             }
 
-            var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
-                        ?? new List<Building_ArmoryRack>();
-
-            var weaponThings = racks
-                .Where(rack => rack.Kind == ArmoryRackKind.Weapon)
-                .SelectMany(rack => rack.StoredItems)
+            var weaponThings = ArmorySources.Items(map, ArmoryRackKind.Weapon)
                 .Where(thing => thing?.def != null && thing.def.IsWeapon)
                 .ToList();
-            var armorThings = racks
-                .Where(rack => rack.Kind == ArmoryRackKind.Armor)
-                .SelectMany(rack => rack.StoredItems)
+            var armorThings = ArmorySources.Items(map, ArmoryRackKind.Armor)
                 .OfType<Apparel>()
                 .ToList();
 
@@ -179,15 +172,13 @@ public static class LoadoutAdapter
                 // the clothes on the floor where they may be hauled off or deteriorate).
                 if (map != null && body != null)
                 {
-                    var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
-                                ?? new List<Building_ArmoryRack>();
                     var clashing = pawn.apparel.WornApparel?
                         .Where(worn => worn != null && armor.Any(piece =>
                             piece != null && !ApparelUtility.CanWearTogether(worn.def, piece.def, body)))
                         .ToList() ?? new List<Apparel>();
                     foreach (var civ in clashing)
                     {
-                        var cell = FreeRackCell(racks, ArmoryRackKind.Apparel, civ, pawn.Position, map) ?? pawn.Position;
+                        var cell = FreeRackCell(ArmoryRackKind.Apparel, civ, pawn.Position, map) ?? pawn.Position;
                         pawn.apparel.TryDrop(civ, out _, cell);
                     }
                 }
@@ -226,12 +217,9 @@ public static class LoadoutAdapter
                 return;
             }
 
-            var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
-                        ?? new List<Building_ArmoryRack>();
-
             if (pawn.equipment?.Primary is ThingWithComps primary)
             {
-                var cell = FreeRackCell(racks, ArmoryRackKind.Weapon, primary, pawn.Position, map) ?? pawn.Position;
+                var cell = FreeRackCell(ArmoryRackKind.Weapon, primary, pawn.Position, map) ?? pawn.Position;
                 pawn.equipment.TryDropEquipment(primary, out _, cell);
             }
 
@@ -242,7 +230,7 @@ public static class LoadoutAdapter
                     .ToList() ?? new List<Apparel>();
                 foreach (var apparel in combatArmor)
                 {
-                    var cell = FreeRackCell(racks, ArmoryRackKind.Armor, apparel, pawn.Position, map) ?? pawn.Position;
+                    var cell = FreeRackCell(ArmoryRackKind.Armor, apparel, pawn.Position, map) ?? pawn.Position;
                     pawn.apparel.TryDrop(apparel, out _, cell);
                 }
             }
@@ -253,15 +241,15 @@ public static class LoadoutAdapter
         }
     }
 
-    // A free cell on the nearest armory rack of the given kind that will accept the item, so returned gear
-    // lands in storage instead of on the floor. Null if there is no such rack/cell (caller drops at feet).
-    private static IntVec3? FreeRackCell(
-        List<Building_ArmoryRack> racks, ArmoryRackKind kind, Thing item, IntVec3 from, Map map)
+    // A free cell on the nearest armory storage of the given kind that will accept the item, so returned gear
+    // lands in storage instead of on the floor. Null if there is no such storage/cell (caller drops at feet).
+    private static IntVec3? FreeRackCell(ArmoryRackKind kind, Thing item, IntVec3 from, Map map)
     {
         try
         {
-            var candidates = racks
-                .Where(rack => rack != null && rack.Spawned && rack.Kind == kind && rack.Accepts(item))
+            var candidates = ArmorySources.All(map)
+                .Where(source => source.kind == kind && source.building.Accepts(item))
+                .Select(source => source.building)
                 .OrderBy(rack => from.DistanceToSquared(rack.Position));
 
             foreach (var rack in candidates)

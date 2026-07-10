@@ -142,15 +142,13 @@ public sealed class Dialog_ArmoryLoadout : Window
     // Distinct thing defs stocked on the colony's armory racks of the given kind.
     private IEnumerable<ThingDef> AvailableDefs(ArmoryRackKind kind)
     {
-        var racks = pawn?.Map?.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>();
-        if (racks == null)
+        var map = pawn?.Map;
+        if (map == null)
         {
             return Enumerable.Empty<ThingDef>();
         }
 
-        return racks
-            .Where(rack => rack.Kind == kind)
-            .SelectMany(rack => rack.StoredItems)
+        return ArmorySources.Items(map, kind)
             .Where(thing => thing?.def != null
                             && (kind == ArmoryRackKind.Weapon ? thing.def.IsWeapon : thing is Apparel))
             .Select(thing => thing.def)

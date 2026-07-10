@@ -25,11 +25,8 @@ public class RecipeWorker_RepairArmoryGear : RecipeWorker
                 return;
             }
 
-            var racks = map.listerBuildings?.AllBuildingsColonistOfClass<Building_ArmoryRack>()?.ToList()
-                        ?? new List<Building_ArmoryRack>();
-
-            var damaged = racks
-                .SelectMany(rack => rack.StoredItems)
+            var damaged = ArmorySources.All(map)
+                .SelectMany(source => ArmorySources.StoredItems(source.building))
                 .Where(IsRepairable)
                 .OrderBy(thing => (float)thing.HitPoints / thing.MaxHitPoints)
                 .FirstOrDefault();
