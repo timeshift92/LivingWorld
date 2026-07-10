@@ -119,9 +119,16 @@ public sealed class MobilizationMapComponent : MapComponent
                     continue;
                 }
 
-                // Only combat-capable, already-armed colonists; unarmed ones arm up from the racks first and
-                // get drafted on a later tick once they are carrying a weapon.
-                if (!LoadoutAdapter.IsMobilizationCandidate(pawn) || !LoadoutAdapter.IsArmed(pawn))
+                if (!LoadoutAdapter.IsMobilizationCandidate(pawn))
+                {
+                    continue;
+                }
+
+                // Draft the armed ones, and also the unarmed ones who have no outfit stand to gear up from —
+                // otherwise those colonists just sit and work through the raid. An unarmed colonist who DOES
+                // own a stand is left this tick so they can go equip their kit first, and gets drafted once
+                // armed. Either way nobody stands idle during a real attack.
+                if (!LoadoutAdapter.IsArmed(pawn) && OutfitStandDriver.HasStand(pawn))
                 {
                     continue;
                 }
