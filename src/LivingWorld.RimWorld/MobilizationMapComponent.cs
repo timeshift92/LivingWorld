@@ -203,27 +203,35 @@ public sealed class MobilizationMapComponent : MapComponent
 
                 if (mobilized)
                 {
-                    // Send eligible colonists with a stand to equip their kit — once each per alert.
-                    if (mobilizedByUs.Contains(pawn)
-                        || !LoadoutAdapter.IsMobilizationCandidate(pawn)
-                        || !OutfitStandDriver.HasStand(pawn))
+                    // Send eligible colonists with a stand to equip their combat kit. EquipFromStand is
+                    // idempotent (only swaps toward combat), so we can retry each recheck until they are armed.
+                    if (!LoadoutAdapter.IsMobilizationCandidate(pawn) || !OutfitStandDriver.HasStand(pawn))
                     {
                         continue;
                     }
 
-                    mobilizedByUs.Add(pawn);
+                    if (!mobilizedByUs.Contains(pawn))
+                    {
+                        mobilizedByUs.Add(pawn);
+                    }
+
                     OutfitStandDriver.EquipFromStand(pawn);
                 }
                 else
                 {
-                    // Stand down only colonists we mobilized: send them back to their stand.
+                    // Stand down only colonists we mobilized: send them back to their stand until they are
+                    // out of the combat kit, then forget them. ReturnToStand is idempotent (only swaps toward
+                    // civvies), so retrying is safe and never disarms a pawn we did not mobilize.
                     if (!mobilizedByUs.Contains(pawn))
                     {
                         continue;
                     }
 
-                    mobilizedByUs.Remove(pawn);
                     OutfitStandDriver.ReturnToStand(pawn);
+                    if (!LoadoutAdapter.IsArmed(pawn))
+                    {
+                        mobilizedByUs.Remove(pawn);
+                    }
                 }
             }
         }

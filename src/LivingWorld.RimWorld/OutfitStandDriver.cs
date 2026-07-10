@@ -47,19 +47,23 @@ public static class OutfitStandDriver
         return StandOf(pawn) != null;
     }
 
-    private static bool HasKit(Building_OutfitStand stand)
+    // A colonist is "in their combat kit" once they carry a weapon. Using the stand swaps between the worn
+    // set and the stored set, so we use this to only ever swap in the correct direction — combat on mobilize,
+    // civvies on stand-down — instead of blindly toggling (which put the wrong outfit on).
+    private static bool InCombatKit(Pawn pawn)
     {
-        return (stand.HeldItems != null && stand.HeldItems.Count > 0) || stand.HeldWeapon != null;
+        return pawn?.equipment?.Primary != null;
     }
 
-    // Send the colonist to their stand to put on the stored combat kit. No-op if the stand is empty (kit
-    // already worn) or they have no stand. Wakes a sleeping colonist so the reaction is immediate.
+    // Send the colonist to their stand to put on the stored combat kit. Only acts when the combat kit is on
+    // the stand (a weapon is stored there) and the colonist is not already armed — otherwise the swap would
+    // strip them into civvies. Wakes a sleeping colonist so the reaction is immediate.
     public static void EquipFromStand(Pawn pawn)
     {
         try
         {
             var stand = StandOf(pawn);
-            if (stand == null || !HasKit(stand))
+            if (stand == null || stand.HeldWeapon == null || InCombatKit(pawn))
             {
                 return;
             }
@@ -72,14 +76,15 @@ public static class OutfitStandDriver
         }
     }
 
-    // On stand-down, send the colonist back to their stand to return the kit and re-dress. Uses the Outfit
-    // Stands Plus dedicated return job when that mod is present, otherwise the vanilla use-stand swap.
+    // On stand-down, send the colonist back to their stand to return the kit and re-dress in civvies. Only
+    // acts when they are actually wearing the combat kit (armed); otherwise the swap would arm them. Uses the
+    // Outfit Stands Plus dedicated return job when present, else the vanilla use-stand swap.
     public static void ReturnToStand(Pawn pawn)
     {
         try
         {
             var stand = StandOf(pawn);
-            if (stand == null)
+            if (stand == null || !InCombatKit(pawn))
             {
                 return;
             }
@@ -97,6 +102,12 @@ public static class OutfitStandDriver
     private static void PushStandJob(Pawn pawn, JobDef jobDef, Building_OutfitStand stand)
     {
         if (pawn?.jobs == null || jobDef == null)
+        {
+            return;
+        }
+
+        // Already walking to the stand for this — don't re-issue the order every recheck.
+        if (pawn.CurJobDef == jobDef)
         {
             return;
         }
