@@ -111,7 +111,8 @@ public sealed class MobilizationMapComponent : MapComponent
                 return;
             }
 
-            foreach (var pawn in colonists)
+            // Snapshot: equipping/dropping gear can mutate the live colonist list mid-loop.
+            foreach (var pawn in colonists.ToList())
             {
                 if (pawn == null || pawn.Downed || pawn.InMentalState || pawn.drafter == null)
                 {
@@ -194,7 +195,8 @@ public sealed class MobilizationMapComponent : MapComponent
                 }
             }
 
-            foreach (var pawn in colonists)
+            // Snapshot: equipping/dropping gear can mutate the live colonist list mid-loop.
+            foreach (var pawn in colonists.ToList())
             {
                 if (pawn == null || pawn.Drafted || pawn.Downed || pawn.InMentalState)
                 {
