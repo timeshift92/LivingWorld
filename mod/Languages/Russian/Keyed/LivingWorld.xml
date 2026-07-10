@@ -41,6 +41,8 @@
   <LW_AllianceOfferDecline>Отклонить</LW_AllianceOfferDecline>
   <LW_RuinSiteLetterLabel>Руины для зачистки</LW_RuinSiteLetterLabel>
   <LW_RuinSiteLetterText>Поселение фракции {faction} пало в руины. Его останки лежат заброшенными неподалёку — отправь караван, чтобы зачистить их ради лута.</LW_RuinSiteLetterText>
+  <LW_SettlementVisitSiteLabel>Визит в поселение</LW_SettlementVisitSiteLabel>
+  <LW_SettlementVisitSiteInspect>Визит Living World в поселение: {visitKind}. Версия материализации {version}. Сверено: {reconciled}.</LW_SettlementVisitSiteInspect>
   <LW_RaidWarningWellArmed>Это богатая, хорошо вооружённая фракция — жди тяжёлого рейда.</LW_RaidWarningWellArmed>
   <LW_ListLimited>Показано {shown} из {total}. Полный ledger хранится в памяти и сохранении.</LW_ListLimited>
   <LW_FoodStatusOk>стабильно</LW_FoodStatusOk>

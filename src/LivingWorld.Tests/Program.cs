@@ -292,6 +292,7 @@ var tests = new List<(string Name, Action Test)>
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
     ("shows a settlement observer window for growth and projects", TestRimWorldSettlementObserverWindow),
     ("opens a direct settlement observer from the world map", TestRimWorldDirectSettlementObserver),
+    ("defines a dedicated settlement visit site foundation", TestRimWorldSettlementVisitSiteFoundation),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -8547,6 +8548,85 @@ static void TestRimWorldDirectSettlementObserver()
     {
         "LW_DirectVisitObserver",
         "LW_DirectVisitObserverTooltip"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldSettlementVisitSiteFoundation()
+{
+    var root = FindRepoRoot();
+
+    var defPath = Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_SettlementVisitSite.xml");
+    AssertFileExists(defPath);
+    var defXml = File.ReadAllText(defPath);
+    AssertContains("<defName>LivingWorld_SettlementVisitSite</defName>", defXml);
+    AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldSettlementVisitSite</worldObjectClass>", defXml);
+    AssertContains("<texture>World/LivingWorld_Scout</texture>", defXml);
+    AssertContains("<selectable>true</selectable>", defXml);
+    AssertContains("<canHaveFaction>true</canHaveFaction>", defXml);
+
+    var sitePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldSettlementVisitSite.cs");
+    AssertFileExists(sitePath);
+    var site = File.ReadAllText(sitePath);
+    AssertContains("class WorldObject_LivingWorldSettlementVisitSite : MapParent", site);
+    AssertContains("private long settlementIdValue", site);
+    AssertContains("private int sourceSettlementWorldObjectId", site);
+    AssertContains("private int sourceTile", site);
+    AssertContains("private string visitKind", site);
+    AssertContains("private int materializedVersion", site);
+    AssertContains("private bool reconciled", site);
+    AssertContains("public EntityId? SettlementId", site);
+    AssertContains("public void Configure(", site);
+    AssertContains("Scribe_Values.Look(ref settlementIdValue", site);
+    AssertContains("Scribe_Values.Look(ref sourceSettlementWorldObjectId", site);
+    AssertContains("Scribe_Values.Look(ref sourceTile", site);
+    AssertContains("Scribe_Values.Look(ref visitKind", site);
+    AssertContains("Scribe_Values.Look(ref materializedVersion", site);
+    AssertContains("Scribe_Values.Look(ref reconciled", site);
+    AssertContains("LW_SettlementVisitSiteInspect", site);
+    AssertDoesNotContain("MapGenerator.GenerateMap", site);
+    AssertDoesNotContain("CaravanEnterMapUtility.Enter", site);
+
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitSiteService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+    AssertContains("static class LivingWorldSettlementVisitSiteService", service);
+    AssertContains("TryCreateOrReuse(", service);
+    AssertContains("DefDatabase<WorldObjectDef>.GetNamedSilentFail(\"LivingWorld_SettlementVisitSite\")", service);
+    AssertContains("WorldObjectMaker.MakeWorldObject(def)", service);
+    AssertContains("Find.WorldObjects.Add(site)", service);
+    AssertContains("FindExisting(", service);
+    AssertContains("OfType<WorldObject_LivingWorldSettlementVisitSite>()", service);
+    AssertContains("candidate.SettlementId == settlementId", service);
+    AssertContains("candidate.SourceSettlementWorldObjectId == sourceSettlement.ID", service);
+    AssertContains("site.Configure(", service);
+    AssertContains("site.SetFaction(sourceSettlement.Faction)", service);
+    AssertDoesNotContain("MapGenerator.GenerateMap", service);
+    AssertDoesNotContain("CaravanEnterMapUtility.Enter", service);
+
+    var mapComponentPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitMapComponent.cs");
+    AssertFileExists(mapComponentPath);
+    var mapComponent = File.ReadAllText(mapComponentPath);
+    AssertContains("class LivingWorldSettlementVisitMapComponent : MapComponent", mapComponent);
+    AssertContains("ConfigureFrom(WorldObject_LivingWorldSettlementVisitSite visitSite)", mapComponent);
+    AssertContains("private long settlementIdValue", mapComponent);
+    AssertContains("private int visitSiteWorldObjectId", mapComponent);
+    AssertContains("private int materializedVersion", mapComponent);
+    AssertContains("private bool reconciled", mapComponent);
+    AssertContains("Scribe_Values.Look(ref settlementIdValue", mapComponent);
+    AssertContains("Scribe_Values.Look(ref visitSiteWorldObjectId", mapComponent);
+    AssertContains("Scribe_Values.Look(ref materializedVersion", mapComponent);
+    AssertContains("Scribe_Values.Look(ref reconciled", mapComponent);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_SettlementVisitSiteLabel",
+        "LW_SettlementVisitSiteInspect"
     })
     {
         AssertContains($"<{key}>", en);

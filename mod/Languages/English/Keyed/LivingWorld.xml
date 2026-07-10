@@ -41,6 +41,8 @@
   <LW_AllianceOfferDecline>Decline</LW_AllianceOfferDecline>
   <LW_RuinSiteLetterLabel>Ruins to salvage</LW_RuinSiteLetterLabel>
   <LW_RuinSiteLetterText>A {faction} settlement has fallen to ruin. Its remains lie abandoned nearby — send a caravan to clear them for salvage.</LW_RuinSiteLetterText>
+  <LW_SettlementVisitSiteLabel>Settlement visit</LW_SettlementVisitSiteLabel>
+  <LW_SettlementVisitSiteInspect>Living World settlement visit: {visitKind}. Materialized version {version}. Reconciled: {reconciled}.</LW_SettlementVisitSiteInspect>
   <LW_RaidWarningWellArmed>This is a wealthy, well-armed faction — expect a hard-hitting raid.</LW_RaidWarningWellArmed>
   <LW_ListLimited>Showing {shown} of {total}. The full ledger is kept in memory and save data.</LW_ListLimited>
   <LW_FoodStatusOk>stable</LW_FoodStatusOk>

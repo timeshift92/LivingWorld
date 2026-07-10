@@ -6,6 +6,15 @@ The peaceful "open real NPC settlement map" entry point is disabled in the RimWo
 
 The safe settlement observer remains available from selected NPC settlements. It records direct-visit intel and opens the Living World observer window, but it does not try to generate or enter a RimWorld map.
 
+The first foundation layer now exists behind the scenes:
+
+- `LivingWorld_SettlementVisitSite` is a dedicated `MapParent` proxy for a future visit map.
+- `WorldObject_LivingWorldSettlementVisitSite` persists the Living World settlement id, source world object id, source tile, visit kind, materialization version, and reconciliation flag.
+- `LivingWorldSettlementVisitMapComponent` is the per-map owner for the same visit state.
+- `LivingWorldSettlementVisitSiteService` creates or reuses one proxy site for a source settlement and Living World settlement id.
+
+This layer is intentionally not exposed as a player action yet.
+
 ## Why it is disabled
 
 The previous implementation exposed the feature before the full lifecycle was proven in a live save. It mixed several concerns in one patch:
