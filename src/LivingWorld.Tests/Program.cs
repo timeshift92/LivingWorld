@@ -337,6 +337,7 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: stand-down switches to the civilian policy", TestMobPlanSetCivilianPolicy),
     ("mob plan: stand-down returns the kit to the stand", TestMobPlanReturnKit),
     ("mob plan: a stood-down civilian holds steady", TestMobPlanSteadyCivilian),
+    ("mob plan: a stand with no kit does not stall the pawn on equip", TestMobPlanEmptyStandEngages),
     ("loadout: best skill at threshold is combat eligible", TestLoadoutEligibleAtThreshold),
     ("loadout: best skill below threshold is not eligible", TestLoadoutNotEligibleBelowThreshold),
     ("loadout: a strong melee skill qualifies", TestLoadoutMeleeQualifies),
@@ -9272,7 +9273,7 @@ static void TestMobPlanEquip()
 {
     var s = new PawnMobState
     {
-        IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = false,
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, KitAvailable = true, InCombatKit = false,
     };
     AssertEqual(MobPhase.Equip, MobilizationPlan.NextAction(mobilized: true, s));
 }
@@ -9385,4 +9386,14 @@ static void TestLoadoutDefaultThreshold()
 {
     AssertEqual(true, LoadoutSelectionService.IsCombatEligible(MobilizationTuning.CombatSkillThreshold, 0));
     AssertEqual(false, LoadoutSelectionService.IsCombatEligible(MobilizationTuning.CombatSkillThreshold - 1, 0));
+}
+
+static void TestMobPlanEmptyStandEngages()
+{
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, KitAvailable = false,
+        InCombatKit = false, CaiAvailable = true, HasLwDuty = false,
+    };
+    AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
 }

@@ -41,6 +41,8 @@ public static class MobilizationCandidates
         }
     }
 
+    // NOTE (known limitation, deferred): "armed" is a coarse proxy for "in the combat kit" — a colonist who
+    // habitually carries a weapon reads as equipped and may skip the stand. Revisit with live diagnostics.
     // True once the pawn is carrying a weapon (its combat kit is on).
     public static bool IsArmed(Pawn pawn)
     {

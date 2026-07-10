@@ -76,7 +76,8 @@ public static class OutfitStandDebugActions
                         + $"asleep={!RestUtility.Awake(pawn)}, armed={MobilizationCandidates.IsArmed(pawn)}, "
                         + $"stand={OutfitStandKit.HasStand(pawn)}, drafted={pawn.Drafted}, "
                         + $"combatPolicy={MobilizationPolicyService.IsCombatPolicy(pawn)}, "
-                        + $"civilianPolicy={MobilizationPolicyService.IsCivilianPolicy(pawn)}");
+                        + $"civilianPolicy={MobilizationPolicyService.IsCivilianPolicy(pawn)}, "
+                        + component.DiagnosePawn(pawn));
         }
     }
 

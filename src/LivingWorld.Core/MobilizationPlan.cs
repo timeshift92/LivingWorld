@@ -47,6 +47,9 @@ public readonly struct PawnMobState
     /// <summary>Owns a personal outfit stand to swap the kit from.</summary>
     public bool HasStand { get; init; }
 
+    /// <summary>The pawn's stand currently holds a weapon to don. An empty/weaponless stand cannot arm them.</summary>
+    public bool KitAvailable { get; init; }
+
     /// <summary>Actually drafted right now (by anyone).</summary>
     public bool Drafted { get; init; }
 
@@ -90,14 +93,15 @@ public static class MobilizationPlan
             return MobPhase.SetCombatPolicy;
         }
 
-        // Kit lives only on the stand, so only a stand owner can arm. Equip until armed.
-        if (s.HasStand && !s.InCombatKit)
+        // Kit lives only on the stand, so only a stand owner with a stocked stand can arm. Equip until armed.
+        if (s.HasStand && s.KitAvailable && !s.InCombatKit)
         {
             return MobPhase.Equip;
         }
 
-        // Ready to fight once armed, or (no stand to arm from) immediately so they don't idle through a raid.
-        var ready = s.InCombatKit || !s.HasStand;
+        // Ready to fight once armed, or when there is no stand / no kit to arm from — so they don't idle
+        // through a raid waiting on a stand that can never equip them.
+        var ready = s.InCombatKit || !s.HasStand || !s.KitAvailable;
         if (ready)
         {
             if (s.CaiAvailable && !s.HasLwDuty)

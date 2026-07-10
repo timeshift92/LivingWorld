@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using RimWorld;
 using Verse;
 using Verse.AI;
@@ -43,8 +42,11 @@ public static class OutfitStandKit
 
     public static bool HasStand(Pawn pawn) => StandOf(pawn) != null;
 
+    // The pawn's stand currently holds a weapon to don — an empty or weapon-less stand cannot arm them.
+    public static bool StandHasWeapon(Pawn pawn) => StandOf(pawn)?.HeldWeapon != null;
+
     // Carrying a weapon is our proxy for "wearing the combat kit" — the stand swap arms and armors together.
-    private static bool InCombatKit(Pawn pawn) => pawn?.equipment?.Primary != null;
+    private static bool InCombatKit(Pawn pawn) => MobilizationCandidates.IsArmed(pawn);
 
     // Send the colonist to their stand to don the stored combat kit. No-op if the kit is not on the stand (no
     // stored weapon) or they are already armed (swapping would strip them into civvies).

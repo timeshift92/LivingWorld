@@ -18,7 +18,6 @@ public sealed class MobilizationMapComponent : MapComponent
 
     private bool manualMobilized;
     private bool threatPresent;
-    private bool wasMobilized;
     private readonly MobilizationDriver driver = new();
 
     public MobilizationMapComponent(Map map)
@@ -61,16 +60,14 @@ public sealed class MobilizationMapComponent : MapComponent
             Log.Warning($"[LivingWorld] Mobilization threat check failed safely: {ex.Message}");
         }
 
-        var mobilized = IsMobilized;
+        driver.Drive(map, IsMobilized);
+    }
 
-        // When the alert ends, drop per-alert tracking so the next alert engages/drafts afresh.
-        if (!mobilized && wasMobilized)
-        {
-            driver.ResetTransient();
-        }
-
-        wasMobilized = mobilized;
-        driver.Drive(map, mobilized);
+    // Dev diagnostics: the driver's derived phase + transient tracking for one pawn (see OutfitStandDebugActions).
+    public string DiagnosePawn(Pawn pawn)
+    {
+        return $"phase={driver.PeekPhase(pawn, IsMobilized)}, "
+               + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}";
     }
 
     public override void ExposeData()
