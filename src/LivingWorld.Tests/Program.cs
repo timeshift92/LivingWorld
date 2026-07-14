@@ -100,6 +100,9 @@ var tests = new List<(string Name, Action Test)>
     ("animal map fate sync keeps player-taken animals out of source cohorts", TestAnimalMapFateSyncKeepsPlayerTakenAnimalsOutOfSourceCohorts),
     ("records sold goods into faction settlement ledger", TestTradeLedgerSettlementReceivesSoldGoods),
     ("records purchased goods leaving faction settlement ledger", TestTradeLedgerSettlementProvidesPurchasedGoods),
+    ("routes confirmed trade to its preferred source settlement", TestTradeLedgerUsesPreferredSettlement),
+    ("plans bounded trade stock without mutating the ledger", TestTradeReconciliationPlansBoundedStock),
+    ("remembers depleted trade resources through event history", TestTradeReconciliationRemembersDepletedStock),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
     ("records public settlement knowledge as estimates", TestPublicSettlementKnowledgeUsesEstimates),
     ("updates settlement knowledge from traders with confidence", TestTraderSettlementKnowledgeUpdatesConfidence),
@@ -199,7 +202,7 @@ var tests = new List<(string Name, Action Test)>
     ("alliance forms with an at-war faction and credits on player attack", TestAllianceFormsAndCreditsOnPlayerAttack),
     ("a decided war resolves and rewards the player's ally victory", TestWarResolvesAndRewardsPlayerVictory),
     ("faction wealth scales the strength of its raids", TestFactionWealthScalesRaidStrength),
-    ("faction wealth adds silver to its traders", TestFactionWealthAddsTraderSilver),
+    ("calculates the bounded faction trader silver signal", TestFactionWealthAddsTraderSilver),
     ("trader wealth bridge patches the real trader generator", TestRimWorldTraderWealthBridge),
     ("daily tick drives war resolution and victory rewards", TestRimWorldWarResolutionAndVictoryWiring),
     ("truce prevents new warbands until expired", TestTrucePreventsNewWarbandsUntilExpired),
@@ -3434,6 +3437,82 @@ static void TestTradeLedgerSettlementProvidesPurchasedGoods()
     AssertEqual(0, state.RaidOpportunities.Count);
 }
 
+static void TestTradeLedgerUsesPreferredSettlement()
+{
+    var state = new WorldState(12345);
+    var first = state.CreateSettlement("first-market", "First Market", "Outlander");
+    var source = state.CreateSettlement("source-market", "Source Market", "Outlander");
+    state.AddResource(source.Id, "Steel", 12);
+
+    var result = SettlementTradeLedgerService.RecordTrade(
+        state,
+        new SettlementTradeLedgerRequest(
+            "Outlander",
+            "Steel",
+            7,
+            SettlementTradeDirection.SettlementProvides,
+            14,
+            0,
+            "player bought source steel",
+            source.Id));
+
+    AssertEqual(SettlementTradeLedgerStatus.Success, result.Status);
+    AssertEqual(source.Id, result.SettlementId);
+    AssertEqual(5, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(first.Id, "Steel"));
+}
+
+static void TestTradeReconciliationPlansBoundedStock()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("market-town", "Market Town", "Outlander");
+    state.AddResource(settlement.Id, "Steel", 3);
+
+    var allocations = SettlementTradeReconciliationService.Plan(
+        state,
+        settlement.Id,
+        new[]
+        {
+            new SettlementTradeStockRequest("Steel", 2, SettlementTradeDirection.SettlementProvides, true),
+            new SettlementTradeStockRequest("Steel", 4, SettlementTradeDirection.SettlementProvides, true),
+            new SettlementTradeStockRequest("ArchotechArtifact", 5, SettlementTradeDirection.SettlementProvides, false),
+            new SettlementTradeStockRequest("Gold", 4, SettlementTradeDirection.SettlementReceives, true)
+        });
+
+    AssertEqual(2, allocations[0].AllowedQuantity);
+    AssertEqual(1, allocations[1].AllowedQuantity);
+    AssertEqual(5, allocations[2].AllowedQuantity);
+    AssertEqual(false, allocations[2].LedgerBacked);
+    AssertEqual(4, allocations[3].AllowedQuantity);
+    AssertEqual(true, allocations[3].LedgerBacked);
+    AssertEqual(3, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(settlement.Id, "Gold"));
+}
+
+static void TestTradeReconciliationRemembersDepletedStock()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("market-town", "Market Town", "Outlander");
+    state.AddResource(settlement.Id, "Gold", 2);
+    AssertEqual(2, state.ConsumeResource(settlement.Id, "Gold", 2, "test depletion"));
+
+    AssertEqual(
+        true,
+        SettlementTradeReconciliationService.IsLedgerTrackedResource(state, settlement.Id, "Gold"));
+
+    var allocation = SettlementTradeReconciliationService.Plan(
+        state,
+        settlement.Id,
+        new[]
+        {
+            new SettlementTradeStockRequest("Gold", 1, SettlementTradeDirection.SettlementProvides, true)
+        }).Single();
+
+    AssertEqual(true, allocation.LedgerBacked);
+    AssertEqual(0, allocation.AllowedQuantity);
+    AssertEqual(0, state.GetOwnedResourceQuantity(settlement.Id, "Gold"));
+}
+
 static void TestTradeLedgerNoSettlementFallsBackToIntel()
 {
     var state = new WorldState(12345);
@@ -5938,8 +6017,8 @@ static void TestFactionWealthScalesRaidStrength()
     AssertEqual(1f, FactionRaidStrengthService.WealthRaidMultiplier(state, "Unknown"));
 }
 
-// Economy -> live trade bridge: a faction wealthier than the world average sends traders carrying
-// extra silver; a poor or average one adds nothing (no penalty).
+// Economy signal retained for compatibility and future stock composition. The runtime bridge no
+// longer mints this amount; actual trader buying power is capped by source-settlement silver.
 static void TestFactionWealthAddsTraderSilver()
 {
     var state = new WorldState(4242);
@@ -5953,16 +6032,19 @@ static void TestFactionWealthAddsTraderSilver()
     AssertEqual(0, TraderWealthService.BonusSilver(state, "Unknown"));   // no data -> no bonus
 }
 
-// RW side of the trade bridge: a Postfix on the real trader-generation method adds the bonus silver.
+// RW side of the trade bridge caps generated silver to real source-settlement stock; the successful
+// transaction patch performs the actual debit.
 static void TestRimWorldTraderWealthBridge()
 {
     var root = FindRepoRoot();
     var patch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldTraderWealthPatch.cs"));
     AssertContains("[HarmonyPatch(typeof(PawnGroupKindWorker_Trader), \"GenerateTrader\")]", patch);
     AssertRimWorldMethodExists("RimWorld.PawnGroupKindWorker_Trader", "GenerateTrader");
-    AssertContains("TraderWealthService.BonusSilver", patch);
+    AssertContains("GetOwnedResourceQuantity", patch);
     AssertContains("ThingDefOf.Silver", patch);
-    AssertContains("inventory.innerContainer.TryAdd", patch);
+    AssertContains("inventory.innerContainer.Remove", patch);
+    AssertDoesNotContain("ThingMaker.MakeThing", patch);
+    AssertDoesNotContain("inventory.innerContainer.TryAdd", patch);
 }
 
 static void TestTrucePreventsNewWarbandsUntilExpired()
@@ -8571,17 +8653,24 @@ static void TestRimWorldTradeIntelPatch()
 
     var source = File.ReadAllText(patchPath);
 
-    AssertContains("[HarmonyPatch(typeof(Dialog_Trade), \"Close\")]", source);
+    AssertContains("[HarmonyPatch(typeof(TradeDeal), \"TryExecute\")]", source);
+    AssertRimWorldMethodExists("RimWorld.TradeDeal", "TryExecute");
     AssertContains("TradeSession.trader", source);
     AssertContains("SettlementTradeLedgerService.RecordTrade", source);
     AssertContains("SettlementTradeLedgerRequest", source);
     AssertContains("SettlementTradeDirection", source);
-    AssertContains("cachedTradeables", source);
-    AssertContains("GetRepresentativeThingDef", source);
+    AssertContains("SettlementTradeReconciliationService.Plan", source);
+    AssertContains("ClampPurchases", source);
+    AssertContains("ClampPlayerSalesToSilver", source);
+    AssertContains("ForceToSource", source);
+    AssertContains("if (!__result || !actuallyTraded", source);
+    AssertContains("__state.Applied", source);
     AssertContains("thingsColony", source);
     AssertContains("thingsTrader", source);
+    AssertDoesNotContain("Dialog_Trade", source);
+    AssertDoesNotContain("cachedTradeables", source);
     AssertDoesNotContain("HasAnyThing", source);
-    AssertDoesNotContain("AnyThing", source);
+    AssertDoesNotContain(".AnyThing", source);
 }
 
 static void TestRimWorldMainButtonDef()

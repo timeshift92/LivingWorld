@@ -22,7 +22,8 @@ public sealed record SettlementTradeLedgerRequest(
     SettlementTradeDirection Direction,
     int ObservedMarketValue,
     int SensitiveGoodsCount,
-    string Summary);
+    string Summary,
+    EntityId? PreferredSettlementId = null);
 
 public sealed record SettlementTradeLedgerResult(
     SettlementTradeLedgerStatus Status,
@@ -52,10 +53,7 @@ public static class SettlementTradeLedgerService
                 RecordIntel(state, request));
         }
 
-        var settlement = state.Settlements
-            .Where(candidate => string.Equals(candidate.FactionId, request.FactionId, StringComparison.Ordinal))
-            .OrderBy(candidate => candidate.Id.Value)
-            .FirstOrDefault();
+        var settlement = ResolveSettlement(state, request);
 
         var intel = RecordIntel(state, request);
         if (settlement == null)
@@ -90,6 +88,27 @@ public static class SettlementTradeLedgerService
             settlement.Id,
             applied,
             intel);
+    }
+
+    private static WorldSettlement? ResolveSettlement(
+        WorldState state,
+        SettlementTradeLedgerRequest request)
+    {
+        if (request.PreferredSettlementId.HasValue)
+        {
+            var preferred = state.GetSettlement(request.PreferredSettlementId.Value);
+            if (preferred is { IsActive: true }
+                && string.Equals(preferred.FactionId, request.FactionId, StringComparison.Ordinal))
+            {
+                return preferred;
+            }
+        }
+
+        return state.Settlements
+            .Where(candidate => candidate.IsActive)
+            .Where(candidate => string.Equals(candidate.FactionId, request.FactionId, StringComparison.Ordinal))
+            .OrderBy(candidate => candidate.Id.Value)
+            .FirstOrDefault();
     }
 
     private static int AddReceivedGoods(

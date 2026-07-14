@@ -1,15 +1,16 @@
 using HarmonyLib;
 using LivingWorld.Core;
 using RimWorld;
+using System;
+using System.Linq;
 using Verse;
 
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// A trader from a Living World faction wealthier than the world average arrives carrying extra silver,
-/// so the ledger economy (facilities, development, wealth) actually shows up at the trade window — richer
-/// settlements make richer trade partners — instead of being display-only. Postfix on the single point
-/// that produces the trader pawn; purely additive (only ever adds silver, never removes goods).
+/// Prevents vanilla trader generation from advertising more silver than the trader's deterministic
+/// Living World source settlement owns. The transaction patch performs the actual debit only when a
+/// deal succeeds, so cancelled windows and traders that leave do not leak or consume ledger silver.
 /// </summary>
 [HarmonyPatch(typeof(PawnGroupKindWorker_Trader), "GenerateTrader")]
 public static class LivingWorldTraderWealthPatch
@@ -33,22 +34,48 @@ public static class LivingWorldTraderWealthPatch
             return;
         }
 
-        var bonusSilver = TraderWealthService.BonusSilver(component.State, factionDefName!);
-        if (bonusSilver <= 0)
+        var source = component.State.Settlements
+            .Where(settlement => settlement.IsActive)
+            .Where(settlement => string.Equals(settlement.FactionId, factionDefName, StringComparison.Ordinal))
+            .OrderByDescending(settlement => component.State.GetSettlementPopulation(settlement.Id).Total)
+            .ThenBy(settlement => settlement.Id.Value)
+            .FirstOrDefault();
+        if (source == null)
         {
             return;
         }
 
-        // Fail-open: never let a stock tweak break trader generation or the trade window.
         try
         {
-            var silver = ThingMaker.MakeThing(ThingDefOf.Silver);
-            silver.stackCount = bonusSilver;
-            __result.inventory.innerContainer.TryAdd(silver, canMergeWithExistingStacks: true);
+            var ledgerSilver = component.State.GetOwnedResourceQuantity(source.Id, ThingDefOf.Silver.defName);
+            var silverStacks = __result.inventory.innerContainer
+                .Where(thing => thing?.def == ThingDefOf.Silver)
+                .ToList();
+            var excess = Math.Max(0, silverStacks.Sum(stack => stack.stackCount) - ledgerSilver);
+            foreach (var stack in silverStacks)
+            {
+                if (excess <= 0)
+                {
+                    break;
+                }
+
+                var removed = Math.Min(excess, stack.stackCount);
+                if (removed == stack.stackCount)
+                {
+                    __result.inventory.innerContainer.Remove(stack);
+                    stack.Destroy(DestroyMode.Vanish);
+                }
+                else
+                {
+                    stack.stackCount -= removed;
+                }
+
+                excess -= removed;
+            }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] trader silver bonus failed safely: {ex.GetType().Name}: {ex.Message}");
+            Log.Warning($"[LivingWorld] trader silver cap failed safely: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }
