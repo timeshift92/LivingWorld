@@ -33,7 +33,7 @@ public sealed class MobilizationDriver
             // Read anchor before the defensive null-conditional chain below — Roslyn's nullable flow analysis
             // otherwise treats `map` as maybe-null afterward even though the parameter itself is non-nullable.
             var anchor = map.Center;
-            var colonists = map?.mapPawns?.FreeColonistsSpawned;
+            var colonists = map.mapPawns?.FreeColonistsSpawned;
             if (colonists == null)
             {
                 return;
@@ -53,10 +53,77 @@ public sealed class MobilizationDriver
                 var action = MobilizationPlan.NextAction(mobilized, state);
                 Execute(pawn, action, tier, anchor, settings.mobilizationDiagnostics);
             }
+
+            // Player combat creatures (Odyssey ghouls): drafted + CAI-driven alongside the fighters. No outfit
+            // stand or apparel policy applies to them — they just fight when mobilized and stand down after.
+            foreach (var creature in map.mapPawns?.SpawnedPawnsInFaction(Faction.OfPlayer)?.ToList() ?? new List<Pawn>())
+            {
+                if (creature == null || !MobilizationCandidates.IsCombatCreature(creature))
+                {
+                    if (creature != null && (engagedByUs.ContainsKey(creature) || draftedByUs.Contains(creature)))
+                    {
+                        ReleaseCreature(creature);
+                    }
+
+                    continue;
+                }
+
+                DriveCreature(creature, mobilized, tier, anchor, settings.mobilizationDiagnostics);
+            }
         }
         catch (Exception ex)
         {
             Log.Warning($"[LivingWorld] Mobilization drive failed safely: {ex.Message}");
+        }
+    }
+
+    private void DriveCreature(Pawn creature, bool mobilized, ThreatTier tier, IntVec3 anchor, bool diagnostics)
+    {
+        if (!mobilized)
+        {
+            if (engagedByUs.ContainsKey(creature) || draftedByUs.Contains(creature))
+            {
+                ReleaseCreature(creature);
+                if (diagnostics)
+                {
+                    Log.Message($"[LivingWorld] Mobilization: {creature.LabelShort} (creature) -> Release");
+                }
+            }
+
+            return;
+        }
+
+        // Already engaged at the current tier — steady.
+        if (engagedByUs.TryGetValue(creature, out var engagedTier) && engagedTier == tier)
+        {
+            return;
+        }
+
+        if (creature.drafter != null)
+        {
+            creature.drafter.Drafted = true;
+            draftedByUs.Add(creature);
+        }
+
+        CaiBridge.TryEngage(creature, tier, anchor);
+        engagedByUs[creature] = tier;
+
+        if (diagnostics)
+        {
+            Log.Message($"[LivingWorld] Mobilization: {creature.LabelShort} (creature) -> Engage (tier {tier})");
+        }
+    }
+
+    private void ReleaseCreature(Pawn creature)
+    {
+        if (engagedByUs.Remove(creature))
+        {
+            CaiBridge.Disengage(creature);
+        }
+
+        if (draftedByUs.Remove(creature) && creature.drafter != null && creature.Drafted)
+        {
+            creature.drafter.Drafted = false;
         }
     }
 

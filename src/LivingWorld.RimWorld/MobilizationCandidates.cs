@@ -117,4 +117,42 @@ public static class MobilizationCandidates
             return false;
         }
     }
+
+    // A player combat creature the Arsenal drafts and CAI-drives alongside the fighters: a draftable, non-colonist
+    // pawn such as an Odyssey ghoul. (War-trained animals are not draftable and instead follow their drafted
+    // master via vanilla; mechanitor mechs are out of scope.) Fail-safe.
+    public static bool IsCombatCreature(Pawn pawn)
+    {
+        try
+        {
+            return pawn != null && pawn.Spawned && !pawn.Dead && !pawn.Downed && !pawn.InMentalState
+                   && pawn.Faction == Faction.OfPlayer && !pawn.IsColonist
+                   && pawn.drafter != null && pawn.IsGhoul;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // A player animal that should take shelter with the non-combatants: a colony animal that is NOT war-trained
+    // (a war-trained animal fights, following its drafted master). Fail-safe: unknown state reads as false.
+    public static bool IsShelterAnimal(Pawn pawn)
+    {
+        try
+        {
+            if (pawn == null || pawn.Dead || !pawn.Spawned || pawn.Faction != Faction.OfPlayer
+                || pawn.RaceProps?.Animal != true)
+            {
+                return false;
+            }
+
+            // War-trained (Release) animals are combatants — leave them to fight, do not herd them to shelter.
+            return pawn.training?.HasLearned(TrainableDefOf.Release) != true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
