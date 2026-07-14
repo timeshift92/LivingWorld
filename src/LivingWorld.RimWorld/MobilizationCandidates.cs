@@ -46,7 +46,14 @@ public static class MobilizationCandidates
             // roster AND able to fight"). This makes fighters and non-combatants a strict complement — a
             // rostered-but-incapable pawn (pacifist / child) is protected by shelter rather than left in
             // the open. Fail-safe: unknown state reads as non-combatant so they are sheltered, not exposed.
-            return pawn != null && pawn.IsColonist && !pawn.Dead && !IsCandidate(pawn);
+            //
+            // BUT a Downed or mentally-broken colonist is OUT of the system entirely — vanilla rescue / the
+            // mental break handles them. Without this guard a fighter who is briefly downed or berserk stops
+            // being IsCandidate, gets reclassified as a non-combatant, and is herded to shelter + swapped to
+            // civilian gear, then re-mobilized on recovery — pointless thrash (a downed/berserk pawn does not
+            // move to an area anyway). Observed live as the "Зоя" flicker in Player.log.
+            return pawn != null && pawn.IsColonist && !pawn.Dead && !pawn.Downed && !pawn.InMentalState
+                   && !IsCandidate(pawn);
         }
         catch
         {
