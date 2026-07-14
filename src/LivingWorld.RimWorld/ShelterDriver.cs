@@ -46,49 +46,33 @@ public sealed class ShelterDriver
             var wantsShelter = tier >= ThreatTier.Raid;
             var shelter = wantsShelter ? ShelterAreaService.ShelterAreaFor(map) : null;
 
+            var diagnostics = settings.mobilizationDiagnostics;
+
             foreach (var pawn in colonists.ToList())
             {
-                if (pawn == null)
+                if (pawn != null)
                 {
-                    continue;
+                    HandleShelter(pawn, MobilizationCandidates.IsNonCombatant(pawn),
+                        MobilizationCandidates.IsBusyUrgent(pawn), wantsShelter, shelter, map, diagnostics);
                 }
+            }
 
-                var state = new NonCombatantState
+            // Player animals shelter with the non-combatants (same allowed-area mechanic). A war-trained animal
+            // is not a shelter animal (it fights, following its drafted master) — handled with isNonCombatant
+            // false so that if we HAD sheltered it and it later became a combatant, its area is still restored.
+            var animals = mapPawns?.SpawnedColonyAnimals?.ToList() ?? new List<Pawn>();
+            foreach (var animal in animals)
+            {
+                if (animal != null)
                 {
-                    IsNonCombatant = MobilizationCandidates.IsNonCombatant(pawn),
-                    IsBusyUrgent = MobilizationCandidates.IsBusyUrgent(pawn),
-                    TierWantsShelter = wantsShelter,
-                    InShelterArea = ShelterAreaService.IsInShelter(pawn),
-                    AreaChangedByUs = prevAreaByPawn.ContainsKey(pawn.thingIDNumber),
-                };
-
-                switch (ShelterPlan.NextAction(state))
-                {
-                    case ShelterPhase.Flee:
-                        if (!prevAreaByPawn.ContainsKey(pawn.thingIDNumber))
-                        {
-                            prevAreaByPawn[pawn.thingIDNumber] = ShelterAreaService.CurrentAreaId(pawn);
-                        }
-
-                        ShelterAreaService.SetArea(pawn, shelter);
-                        if (settings.mobilizationDiagnostics)
-                        {
-                            Log.Message($"[LivingWorld] Shelter: {pawn.LabelShort} -> Flee");
-                        }
-                        break;
-
-                    case ShelterPhase.Restore:
-                        RestoreArea(pawn, map);
-                        if (settings.mobilizationDiagnostics)
-                        {
-                            Log.Message($"[LivingWorld] Shelter: {pawn.LabelShort} -> Restore");
-                        }
-                        break;
+                    HandleShelter(animal, MobilizationCandidates.IsShelterAnimal(animal), isBusyUrgent: false,
+                        wantsShelter, shelter, map, diagnostics);
                 }
             }
 
             // Drop tracking for pawns that despawned/left so the map does not grow unbounded.
             var live = new HashSet<int>(colonists.Where(p => p != null).Select(p => p.thingIDNumber));
+            live.UnionWith(animals.Where(a => a != null).Select(a => a.thingIDNumber));
             foreach (var goneId in prevAreaByPawn.Keys.Where(id => !live.Contains(id)).ToList())
             {
                 prevAreaByPawn.Remove(goneId);
@@ -97,6 +81,45 @@ public sealed class ShelterDriver
         catch (Exception ex)
         {
             Log.Warning($"[LivingWorld] Shelter drive failed safely: {ex.Message}");
+        }
+    }
+
+    private void HandleShelter(Pawn pawn, bool isNonCombatant, bool isBusyUrgent, bool wantsShelter,
+        Area? shelter, Map map, bool diagnostics)
+    {
+        var state = new NonCombatantState
+        {
+            IsNonCombatant = isNonCombatant,
+            IsBusyUrgent = isBusyUrgent,
+            TierWantsShelter = wantsShelter,
+            InShelterArea = ShelterAreaService.IsInShelter(pawn),
+            AreaChangedByUs = prevAreaByPawn.ContainsKey(pawn.thingIDNumber),
+        };
+
+        switch (ShelterPlan.NextAction(state))
+        {
+            case ShelterPhase.Flee:
+                if (!prevAreaByPawn.ContainsKey(pawn.thingIDNumber))
+                {
+                    prevAreaByPawn[pawn.thingIDNumber] = ShelterAreaService.CurrentAreaId(pawn);
+                }
+
+                ShelterAreaService.SetArea(pawn, shelter);
+                if (diagnostics)
+                {
+                    Log.Message($"[LivingWorld] Shelter: {pawn.LabelShort} -> Flee");
+                }
+
+                break;
+
+            case ShelterPhase.Restore:
+                RestoreArea(pawn, map);
+                if (diagnostics)
+                {
+                    Log.Message($"[LivingWorld] Shelter: {pawn.LabelShort} -> Restore");
+                }
+
+                break;
         }
     }
 

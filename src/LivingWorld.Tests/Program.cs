@@ -410,8 +410,8 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: a combat-policy candidate with a stand equips the kit", TestMobPlanEquip),
     ("mob plan: an equipped candidate engages via CAI when available", TestMobPlanEngage),
     ("mob plan: an already-engaged candidate holds steady", TestMobPlanSteadyCombatDuty),
-    ("mob plan: without CAI an equipped candidate is drafted", TestMobPlanDraftFallback),
-    ("mob plan: a drafted candidate without CAI holds steady", TestMobPlanSteadyCombatDrafted),
+    ("mob plan: without CAI an equipped candidate still engages (musters)", TestMobPlanReadyWithoutCaiEngages),
+    ("mob plan: a committed candidate holds steady", TestMobPlanReadyEngagedSteadies),
     ("mob plan: a standless candidate still engages so it does not idle", TestMobPlanStandlessEngages),
     ("mob plan: stand-down clears our CAI duty first", TestMobPlanStandDownClearsDuty),
     ("mob plan: stand-down undrafts a pawn we drafted", TestMobPlanStandDownClearsDraft),
@@ -430,6 +430,8 @@ var tests = new List<(string Name, Action Test)>
     ("threat: no hostiles is None", TestThreatNone),
     ("threat: a small animal pack is Nuisance", TestThreatNuisanceAnimals),
     ("threat: a big animal pack escalates past Nuisance", TestThreatBigAnimalPackSerious),
+    ("threat: a lone dangerous beast (elephant) is Raid, not Nuisance", TestThreatDangerousAnimalRaid),
+    ("threat: a small critter pack stays Nuisance even flagged not-dangerous", TestThreatSmallCritterNuisance),
     ("threat: a normal humanlike raid is Raid", TestThreatRaid),
     ("threat: mechanoids are Serious", TestThreatMechSerious),
     ("threat: Anomaly entities are Serious", TestThreatEntitySerious),
@@ -451,6 +453,18 @@ var tests = new List<(string Name, Action Test)>
     ("shelter: not needed and we never touched the area -> None", TestShelterNoRestoreNeeded),
     ("shelter: a pawn promoted to fighter while sheltered is restored", TestShelterPromotedFighterRestored),
     ("shelter: restore fires even for a busy pawn (area change does not yank them)", TestShelterRestoreIgnoresBusy),
+    ("muster: a non-fighter is left alone", TestMusterNonFighterNone),
+    ("muster: an unmobilized fighter is left alone", TestMusterUnmobilizedNone),
+    ("muster: a busy-urgent fighter is not pulled to the line", TestMusterBusyUrgentNone),
+    ("muster: wants muster, not at anchor -> March", TestMusterMarch),
+    ("muster: wants muster, arrived -> Hold", TestMusterHold),
+    ("muster: released squad -> Release (free engage)", TestMusterReleasedEngages),
+    ("muster: tier does not want a line -> Release", TestMusterNoLineEngages),
+    ("muster: unreachable anchor -> Release (do not freeze a straggler)", TestMusterUnreachableEngages),
+    ("muster gate: a breach releases immediately", TestMusterGateBreachReleases),
+    ("muster gate: below the ready fraction holds", TestMusterGateBelowFractionHolds),
+    ("muster gate: at the ready fraction releases", TestMusterGateAtFractionReleases),
+    ("muster gate: zero fighters never blocks", TestMusterGateZeroReleases),
     ("reconcile imports new physical settlement", TestReconcilePlansImportForNewPhysicalSettlement),
     ("reconcile destroys missing physical when enabled", TestReconcilePlansDestructionForMissingPhysicalWhenEnabled),
     ("reconcile skips destruction when disabled", TestReconcileSkipsDestructionWhenDisabled),
@@ -12209,22 +12223,25 @@ static void TestMobPlanSteadyCombatDuty()
     AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
 }
 
-static void TestMobPlanDraftFallback()
+static void TestMobPlanReadyWithoutCaiEngages()
 {
+    // A ready fighter with no CAI still routes to the muster/engage step (the glue drafts + holds it on the
+    // line via the vanilla think-tree). Previously this returned Draft, so a non-CAI colony never mustered.
     var s = new PawnMobState
     {
         IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
         CaiAvailable = false, Drafted = false,
     };
-    AssertEqual(MobPhase.Draft, MobilizationPlan.NextAction(mobilized: true, s));
+    AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
 }
 
-static void TestMobPlanSteadyCombatDrafted()
+static void TestMobPlanReadyEngagedSteadies()
 {
+    // Once committed (HasLwDuty — the glue set engagedByUs on release), the machine idles at SteadyCombat.
     var s = new PawnMobState
     {
         IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
-        CaiAvailable = false, Drafted = true,
+        CaiAvailable = false, Drafted = true, HasLwDuty = true,
     };
     AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
 }
@@ -12351,6 +12368,20 @@ static void TestThreatBigAnimalPackSerious()
 {
     var s = new ThreatSignals { AnyHostile = true, OnlyAnimals = true, HostileCount = 20, BigRaid = true };
     AssertEqual(ThreatTier.Serious, ThreatClassifier.Classify(s));
+}
+
+static void TestThreatDangerousAnimalRaid()
+{
+    // A single revenge-seeking megafauna (elephant/thrumbo) is a real fight, not a squirrel-tier nuisance.
+    var s = new ThreatSignals { AnyHostile = true, OnlyAnimals = true, AnyDangerousAnimal = true, HostileCount = 1 };
+    AssertEqual(ThreatTier.Raid, ThreatClassifier.Classify(s));
+}
+
+static void TestThreatSmallCritterNuisance()
+{
+    // Small critters (rats, squirrels) — not dangerous — stay a nuisance the fighters shrug off.
+    var s = new ThreatSignals { AnyHostile = true, OnlyAnimals = true, AnyDangerousAnimal = false, HostileCount = 4 };
+    AssertEqual(ThreatTier.Nuisance, ThreatClassifier.Classify(s));
 }
 
 static void TestThreatRaid()
@@ -12557,6 +12588,102 @@ static void TestShelterRestoreIgnoresBusy()
         IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = true, IsBusyUrgent = true,
     };
     AssertEqual(ShelterPhase.Restore, ShelterPlan.NextAction(s));
+}
+
+static void TestMusterNonFighterNone()
+{
+    var s = new MusterState { IsFighter = false, Mobilized = true, WantsMuster = true };
+    AssertEqual(MusterPhase.None, MusterPlan.NextAction(s));
+}
+
+static void TestMusterUnmobilizedNone()
+{
+    var s = new MusterState { IsFighter = true, Mobilized = false, WantsMuster = true };
+    AssertEqual(MusterPhase.None, MusterPlan.NextAction(s));
+}
+
+static void TestMusterBusyUrgentNone()
+{
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, IsBusyUrgent = true,
+    };
+    AssertEqual(MusterPhase.None, MusterPlan.NextAction(s));
+}
+
+static void TestMusterMarch()
+{
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, AtAnchor = false,
+    };
+    AssertEqual(MusterPhase.March, MusterPlan.NextAction(s));
+}
+
+static void TestMusterHold()
+{
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, AtAnchor = true,
+    };
+    AssertEqual(MusterPhase.Hold, MusterPlan.NextAction(s));
+}
+
+static void TestMusterReleasedEngages()
+{
+    // Once the squad is released, even a fighter still at the anchor breaks the line and free-engages.
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, AtAnchor = true,
+        Released = true,
+    };
+    AssertEqual(MusterPhase.Release, MusterPlan.NextAction(s));
+}
+
+static void TestMusterNoLineEngages()
+{
+    // The tier does not want a held line (e.g. a lone nuisance) — engage where found, no muster.
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = false, AnchorReachable = true,
+    };
+    AssertEqual(MusterPhase.Release, MusterPlan.NextAction(s));
+}
+
+static void TestMusterUnreachableEngages()
+{
+    // A fighter that cannot path to the anchor must not freeze at the marshalling stage — it engages instead.
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = false, AtAnchor = false,
+    };
+    AssertEqual(MusterPhase.Release, MusterPlan.NextAction(s));
+}
+
+static void TestMusterGateBreachReleases()
+{
+    var s = new MusterSignals { FightersTotal = 10, FightersAtAnchor = 0, LineBreached = true };
+    AssertEqual(true, MusterGate.WantsRelease(s, 0.7));
+}
+
+static void TestMusterGateBelowFractionHolds()
+{
+    // 6 of 10 gathered, need ceil(10*0.7)=7 — hold the line.
+    var s = new MusterSignals { FightersTotal = 10, FightersAtAnchor = 6, LineBreached = false };
+    AssertEqual(false, MusterGate.WantsRelease(s, 0.7));
+}
+
+static void TestMusterGateAtFractionReleases()
+{
+    // 7 of 10 gathered, need ceil(10*0.7)=7 — release the whole line together.
+    var s = new MusterSignals { FightersTotal = 10, FightersAtAnchor = 7, LineBreached = false };
+    AssertEqual(true, MusterGate.WantsRelease(s, 0.7));
+}
+
+static void TestMusterGateZeroReleases()
+{
+    var s = new MusterSignals { FightersTotal = 0, FightersAtAnchor = 0, LineBreached = false };
+    AssertEqual(true, MusterGate.WantsRelease(s, 0.7));
 }
 
 static void TestSettlementSlugParsesTile()

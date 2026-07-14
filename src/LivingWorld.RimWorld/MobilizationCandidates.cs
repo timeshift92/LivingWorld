@@ -46,7 +46,14 @@ public static class MobilizationCandidates
             // roster AND able to fight"). This makes fighters and non-combatants a strict complement — a
             // rostered-but-incapable pawn (pacifist / child) is protected by shelter rather than left in
             // the open. Fail-safe: unknown state reads as non-combatant so they are sheltered, not exposed.
-            return pawn != null && pawn.IsColonist && !pawn.Dead && !IsCandidate(pawn);
+            //
+            // BUT a Downed or mentally-broken colonist is OUT of the system entirely — vanilla rescue / the
+            // mental break handles them. Without this guard a fighter who is briefly downed or berserk stops
+            // being IsCandidate, gets reclassified as a non-combatant, and is herded to shelter + swapped to
+            // civilian gear, then re-mobilized on recovery — pointless thrash (a downed/berserk pawn does not
+            // move to an area anyway). Observed live as the "Зоя" flicker in Player.log.
+            return pawn != null && pawn.IsColonist && !pawn.Dead && !pawn.Downed && !pawn.InMentalState
+                   && !IsCandidate(pawn);
         }
         catch
         {
@@ -111,6 +118,44 @@ public static class MobilizationCandidates
         {
             var job = pawn?.CurJobDef;
             return job == JobDefOf.BeatFire || job == JobDefOf.TendPatient || job == JobDefOf.Rescue;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // A player combat creature the Arsenal drafts and CAI-drives alongside the fighters: a draftable, non-colonist
+    // pawn such as an Odyssey ghoul. (War-trained animals are not draftable and instead follow their drafted
+    // master via vanilla; mechanitor mechs are out of scope.) Fail-safe.
+    public static bool IsCombatCreature(Pawn pawn)
+    {
+        try
+        {
+            return pawn != null && pawn.Spawned && !pawn.Dead && !pawn.Downed && !pawn.InMentalState
+                   && pawn.Faction == Faction.OfPlayer && !pawn.IsColonist
+                   && pawn.drafter != null && pawn.IsGhoul;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // A player animal that should take shelter with the non-combatants: a colony animal that is NOT war-trained
+    // (a war-trained animal fights, following its drafted master). Fail-safe: unknown state reads as false.
+    public static bool IsShelterAnimal(Pawn pawn)
+    {
+        try
+        {
+            if (pawn == null || pawn.Dead || !pawn.Spawned || pawn.Faction != Faction.OfPlayer
+                || pawn.RaceProps?.Animal != true)
+            {
+                return false;
+            }
+
+            // War-trained (Release) animals are combatants — leave them to fight, do not herd them to shelter.
+            return pawn.training?.HasLearned(TrainableDefOf.Release) != true;
         }
         catch
         {
