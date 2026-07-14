@@ -380,6 +380,10 @@ var tests = new List<(string Name, Action Test)>
     ("threat: insects are Serious", TestThreatInsectSerious),
     ("threat: sappers are Serious", TestThreatSapperSerious),
     ("threat: an enemy at the base is Serious", TestThreatAtBaseSerious),
+    ("debounce: escalation is immediate", TestDebounceEscalatesImmediately),
+    ("debounce: de-escalation waits for required clear rechecks", TestDebounceDeescalatesAfterRequired),
+    ("debounce: a single low recheck does not drop the tier", TestDebounceHoldsThroughFlicker),
+    ("debounce: a fresh high recheck resets the clear counter", TestDebounceResetsCounterOnHigh),
 };
 
 var failures = new List<string>();
@@ -10569,4 +10573,36 @@ static void TestThreatAtBaseSerious()
 {
     var s = new ThreatSignals { AnyHostile = true, EnemyAtBase = true, HostileCount = 4 };
     AssertEqual(ThreatTier.Serious, ThreatClassifier.Classify(s));
+}
+
+static void TestDebounceEscalatesImmediately()
+{
+    // current None, raw Serious -> jump to Serious now, counter reset.
+    var (tier, below) = ThreatDebounce.Step(ThreatTier.None, ThreatTier.Serious, 0, 3);
+    AssertEqual(ThreatTier.Serious, tier);
+    AssertEqual(0, below);
+}
+
+static void TestDebounceDeescalatesAfterRequired()
+{
+    // current Serious, raw None, this is the 3rd consecutive low recheck (belowCount was 2) -> drop.
+    var (tier, below) = ThreatDebounce.Step(ThreatTier.Serious, ThreatTier.None, 2, 3);
+    AssertEqual(ThreatTier.None, tier);
+    AssertEqual(0, below);
+}
+
+static void TestDebounceHoldsThroughFlicker()
+{
+    // current Serious, raw None, only the 1st low recheck -> hold Serious, count it.
+    var (tier, below) = ThreatDebounce.Step(ThreatTier.Serious, ThreatTier.None, 0, 3);
+    AssertEqual(ThreatTier.Serious, tier);
+    AssertEqual(1, below);
+}
+
+static void TestDebounceResetsCounterOnHigh()
+{
+    // current Raid, raw Raid (still hostile) after some low flicker -> stay, reset counter to 0.
+    var (tier, below) = ThreatDebounce.Step(ThreatTier.Raid, ThreatTier.Raid, 2, 3);
+    AssertEqual(ThreatTier.Raid, tier);
+    AssertEqual(0, below);
 }
