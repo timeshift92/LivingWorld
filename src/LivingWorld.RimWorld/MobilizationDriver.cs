@@ -90,7 +90,10 @@ public sealed class MobilizationDriver
 
             foreach (var p in map.mapPawns.FreeColonistsSpawned?.ToList() ?? new List<Pawn>())
             {
-                if (p == null || !MobilizationCandidates.IsCandidate(p) || !CanReach(p, anchor))
+                // Exclude busy-urgent fighters (firefight/tend/rescue) from the denominator — they will never
+                // march to the line, so counting them would hold the gate below 100% until the timeout fires.
+                if (p == null || !MobilizationCandidates.IsCandidate(p)
+                    || MobilizationCandidates.IsBusyUrgent(p) || !CanReach(p, anchor))
                 {
                     continue;
                 }

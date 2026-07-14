@@ -98,48 +98,66 @@ public sealed class MobilizationMapComponent : MapComponent
 
     // Resolve the muster anchor (cached, recomputed only when the tier changes) and advance the one-way release
     // latch: hold the line until enough fighters have gathered (MusterGate) or the line is breached, with a
-    // timeout safety valve so one unreachable straggler cannot freeze the squad forever. Reset on full stand-down.
+    // timeout safety valve so one unreachable straggler cannot freeze the squad forever. The latch is per-ALERT:
+    // it resets whenever no automatic threat is present, so it does not leak across raids when the player leaves
+    // the manual "Mobilize colony" toggle on (which keeps IsMobilized true between raids). Fully fail-safe.
     private MusterContext BuildMusterContext(LivingWorldSettings settings)
     {
         var wantsMuster = settings.musterEnabled
                           && (currentTier == ThreatTier.Raid || currentTier == ThreatTier.Serious);
 
-        if (!IsMobilized)
+        try
         {
-            musterReleased = false;
-            musterHoldRechecks = 0;
-            anchorTier = ThreatTier.None;
-        }
-        else
-        {
-            if (wantsMuster && (currentTier != anchorTier || !cachedAnchor.IsValid))
+            if (!threatPresent)
             {
-                cachedAnchor = MusterAnchorService.Resolve(map, hostileCentroid, lastSignals.EnemyAtBase, out _);
-                anchorTier = currentTier;
+                musterReleased = false;
+                musterHoldRechecks = 0;
+                anchorTier = ThreatTier.None;
             }
-
-            if (wantsMuster && !musterReleased)
+            else
             {
-                // The enemy already inside the perimeter makes a held line moot — engage now.
-                var breached = lastSignals.EnemyAtBase || lastSignals.AnySapper || lastSignals.AnyEntity
-                               || lastSignals.AnyMechanoid || lastSignals.AnyInsect;
-
-                var (total, atAnchor) = driver.MusterProgress(map, cachedAnchor, settings.musterHoldRadius);
-                musterHoldRechecks++;
-
-                var progress = new MusterSignals
+                if (wantsMuster && (currentTier != anchorTier || !cachedAnchor.IsValid))
                 {
-                    FightersTotal = total,
-                    FightersAtAnchor = atAnchor,
-                    LineBreached = breached,
-                };
+                    cachedAnchor = MusterAnchorService.Resolve(map, hostileCentroid, lastSignals.EnemyAtBase, out _);
+                    anchorTier = currentTier;
+                }
 
-                if (MusterGate.WantsRelease(progress, settings.musterReadyFraction)
-                    || musterHoldRechecks >= settings.musterReleaseTimeoutRechecks)
+                if (wantsMuster && !musterReleased)
                 {
-                    musterReleased = true;
+                    // Breach = the enemy is at/among the base (proximity) or actively sapping the wall — holding a
+                    // forward line is moot, engage now. NOTE: enemy TYPE (mech/insect/entity) does NOT force a
+                    // breach — those raids hold a line too and release via proximity when they arrive.
+                    var breached = lastSignals.EnemyAtBase || lastSignals.AnySapper;
+
+                    var (total, atAnchor) = driver.MusterProgress(map, cachedAnchor, settings.musterHoldRadius);
+                    musterHoldRechecks++;
+
+                    var progress = new MusterSignals
+                    {
+                        FightersTotal = total,
+                        FightersAtAnchor = atAnchor,
+                        LineBreached = breached,
+                    };
+
+                    if (MusterGate.WantsRelease(progress, settings.musterReadyFraction)
+                        || musterHoldRechecks >= settings.musterReleaseTimeoutRechecks)
+                    {
+                        musterReleased = true;
+                    }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            // Fail open: no held line this recheck, everyone free-engages — never lock the colony.
+            Log.Warning($"[LivingWorld] Muster context failed safely: {ex.Message}");
+            return new MusterContext
+            {
+                Anchor = map.Center,
+                HoldRadius = settings.musterHoldRadius,
+                WantsMuster = false,
+                Released = true,
+            };
         }
 
         return new MusterContext

@@ -375,8 +375,8 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: a combat-policy candidate with a stand equips the kit", TestMobPlanEquip),
     ("mob plan: an equipped candidate engages via CAI when available", TestMobPlanEngage),
     ("mob plan: an already-engaged candidate holds steady", TestMobPlanSteadyCombatDuty),
-    ("mob plan: without CAI an equipped candidate is drafted", TestMobPlanDraftFallback),
-    ("mob plan: a drafted candidate without CAI holds steady", TestMobPlanSteadyCombatDrafted),
+    ("mob plan: without CAI an equipped candidate still engages (musters)", TestMobPlanReadyWithoutCaiEngages),
+    ("mob plan: a committed candidate holds steady", TestMobPlanReadyEngagedSteadies),
     ("mob plan: a standless candidate still engages so it does not idle", TestMobPlanStandlessEngages),
     ("mob plan: stand-down clears our CAI duty first", TestMobPlanStandDownClearsDuty),
     ("mob plan: stand-down undrafts a pawn we drafted", TestMobPlanStandDownClearsDraft),
@@ -10794,22 +10794,25 @@ static void TestMobPlanSteadyCombatDuty()
     AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
 }
 
-static void TestMobPlanDraftFallback()
+static void TestMobPlanReadyWithoutCaiEngages()
 {
+    // A ready fighter with no CAI still routes to the muster/engage step (the glue drafts + holds it on the
+    // line via the vanilla think-tree). Previously this returned Draft, so a non-CAI colony never mustered.
     var s = new PawnMobState
     {
         IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
         CaiAvailable = false, Drafted = false,
     };
-    AssertEqual(MobPhase.Draft, MobilizationPlan.NextAction(mobilized: true, s));
+    AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
 }
 
-static void TestMobPlanSteadyCombatDrafted()
+static void TestMobPlanReadyEngagedSteadies()
 {
+    // Once committed (HasLwDuty — the glue set engagedByUs on release), the machine idles at SteadyCombat.
     var s = new PawnMobState
     {
         IsCandidate = true, PolicyIsCombat = true, HasStand = true, InCombatKit = true,
-        CaiAvailable = false, Drafted = true,
+        CaiAvailable = false, Drafted = true, HasLwDuty = true,
     };
     AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
 }

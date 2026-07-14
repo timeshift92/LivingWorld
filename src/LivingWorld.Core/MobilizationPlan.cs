@@ -117,17 +117,13 @@ public static class MobilizationPlan
         // Ready to fight once armed, or when there is no stand / no kit to arm from — so they don't idle
         // through a raid waiting on a stand that can never equip them.
         var ready = s.InCombatKit || !s.HasStand || !s.KitAvailable;
-        if (ready)
+        if (ready && !s.HasLwDuty)
         {
-            if (s.CaiAvailable && !s.HasLwDuty)
-            {
-                return MobPhase.Engage;
-            }
-
-            if (!s.CaiAvailable && !s.Drafted)
-            {
-                return MobPhase.Draft;
-            }
+            // Hand a ready, not-yet-committed fighter to the muster/engage step. This works with OR without
+            // CAI: the glue drafts the pawn and holds it on the line via the vanilla think-tree (Wait_Combat),
+            // using CAI only as a best-effort free-engage layer once the line is released. (Previously a non-CAI
+            // fighter only drafted in place and never mustered.)
+            return MobPhase.Engage;
         }
 
         return MobPhase.SteadyCombat;
