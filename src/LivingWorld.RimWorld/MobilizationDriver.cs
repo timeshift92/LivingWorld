@@ -147,19 +147,22 @@ public sealed class MobilizationDriver
                 break;
 
             case MobPhase.Engage:
-                if (CaiBridge.TryEngage(pawn, tier, anchor))
+                // CAI's autonomous control (aiAutoControl) only takes effect on a DRAFTED pawn, and giving an
+                // UNDRAFTED colonist a CAI duty makes the free-colonist think tree spam "ThinkNode_Duty with no
+                // duty" (and fights a ritual/lord for control). So draft first — this makes aiAutoControl
+                // effective, uses the drafted think tree (no duty error), and cleanly pulls the pawn out of any
+                // ritual — then hand CAI the objective + reactive control on top (best-effort).
+                if (pawn.drafter != null)
                 {
-                    engagedByUs[pawn] = tier;
-                }
-                else if (pawn.drafter != null)
-                {
-                    // CAI present but could not take this pawn — draft as fallback so it still fights. Track in
-                    // both maps: engagedByUs (at this tier) stops the re-Engage loop, draftedByUs lets stand-down
-                    // undraft it.
                     pawn.drafter.Drafted = true;
                     draftedByUs.Add(pawn);
-                    engagedByUs[pawn] = tier;
                 }
+
+                CaiBridge.TryEngage(pawn, tier, anchor);
+
+                // Mark handled at this tier either way: stops the re-Engage loop, and a tier change re-issues.
+                // If CAI could not take the pawn it is still drafted (fallback); ClearCombat disengages + undrafts.
+                engagedByUs[pawn] = tier;
                 break;
 
             case MobPhase.Draft:
