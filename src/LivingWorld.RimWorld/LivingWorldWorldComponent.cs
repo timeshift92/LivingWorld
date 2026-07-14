@@ -13,6 +13,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 {
     private const int TicksPerDay = 60_000;
     private const int MaxCatchUpSimulationDays = 7;
+    private const int FailedDayRetryDelayTicks = 250;
     private const int BirthIntervalDays = 10;
     private const int AgeIntervalDays = 30;
     private const int NaturalDeathAge = 85;
@@ -31,6 +32,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private bool migratedVisibleDynamics;
     private string serializedState = string.Empty;
     private int lastSimulatedDay;
+    private int nextDailySimulationRetryTick;
     private int cachedWorldPopulation;
     private int cachedTargetPopulation;
     private bool? rimWarActive;
@@ -208,12 +210,35 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
+        if (nextDailySimulationRetryTick > currentTick)
+        {
+            return;
+        }
+
         var simulatedDays = 0;
+        var simulationFailed = false;
         while (lastSimulatedDay < currentDay && simulatedDays < MaxCatchUpSimulationDays)
         {
-            lastSimulatedDay++;
-            SimulateWorldDay(lastSimulatedDay);
-            simulatedDays++;
+            var nextDay = lastSimulatedDay + 1;
+            try
+            {
+                SimulateWorldDay(nextDay);
+                lastSimulatedDay = nextDay;
+                simulatedDays++;
+            }
+            catch (Exception ex)
+            {
+                simulationFailed = true;
+                nextDailySimulationRetryTick = currentTick + FailedDayRetryDelayTicks;
+                Log.Error(
+                    $"[LivingWorld] Daily simulation day {nextDay} failed; the watermark was not advanced and the day will be retried: {ex}");
+                break;
+            }
+        }
+
+        if (!simulationFailed)
+        {
+            nextDailySimulationRetryTick = 0;
         }
 
         // Safety net for any add/capture the hooks missed (mods bypassing the standard API). Never
@@ -233,7 +258,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendConflictLetters();
         MaybeSendAllianceOffers();
         MaybeGrantVictoryRewards();
-        SimulateMechClusters(currentTick, Math.Max(1, simulatedDays));
+        if (simulatedDays > 0)
+        {
+            SimulateMechClusters(currentTick, simulatedDays);
+        }
 
         LogSimulationDebugSnapshot(simulatedDays, currentTick);
     }
@@ -1730,7 +1758,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 int playerTile = playerMap.Tile;
                 foreach (var cluster in mechClusters)
                 {
-                    if (cluster.Awake || cluster.Tile < 0)
+                    if (cluster.Resolved || cluster.Awake || cluster.Tile < 0)
                     {
                         continue;
                     }
@@ -1765,7 +1793,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         EnsureMechClusters();
         EnsureMechClusterSites();
-        if (mechClusters.Count == 0 || mechClusters.Any(cluster => cluster.Awake))
+        if (!mechClusters.Any(cluster => !cluster.Resolved)
+            || mechClusters.Any(cluster => !cluster.Resolved && cluster.Awake))
         {
             return;
         }
@@ -1782,7 +1811,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var best = float.MaxValue;
         foreach (var cluster in mechClusters)
         {
-            if (cluster.Tile < 0)
+            if (cluster.Resolved || cluster.Tile < 0)
             {
                 continue;
             }
@@ -1820,7 +1849,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
     private void EnsureMechClusters()
     {
-        if (mechClusters.Count >= MechClusterRuntime.MaxClusters)
+        if (mechClusters.Count(cluster => !cluster.Resolved) >= MechClusterRuntime.MaxClusters)
         {
             return;
         }
@@ -1833,7 +1862,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         int playerTile = playerMap.Tile;
         var guard = 0;
-        while (mechClusters.Count < MechClusterRuntime.MaxClusters && guard++ < MechClusterRuntime.MaxClusters + 3)
+        while (mechClusters.Count(cluster => !cluster.Resolved) < MechClusterRuntime.MaxClusters
+            && guard++ < MechClusterRuntime.MaxClusters + 3)
         {
             if (!TryFindMechClusterTile(playerTile, out var tile))
             {
@@ -1921,7 +1951,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         foreach (var cluster in mechClusters)
         {
-            if (cluster.Tile < 0 || HasMechClusterSite(cluster.Id))
+            if (cluster.Resolved || cluster.Tile < 0 || HasMechClusterSite(cluster.Id))
             {
                 continue;
             }
@@ -1977,9 +2007,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             var stillExists = worldObject != null && IsMechClusterSite(worldObject);
             if (!stillExists)
             {
-                if (worldObject != null)
+                var nodeId = mechClusterSiteNodeIds[i];
+                var cluster = mechClusters.FirstOrDefault(candidate => candidate.Id == nodeId);
+                if (cluster != null && !cluster.Resolved)
                 {
-                    worldObjects.Remove(worldObject);
+                    cluster.Resolved = true;
+                    cluster.ResolvedTick = Find.TickManager?.TicksGame ?? State.CurrentTick;
                 }
 
                 mechClusterSiteNodeIds.RemoveAt(i);
@@ -2408,8 +2441,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 continue;
             }
 
-            // Mark attempted before building so a failure never retries every tick.
-            ruinSiteIds.Add(ruin.Id.Value);
             try
             {
                 var site = SiteMaker.MakeSite(
@@ -2426,6 +2457,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
                 site.Tile = tile;
                 worldObjects.Add(site);
+                ruinSiteIds.Add(ruin.Id.Value);
+                alreadyBuilt.Add(ruin.Id.Value);
 
                 // Surface the ruin as a loot opportunity the player can act on (jump to it), not a
                 // silent marker. Only in-game, so loading a save never re-announces old ruins.
@@ -2529,6 +2562,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref bootstrapped, "livingWorld_bootstrapped", false);
         Scribe_Values.Look(ref serializedState, "livingWorld_serializedState", string.Empty);
         Scribe_Values.Look(ref lastSimulatedDay, "livingWorld_lastSimulatedDay", 0);
+        Scribe_Values.Look(ref nextDailySimulationRetryTick, "livingWorld_nextDailySimulationRetryTick", 0);
         Scribe_Values.Look(ref lastWorldWarLetterTick, "livingWorld_lastWorldWarLetterTick", int.MinValue);
         Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
         Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);

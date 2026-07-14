@@ -40,6 +40,11 @@ public static class LivingWorldSettlementMapFacilityTracker
             .ToList();
         foreach (var facilityId in facilityIds)
         {
+            if (component.IsFacilityReconciled(facilityId))
+            {
+                continue;
+            }
+
             var things = component.FacilityThings.Where(entry => entry.FacilityId == facilityId).ToList();
             var floors = component.Floors.Where(entry => entry.FacilityId == facilityId).ToList();
             var total = things.Count + floors.Count;
@@ -66,6 +71,8 @@ public static class LivingWorldSettlementMapFacilityTracker
             {
                 updates++;
             }
+
+            component.MarkFacilityReconciled(facilityId);
         }
 
         return updates;

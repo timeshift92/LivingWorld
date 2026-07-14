@@ -7,54 +7,97 @@ using Verse;
 
 namespace LivingWorld.RimWorld;
 
-[HarmonyPatch(typeof(MapDeiniter), "Deinit")]
+[HarmonyPatch(typeof(Game), nameof(Game.DeinitAndRemoveMap))]
 [HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
 [HarmonyPriority(Priority.Last)]
 public static class LivingWorldSettlementMapDeinitPatch
 {
-    public static void Prefix(Map map)
+    public static bool Prefix(Map map)
     {
         var component = LivingWorldWorldComponent.Instance;
         if (component == null || map == null || !OwnsMapLifecycle(map.Parent))
         {
-            return;
+            return true;
         }
 
         var mapComponent = LivingWorldSettlementVisitMapComponent.For(map);
-        if (mapComponent == null
-            || mapComponent.Reconciled
-            || mapComponent.Lifecycle != LivingWorldMapMaterializationLifecycle.Materialized)
+        if (mapComponent == null || mapComponent.Reconciled)
         {
-            return;
+            return true;
         }
 
-        TryReconcile(
+        if (mapComponent.Lifecycle == LivingWorldMapMaterializationLifecycle.Failed)
+        {
+            if (!mapComponent.RollbackPending)
+            {
+                return true;
+            }
+
+            var recovered = LivingWorldSettlementMapMaterializationService.RetryFailedMaterializationRollback(
+                component.State,
+                map,
+                mapComponent.PurposeKey,
+                "settlement map deinit retried failed preparation rollback");
+            if (!recovered)
+            {
+                Log.Error(
+                    "[LivingWorld] Settlement map removal was cancelled because failed materialization still owns ledger state.");
+                return false;
+            }
+
+            mapComponent.MarkRollbackRecovered();
+            return true;
+        }
+
+        if (mapComponent.Lifecycle != LivingWorldMapMaterializationLifecycle.Materialized)
+        {
+            return true;
+        }
+
+        var reconciled = TryReconcile(
+            mapComponent,
+            LivingWorldMapReconciliationLayer.Resources,
             () => LivingWorldSettlementMapResourceTracker.ReconcileMap(
                 component.State,
                 map,
                 "settlement map deinit"),
             "resources");
-        TryReconcile(
+        reconciled &= TryReconcile(
+            mapComponent,
+            LivingWorldMapReconciliationLayer.Facilities,
             () => LivingWorldSettlementMapFacilityTracker.ReconcileMap(
                 component.State,
                 map,
                 "settlement map deinit"),
             "facilities and floors");
-        TryReconcile(
+        reconciled &= TryReconcile(
+            mapComponent,
+            LivingWorldMapReconciliationLayer.Animals,
             () => LivingWorldAnimalMapPawnTracker.ReconcileMap(
                 component.State,
                 map,
                 "settlement map deinit"),
             "animals");
-        TryReconcile(
+        reconciled &= TryReconcile(
+            mapComponent,
+            LivingWorldMapReconciliationLayer.Residents,
             () => ReconcileResidents(component.State, map, mapComponent.PurposeKey),
             "residents");
+
+        if (!reconciled)
+        {
+            Log.Error(
+                "[LivingWorld] Settlement map removal was cancelled because one or more ledger reconciliation layers failed."
+                + " The map remains loaded and the completed layers are persisted so a retry is idempotent.");
+            return false;
+        }
 
         mapComponent.MarkReconciled();
         var visitSite = Find.WorldObjects?.AllWorldObjects
             .OfType<WorldObject_LivingWorldSettlementVisitSite>()
             .FirstOrDefault(worldObject => worldObject.ID == mapComponent.VisitSiteWorldObjectId);
         visitSite?.MarkReconciled();
+        return true;
     }
 
     private static void ReconcileResidents(WorldState state, Map map, string purposeKey)
@@ -107,15 +150,27 @@ public static class LivingWorldSettlementMapDeinitPatch
             && !ModsConfig.IsActive("Torann.RimWar");
     }
 
-    private static void TryReconcile(Action reconcile, string layer)
+    private static bool TryReconcile(
+        LivingWorldSettlementVisitMapComponent mapComponent,
+        LivingWorldMapReconciliationLayer layerFlag,
+        Action reconcile,
+        string layer)
     {
+        if (mapComponent.IsLayerReconciled(layerFlag))
+        {
+            return true;
+        }
+
         try
         {
             reconcile();
+            mapComponent.MarkLayerReconciled(layerFlag);
+            return true;
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Settlement map {layer} reconciliation skipped safely: {ex.GetType().Name}: {ex.Message}");
+            Log.Error($"[LivingWorld] Settlement map {layer} reconciliation failed: {ex}");
+            return false;
         }
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
+using RimWorld;
 using Verse;
 
 namespace LivingWorld.RimWorld;
@@ -13,6 +14,17 @@ public enum LivingWorldMapMaterializationLifecycle
     Materialized,
     Reconciled,
     Failed
+}
+
+[Flags]
+public enum LivingWorldMapReconciliationLayer
+{
+    None = 0,
+    Resources = 1 << 0,
+    Facilities = 1 << 1,
+    Animals = 1 << 2,
+    Residents = 1 << 3,
+    All = Resources | Facilities | Animals | Residents
 }
 
 /// <summary>
@@ -27,13 +39,16 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
     private int lifecycleValue;
     private string purposeKey = string.Empty;
     private string failureReason = string.Empty;
+    private bool rollbackPending;
     private int materializedPopulation;
     private int materializedScore;
     private bool reconciled;
+    private int reconciledLayersValue;
     private List<LivingWorldTrackedMapResource> resources = new();
     private List<LivingWorldTrackedMapThing> facilityThings = new();
     private List<LivingWorldTrackedMapFloor> floors = new();
     private List<LivingWorldTrackedMapAnimal> animals = new();
+    private List<long> reconciledFacilityIds = new();
 
     public LivingWorldSettlementVisitMapComponent(Map map)
         : base(map)
@@ -56,6 +71,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
     public string PurposeKey => purposeKey;
 
     public string FailureReason => failureReason;
+
+    public bool RollbackPending => rollbackPending;
 
     public int MaterializedPopulation => materializedPopulation;
 
@@ -100,13 +117,16 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         settlementIdValue = settlementId.Kind == EntityKind.Settlement ? settlementId.Value : 0L;
         purposeKey = sessionPurposeKey ?? string.Empty;
         failureReason = string.Empty;
+        rollbackPending = false;
         materializedPopulation = 0;
         materializedScore = 0;
         reconciled = false;
+        reconciledLayersValue = (int)LivingWorldMapReconciliationLayer.None;
         resources.Clear();
         facilityThings.Clear();
         floors.Clear();
         animals.Clear();
+        reconciledFacilityIds.Clear();
         lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Preparing;
         return true;
     }
@@ -121,18 +141,50 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Materialized;
     }
 
-    public void FailMaterialization(string reason)
+    public void FailMaterialization(string reason, bool requiresRecovery = false)
     {
         failureReason = string.IsNullOrWhiteSpace(reason)
             ? "settlement map materialization failed"
             : reason.Trim();
+        rollbackPending = requiresRecovery;
         lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Failed;
+    }
+
+    public void MarkRollbackRecovered()
+    {
+        rollbackPending = false;
     }
 
     public void MarkReconciled()
     {
         reconciled = true;
+        reconciledLayersValue = (int)LivingWorldMapReconciliationLayer.All;
         lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Reconciled;
+    }
+
+    public bool IsLayerReconciled(LivingWorldMapReconciliationLayer layer)
+    {
+        return (((LivingWorldMapReconciliationLayer)reconciledLayersValue) & layer) == layer;
+    }
+
+    public void MarkLayerReconciled(LivingWorldMapReconciliationLayer layer)
+    {
+        reconciledLayersValue |= (int)layer;
+    }
+
+    public bool IsFacilityReconciled(EntityId facilityId)
+    {
+        return facilityId.Kind == EntityKind.SettlementFacility
+            && reconciledFacilityIds.Contains(facilityId.Value);
+    }
+
+    public void MarkFacilityReconciled(EntityId facilityId)
+    {
+        if (facilityId.Kind == EntityKind.SettlementFacility
+            && !reconciledFacilityIds.Contains(facilityId.Value))
+        {
+            reconciledFacilityIds.Add(facilityId.Value);
+        }
     }
 
     public void TrackResource(Thing thing, EntityId returnOwnerId, string resourceKey)
@@ -236,13 +288,16 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         Scribe_Values.Look(ref lifecycleValue, "livingWorld_materializationLifecycle", 0);
         Scribe_Values.Look(ref purposeKey, "livingWorld_materializationPurposeKey", string.Empty);
         Scribe_Values.Look(ref failureReason, "livingWorld_materializationFailure", string.Empty);
+        Scribe_Values.Look(ref rollbackPending, "livingWorld_materializationRollbackPending", false);
         Scribe_Values.Look(ref materializedPopulation, "livingWorld_materializedPopulation", 0);
         Scribe_Values.Look(ref materializedScore, "livingWorld_materializedScore", 0);
         Scribe_Values.Look(ref reconciled, "livingWorld_reconciled", false);
+        Scribe_Values.Look(ref reconciledLayersValue, "livingWorld_reconciledLayers", 0);
         Scribe_Collections.Look(ref resources, "livingWorld_trackedResources", LookMode.Deep);
         Scribe_Collections.Look(ref facilityThings, "livingWorld_trackedFacilityThings", LookMode.Deep);
         Scribe_Collections.Look(ref floors, "livingWorld_trackedFloors", LookMode.Deep);
         Scribe_Collections.Look(ref animals, "livingWorld_trackedAnimals", LookMode.Deep);
+        Scribe_Collections.Look(ref reconciledFacilityIds, "livingWorld_reconciledFacilityIds", LookMode.Value);
 
         if (Scribe.mode == LoadSaveMode.PostLoadInit)
         {
@@ -250,16 +305,53 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             facilityThings ??= new List<LivingWorldTrackedMapThing>();
             floors ??= new List<LivingWorldTrackedMapFloor>();
             animals ??= new List<LivingWorldTrackedMapAnimal>();
+            reconciledFacilityIds ??= new List<long>();
             resources.RemoveAll(entry => entry == null || entry.ThingId <= 0 || entry.ReturnOwnerValue <= 0);
             facilityThings.RemoveAll(entry => entry == null || entry.ThingId <= 0 || entry.FacilityIdValue <= 0);
             floors.RemoveAll(entry => entry == null || entry.FacilityIdValue <= 0);
             animals.RemoveAll(entry => entry == null || entry.PawnThingId <= 0 || entry.CohortIdValue <= 0);
+            reconciledFacilityIds.RemoveAll(value => value <= 0);
+
+            if (reconciled)
+            {
+                reconciledLayersValue = (int)LivingWorldMapReconciliationLayer.All;
+            }
 
             // Backward-compatible maps from before the lifecycle field were already materialized.
-            if (materializedVersion > 0 && Lifecycle == LivingWorldMapMaterializationLifecycle.None)
+            if (materializedVersion > 0
+                && (Lifecycle is LivingWorldMapMaterializationLifecycle.None
+                    or LivingWorldMapMaterializationLifecycle.Materialized)
+                && materializedPopulation <= 0)
+            {
+                var parentFaction = map.ParentFaction;
+                var residentCount = parentFaction == null
+                    ? 0
+                    : map.mapPawns?.AllPawns.Count(pawn =>
+                        pawn != null
+                        && !pawn.Dead
+                        && pawn.RaceProps?.Humanlike == true
+                        && pawn.Faction == parentFaction
+                        && pawn.Faction != Faction.OfPlayer) ?? 0;
+                if (residentCount > 0)
+                {
+                    lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Materialized;
+                    materializedPopulation = residentCount;
+                    materializedScore = Math.Max(residentCount, materializedScore);
+                }
+                else
+                {
+                    materializedVersion = 0;
+                    materializedPopulation = 0;
+                    materializedScore = 0;
+                    lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Failed;
+                    failureReason = "Legacy settlement map had no recoverable NPC population and must be rematerialized.";
+                    reconciled = false;
+                    reconciledLayersValue = (int)LivingWorldMapReconciliationLayer.None;
+                }
+            }
+            else if (materializedVersion > 0 && Lifecycle == LivingWorldMapMaterializationLifecycle.None)
             {
                 lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Materialized;
-                materializedScore = Math.Max(1, materializedScore);
             }
         }
     }

@@ -75,14 +75,15 @@ public static class LivingWorldSettlementMapResourceTracker
         foreach (var tracked in component.Resources.ToList())
         {
             var thing = allThings.FirstOrDefault(candidate => candidate?.thingIDNumber == tracked.ThingId);
-            component.RemoveResource(tracked.ThingId);
             if (thing == null || !thing.Spawned || thing.Map != map || thing.stackCount <= 0)
             {
+                component.RemoveResource(tracked.ThingId);
                 continue;
             }
 
             var ownerId = ResolveReturnOwner(state, tracked.ReturnOwnerId);
             ResourceLedgerService.AddResource(state, ownerId, tracked.ResourceKey, thing.stackCount);
+            component.RemoveResource(tracked.ThingId);
             returned += thing.stackCount;
         }
 

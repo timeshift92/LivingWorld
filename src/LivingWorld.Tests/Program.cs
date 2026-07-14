@@ -8983,7 +8983,7 @@ static void TestRimWorldSettlementMapMaterialization()
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("GenSpawn.Spawn", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
-    AssertContains("settlement map resource spawned", service);
+    AssertContains("settlement map resource materialized", service);
     AssertContains("AnimalMapMaterializationService.WithdrawForSettlementMap", service);
     AssertContains("PawnKindDef.Named(animalKind)", service);
     AssertContains("PawnGenerator.GeneratePawn", service);
@@ -9010,6 +9010,10 @@ static void TestRimWorldSettlementFacilitiesAndAnimalFateMaterialization()
     AssertContains("AnimalMapFateKind.Returned", tracker);
     AssertContains("AnimalMapFateKind.Dead", tracker);
     AssertContains("AnimalMapFateKind.TakenByPlayer", tracker);
+    AssertEqual(
+        true,
+        tracker.IndexOf("AnimalMapFateSyncService.Resolve", StringComparison.Ordinal)
+            < tracker.IndexOf("component.RemoveAnimal", StringComparison.Ordinal));
 
     var killPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnKillPatch.cs"));
     var exitPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
@@ -9031,7 +9035,8 @@ static void TestRimWorldSettlementRoomsAndStockpilesMaterialization()
     AssertContains("DoorThingDefName", service);
     AssertContains("WallStuffDefName", service);
     AssertContains("layout.StockpileCells", service);
-    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("var consumed = ResourceLedgerService.ConsumeResource", service);
+    AssertContains("var remainder = consumed - spawned", service);
     AssertContains("ThingDef.Named(resourceKey)", service);
     AssertContains("ResourceLedgerService.ConsumeResource", service);
 }
@@ -9046,10 +9051,19 @@ static void TestRimWorldSettlementMapFacilityDamageReconciliation()
     AssertContains("public static int ReconcileMap", tracker);
     AssertContains("SettlementMapDamageService.ReconcileFacilityDamage", tracker);
     AssertContains("thing.Spawned", tracker);
+    AssertContains("component.IsFacilityReconciled", tracker);
+    AssertContains("component.MarkFacilityReconciled", tracker);
 
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
     var patch = File.ReadAllText(patchPath);
     AssertContains("LivingWorldSettlementMapFacilityTracker.ReconcileMap", patch);
+    AssertContains("public static bool Prefix(Map map)", patch);
+    AssertContains("HarmonyPatch(typeof(Game), nameof(Game.DeinitAndRemoveMap))", patch);
+    AssertRimWorldMethodExists("Verse.Game", "DeinitAndRemoveMap");
+    AssertContains("LivingWorldMapReconciliationLayer.Facilities", patch);
+    AssertContains("Settlement map removal was cancelled", patch);
+    AssertContains("mapComponent.RollbackPending", patch);
+    AssertContains("RetryFailedMaterializationRollback", patch);
 
     var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
     AssertContains("SpawnCityFeatures", service);
@@ -9093,14 +9107,28 @@ static void TestRimWorldSettlementMapResourceReconciliation()
     AssertContains("thing.Map != map", tracker);
     AssertContains("ResolveReturnOwner", tracker);
     AssertContains("ResourceLedgerService.AddResource", tracker);
+    AssertEqual(
+        true,
+        tracker.LastIndexOf("ResourceLedgerService.AddResource", StringComparison.Ordinal)
+            < tracker.LastIndexOf("component.RemoveResource", StringComparison.Ordinal));
 
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
     var patch = File.ReadAllText(patchPath);
     AssertContains("LivingWorldSettlementMapResourceTracker.ReconcileMap", patch);
+    AssertContains("LivingWorldMapReconciliationLayer.Resources", patch);
 
     var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
-    AssertContains("TrySpawnResourceStack(map, lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity, layout.StockpileCells)", service);
+    AssertContains("var consumed = ResourceLedgerService.ConsumeResource", service);
+    AssertContains("var remainder = consumed - spawned", service);
     AssertContains("LivingWorldSettlementMapResourceTracker.Track", service);
+    AssertContains("RollbackFailedMaterialization", service);
+    AssertContains("LivingWorldAnimalMapPawnTracker.ReconcileMap", service);
+    AssertContains("MaterializationLeaseService.Release", service);
+    AssertContains("requires its persistent map component", service);
+    AssertEqual(
+        true,
+        service.IndexOf("SettlementMaterializationService.PrepareDefense", StringComparison.Ordinal)
+            < service.IndexOf("ClearGeneratedSettlementContent", StringComparison.Ordinal));
 }
 
 static void TestRimWorldSettlementMapFullCitySurface()
@@ -9780,6 +9808,11 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     AssertContains("Scribe_Values.Look(ref visitSiteWorldObjectId", mapComponent);
     AssertContains("Scribe_Values.Look(ref materializedVersion", mapComponent);
     AssertContains("Scribe_Values.Look(ref reconciled", mapComponent);
+    AssertContains("livingWorld_reconciledLayers", mapComponent);
+    AssertContains("livingWorld_materializationRollbackPending", mapComponent);
+    AssertContains("livingWorld_reconciledFacilityIds", mapComponent);
+    AssertContains("Legacy settlement map had no recoverable NPC population", mapComponent);
+    AssertContains("materializedPopulation = residentCount", mapComponent);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -10178,6 +10211,11 @@ static void TestRimWorldRuinSites()
     // Built once per ruin, persisted so a site is never re-created after save/load.
     AssertContains("ruinSiteIds", component);
     AssertContains("Scribe_Collections.Look(ref ruinSiteIds", component);
+    var ruinMethod = component.Substring(component.IndexOf("public void EnsureRuinSites()", StringComparison.Ordinal));
+    AssertEqual(
+        true,
+        ruinMethod.IndexOf("worldObjects.Add(site);", StringComparison.Ordinal)
+            < ruinMethod.IndexOf("ruinSiteIds.Add(ruin.Id.Value);", StringComparison.Ordinal));
     // Fail-open: a site that cannot be built is caught, never thrown inside the tick.
     AssertContains("ruin site creation failed safely", component);
     // The real RimWorld site-building API exists in this build.
@@ -10332,7 +10370,16 @@ static void TestWorldComponentCatchesUpMissedSimulationDays()
     AssertContains("MaxCatchUpSimulationDays", source);
     AssertContains("while (lastSimulatedDay < currentDay", source);
     AssertContains("simulatedDays < MaxCatchUpSimulationDays", source);
-    AssertContains("SimulateWorldDay(lastSimulatedDay", source);
+    AssertContains("var nextDay = lastSimulatedDay + 1", source);
+    AssertContains("SimulateWorldDay(nextDay)", source);
+    AssertContains("lastSimulatedDay = nextDay", source);
+    AssertEqual(
+        true,
+        source.IndexOf("SimulateWorldDay(nextDay)", StringComparison.Ordinal)
+            < source.IndexOf("lastSimulatedDay = nextDay", StringComparison.Ordinal));
+    AssertContains("the watermark was not advanced", source);
+    AssertContains("FailedDayRetryDelayTicks", source);
+    AssertContains("livingWorld_nextDailySimulationRetryTick", source);
 }
 
 static void TestWorldComponentUsesInitialWorldSeedingBoundary()
@@ -10700,7 +10747,11 @@ static void TestRimWorldIdentityComp()
     AssertContains("public EntityId LedgerId", source);
     AssertContains("public override void PostExposeData()", source);
     AssertContains("Scribe_Values.Look", source);
-    AssertContains("ThingDef declares", source);
+    AssertContains("ThingDef-declared", source);
+    AssertContains("class LivingWorldIdentityDefInjector", source);
+    AssertContains("DefDatabase<ThingDef>.AllDefsListForReading", source);
+    AssertContains("def?.race?.Humanlike == true", source);
+    AssertContains("def.comps.Add(new CompProperties_LivingWorldIdentity())", source);
     AssertDoesNotContain("will not be", source);
     AssertRimWorldMethodExists("Verse.ThingComp", "PostExposeData");
 }
@@ -11222,6 +11273,8 @@ static void TestRimWorldMechClusters()
     AssertFileExists(runtimePath);
     var runtime = File.ReadAllText(runtimePath);
     AssertContains("class MechClusterNode : IExposable", runtime);
+    AssertContains("public bool Resolved", runtime);
+    AssertContains("Scribe_Values.Look(ref Resolved", runtime);
     AssertContains("public static float DailyPressure(", runtime);
     AssertContains("public static bool ShouldAwaken(", runtime);
     AssertContains("WealthFactor", runtime);
@@ -11270,7 +11323,10 @@ static void TestRimWorldMechClusters()
     AssertContains("HasMechClusterSite(cluster.Id)", component);
     AssertContains("PruneMissingMechClusterSites", component);
     AssertContains("IsMechClusterSite(worldObject)", component);
-    AssertContains("worldObjects.Remove(worldObject)", component);
+    AssertContains("cluster.Resolved = true", component);
+    AssertContains("cluster.ResolvedTick", component);
+    AssertContains("cluster.Resolved || cluster.Tile < 0", component);
+    AssertDoesNotContain("worldObjects.Remove(worldObject)", component);
     AssertContains("TryFindMechClusterTile(", component);
     AssertContains("wealthWatcher", component);
     AssertContains("livingWorld_mechClusters", component);

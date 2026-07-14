@@ -1,7 +1,35 @@
+using System.Linq;
 using LivingWorld.Core;
 using Verse;
 
 namespace LivingWorld.RimWorld;
+
+/// <summary>
+/// Declares the identity comp on every loaded humanlike race before any game is loaded. Runtime-only
+/// additions to Pawn.AllComps are not reconstructed by ThingWithComps during load; putting the comp on
+/// the ThingDef makes its serialized ledger id durable for vanilla humans and modded humanlikes alike.
+/// </summary>
+[StaticConstructorOnStartup]
+public static class LivingWorldIdentityDefInjector
+{
+    static LivingWorldIdentityDefInjector()
+    {
+        foreach (var def in DefDatabase<ThingDef>.AllDefsListForReading
+            .Where(def => def?.race?.Humanlike == true)
+            .OrderBy(def => def.defName))
+        {
+            def.comps ??= new System.Collections.Generic.List<CompProperties>();
+            if (def.comps.Any(properties =>
+                properties is CompProperties_LivingWorldIdentity
+                || properties?.compClass == typeof(CompLivingWorldIdentity)))
+            {
+                continue;
+            }
+
+            def.comps.Add(new CompProperties_LivingWorldIdentity());
+        }
+    }
+}
 
 public sealed class CompProperties_LivingWorldIdentity : CompProperties
 {
@@ -16,10 +44,10 @@ public sealed class CompProperties_LivingWorldIdentity : CompProperties
 /// world ledger — not the fragile thingIDNumber — is the intended durable link.
 /// <para>
 /// LivingWorld_PawnIdentity.xml registers <see cref="CompProperties_LivingWorldIdentity"/>
-/// on the Human ThingDef, so the ThingDef declares this comp and newly materialized
-/// human pawns get a ThingDef-declared comp
-/// that RimWorld can expose with the pawn. Materialization still creates the comp
-/// defensively if another race/modded pawn lacks the declaration.
+/// on the vanilla Human ThingDef, while <see cref="LivingWorldIdentityDefInjector"/> declares it on
+/// every loaded humanlike race. Newly loaded and generated pawns therefore get a ThingDef-declared
+/// comp that RimWorld can restore with the pawn. Materialization still creates it defensively if a
+/// late-mutating mod bypasses the declaration.
 /// </para>
 /// </summary>
 public sealed class CompLivingWorldIdentity : ThingComp

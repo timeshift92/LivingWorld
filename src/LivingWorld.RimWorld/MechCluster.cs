@@ -16,6 +16,8 @@ public sealed class MechClusterNode : IExposable
     public bool Awake;
     public int AwakenTick;
     public float Pressure;
+    public bool Resolved;
+    public int ResolvedTick;
 
     public void ExposeData()
     {
@@ -24,6 +26,8 @@ public sealed class MechClusterNode : IExposable
         Scribe_Values.Look(ref Awake, "awake", false);
         Scribe_Values.Look(ref AwakenTick, "awakenTick", 0);
         Scribe_Values.Look(ref Pressure, "pressure", 0f);
+        Scribe_Values.Look(ref Resolved, "resolved", false);
+        Scribe_Values.Look(ref ResolvedTick, "resolvedTick", 0);
     }
 }
 

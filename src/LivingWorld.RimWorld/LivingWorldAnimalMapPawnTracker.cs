@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
@@ -105,8 +106,7 @@ public static class LivingWorldAnimalMapPawnTracker
         AnimalMapFateKind fate,
         string reason)
     {
-        component.RemoveAnimal(tracked.PawnThingId);
-        AnimalMapFateSyncService.Resolve(
+        var result = AnimalMapFateSyncService.Resolve(
             state,
             new AnimalMapFateSyncRequest(
                 tracked.CohortId,
@@ -116,6 +116,12 @@ public static class LivingWorldAnimalMapPawnTracker
                 fate,
                 Find.TickManager?.TicksGame ?? state.CurrentTick,
                 string.IsNullOrWhiteSpace(reason) ? "settlement map animal fate" : reason));
+        if (result.Status != AnimalMapFateSyncStatus.Success)
+        {
+            throw new InvalidOperationException(result.Reason);
+        }
+
+        component.RemoveAnimal(tracked.PawnThingId);
     }
 
     private static bool TryFindTracked(
