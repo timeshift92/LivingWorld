@@ -7,10 +7,11 @@ namespace LivingWorld.RimWorld;
 
 /// <summary>
 /// Binds RimWorld's neutral arrivals (visitor groups and trade caravans both derive from
-/// <see cref="IncidentWorker_NeutralGroup"/>) to ledger citizens through a settlement-visit lease.
+/// <see cref="IncidentWorker_NeutralGroup"/>) to the persisted reservation created before departure.
 /// <see cref="IncidentWorker_NeutralGroup.SpawnPawns"/> is the single generation point that returns
 /// the freshly-spawned group, so a Postfix here is the neutral-arrival analogue of the raid pawn
-/// generation patch. Purely additive: it never blocks or alters the arrival.
+/// generation patch. Generated humans, animals and inventory that exceed that reservation are removed
+/// before the incident worker can spawn them.
 /// </summary>
 [HarmonyPatch(typeof(IncidentWorker_NeutralGroup), "SpawnPawns")]
 public static class LivingWorldNeutralGroupBindingPatch
@@ -25,6 +26,22 @@ public static class LivingWorldNeutralGroupBindingPatch
         var component = LivingWorldWorldComponent.Instance;
         if (component == null)
         {
+            return;
+        }
+
+        var reservedGroup = ApproachingGroupRuntime.CurrentGroup;
+        if (reservedGroup != null)
+        {
+            ApproachingGroupRuntime.RecordGeneratedPawns(__result);
+            if (!LivingWorldVisitorBindingService.BindReservedVisitorPawns(
+                    component.State,
+                    reservedGroup,
+                    __result))
+            {
+                __result.Clear();
+            }
+
+            ApproachingGroupRuntime.RecordGeneratedPawns(__result);
             return;
         }
 

@@ -11,6 +11,12 @@ namespace LivingWorld.RimWorld;
 
 public sealed class LivingWorldWorldComponent : WorldComponent
 {
+    private enum ApproachingGroupArrivalResult
+    {
+        Materialized,
+        Cancelled
+    }
+
     private const int TicksPerDay = 60_000;
     private const int MaxCatchUpSimulationDays = 7;
     private const int FailedDayRetryDelayTicks = 250;
@@ -19,6 +25,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private const int NaturalDeathAge = 85;
     private const int MaxNaturalDeathsPerDay = 5;
     private const int PlayerCaravanMarkerContactCheckIntervalTicks = 250;
+    private const int ApproachingGroupStayTicks = 60_000 * 5;
+    private const int MaxApproachingGroupCitizens = 16;
     private const string FoodResourceKey = "PackagedSurvivalMeal";
     private const string SteelResourceKey = "Steel";
     private const string MedicineResourceKey = "MedicineIndustrial";
@@ -2080,59 +2088,115 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         return Find.WorldObjects?.AllWorldObjects.FirstOrDefault(worldObject => worldObject.ID == siteObjectId);
     }
 
-    // Called by the group-travel patch when the storyteller fires a neutral group arrival (visitors, and
-    // later traders/travellers). Turns it into a group marching from one of the faction's settlements to
-    // the colony, shown as a world-map marker, and defers the arrival until it gets there. Returns false
-    // (so the incident fires immediately, unchanged) when travelling arrivals are off, there is no map
-    // target, or the faction has no settlement to travel from — an arrival is never lost.
-    public bool TryLaunchApproachingGroup(IncidentDef? incidentDef, IncidentParms parms, string kindKey)
+    // Converts a ledger-backed neutral incident into a fully reserved physical group before it leaves.
+    // Untracked factions retain vanilla behavior; tracked factions are blocked instead of failing open
+    // when they cannot provide the citizens or payload requested by the incident.
+    public ApproachingGroupLaunchResult TryLaunchApproachingGroup(
+        IncidentDef? incidentDef,
+        IncidentParms parms,
+        string kindKey)
     {
+        TravelingGroupReservationResult? reservation = null;
+        PendingApproachingGroup? pending = null;
+        string purposeKey = string.Empty;
         try
         {
             var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
             if (!settings.arrivalsTravelEnabled)
             {
-                return false;
+                return ApproachingGroupLaunchResult.NotHandled;
             }
 
             var defName = incidentDef?.defName;
             if (string.IsNullOrWhiteSpace(defName) || parms?.target is not Map map)
             {
-                return false;
+                return ApproachingGroupLaunchResult.NotHandled;
             }
 
             var faction = parms.faction ?? PickNeutralFactionWithSettlement();
             var factionId = faction?.def?.defName;
             if (faction == null || string.IsNullOrWhiteSpace(factionId))
             {
-                return false;
+                return ApproachingGroupLaunchResult.NotHandled;
             }
 
             int targetTile = map.Tile;
-            var originTile = NearestFactionSettlementTile(faction, targetTile);
-            if (originTile < 0)
+            var trackedFaction = State.Settlements.Any(settlement =>
+                settlement.IsActive
+                && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal));
+            var source = ResolveApproachingGroupSource(factionId!, targetTile);
+            if (source.Settlement == null || source.Tile < 0)
             {
-                return false;
+                return trackedFaction
+                    ? ApproachingGroupLaunchResult.Blocked
+                    : ApproachingGroupLaunchResult.NotHandled;
             }
 
-            var distance = Find.WorldGrid?.ApproxDistanceInTiles(originTile, targetTile) ?? 0f;
+            var distance = Find.WorldGrid?.ApproxDistanceInTiles(source.Tile, targetTile) ?? 0f;
             var travelTicks = ApproachingGroupRuntime.TravelTicksFor(distance);
             var now = Find.TickManager?.TicksGame ?? 0;
+            var requestedCitizens = EstimateApproachingGroupCitizens(parms, kindKey);
+            var availableCitizens = CountAvailableCitizens(source.Settlement.Id);
+            var citizenCount = Math.Min(requestedCitizens, availableCitizens);
+            if (citizenCount <= 0)
+            {
+                return ApproachingGroupLaunchResult.Blocked;
+            }
 
-            var pending = new PendingApproachingGroup
+            var groupId = nextApproachGroupId;
+            purposeKey = $"approach-group:{groupId}:{factionId}";
+            var isTrader = string.Equals(kindKey, "LW_ArrivalKind_Traders", StringComparison.Ordinal);
+            reservation = TravelingGroupReservationService.Reserve(
+                State,
+                new TravelingGroupReservationRequest(
+                    source.Settlement.Id,
+                    isTrader ? MaterializationPurpose.TradeCaravan : MaterializationPurpose.SettlementVisit,
+                    purposeKey,
+                    citizenCount,
+                    travelTicks + ApproachingGroupStayTicks,
+                    BuildApproachingGroupCargo(source.Settlement.Id, citizenCount, isTrader),
+                    isTrader ? Math.Min(3, Math.Max(1, citizenCount / 3)) : 0,
+                    now));
+            if (reservation.Status != TravelingGroupReservationStatus.Success)
+            {
+                return ApproachingGroupLaunchResult.Blocked;
+            }
+
+            pending = new PendingApproachingGroup
             {
                 IncidentDefName = defName!,
                 FactionDefName = factionId!,
                 Points = parms.points,
                 TargetTile = targetTile,
-                OriginTile = originTile,
+                OriginTile = source.Tile,
                 DepartTick = now,
                 ArrivalTick = now + travelTicks,
-                MarkerKey = $"{ApproachingGroupRuntime.MarkerKeyPrefix}{nextApproachGroupId++}",
+                MarkerKey = $"{ApproachingGroupRuntime.MarkerKeyPrefix}{groupId}",
                 KindKey = string.IsNullOrWhiteSpace(kindKey) ? "LW_ArrivalKind_Visitors" : kindKey,
                 TargetLabel = ResolveColonyLabel(map),
+                SourceSettlementIdValue = source.Settlement.Id.Value,
+                PurposeKey = purposeKey,
+                LeaseIdValues = reservation.CitizenLeases.Select(lease => lease.Id.Value).ToList(),
+                ResourceOwnerLeaseIdValue = reservation.ResourceOwnerId?.Value ?? 0L,
+                Cargo = reservation.Resources
+                    .Select(resource => new PendingApproachingGroupCargo
+                    {
+                        ResourceKey = resource.ResourceKey,
+                        ReservedQuantity = resource.Quantity
+                    })
+                    .ToList(),
+                Animals = ExpandApproachingGroupAnimals(reservation.Animals),
+                Status = PendingApproachingGroupStatus.Traveling,
+                TraderKindDefName = parms.traderKind?.defName ?? string.Empty,
+                PawnGroupKindDefName = parms.pawnGroupKind?.defName ?? string.Empty,
+                PawnCount = citizenCount,
+                PointMultiplier = parms.pointMultiplier,
+                Forced = parms.forced,
+                HasPawnGroupMakerSeed = parms.pawnGroupMakerSeed.HasValue,
+                PawnGroupMakerSeed = parms.pawnGroupMakerSeed ?? 0,
             };
             approachingGroups.Add(pending);
+            nextApproachGroupId++;
             SyncApproachingGroupMarkers();
 
             if (Current.ProgramState == ProgramState.Playing)
@@ -2146,97 +2210,366 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                         pending.TargetLabel.Named("colony"),
                         days.Named("days")),
                     LetterDefOf.NeutralEvent,
-                    new LookTargets((PlanetTile)originTile));
+                    new LookTargets((PlanetTile)source.Tile));
             }
 
-            return true;
+            return ApproachingGroupLaunchResult.Deferred;
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Approaching-group launch failed, firing incident immediately: {ex.Message}");
-            return false;
+            if (pending != null)
+            {
+                approachingGroups.Remove(pending);
+            }
+
+            if (reservation?.Status == TravelingGroupReservationStatus.Success && !string.IsNullOrWhiteSpace(purposeKey))
+            {
+                TravelingGroupReservationService.Rollback(
+                    State,
+                    purposeKey,
+                    reservation.Animals,
+                    Find.TickManager?.TicksGame ?? State.CurrentTick,
+                    "approaching group launch failed");
+            }
+
+            Log.Warning($"[LivingWorld] Approaching-group launch blocked safely: {ex.Message}");
+            return ApproachingGroupLaunchResult.Blocked;
         }
+    }
+
+    private (WorldSettlement? Settlement, int Tile) ResolveApproachingGroupSource(
+        string factionId,
+        int targetTile)
+    {
+        var grid = Find.WorldGrid;
+        var worldSettlements = Find.WorldObjects?.Settlements;
+        if (grid == null || worldSettlements == null)
+        {
+            return (null, -1);
+        }
+
+        var physicalTiles = new HashSet<int>(worldSettlements
+            .Where(settlement => string.Equals(settlement?.Faction?.def?.defName, factionId, StringComparison.Ordinal))
+            .Select(settlement => (int)settlement.Tile)
+            .Where(tile => tile >= 0));
+        var candidate = State.Settlements
+            .Where(settlement => settlement.IsActive
+                && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
+            .Select(settlement => (Settlement: settlement, Tile: SettlementSlug.ParseTile(settlement.Slug)))
+            .Where(candidate => candidate.Tile >= 0 && physicalTiles.Contains(candidate.Tile))
+            .OrderBy(candidate => grid.ApproxDistanceInTiles(candidate.Tile, targetTile))
+            .ThenBy(candidate => candidate.Settlement.Id.Value)
+            .Select(candidate => ((WorldSettlement?)candidate.Settlement, candidate.Tile))
+            .FirstOrDefault();
+        return candidate.Item1 == null ? (null, -1) : candidate;
+    }
+
+    private int CountAvailableCitizens(EntityId settlementId)
+    {
+        var leased = new HashSet<EntityId>(State.MaterializationLeases
+            .Where(lease => lease.IsActive)
+            .Select(lease => lease.CitizenId));
+        return State.Citizens.Count(citizen =>
+            citizen.Status == CitizenStatus.Alive
+            && citizen.IsAdult
+            && State.GetOwner(citizen.Id) == settlementId
+            && !leased.Contains(citizen.Id));
+    }
+
+    private static int EstimateApproachingGroupCitizens(IncidentParms parms, string kindKey)
+    {
+        if (parms.pawnCount > 0)
+        {
+            return Math.Min(MaxApproachingGroupCitizens, parms.pawnCount);
+        }
+
+        var minimum = string.Equals(kindKey, "LW_ArrivalKind_Traders", StringComparison.Ordinal) ? 3 : 2;
+        var fromPoints = (int)Math.Ceiling(Math.Max(0f, parms.points) / 100f);
+        return Math.Max(minimum, Math.Min(MaxApproachingGroupCitizens, fromPoints));
+    }
+
+    private IReadOnlyDictionary<string, int> BuildApproachingGroupCargo(
+        EntityId settlementId,
+        int citizenCount,
+        bool isTrader)
+    {
+        if (!isTrader)
+        {
+            var food = State.GetOwnedResourceQuantity(settlementId, FoodResourceKey);
+            return food <= 0
+                ? new Dictionary<string, int>()
+                : new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    [FoodResourceKey] = Math.Min(food, citizenCount * 2)
+                };
+        }
+
+        var cargo = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var resource in State.ResourcesForOwner(settlementId)
+            .Where(resource => resource.Quantity > 0)
+            .OrderBy(resource => resource.ResourceKey, StringComparer.Ordinal))
+        {
+            var def = DefDatabase<ThingDef>.GetNamedSilentFail(resource.ResourceKey);
+            if (def == null || def.category != ThingCategory.Item)
+            {
+                continue;
+            }
+
+            var perResourceCap = string.Equals(resource.ResourceKey, SilverResourceKey, StringComparison.Ordinal)
+                ? Math.Max(500, citizenCount * 250)
+                : Math.Max(1, def.stackLimit) * 2;
+            cargo[resource.ResourceKey] = Math.Min(resource.Quantity, perResourceCap);
+        }
+
+        return cargo;
+    }
+
+    private static List<PendingApproachingGroupAnimal> ExpandApproachingGroupAnimals(
+        IReadOnlyList<MaterializedAnimalStack> animals)
+    {
+        var expanded = new List<PendingApproachingGroupAnimal>();
+        foreach (var stack in animals.OrderBy(stack => stack.CohortId.Value))
+        {
+            for (var index = 0; index < stack.Count; index++)
+            {
+                expanded.Add(new PendingApproachingGroupAnimal
+                {
+                    CohortIdValue = stack.CohortId.Value,
+                    AnimalKind = stack.AnimalKind,
+                    Type = stack.Type
+                });
+            }
+        }
+
+        return expanded;
     }
 
     private void ProcessApproachingGroupArrivals(int now)
     {
-        if (approachingGroups.Count == 0)
+        foreach (var group in approachingGroups
+            .Where(group => group.Status == PendingApproachingGroupStatus.Traveling && group.ArrivalTick <= now)
+            .ToList())
         {
-            return;
-        }
-
-        List<PendingApproachingGroup>? arrived = null;
-        foreach (var group in approachingGroups)
-        {
-            if (group.ArrivalTick <= now)
+            if (FireArrivedGroup(group, now) == ApproachingGroupArrivalResult.Cancelled)
             {
-                (arrived ??= new List<PendingApproachingGroup>()).Add(group);
+                approachingGroups.Remove(group);
             }
         }
 
-        if (arrived == null)
-        {
-            return;
-        }
-
-        foreach (var group in arrived)
-        {
-            approachingGroups.Remove(group);
-            FireArrivedGroup(group);
-        }
+        FinalizeMaterializedApproachingGroups(now);
 
         SyncApproachingGroupMarkers();
     }
 
-    // Re-fires the neutral-group incident at its destination map with FiringArrival set so the travel
-    // patch lets the vanilla worker run and spawn the group now. Fail-open: if the map is gone or anything
-    // throws, the group simply does not land.
-    private void FireArrivedGroup(PendingApproachingGroup group)
+    private ApproachingGroupArrivalResult FireArrivedGroup(PendingApproachingGroup group, int now)
     {
+        IReadOnlyList<Pawn> generatedPawns = Array.Empty<Pawn>();
         try
         {
             var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == group.TargetTile);
             if (map == null)
             {
-                return;
+                RollbackApproachingGroup(group, generatedPawns, now, "neutral group target map no longer exists");
+                return ApproachingGroupArrivalResult.Cancelled;
             }
 
             var faction = Find.FactionManager?.AllFactionsListForReading
                 .FirstOrDefault(candidate => candidate.def?.defName == group.FactionDefName);
+            var source = group.SourceSettlementIdValue > 0
+                ? State.GetSettlement(EntityId.Create(EntityKind.Settlement, group.SourceSettlementIdValue))
+                : null;
+            if (faction == null
+                || source is not { IsActive: true }
+                || !string.Equals(source.FactionId, group.FactionDefName, StringComparison.Ordinal))
+            {
+                RollbackApproachingGroup(group, generatedPawns, now, "neutral group source faction or settlement changed");
+                return ApproachingGroupArrivalResult.Cancelled;
+            }
 
             var def = DefDatabase<IncidentDef>.GetNamedSilentFail(group.IncidentDefName);
             if (def?.Worker == null)
             {
-                return;
+                RollbackApproachingGroup(group, generatedPawns, now, "neutral group incident definition is unavailable");
+                return ApproachingGroupArrivalResult.Cancelled;
             }
 
             var parms = StorytellerUtility.DefaultParmsNow(def.category, map);
-            if (faction != null)
-            {
-                parms.faction = faction;
-            }
-
+            parms.faction = faction;
             if (group.Points > 0f)
             {
                 parms.points = group.Points;
             }
 
             parms.target = map;
+            parms.traderKind = DefDatabase<TraderKindDef>.GetNamedSilentFail(group.TraderKindDefName);
+            parms.pawnGroupKind = DefDatabase<PawnGroupKindDef>.GetNamedSilentFail(group.PawnGroupKindDefName);
+            parms.pawnCount = group.PawnCount;
+            parms.pointMultiplier = group.PointMultiplier;
+            parms.forced = group.Forced;
+            parms.pawnGroupMakerSeed = group.HasPawnGroupMakerSeed ? group.PawnGroupMakerSeed : (int?)null;
 
-            ApproachingGroupRuntime.FiringArrival = true;
+            group.Status = PendingApproachingGroupStatus.Materializing;
+            group.ArrivalAttempts++;
+            ApproachingGroupRuntime.BeginArrival(group);
+            var executed = false;
             try
             {
-                def.Worker.TryExecute(parms);
+                executed = def.Worker.TryExecute(parms);
             }
             finally
             {
-                ApproachingGroupRuntime.FiringArrival = false;
+                generatedPawns = ApproachingGroupRuntime.GeneratedPawns.ToList();
+                ApproachingGroupRuntime.EndArrival();
+            }
+
+            if (!executed || group.BoundPawnThingIds.Count == 0)
+            {
+                RollbackApproachingGroup(group, generatedPawns, now, "neutral group incident failed to materialize");
+                return ApproachingGroupArrivalResult.Cancelled;
+            }
+
+            group.Status = PendingApproachingGroupStatus.Materialized;
+            group.MaterializedTick = now;
+            return ApproachingGroupArrivalResult.Materialized;
+        }
+        catch (Exception ex)
+        {
+            ApproachingGroupRuntime.EndArrival();
+            RollbackApproachingGroup(group, generatedPawns, now, "neutral group arrival threw an exception");
+            Log.Warning($"[LivingWorld] Arrived group rolled back after materialization failure: {ex.Message}");
+            return ApproachingGroupArrivalResult.Cancelled;
+        }
+    }
+
+    private void RollbackApproachingGroup(
+        PendingApproachingGroup group,
+        IReadOnlyList<Pawn> generatedPawns,
+        int now,
+        string reason)
+    {
+        try
+        {
+            if (group.SourceSettlementIdValue > 0 && !string.IsNullOrWhiteSpace(group.PurposeKey))
+            {
+                LivingWorldVisitorBindingService.RollbackFailedArrival(State, group, generatedPawns, now, reason);
+                return;
+            }
+
+            foreach (var pawn in generatedPawns.Where(pawn => pawn != null && !pawn.Destroyed).ToList())
+            {
+                pawn.Destroy(DestroyMode.Vanish);
             }
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Arrived group failed to materialize: {ex.Message}");
+            Log.Error($"[LivingWorld] Neutral group rollback failed: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private void FinalizeMaterializedApproachingGroups(int now)
+    {
+        foreach (var group in approachingGroups
+            .Where(group => group.Status == PendingApproachingGroupStatus.Materialized)
+            .ToList())
+        {
+            var citizensResolved = group.LeaseIdValues.All(value =>
+                State.GetMaterializationLease(EntityId.Create(EntityKind.MaterializationLease, value))?.IsActive != true);
+            var animalsResolved = group.Animals.All(animal => animal.Resolved);
+            var expired = group.MaterializedTick > 0 && now - group.MaterializedTick >= ApproachingGroupStayTicks;
+            if (citizensResolved && (animalsResolved || expired))
+            {
+                approachingGroups.Remove(group);
+            }
+        }
+    }
+
+    public bool TryResolvePhysicalTradeGroup(Pawn pawn, out EntityId sourceSettlementId)
+    {
+        sourceSettlementId = default;
+        var group = FindMaterializedApproachingGroup(pawn);
+        if (group == null
+            || !string.Equals(group.KindKey, "LW_ArrivalKind_Traders", StringComparison.Ordinal)
+            || group.SourceSettlementIdValue <= 0)
+        {
+            return false;
+        }
+
+        sourceSettlementId = EntityId.Create(EntityKind.Settlement, group.SourceSettlementIdValue);
+        return State.GetSettlement(sourceSettlementId) is { IsActive: true };
+    }
+
+    public void RegisterApproachingGroupReceivedResource(Pawn pawn, string resourceKey)
+    {
+        if (string.IsNullOrWhiteSpace(resourceKey))
+        {
+            return;
+        }
+
+        var group = FindMaterializedApproachingGroup(pawn);
+        if (group == null || group.Cargo.Any(cargo => string.Equals(cargo.ResourceKey, resourceKey, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        group.Cargo.Add(new PendingApproachingGroupCargo { ResourceKey = resourceKey });
+    }
+
+    public void NotifyApproachingGroupCarrierReturned(Pawn pawn, string reason)
+    {
+        var group = FindMaterializedApproachingGroup(pawn);
+        if (group == null || group.ResolvedCarrierThingIds.Contains(pawn.thingIDNumber))
+        {
+            return;
+        }
+
+        LivingWorldVisitorBindingService.ReturnCarrierInventory(State, group, pawn, reason);
+        group.ResolvedCarrierThingIds.Add(pawn.thingIDNumber);
+        var animal = group.Animals.FirstOrDefault(candidate => candidate.PawnThingId == pawn.thingIDNumber);
+        if (animal != null && !animal.Resolved)
+        {
+            AnimalMapMaterializationService.ReturnToCohorts(
+                State,
+                new[]
+                {
+                    new MaterializedAnimalStack(
+                        EntityId.Create(EntityKind.Animal, animal.CohortIdValue),
+                        animal.AnimalKind,
+                        animal.Type,
+                        1)
+                },
+                Find.TickManager?.TicksGame ?? State.CurrentTick,
+                reason);
+            animal.Resolved = true;
+        }
+    }
+
+    public void NotifyApproachingGroupCarrierLost(Pawn pawn)
+    {
+        var group = FindMaterializedApproachingGroup(pawn);
+        if (group == null || group.ResolvedCarrierThingIds.Contains(pawn.thingIDNumber))
+        {
+            return;
+        }
+
+        group.ResolvedCarrierThingIds.Add(pawn.thingIDNumber);
+        var animal = group.Animals.FirstOrDefault(candidate => candidate.PawnThingId == pawn.thingIDNumber);
+        if (animal != null)
+        {
+            animal.Resolved = true;
+        }
+    }
+
+    private PendingApproachingGroup? FindMaterializedApproachingGroup(Pawn pawn)
+    {
+        if (pawn == null)
+        {
+            return null;
+        }
+
+        return approachingGroups.FirstOrDefault(group =>
+            group.Status == PendingApproachingGroupStatus.Materialized
+            && (group.BoundPawnThingIds.Contains(pawn.thingIDNumber)
+                || group.Animals.Any(animal => animal.PawnThingId == pawn.thingIDNumber)));
     }
 
     private void SyncApproachingGroupMarkers()
@@ -2267,7 +2600,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             foreach (var group in approachingGroups)
             {
-                if (group.TargetTile < 0 || group.OriginTile < 0)
+                if (group.Status != PendingApproachingGroupStatus.Traveling
+                    || group.TargetTile < 0
+                    || group.OriginTile < 0)
                 {
                     continue;
                 }

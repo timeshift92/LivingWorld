@@ -100,6 +100,12 @@ public static class LivingWorldPawnExitTracker
 
         try
         {
+            var exitAction = RaidPawnExitPolicy.Resolve(pawn.Dead, pawn.IsPrisoner, pawn.Downed);
+            if (exitAction == RaidPawnExitAction.Return)
+            {
+                component.NotifyApproachingGroupCarrierReturned(pawn, reason);
+            }
+
             if (LivingWorldAnimalMapPawnTracker.TryMarkReturned(pawn, reason))
             {
                 return;
@@ -112,7 +118,7 @@ public static class LivingWorldPawnExitTracker
                 return;
             }
 
-            switch (RaidPawnExitPolicy.Resolve(pawn.Dead, pawn.IsPrisoner, pawn.Downed))
+            switch (exitAction)
             {
                 case RaidPawnExitAction.Capture:
                     LivingWorldPawnSyncService.Apply(

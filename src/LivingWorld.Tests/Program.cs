@@ -90,6 +90,10 @@ var tests = new List<(string Name, Action Test)>
     ("materialization lease reconciles pawn fate into ledger", TestMaterializationLeaseReconcilesPawnFate),
     ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
+    ("traveling neutral group reserves citizens cargo and animals atomically", TestTravelingGroupReservationIsConservative),
+    ("traveling neutral group rollback returns every reserved asset", TestTravelingGroupRollbackReturnsAssets),
+    ("traveling neutral group failed reservation leaks no assets", TestTravelingGroupReservationFailureLeaksNothing),
+    ("traveling neutral group reservation survives save load", TestTravelingGroupReservationSurvivesSaveLoad),
     ("prisoner capture establishes durable self-owned custody once", TestPrisonerCaptureEstablishesCustodyOnce),
     ("raid prisoner release returns the linked citizen to its source settlement", TestRaidPrisonerReleaseReturnsHome),
     ("recruit and death resolve a captured citizen idempotently", TestPrisonerRecruitAndDeathLifecycle),
@@ -110,6 +114,7 @@ var tests = new List<(string Name, Action Test)>
     ("routes confirmed trade to its preferred source settlement", TestTradeLedgerUsesPreferredSettlement),
     ("plans bounded trade stock without mutating the ledger", TestTradeReconciliationPlansBoundedStock),
     ("remembers depleted trade resources through event history", TestTradeReconciliationRemembersDepletedStock),
+    ("ledger-backed traders cannot supply unreserved vanilla goods", TestTradeReconciliationRejectsUnreservedGoods),
     ("keeps trade intel when faction has no ledger settlement", TestTradeLedgerNoSettlementFallsBackToIntel),
     ("records public settlement knowledge as estimates", TestPublicSettlementKnowledgeUsesEstimates),
     ("updates settlement knowledge from traders with confidence", TestTraderSettlementKnowledgeUpdatesConfidence),
@@ -2949,6 +2954,162 @@ static void TestMaterializationLeaseSurvivesSaveLoad()
     AssertEqual(MaterializationPurpose.SettlementVisit, restoredLease.Purpose);
 }
 
+static void TestTravelingGroupReservationIsConservative()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("trade-town", "Trade Town", "Outlander");
+    for (var index = 0; index < 3; index++)
+    {
+        state.CreateCitizen($"Trader {index}", 30 + index, Sex.Female, "merchant", settlement.Id);
+    }
+
+    state.AddResource(settlement.Id, "Steel", 10);
+    var cohort = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        4,
+        100,
+        80,
+        10,
+        state.CurrentTick);
+
+    var result = TravelingGroupReservationService.Reserve(
+        state,
+        new TravelingGroupReservationRequest(
+            settlement.Id,
+            MaterializationPurpose.TradeCaravan,
+            "approach-group:1:Outlander",
+            2,
+            60_000,
+            new Dictionary<string, int> { ["Steel"] = 5 },
+            2,
+            state.CurrentTick));
+
+    AssertEqual(TravelingGroupReservationStatus.Success, result.Status);
+    AssertEqual(2, result.CitizenLeases.Count);
+    AssertEqual(5, result.Resources.Single().Quantity);
+    AssertEqual(2, result.Animals.Sum(stack => stack.Count));
+    AssertEqual(5, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(5, state.GetOwnedResourceQuantity(result.ResourceOwnerId!.Value, "Steel"));
+    AssertEqual(2, state.GetAnimalCohort(cohort.Id)!.Count);
+}
+
+static void TestTravelingGroupRollbackReturnsAssets()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement("trade-town", "Trade Town", "Outlander");
+    state.CreateCitizen("Trader A", 30, Sex.Female, "merchant", settlement.Id);
+    state.CreateCitizen("Trader B", 31, Sex.Male, "guard", settlement.Id);
+    state.AddResource(settlement.Id, "Steel", 10);
+    var cohort = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        3,
+        100,
+        80,
+        10,
+        state.CurrentTick);
+    var reservation = TravelingGroupReservationService.Reserve(
+        state,
+        new TravelingGroupReservationRequest(
+            settlement.Id,
+            MaterializationPurpose.TradeCaravan,
+            "approach-group:2:Outlander",
+            2,
+            60_000,
+            new Dictionary<string, int> { ["Steel"] = 6 },
+            2,
+            state.CurrentTick));
+
+    var rollback = TravelingGroupReservationService.Rollback(
+        state,
+        "approach-group:2:Outlander",
+        reservation.Animals,
+        state.CurrentTick,
+        "target map disappeared");
+
+    AssertEqual(2, rollback.ReleasedCitizens);
+    AssertEqual(6, rollback.ReturnedResources);
+    AssertEqual(2, rollback.ReturnedAnimals);
+    AssertEqual(10, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(3, state.GetAnimalCohort(cohort.Id)!.Count);
+    AssertEqual(2, state.MaterializationLeases.Count(lease => lease.Lifecycle == MaterializationLeaseLifecycle.Released));
+}
+
+static void TestTravelingGroupReservationFailureLeaksNothing()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("small-town", "Small Town", "Outlander");
+    state.CreateCitizen("Only Visitor", 30, Sex.Female, "merchant", settlement.Id);
+    state.AddResource(settlement.Id, "Steel", 10);
+    var cohort = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        3,
+        100,
+        80,
+        10,
+        state.CurrentTick);
+
+    var result = TravelingGroupReservationService.Reserve(
+        state,
+        new TravelingGroupReservationRequest(
+            settlement.Id,
+            MaterializationPurpose.TradeCaravan,
+            "approach-group:3:Outlander",
+            2,
+            60_000,
+            new Dictionary<string, int> { ["Steel"] = 6 },
+            2,
+            state.CurrentTick));
+
+    AssertEqual(TravelingGroupReservationStatus.InsufficientCitizens, result.Status);
+    AssertEqual(10, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(3, state.GetAnimalCohort(cohort.Id)!.Count);
+    AssertEqual(0, state.MaterializationLeases.Count);
+}
+
+static void TestTravelingGroupReservationSurvivesSaveLoad()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("trade-town", "Trade Town", "Outlander");
+    state.CreateCitizen("Trader A", 30, Sex.Female, "merchant", settlement.Id);
+    state.CreateCitizen("Trader B", 31, Sex.Male, "guard", settlement.Id);
+    state.AddResource(settlement.Id, "Steel", 9);
+    var cohort = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        3,
+        100,
+        80,
+        10,
+        state.CurrentTick);
+    var reservation = TravelingGroupReservationService.Reserve(
+        state,
+        new TravelingGroupReservationRequest(
+            settlement.Id,
+            MaterializationPurpose.TradeCaravan,
+            "approach-group:4:Outlander",
+            2,
+            60_000,
+            new Dictionary<string, int> { ["Steel"] = 4 },
+            1,
+            state.CurrentTick));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+
+    AssertEqual(2, restored.MaterializationLeases.Count(lease => lease.IsActive));
+    AssertEqual(5, restored.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(4, restored.GetOwnedResourceQuantity(reservation.ResourceOwnerId!.Value, "Steel"));
+    AssertEqual(2, restored.GetAnimalCohort(cohort.Id)!.Count);
+}
+
 static void TestPrisonerCaptureEstablishesCustodyOnce()
 {
     var (state, settlement, citizen, lease) = CreateLeasedCitizenForPrisonerTest(7101);
@@ -3827,6 +3988,28 @@ static void TestTradeReconciliationRemembersDepletedStock()
     AssertEqual(true, allocation.LedgerBacked);
     AssertEqual(0, allocation.AllowedQuantity);
     AssertEqual(0, state.GetOwnedResourceQuantity(settlement.Id, "Gold"));
+}
+
+static void TestTradeReconciliationRejectsUnreservedGoods()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("market-town", "Market Town", "Outlander");
+
+    var allocation = SettlementTradeReconciliationService.Plan(
+        state,
+        settlement.Id,
+        new[]
+        {
+            new SettlementTradeStockRequest(
+                "GeneratedArtifact",
+                3,
+                SettlementTradeDirection.SettlementProvides,
+                true)
+        }).Single();
+
+    AssertEqual(true, allocation.LedgerBacked);
+    AssertEqual(0, allocation.AvailableBefore);
+    AssertEqual(0, allocation.AllowedQuantity);
 }
 
 static void TestTradeLedgerNoSettlementFallsBackToIntel()
@@ -8986,18 +9169,27 @@ static void TestRimWorldSettlementVisitMaterialization()
     AssertContains("[HarmonyPatch(typeof(IncidentWorker_NeutralGroup), \"SpawnPawns\")]", patch);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_NeutralGroup", "SpawnPawns");
     AssertContains("ref List<Pawn> __result", patch);
-    AssertContains("LivingWorldVisitorBindingService.BindVisitorPawns", patch);
+    AssertContains("LivingWorldVisitorBindingService.BindReservedVisitorPawns", patch);
 
     // The binding service: leases citizens from the faction's settlement and stamps the identity comp,
     // mirroring the raid binding. Fail-safe on missing settlement/citizens.
     var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldVisitorBindingService.cs");
     AssertFileExists(servicePath);
     var service = File.ReadAllText(servicePath);
-    AssertContains("MaterializationLeaseService.CreateLeases", service);
-    AssertContains("MaterializationPurpose.SettlementVisit", service);
+    AssertContains("BindReservedVisitorPawns", service);
     AssertContains("MaterializationLeaseService.BindPawn", service);
-    AssertContains("identity.SetLedgerId(lease.CitizenId)", service);
+    AssertContains("StampIdentity(pawn, lease.CitizenId)", service);
+    AssertContains("ReplaceGeneratedInventoryWithReservedCargo", service);
+    AssertContains("ReplaceAnimalsWithReservedPayload", service);
     AssertContains("IsInitialWorldSeedingActive", service);
+
+    var reservationService = File.ReadAllText(
+        Path.Combine(root, "src", "LivingWorld.Core", "TravelingGroupReservationService.cs"));
+    AssertContains("TravelingGroupReservationService", reservationService);
+    AssertContains("state.CreateMaterializationLease", reservationService);
+    AssertContains("AnimalMapMaterializationService.WithdrawForSettlementMap", reservationService);
+    AssertContains("state.TransferResource(", reservationService);
+    AssertContains("public static TravelingGroupRollbackResult Rollback", reservationService);
 
     // The back half is already shared: a SettlementVisit lease resolves through the same pawn-fate
     // sync service the raid path uses, so the exit/kill/capture patches write back visit fates too.
@@ -9448,9 +9640,16 @@ static void TestRimWorldTradeIntelPatch()
     AssertContains("SettlementTradeLedgerRequest", source);
     AssertContains("SettlementTradeDirection", source);
     AssertContains("SettlementTradeReconciliationService.Plan", source);
+    AssertContains("public static bool Prefix(TradeDeal __instance, ref bool __result", source);
+    AssertContains("if (!trackedFaction)", source);
+    AssertContains("__result = false", source);
     AssertContains("ClampPurchases", source);
     AssertContains("ClampPlayerSalesToSilver", source);
     AssertContains("ForceToSource", source);
+    AssertContains("transfer.PhysicalBacked", source);
+    AssertContains("RegisterApproachingGroupReceivedResource", source);
+    AssertContains("Reserved physical caravan trade moved", source);
+    AssertDoesNotContain("__instance == null || TradeSession.giftMode", source);
     AssertContains("if (!__result || !actuallyTraded", source);
     AssertContains("__state.Applied", source);
     AssertContains("thingsColony", source);
@@ -11267,6 +11466,15 @@ static void TestRimWorldApproachingVisitors()
     AssertFileExists(runtimePath);
     var runtime = File.ReadAllText(runtimePath);
     AssertContains("class PendingApproachingGroup : IExposable", runtime);
+    AssertContains("SourceSettlementIdValue", runtime);
+    AssertContains("LeaseIdValues", runtime);
+    AssertContains("ResourceOwnerLeaseIdValue", runtime);
+    AssertContains("PendingApproachingGroupCargo", runtime);
+    AssertContains("PendingApproachingGroupAnimal", runtime);
+    AssertContains("TraderKindDefName", runtime);
+    AssertContains("PawnGroupKindDefName", runtime);
+    AssertContains("Scribe_Collections.Look(ref Cargo", runtime);
+    AssertContains("Scribe_Collections.Look(ref Animals", runtime);
     AssertContains("public static bool FiringArrival", runtime);
     AssertContains("MarkerKeyPrefix", runtime);
     AssertContains("TravelTicksFor", runtime);
@@ -11285,14 +11493,17 @@ static void TestRimWorldApproachingVisitors()
     // markers separately from the ledger-driven army markers. Persisted and settings-gated.
     var component = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
-    AssertContains("public bool TryLaunchApproachingGroup(", component);
+    AssertContains("public ApproachingGroupLaunchResult TryLaunchApproachingGroup(", component);
     AssertContains("ProcessApproachingGroupArrivals(", component);
-    AssertContains("private void FireArrivedGroup(", component);
+    AssertContains("private ApproachingGroupArrivalResult FireArrivedGroup(", component);
     AssertContains("SyncApproachingGroupMarkers()", component);
-    AssertContains("ApproachingGroupRuntime.FiringArrival = true", component);
-    AssertContains("def.Worker.TryExecute(parms)", component);
+    AssertContains("ApproachingGroupRuntime.BeginArrival(group)", component);
+    AssertContains("TravelingGroupReservationService.Reserve", component);
+    AssertContains("RollbackApproachingGroup(group", component);
+    AssertContains("if (!executed || group.BoundPawnThingIds.Count == 0)", component);
     AssertContains("livingWorld_approachingGroups", component);
     AssertContains("settings.arrivalsTravelEnabled", component);
+    AssertContains("ApproachingGroupLaunchResult.Blocked", patch);
 
     // Settings toggle wired and drawn.
     var settings = File.ReadAllText(

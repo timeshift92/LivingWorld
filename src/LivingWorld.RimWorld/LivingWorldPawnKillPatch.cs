@@ -20,6 +20,7 @@ public static class LivingWorldPawnKillPatch
 
         try
         {
+            component.NotifyApproachingGroupCarrierLost(__instance);
             if (LivingWorldAnimalMapPawnTracker.TryMarkDead(__instance, "settlement map animal killed"))
             {
                 return;
