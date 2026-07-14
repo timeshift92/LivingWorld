@@ -7,7 +7,7 @@ public static class LivingWorldSettingsDrawer
 {
     // Content height for the scrollable mod-settings page (the grouped sections do not fit a fixed
     // window, so LivingWorldMod scrolls this).
-    public const float PreferredHeight = 1020f;
+    public const float PreferredHeight = 1160f;
 
     // The world-generation screen only needs the one decision a player makes before the world
     // exists - whether Living World is active. Planet size and population are the vanilla planet
@@ -53,6 +53,12 @@ public static class LivingWorldSettingsDrawer
         // Faction Activity — the NPC world war.
         DrawSectionHeader(listing, "LW_SettingsSection_FactionActivity");
         listing.CheckboxLabeled("LW_Settings_WorldWarEnabled".Translate(), ref settings.worldWarEnabled, "LW_Settings_WorldWarEnabledTip".Translate());
+        listing.Label("LW_Settings_WorldMarkerFilters".Translate());
+        listing.CheckboxLabeled("LW_Settings_ShowWarbands".Translate(), ref settings.showWarbandMarkers);
+        listing.CheckboxLabeled("LW_Settings_ShowTraders".Translate(), ref settings.showTraderMarkers);
+        listing.CheckboxLabeled("LW_Settings_ShowScouts".Translate(), ref settings.showScoutMarkers);
+        listing.CheckboxLabeled("LW_Settings_ShowDiplomats".Translate(), ref settings.showDiplomatMarkers);
+        listing.CheckboxLabeled("LW_Settings_ShowSettlers".Translate(), ref settings.showSettlerMarkers);
         listing.CheckboxLabeled("LW_Settings_TravelingRaids".Translate(), ref settings.travelingRaidsEnabled, "LW_Settings_TravelingRaidsTip".Translate());
         listing.CheckboxLabeled("LW_Settings_EconomicDiversity".Translate(), ref settings.economicDiversityEnabled, "LW_Settings_EconomicDiversityTip".Translate());
         listing.CheckboxLabeled("LW_Settings_MechClusters".Translate(), ref settings.mechClustersEnabled, "LW_Settings_MechClustersTip".Translate());

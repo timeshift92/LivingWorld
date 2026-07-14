@@ -132,6 +132,12 @@
   <LW_SettingDrifterCeiling>World population ceiling</LW_SettingDrifterCeiling>
   <LW_SettingsSection_Population>World population</LW_SettingsSection_Population>
   <LW_SettingsSection_FactionActivity>Faction activity (world war)</LW_SettingsSection_FactionActivity>
+  <LW_Settings_WorldMarkerFilters>World-map markers</LW_Settings_WorldMarkerFilters>
+  <LW_Settings_ShowWarbands>Show warbands and raid parties</LW_Settings_ShowWarbands>
+  <LW_Settings_ShowTraders>Show trade caravans and visitors</LW_Settings_ShowTraders>
+  <LW_Settings_ShowScouts>Show scouts</LW_Settings_ShowScouts>
+  <LW_Settings_ShowDiplomats>Show diplomats</LW_Settings_ShowDiplomats>
+  <LW_Settings_ShowSettlers>Show settler expeditions</LW_Settings_ShowSettlers>
   <LW_SettingsSection_Development>Settlement development</LW_SettingsSection_Development>
   <LW_SettingsSection_Baseline>Settlement baseline (world generation)</LW_SettingsSection_Baseline>
   <LW_SettingsSection_Performance>Performance</LW_SettingsSection_Performance>
@@ -264,8 +270,7 @@
   <LW_DebugOpenRealSettlementMap>DEV: open real LW base map</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World will materialize rooms, stores, defenders and animals there. This creates a real save-map and is meant for testing.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>World actions</LW_WorldActionsHeader>
-  <LW_WorldActionLegendLine>Visible markers: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}. Click a marker on the world map to see faction, target, cargo/strength and reason.</LW_WorldActionLegendLine>
-  <LW_WorldActionSettlersImmediate>Settlers: expansion currently founds a new ledger settlement immediately; no fake travelling settler marker is drawn yet.</LW_WorldActionSettlersImmediate>
+  <LW_WorldActionLegendLine>Active world actions: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}, settlers {settlers}. Marker visibility is configurable in Mod Settings.</LW_WorldActionLegendLine>
   <LW_WorldActionRow>{kind}: {faction} to {target}, about {days} day(s)</LW_WorldActionRow>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>

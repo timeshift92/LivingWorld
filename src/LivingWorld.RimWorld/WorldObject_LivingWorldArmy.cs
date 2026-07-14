@@ -18,6 +18,8 @@ namespace LivingWorld.RimWorld;
 public sealed class WorldObject_LivingWorldArmy : WorldObject
 {
     private const float MarkerDrawSize = 0.46f;
+    private const int MarkerLaneCount = 5;
+    private const float MarkerLaneSpacing = 0.18f;
 
     private string markerKey = string.Empty;
     private string textureName = "World/LivingWorld_Warband";
@@ -46,6 +48,58 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     internal int Strength => strength;
 
     internal string KindNoun => kindNoun;
+
+    internal Vector3 TravelPosition
+    {
+        get
+        {
+            var grid = Find.WorldGrid;
+            if (grid == null || originTile < 0 || targetTile < 0)
+            {
+                return base.DrawPos;
+            }
+
+            var from = grid.GetTileCenter(originTile);
+            var to = grid.GetTileCenter(targetTile);
+            return Vector3.Slerp(from, to, ProgressPct);
+        }
+    }
+
+    internal bool IsVisibleByFilter
+    {
+        get
+        {
+            var settings = LivingWorldSettings.Instance;
+            if (settings == null)
+            {
+                return true;
+            }
+
+            if (markerKey.StartsWith("settler:", System.StringComparison.Ordinal)
+                || textureName.EndsWith("LivingWorld_Settler", System.StringComparison.Ordinal))
+            {
+                return settings.showSettlerMarkers;
+            }
+
+            if (textureName.EndsWith("LivingWorld_Scout", System.StringComparison.Ordinal))
+            {
+                return settings.showScoutMarkers;
+            }
+
+            if (textureName.EndsWith("LivingWorld_Diplomat", System.StringComparison.Ordinal))
+            {
+                return settings.showDiplomatMarkers;
+            }
+
+            if (markerKey.StartsWith("caravan:", System.StringComparison.Ordinal)
+                || textureName.EndsWith("LivingWorld_Trader", System.StringComparison.Ordinal))
+            {
+                return settings.showTraderMarkers;
+            }
+
+            return settings.showWarbandMarkers;
+        }
+    }
 
     public void Configure(
         string markerKey,
@@ -100,17 +154,41 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     {
         get
         {
+            var position = TravelPosition;
             var grid = Find.WorldGrid;
-            if (grid == null || originTile < 0 || targetTile < 0)
+            if (grid == null || originTile < 0 || targetTile < 0 || string.IsNullOrEmpty(markerKey))
             {
-                return base.DrawPos;
+                return position;
             }
 
             var from = grid.GetTileCenter(originTile);
             var to = grid.GetTileCenter(targetTile);
-            return Vector3.Slerp(from, to, ProgressPct);
+            var lane = StableLane(markerKey);
+            if (lane == 0)
+            {
+                return position;
+            }
+
+            var lateral = Vector3.Cross(from, to);
+            if (lateral.sqrMagnitude < 0.0001f)
+            {
+                lateral = Vector3.Cross(position.normalized, Vector3.up);
+            }
+
+            if (lateral.sqrMagnitude < 0.0001f)
+            {
+                lateral = Vector3.Cross(position.normalized, Vector3.right);
+            }
+
+            var offset = lateral.normalized
+                * lane
+                * Tile.Layer.AverageTileSize
+                * MarkerLaneSpacing;
+            return (position + offset).normalized * position.magnitude;
         }
     }
+
+    public override bool SelectableNow => base.SelectableNow && IsVisibleByFilter;
 
     public override Material Material
     {
@@ -135,6 +213,11 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
 
     public override void Draw()
     {
+        if (!IsVisibleByFilter)
+        {
+            return;
+        }
+
         var material = Material;
         if (Tile.LayerDef.isSpace || !material)
         {
@@ -215,6 +298,21 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
             texture.filterMode = FilterMode.Trilinear;
             texture.anisoLevel = 2;
             texture.mipMapBias = -0.15f;
+        }
+    }
+
+    private static int StableLane(string key)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            for (var i = 0; i < key.Length; i++)
+            {
+                hash ^= key[i];
+                hash *= 16777619;
+            }
+
+            return (int)(hash % MarkerLaneCount) - (MarkerLaneCount / 2);
         }
     }
 

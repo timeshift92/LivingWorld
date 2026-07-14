@@ -979,6 +979,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .OfType<WorldObject_LivingWorldArmy>()
             .Where(marker => !string.IsNullOrWhiteSpace(marker.MarkerKey))
             .ToList();
+        var liveMarkerKeys = new HashSet<string>(
+            markers.Select(marker => marker.MarkerKey),
+            StringComparer.Ordinal);
+        notifiedPlayerCaravanMarkerContacts.RemoveAll(contact =>
+        {
+            var separator = contact.IndexOf(':');
+            return separator < 0
+                || separator == contact.Length - 1
+                || !liveMarkerKeys.Contains(contact.Substring(separator + 1));
+        });
         foreach (var caravan in playerCaravans)
         {
             foreach (var marker in markers)
@@ -990,7 +1000,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 }
 
                 var contactDistance = marker.Tile.Layer.AverageTileSize * 0.75f;
-                if (Vector3.Distance(caravan.DrawPos, marker.DrawPos) > contactDistance)
+                if (Vector3.Distance(caravan.DrawPos, marker.TravelPosition) > contactDistance)
                 {
                     continue;
                 }
@@ -1087,7 +1097,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private static bool MarkersOverlap(WorldObject_LivingWorldArmy left, WorldObject_LivingWorldArmy right)
     {
         var contactDistance = Math.Min(left.Tile.Layer.AverageTileSize, right.Tile.Layer.AverageTileSize) * 0.55f;
-        return Vector3.Distance(left.DrawPos, right.DrawPos) <= contactDistance;
+        return Vector3.Distance(left.TravelPosition, right.TravelPosition) <= contactDistance;
     }
 
     private static bool TryParseTrafficMarkerId(string key, out EntityId id)

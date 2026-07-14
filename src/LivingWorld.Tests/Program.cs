@@ -9970,6 +9970,9 @@ static void TestRimWorldWorldActionMarkerLegendAndFilters()
     var root = FindRepoRoot();
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    var settings = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettings.cs"));
+    var drawer = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettingsDrawer.cs"));
+    var marker = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldArmy.cs"));
 
     AssertContains("LW_WorldActionsHeader", mainTab);
     AssertContains("LW_WorldActionLegendLine", mainTab);
@@ -9977,20 +9980,51 @@ static void TestRimWorldWorldActionMarkerLegendAndFilters()
     AssertContains("BuildWorldActionRows", mainTab);
     AssertContains("state.Caravans", mainTab);
     AssertContains("state.Missions", mainTab);
+    AssertContains("state.MigrationGroups", mainTab);
+    AssertContains("MigrationService.ReasonSettlementFounding", mainTab);
     AssertContains("WorldMissionKind.Scout", mainTab);
     AssertContains("WorldMissionKind.Diplomat", mainTab);
     AssertContains("ArmyMovementStatus.Traveling", mainTab);
     AssertContains("CaravanStatus.Traveling", mainTab);
     AssertContains("WorldMissionStatus.Traveling", mainTab);
 
-    // Expansion currently creates the colony in Core immediately; the UI must say that explicitly
-    // rather than pretending there is a settler marker that does not exist.
-    AssertContains("LW_WorldActionSettlersImmediate", mainTab);
     AssertContains("World/LivingWorld_Settler", component);
+    AssertDoesNotContain("LW_WorldActionSettlersImmediate", mainTab);
+
+    foreach (var field in new[]
+    {
+        "showWarbandMarkers",
+        "showTraderMarkers",
+        "showScoutMarkers",
+        "showDiplomatMarkers",
+        "showSettlerMarkers"
+    })
+    {
+        AssertContains(field, settings);
+        AssertContains(field, drawer);
+        AssertContains(field, marker);
+    }
+
+    AssertContains("public override bool SelectableNow", marker);
+    AssertContains("IsVisibleByFilter", marker);
+    AssertContains("StableLane(markerKey)", marker);
+    AssertContains("internal Vector3 TravelPosition", marker);
+    AssertContains("marker.TravelPosition", component);
+    AssertContains("left.TravelPosition, right.TravelPosition", component);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    foreach (var key in new[] { "LW_WorldActionsHeader", "LW_WorldActionLegendLine", "LW_WorldActionSettlersImmediate" })
+    foreach (var key in new[]
+    {
+        "LW_WorldActionsHeader",
+        "LW_WorldActionLegendLine",
+        "LW_Settings_WorldMarkerFilters",
+        "LW_Settings_ShowWarbands",
+        "LW_Settings_ShowTraders",
+        "LW_Settings_ShowScouts",
+        "LW_Settings_ShowDiplomats",
+        "LW_Settings_ShowSettlers"
+    })
     {
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);

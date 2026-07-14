@@ -132,6 +132,12 @@
   <LW_SettingDrifterCeiling>Потолок населения мира</LW_SettingDrifterCeiling>
   <LW_SettingsSection_Population>Население мира</LW_SettingsSection_Population>
   <LW_SettingsSection_FactionActivity>Активность фракций (мировая война)</LW_SettingsSection_FactionActivity>
+  <LW_Settings_WorldMarkerFilters>Маркеры на карте мира</LW_Settings_WorldMarkerFilters>
+  <LW_Settings_ShowWarbands>Показывать варбанды и рейдовые отряды</LW_Settings_ShowWarbands>
+  <LW_Settings_ShowTraders>Показывать торговые караваны и визиты</LW_Settings_ShowTraders>
+  <LW_Settings_ShowScouts>Показывать разведчиков</LW_Settings_ShowScouts>
+  <LW_Settings_ShowDiplomats>Показывать дипломатов</LW_Settings_ShowDiplomats>
+  <LW_Settings_ShowSettlers>Показывать экспедиции поселенцев</LW_Settings_ShowSettlers>
   <LW_SettingsSection_Development>Развитие поселений</LW_SettingsSection_Development>
   <LW_SettingsSection_Baseline>Базовые поселения (генерация мира)</LW_SettingsSection_Baseline>
   <LW_SettingsSection_Performance>Производительность</LW_SettingsSection_Performance>
@@ -264,8 +270,7 @@
   <LW_DebugOpenRealSettlementMap>DEV: открыть реальную карту базы LW</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует там комнаты, склады, защитников и животных. Это создаёт реальную карту в сохранении и предназначено для проверки.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>Действия мира</LW_WorldActionsHeader>
-  <LW_WorldActionLegendLine>Видимые маркеры: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}. Клик по маркеру на карте мира покажет фракцию, цель, груз/силу и причину.</LW_WorldActionLegendLine>
-  <LW_WorldActionSettlersImmediate>Поселенцы: расширение сейчас сразу создаёт новое ledger-поселение; фальшивый движущийся маркер поселенцев пока не рисуется.</LW_WorldActionSettlersImmediate>
+  <LW_WorldActionLegendLine>Активные действия мира: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}, поселенцы {settlers}. Видимость маркеров настраивается в настройках мода.</LW_WorldActionLegendLine>
   <LW_WorldActionRow>{kind}: {faction} к {target}, около {days} дн.</LW_WorldActionRow>
   <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Фракция</LW_EconomyCol_Faction>

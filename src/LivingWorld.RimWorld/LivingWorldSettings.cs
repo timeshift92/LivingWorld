@@ -22,6 +22,11 @@ public sealed class LivingWorldSettings : ModSettings
     public int drifterMinFounders = 4;
     public int drifterLeaderAptitudeThreshold = 70;
     public bool worldWarEnabled = true;
+    public bool showWarbandMarkers = true;
+    public bool showTraderMarkers = true;
+    public bool showScoutMarkers = true;
+    public bool showDiplomatMarkers = true;
+    public bool showSettlerMarkers = true;
     public bool travelingRaidsEnabled = true;
     public bool economicDiversityEnabled = true;
     public bool mechClustersEnabled = true;
@@ -66,6 +71,11 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref drifterMinFounders, "drifterMinFounders", 4);
         Scribe_Values.Look(ref drifterLeaderAptitudeThreshold, "drifterLeaderAptitudeThreshold", 70);
         Scribe_Values.Look(ref worldWarEnabled, "worldWarEnabled", true);
+        Scribe_Values.Look(ref showWarbandMarkers, "showWarbandMarkers", true);
+        Scribe_Values.Look(ref showTraderMarkers, "showTraderMarkers", true);
+        Scribe_Values.Look(ref showScoutMarkers, "showScoutMarkers", true);
+        Scribe_Values.Look(ref showDiplomatMarkers, "showDiplomatMarkers", true);
+        Scribe_Values.Look(ref showSettlerMarkers, "showSettlerMarkers", true);
         Scribe_Values.Look(ref travelingRaidsEnabled, "travelingRaidsEnabled", true);
         Scribe_Values.Look(ref economicDiversityEnabled, "economicDiversityEnabled", true);
         Scribe_Values.Look(ref mechClustersEnabled, "mechClustersEnabled", true);

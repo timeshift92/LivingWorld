@@ -642,6 +642,12 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .OrderBy(mission => mission.ArrivalTick)
             .ThenBy(mission => mission.Id.Value)
             .ToList();
+        var settlers = state.MigrationGroups
+            .Where(group => group.Status == MigrationGroupStatus.Traveling
+                && string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, System.StringComparison.Ordinal))
+            .OrderBy(group => group.ArrivalTick)
+            .ThenBy(group => group.Id.Value)
+            .ToList();
 
         var rows = new List<string>
         {
@@ -649,8 +655,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 warbands.Count.Named("warbands"),
                 caravans.Count.Named("caravans"),
                 scouts.Count.Named("scouts"),
-                diplomats.Count.Named("diplomats")).ToString(),
-            "LW_WorldActionSettlersImmediate".Translate().ToString(),
+                diplomats.Count.Named("diplomats"),
+                settlers.Count.Named("settlers")).ToString(),
         };
 
         rows.AddRange(warbands.Take(4).Select(movement =>
@@ -693,6 +699,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 (target?.Name ?? "?").Named("target"),
                 DaysUntil(mission.ArrivalTick, state.CurrentTick).Named("days")).ToString();
         }));
+
+        rows.AddRange(settlers.Take(3).Select(group =>
+            "LW_WorldActionRow".Translate(
+                "LW_MissionKind_Settler".Translate().Named("kind"),
+                group.FactionId.Named("faction"),
+                (string.IsNullOrWhiteSpace(group.PlannedSettlementName)
+                    ? group.PlannedSettlementSlug
+                    : group.PlannedSettlementName).Named("target"),
+                DaysUntil(group.ArrivalTick, state.CurrentTick).Named("days")).ToString()));
 
         return rows;
     }
