@@ -388,6 +388,7 @@ var tests = new List<(string Name, Action Test)>
     ("debounce: de-escalation waits for required clear rechecks", TestDebounceDeescalatesAfterRequired),
     ("debounce: a single low recheck does not drop the tier", TestDebounceHoldsThroughFlicker),
     ("debounce: a fresh high recheck resets the clear counter", TestDebounceResetsCounterOnHigh),
+    ("mob plan: exhaustive invariants over the whole state space", TestMobPlanExhaustiveInvariants),
 };
 
 var failures = new List<string>();
@@ -10636,4 +10637,69 @@ static void TestDebounceResetsCounterOnHigh()
     var (tier, below) = ThreatDebounce.Step(ThreatTier.Raid, ThreatTier.Raid, 2, 3);
     AssertEqual(ThreatTier.Raid, tier);
     AssertEqual(0, below);
+}
+
+static void TestMobPlanExhaustiveInvariants()
+{
+    var mobilizePhases = new System.Collections.Generic.HashSet<MobPhase>
+    {
+        MobPhase.Wake, MobPhase.SetCombatPolicy, MobPhase.Equip,
+        MobPhase.Engage, MobPhase.Draft, MobPhase.SteadyCombat,
+    };
+    var standDownPhases = new System.Collections.Generic.HashSet<MobPhase>
+    {
+        MobPhase.ClearCombat, MobPhase.SetCivilianPolicy, MobPhase.ReturnKit, MobPhase.SteadyCivilian,
+    };
+
+    for (var bits = 0; bits < 4096; bits++)
+    {
+        var s = new PawnMobState
+        {
+            IsCandidate = (bits & 1) != 0,
+            IsBusyUrgent = (bits & 2) != 0,
+            Asleep = (bits & 4) != 0,
+            PolicyIsCombat = (bits & 8) != 0,
+            PolicyIsCivilian = (bits & 16) != 0,
+            InCombatKit = (bits & 32) != 0,
+            HasStand = (bits & 64) != 0,
+            KitAvailable = (bits & 128) != 0,
+            Drafted = (bits & 256) != 0,
+            DraftedByUs = (bits & 512) != 0,
+            HasLwDuty = (bits & 1024) != 0,
+            CaiAvailable = (bits & 2048) != 0,
+        };
+
+        foreach (var mobilized in new[] { true, false })
+        {
+            var phase = MobilizationPlan.NextAction(mobilized, s);
+
+            // Invariant 1: the result is always a defined enum value (never throws, never garbage).
+            AssertEqual(true, System.Enum.IsDefined(typeof(MobPhase), phase));
+
+            // Invariant 2: a busy-urgent pawn is never acted on.
+            if (s.IsBusyUrgent)
+            {
+                AssertEqual(MobPhase.None, phase);
+            }
+
+            // Invariant 3: a never-touched non-candidate (and not busy) is left alone.
+            if (!s.IsCandidate && !s.IsBusyUrgent
+                && !s.HasLwDuty && !s.DraftedByUs && !s.InCombatKit && !s.PolicyIsCombat)
+            {
+                AssertEqual(MobPhase.None, phase);
+            }
+
+            // Invariant 4: a mobilized, non-busy candidate only ever gets a mobilize-side phase.
+            if (mobilized && s.IsCandidate && !s.IsBusyUrgent)
+            {
+                AssertEqual(true, mobilizePhases.Contains(phase));
+            }
+
+            // Invariant 5: a stood-down, non-busy candidate only ever gets a stand-down-side phase.
+            if (!mobilized && s.IsCandidate && !s.IsBusyUrgent)
+            {
+                AssertEqual(true, standDownPhases.Contains(phase));
+            }
+        }
+    }
 }
