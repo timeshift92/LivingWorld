@@ -16,8 +16,10 @@ internal static class SettlementExpansionExecutor
             .ThenBy(group => group.Id.Value)
             .ToList())
         {
-            state.CompleteSettlementExpedition(group.Id);
-            founded++;
+            if (state.TryCompleteSettlementExpedition(group.Id, out _, out _))
+            {
+                founded++;
+            }
         }
 
         return founded;
@@ -51,13 +53,16 @@ internal static class SettlementExpansionExecutor
             slug = $"{factionId}-colony-{ordinal}";
         }
 
-        state.StartSettlementExpedition(
+        var expedition = state.StartSettlementExpedition(
             source.Id,
             slug,
             $"{factionId} colony {ordinal}",
             settlers,
             request.Tick,
             request.Tick + Math.Max(1, request.TravelDays) * 60_000);
-        return true;
+
+        // Force the concrete location identity to be resolved while the departure is still being
+        // committed. The value is derived from persisted fields and remains stable after save/load.
+        return !string.IsNullOrWhiteSpace(expedition.PlannedLocationToken);
     }
 }

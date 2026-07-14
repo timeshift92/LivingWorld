@@ -20,4 +20,14 @@ public sealed record WorldMigrationGroup(
     public string PlannedSettlementSlug { get; init; } = string.Empty;
 
     public string PlannedSettlementName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Stable Core-side identity of the intended founding site. It is deliberately derived from
+    /// fields already serialized by older versions, preserving save compatibility while giving
+    /// the RimWorld bridge a concrete token to bind to a world tile before departure.
+    /// </summary>
+    public string PlannedLocationToken => SettlementExpansionSiteSelector.CreateLocationToken(
+        SourceSettlementId,
+        FactionId,
+        PlannedSettlementSlug);
 }

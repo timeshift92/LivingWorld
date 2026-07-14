@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace LivingWorld.Core;
 
@@ -68,5 +69,69 @@ public static class FactionBehaviorService
     private static FactionBehaviorProfile Passive(FactionBehavior behavior)
     {
         return new FactionBehaviorProfile(behavior, 1f, 1f, 1f, EngagementRange: 0, ParticipatesInWorldWar: false);
+    }
+}
+
+/// <summary>
+/// Migrates the legacy production bootstrap where every ordinary human faction was assigned
+/// <see cref="FactionBehavior.Aggressive"/>. The old distribution made expansion, trade and
+/// cautious development unreachable unless a test or another mod assigned those archetypes by
+/// hand. Existing non-combat assignments are preserved and one aggressive faction is always kept.
+/// </summary>
+public static class FactionBehaviorBootstrapService
+{
+    private static readonly FactionBehavior[] RequiredNonCombatBehaviors =
+    {
+        FactionBehavior.Expansionist,
+        FactionBehavior.Merchant,
+        FactionBehavior.Cautious,
+        FactionBehavior.Random,
+    };
+
+    public static int EnsureProductionActionReachability(WorldState state)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var factionIds = state.Settlements
+            .Where(settlement => settlement.IsActive)
+            .Select(settlement => settlement.FactionId)
+            .Distinct(StringComparer.Ordinal)
+            .Where(factionId => !state.IsPlayerFaction(factionId))
+            .Where(factionId => !state.IsFactionCollapsed(factionId))
+            .OrderBy(factionId => factionId, StringComparer.Ordinal)
+            .ToList();
+
+        var aggressive = factionIds
+            .Where(factionId => state.GetFactionBehavior(factionId) == FactionBehavior.Aggressive)
+            .ToList();
+        if (aggressive.Count <= 1)
+        {
+            return 0;
+        }
+
+        // Keep the first stable faction aggressive. Remaining legacy assignments fill only
+        // missing peaceful archetypes, so existing peaceful behavior choices are never replaced.
+        var available = aggressive.Skip(1).GetEnumerator();
+        var changed = 0;
+        foreach (var behavior in RequiredNonCombatBehaviors)
+        {
+            if (factionIds.Any(factionId => state.GetFactionBehavior(factionId) == behavior))
+            {
+                continue;
+            }
+
+            if (!available.MoveNext())
+            {
+                break;
+            }
+
+            state.AssignFactionBehavior(available.Current, behavior);
+            changed++;
+        }
+
+        return changed;
     }
 }

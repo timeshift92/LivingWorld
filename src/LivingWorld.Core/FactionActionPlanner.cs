@@ -116,6 +116,11 @@ public static class FactionActionPlanner
             throw new ArgumentNullException(nameof(state));
         }
 
+        // RimWorld's original bootstrap assigned every ordinary human faction Aggressive. Repair
+        // that persisted legacy distribution inside Core before planning, otherwise settler,
+        // caravan and development actions remain reachable only from tests that assign behaviors.
+        FactionBehaviorBootstrapService.EnsureProductionActionReachability(state);
+
         var plannedTargets = new List<EntityId>();
         var plans = new List<FactionActionPlan>();
         foreach (var factionId in state.Settlements
@@ -214,7 +219,10 @@ public static class FactionActionPlanner
     private static bool CanSendCaravan(WorldState state, string factionId, WorldSettlement? target)
     {
         return WorldWarTargetSelector.FindTradeSource(state, factionId, "Steel") != null
-            && target != null;
+            && target != null
+            && !state.Caravans.Any(caravan =>
+                caravan.Status == CaravanStatus.Traveling
+                && string.Equals(caravan.FactionId, factionId, StringComparison.Ordinal));
     }
 
     private static int FactionPower(WorldState state, string factionId)

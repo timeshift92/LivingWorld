@@ -1126,6 +1126,16 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
         }
 
+        if (!source.IsActive)
+        {
+            throw new InvalidOperationException($"Settlement {sourceSettlementId} is not active.");
+        }
+
+        if (IsFactionCollapsed(source.FactionId))
+        {
+            throw new InvalidOperationException($"Faction {source.FactionId} is collapsed and cannot launch an expedition.");
+        }
+
         if (_settlements.Values.Any(settlement => string.Equals(settlement.Slug, slug, StringComparison.Ordinal)))
         {
             throw new InvalidOperationException($"Settlement slug {slug} already exists.");
@@ -1182,6 +1192,16 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {sourceSettlementId} does not exist.");
         }
 
+        if (!source.IsActive)
+        {
+            throw new InvalidOperationException($"Settlement {sourceSettlementId} is not active.");
+        }
+
+        if (IsFactionCollapsed(source.FactionId))
+        {
+            throw new InvalidOperationException($"Faction {source.FactionId} is collapsed and cannot launch an expedition.");
+        }
+
         if (_settlements.Values.Any(settlement => string.Equals(settlement.Slug, slug, StringComparison.Ordinal))
             || _migrationGroups.Values.Any(group =>
                 group.Status == MigrationGroupStatus.Traveling
@@ -1226,6 +1246,14 @@ public sealed class WorldState
 
         MoveResourceIfAvailable(sourceSettlementId, group.Id, "PackagedSurvivalMeal", settlerCount * 3, "settler expedition supplies");
         MoveResourceIfAvailable(sourceSettlementId, group.Id, "Steel", settlerCount * 10, "settler expedition materials");
+        MoveResourceIfAvailable(
+            sourceSettlementId,
+            group.Id,
+            "ComponentIndustrial",
+            Math.Max(1, settlerCount / 2),
+            "settler expedition components");
+        MoveResourceIfAvailable(sourceSettlementId, group.Id, "MedicineIndustrial", settlerCount, "settler expedition medicine");
+        MoveResourceIfAvailable(sourceSettlementId, group.Id, "Silver", settlerCount * 5, "settler expedition treasury");
         MarkDerivedAggregatesDirty();
 
         return group;
@@ -1233,9 +1261,24 @@ public sealed class WorldState
 
     public WorldSettlement CompleteSettlementExpedition(EntityId groupId)
     {
+        if (TryCompleteSettlementExpedition(groupId, out var colony, out var reason))
+        {
+            return colony!;
+        }
+
+        throw new InvalidOperationException(reason);
+    }
+
+    internal bool TryCompleteSettlementExpedition(
+        EntityId groupId,
+        out WorldSettlement? colony,
+        out string reason)
+    {
+        colony = null;
         if (!_migrationGroups.TryGetValue(groupId, out var group))
         {
-            throw new InvalidOperationException($"Migration group {groupId} does not exist.");
+            reason = $"Migration group {groupId} does not exist.";
+            return false;
         }
 
         if (group.Status == MigrationGroupStatus.Arrived)
@@ -1244,23 +1287,70 @@ public sealed class WorldState
                 string.Equals(settlement.Slug, group.PlannedSettlementSlug, StringComparison.Ordinal));
             if (existing != null)
             {
-                return existing;
+                colony = existing;
+                reason = string.Empty;
+                return true;
             }
         }
 
-        if (!string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal)
+        if (group.Status != MigrationGroupStatus.Traveling
+            || !string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(group.PlannedSettlementSlug)
             || string.IsNullOrWhiteSpace(group.PlannedSettlementName))
         {
-            throw new InvalidOperationException($"Migration group {groupId} is not a settlement expedition.");
+            reason = $"Migration group {groupId} is not an active settlement expedition.";
+            return false;
         }
 
-        var slug = UniqueSettlementSlug(group.PlannedSettlementSlug);
-        var colony = CreateSettlement(slug, group.PlannedSettlementName, group.FactionId);
         var settlers = _citizens.Values
             .Where(citizen => citizen.Status == CitizenStatus.Migrating && GetOwner(citizen.Id) == group.Id)
             .OrderBy(citizen => citizen.Id.Value)
             .ToList();
+
+        if (settlers.Count == 0)
+        {
+            reason = $"Settlement expedition {groupId} has no living migrants.";
+            RejectSettlementExpedition(group, reason);
+            return false;
+        }
+
+        if (IsFactionCollapsed(group.FactionId))
+        {
+            reason = $"Settlement expedition {groupId} belongs to collapsed faction {group.FactionId}.";
+            RejectSettlementExpedition(group, reason);
+            return false;
+        }
+
+        var source = ResolveActiveExpeditionSource(group);
+        if (source == null)
+        {
+            reason = $"Settlement expedition {groupId} has no active source settlement for faction {group.FactionId}.";
+            RejectSettlementExpedition(group, reason);
+            return false;
+        }
+
+        if (source.Id != group.SourceSettlementId)
+        {
+            group = group with { SourceSettlementId = source.Id };
+            _migrationGroups[group.Id] = group;
+            AppendEvent(
+                WorldEventKind.MigrationStarted,
+                group.Id,
+                $"Settlement expedition {group.Id} rerouted through active settlement {source.Id} to {group.PlannedLocationToken}.");
+        }
+
+        var slug = UniqueSettlementSlug(group.PlannedSettlementSlug);
+        if (!string.Equals(slug, group.PlannedSettlementSlug, StringComparison.Ordinal))
+        {
+            group = group with { PlannedSettlementSlug = slug };
+            _migrationGroups[group.Id] = group;
+            AppendEvent(
+                WorldEventKind.MigrationStarted,
+                group.Id,
+                $"Settlement expedition {group.Id} rerouted to unoccupied location {group.PlannedLocationToken}.");
+        }
+
+        colony = CreateSettlement(slug, group.PlannedSettlementName, group.FactionId);
 
         foreach (var settler in settlers)
         {
@@ -1281,12 +1371,45 @@ public sealed class WorldState
             }
         }
 
+        SettlementExpansionPrimer.Prime(this, source, colony, group, CurrentTick);
         MarkMigrationGroupArrived(group.Id);
         AppendEvent(
             WorldEventKind.SettlementFounded,
             colony.Id,
             $"Settlement {colony.Id} founded by {group.FactionId} with {settlers.Count} settlers from expedition {group.Id}.");
-        return colony;
+        reason = string.Empty;
+        return true;
+    }
+
+    private WorldSettlement? ResolveActiveExpeditionSource(WorldMigrationGroup group)
+    {
+        if (_settlements.TryGetValue(group.SourceSettlementId, out var source)
+            && source.IsActive
+            && string.Equals(source.FactionId, group.FactionId, StringComparison.Ordinal))
+        {
+            return source;
+        }
+
+        return _settlements.Values
+            .Where(candidate => candidate.IsActive)
+            .Where(candidate => string.Equals(candidate.FactionId, group.FactionId, StringComparison.Ordinal))
+            .OrderBy(candidate => candidate.Id.Value)
+            .FirstOrDefault();
+    }
+
+    private void RejectSettlementExpedition(WorldMigrationGroup group, string reason)
+    {
+        _migrationGroups[group.Id] = group with { Status = MigrationGroupStatus.Lost };
+        foreach (var citizen in _citizens.Values
+            .Where(candidate => candidate.Status == CitizenStatus.Migrating && GetOwner(candidate.Id) == group.Id)
+            .OrderBy(candidate => candidate.Id.Value)
+            .ToList())
+        {
+            _citizens[citizen.Id] = citizen with { Status = CitizenStatus.Missing };
+        }
+
+        MarkDerivedAggregatesDirty();
+        AppendEvent(WorldEventKind.MigrationCompleted, group.Id, reason);
     }
 
     private void MoveResourceIfAvailable(EntityId fromOwnerId, EntityId toOwnerId, string resourceKey, int requestedQuantity, string reason)
