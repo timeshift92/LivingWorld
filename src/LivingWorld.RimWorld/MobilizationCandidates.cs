@@ -22,18 +22,36 @@ public static class MobilizationCandidates
                 return false;
             }
 
-            // Never mobilize a colonist who cannot fight: pacifists / violence-incapable pawns, and pawns that
-            // cannot be drafted at all (children, etc.).
+            // Hard floor: never mobilize a colonist who cannot fight, even if rostered.
             if (pawn.WorkTagIsDisabled(WorkTags.Violent) || pawn.drafter == null)
             {
                 return false;
             }
 
-            var shooting = SkillLevel(pawn, SkillDefOf.Shooting);
-            var melee = SkillLevel(pawn, SkillDefOf.Melee);
-            var threshold = LivingWorldSettings.Instance?.mobilizationSkillThreshold
-                            ?? MobilizationTuning.CombatSkillThreshold;
-            return LoadoutSelectionService.IsCombatEligible(shooting, melee, threshold);
+            // The Fighters roster decides who arms up (skill-eligible by default, player-overridable).
+            var roster = FightersRoster.Get();
+            return roster != null && roster.IsFighter(pawn);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Everyone the shelter system moves: a colonist who is not a fighter. Deliberately broad — children and
+    // violence-incapable colonists are non-combatants too. Fail-safe: unknown state reads as non-combatant so
+    // they are protected (sheltered) rather than left in the open.
+    public static bool IsNonCombatant(Pawn pawn)
+    {
+        try
+        {
+            if (pawn == null || !pawn.IsColonist || pawn.Dead)
+            {
+                return false;
+            }
+
+            var roster = FightersRoster.Get();
+            return roster == null || !roster.IsFighter(pawn);
         }
         catch
         {
