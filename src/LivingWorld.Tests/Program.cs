@@ -9721,8 +9721,11 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertContains("CaravanArmoryService.ArmDepartingPawns(pawns)", patch);
     AssertContains("settings.armoryMobilizationEnabled", patch);
     AssertContains("MobilizationCandidates.IsCandidate", patch);
-    AssertContains("OutfitStandKit.PushEquip(pawn)", patch);
-    AssertContains("MobilizationCandidates.IsArmed", patch);
+    // The caravan forms synchronously right after this prefix, so a walk-to-stand equip job would never
+    // finish in time. Phase A counts already-equipped pawns as armed and logs the rest honestly instead of
+    // pushing a job that cannot complete (see Task 10).
+    AssertContains("MobilizationCandidates.IsInCombatKit(pawn)", patch);
+    AssertContains("Log.Message", patch);
     AssertContains("ModsConfig.OdysseyActive", patch);
     AssertContains("Log.Warning", patch);
     AssertRimWorldMethodExists("RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan");

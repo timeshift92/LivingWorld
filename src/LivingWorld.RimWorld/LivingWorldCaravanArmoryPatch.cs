@@ -63,14 +63,23 @@ public static class CaravanArmoryService
         {
             foreach (var pawn in pawns.Where(MobilizationCandidates.IsCandidate))
             {
-                if (pawn.Map == null || MobilizationCandidates.IsArmed(pawn) || !OutfitStandKit.HasStand(pawn))
+                if (pawn.Map == null || !OutfitStandKit.HasStand(pawn))
                 {
                     continue;
                 }
 
-                // Send them to their outfit stand to gear up before the caravan forms.
-                OutfitStandKit.PushEquip(pawn);
-                armed++;
+                if (MobilizationCandidates.IsInCombatKit(pawn))
+                {
+                    // Already geared up (mobilized before departing) — counts as armed for the expedition.
+                    armed++;
+                    continue;
+                }
+
+                // The caravan forms synchronously after this prefix, so a walk-to-stand equip job would not
+                // finish in time — pushing it would silently do nothing. Log so the player knows to mobilize
+                // the expedition party first; do not issue a job that cannot complete.
+                Log.Message($"[LivingWorld] Caravan armory: {pawn.LabelShort} left without gearing up "
+                            + "(mobilize the party before forming the caravan to arm from stands).");
             }
         }
         catch (Exception ex)
