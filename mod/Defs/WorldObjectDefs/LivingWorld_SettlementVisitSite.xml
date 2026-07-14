@@ -6,7 +6,11 @@
     <description>A controlled Living World proxy site used to enter a real NPC settlement map without mutating the vanilla settlement world object directly.</description>
     <worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldSettlementVisitSite</worldObjectClass>
     <texture>World/LivingWorld_Scout</texture>
-    <selectable>true</selectable>
+    <selectable>false</selectable>
     <canHaveFaction>true</canHaveFaction>
+    <mapGenerator>LivingWorld_SettlementVisit</mapGenerator>
+    <comps>
+      <li Class="WorldObjectCompProperties_FormCaravan" />
+    </comps>
   </WorldObjectDef>
 </Defs>

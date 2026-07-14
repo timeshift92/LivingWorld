@@ -45,12 +45,27 @@ public static class LivingWorldSettlementVisitFloatMenuPatch
     {
         if (settlement == null || !settlement.Spawned)
         {
-            return false;
+            return "LW_SettlementVisitUnavailableMissing".Translate().ToString();
+        }
+
+        if (!settlement.Visitable)
+        {
+            return "LW_SettlementVisitUnavailableNotVisitable".Translate().ToString();
+        }
+
+        if (settlement.Faction == null || settlement.Faction.HostileTo(Faction.OfPlayer))
+        {
+            return "LW_SettlementVisitUnavailableHostile".Translate().ToString();
+        }
+
+        if (settlement.HasMap)
+        {
+            return "LW_SettlementVisitUnavailableMapActive".Translate().ToString();
         }
 
         if (!LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement(settlement, out _))
         {
-            return false;
+            return "LW_SettlementVisitUnavailableNoLedger".Translate().ToString();
         }
 
         return true;

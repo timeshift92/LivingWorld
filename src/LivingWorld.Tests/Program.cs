@@ -90,6 +90,7 @@ var tests = new List<(string Name, Action Test)>
     ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
     ("settlement defense materialization reserves defenders and resources", TestSettlementDefenseMaterializationReservesDefendersAndResources),
+    ("settlement resident materialization leases every remaining citizen exactly once", TestSettlementResidentMaterializationLeasesRemainingCitizens),
     ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
     ("settlement map layout builds rooms and stockpile slots from ledger facilities", TestSettlementMapLayoutBuildsRoomsAndStockpiles),
     ("settlement map layout builds city housing defense power and work features", TestSettlementMapLayoutBuildsCityInfrastructure),
@@ -2961,6 +2962,46 @@ static void TestSettlementDefenseMaterializationReservesDefendersAndResources()
     AssertEqual(100, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
     AssertEqual(25, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
     AssertEqual(0, state.MaterializationLeases.Count(lease => lease.IsActive));
+}
+
+static void TestSettlementResidentMaterializationLeasesRemainingCitizens()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("resident-town", "Resident Town", "Outlander");
+    var guard = state.CreateCitizen("Guard", 31, Sex.Female, "guard", settlement.Id);
+    var farmer = state.CreateCitizen("Farmer", 42, Sex.Male, "farmer", settlement.Id);
+    var child = state.CreateCitizen("Child", 10, Sex.Female, "child", settlement.Id);
+
+    var defense = SettlementMaterializationService.PrepareDefense(
+        state,
+        new SettlementDefenseMaterializationRequest(
+            settlement.Id,
+            RequestedDefenders: 1,
+            LifetimeTicks: 60_000,
+            RequestedResources: new Dictionary<string, int>(),
+            PurposeKey: "visit:resident-town"));
+    AssertEqual(SettlementDefenseMaterializationStatus.Success, defense.Status);
+    AssertEqual(guard.Id, defense.DefenderLeases.Single().CitizenId);
+
+    var residents = SettlementResidentMaterializationService.PrepareResidents(
+        state,
+        new SettlementResidentMaterializationRequest(
+            settlement.Id,
+            LifetimeTicks: 60_000,
+            PurposeKey: "visit:resident-town"));
+
+    AssertEqual(SettlementResidentMaterializationStatus.Success, residents.Status);
+    AssertEqual(2, residents.Leases.Count);
+    AssertEqual(farmer.Id, residents.Leases[0].CitizenId);
+    AssertEqual(child.Id, residents.Leases[1].CitizenId);
+    AssertEqual(3, state.MaterializationLeases.Count(lease => lease.IsActive));
+
+    MaterializationLeaseService.BindPawn(state, residents.Leases[0].Id, 9001);
+    var released = SettlementResidentMaterializationService.ReleaseUnmaterialized(state, "visit:resident-town");
+
+    AssertEqual(1, released);
+    AssertEqual(MaterializationLeaseLifecycle.Materialized, state.GetMaterializationLease(residents.Leases[0].Id)!.Lifecycle);
+    AssertEqual(MaterializationLeaseLifecycle.Released, state.GetMaterializationLease(residents.Leases[1].Id)!.Lifecycle);
 }
 
 static void TestSettlementMapLayoutMaterializesRealFacilities()
@@ -8248,7 +8289,8 @@ static void TestRimWorldSettlementMapFloorDamageReconciliation()
 
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
     var patch = File.ReadAllText(patchPath);
-    AssertContains("LivingWorldSettlementMapFloorTracker.ReconcileMap", patch);
+    AssertContains("LivingWorldSettlementMapFacilityTracker.ReconcileMap", patch);
+    AssertContains("component.Floors", File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapFacilityTracker.cs")));
 
     var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
     AssertContains("LivingWorldSettlementMapFloorTracker.Track", service);
@@ -8868,7 +8910,9 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     AssertContains("<defName>LivingWorld_SettlementVisitSite</defName>", defXml);
     AssertContains("<worldObjectClass>LivingWorld.RimWorld.WorldObject_LivingWorldSettlementVisitSite</worldObjectClass>", defXml);
     AssertContains("<texture>World/LivingWorld_Scout</texture>", defXml);
-    AssertContains("<selectable>true</selectable>", defXml);
+    AssertContains("<selectable>false</selectable>", defXml);
+    AssertContains("<mapGenerator>LivingWorld_SettlementVisit</mapGenerator>", defXml);
+    AssertContains("WorldObjectCompProperties_FormCaravan", defXml);
     AssertContains("<canHaveFaction>true</canHaveFaction>", defXml);
 
     var sitePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldSettlementVisitSite.cs");
@@ -8919,6 +8963,11 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     AssertContains("private int visitSiteWorldObjectId", mapComponent);
     AssertContains("private int materializedVersion", mapComponent);
     AssertContains("private bool reconciled", mapComponent);
+    AssertContains("LivingWorldMapMaterializationLifecycle", mapComponent);
+    AssertContains("Scribe_Collections.Look(ref resources", mapComponent);
+    AssertContains("Scribe_Collections.Look(ref facilityThings", mapComponent);
+    AssertContains("Scribe_Collections.Look(ref floors", mapComponent);
+    AssertContains("Scribe_Collections.Look(ref animals", mapComponent);
     AssertContains("Scribe_Values.Look(ref settlementIdValue", mapComponent);
     AssertContains("Scribe_Values.Look(ref visitSiteWorldObjectId", mapComponent);
     AssertContains("Scribe_Values.Look(ref materializedVersion", mapComponent);
@@ -8980,7 +9029,9 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     AssertContains("LongEventHandler.QueueLongEvent", entry);
     AssertContains("MapGenerator.GenerateMap", entry);
     AssertContains("visitSite,", entry);
-    AssertContains("LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite)", entry);
+    AssertContains("mapComponent?.ConfigureFrom(visitSite)", entry);
+    AssertContains("mapComponent?.IsPlayable != true", entry);
+    AssertContains("missingPawn", entry);
     AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, visitSite)", entry);
     AssertContains("CaravanEnterMapUtility.Enter", entry);
     AssertContains("CameraJumper.TryJump", entry);
@@ -8993,7 +9044,10 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     AssertContains("parent is WorldObject_LivingWorldSettlementVisitSite visitSite", materializer);
     AssertContains("state.GetSettlement(settlementId.Value)", materializer);
     AssertContains("visitSite.MarkMaterialized", materializer);
-    AssertContains("LivingWorldSettlementVisitMapComponent.For(map)?.ConfigureFrom(visitSite)", materializer);
+    AssertContains("visitMapComponent?.ConfigureFrom(visitSite)", materializer);
+    AssertContains("SettlementResidentMaterializationService.PrepareResidents", materializer);
+    AssertContains("AssignSettlementLord", materializer);
+    AssertContains("ClearGeneratedSettlementContent", materializer);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));

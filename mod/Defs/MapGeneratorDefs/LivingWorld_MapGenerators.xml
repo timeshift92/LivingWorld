@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <MapGeneratorDef>
+    <defName>LivingWorld_SettlementVisit</defName>
+    <genSteps>
+      <li>ElevationFertility</li>
+      <li>MutatorPostElevationFertility</li>
+      <li>Terrain</li>
+      <li>MutatorPostTerrain</li>
+      <li>RocksFromGrid</li>
+      <li>Roads</li>
+      <li>RockChunks</li>
+      <li>FindPlayerStartSpot</li>
+      <li>Plants</li>
+      <li>Snow</li>
+      <li>Fog</li>
+    </genSteps>
+  </MapGeneratorDef>
+</Defs>

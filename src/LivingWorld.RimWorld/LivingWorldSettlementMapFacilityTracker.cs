@@ -7,24 +7,15 @@ namespace LivingWorld.RimWorld;
 
 public static class LivingWorldSettlementMapFacilityTracker
 {
-    private sealed record TrackedFacilityThing(int MapId, EntityId FacilityId);
-
-    private static readonly Dictionary<int, TrackedFacilityThing> ThingsByThingId = new();
-
     public static void Track(Thing? thing, EntityId facilityId)
     {
-        if (thing == null || facilityId.Kind != EntityKind.SettlementFacility)
+        var map = thing?.MapHeld;
+        if (thing == null || map == null || facilityId.Kind != EntityKind.SettlementFacility)
         {
             return;
         }
 
-        var map = thing.Map;
-        if (map == null)
-        {
-            return;
-        }
-
-        ThingsByThingId[thing.thingIDNumber] = new TrackedFacilityThing(map.uniqueID, facilityId);
+        LivingWorldSettlementVisitMapComponent.For(map)?.TrackFacilityThing(thing, facilityId);
     }
 
     public static int ReconcileMap(WorldState state, Map? map, string reason)
@@ -34,41 +25,47 @@ public static class LivingWorldSettlementMapFacilityTracker
             return 0;
         }
 
-        var trackedForMap = ThingsByThingId
-            .Where(pair => pair.Value.MapId == map.uniqueID)
-            .ToList();
-        if (trackedForMap.Count == 0)
+        var component = LivingWorldSettlementVisitMapComponent.For(map);
+        if (component == null || (component.FacilityThings.Count == 0 && component.Floors.Count == 0))
         {
             return 0;
         }
 
         var allThings = map.listerThings?.AllThings ?? new List<Thing>();
         var updates = 0;
-        foreach (var group in trackedForMap.GroupBy(pair => pair.Value.FacilityId))
+        var facilityIds = component.FacilityThings.Select(entry => entry.FacilityId)
+            .Concat(component.Floors.Select(entry => entry.FacilityId))
+            .Distinct()
+            .OrderBy(id => id.Value)
+            .ToList();
+        foreach (var facilityId in facilityIds)
         {
-            var total = group.Count();
-            var surviving = group.Count(pair =>
+            var things = component.FacilityThings.Where(entry => entry.FacilityId == facilityId).ToList();
+            var floors = component.Floors.Where(entry => entry.FacilityId == facilityId).ToList();
+            var total = things.Count + floors.Count;
+            var survivingThings = things.Count(entry =>
             {
-                var thing = allThings.FirstOrDefault(candidate => candidate?.thingIDNumber == pair.Key);
+                var thing = allThings.FirstOrDefault(candidate => candidate?.thingIDNumber == entry.ThingId);
                 return thing != null && thing.Spawned && thing.Map == map;
+            });
+            var survivingFloors = floors.Count(entry =>
+            {
+                var cell = new IntVec3(entry.X, 0, entry.Z);
+                return cell.InBounds(map)
+                    && map.terrainGrid.TerrainAt(cell)?.defName == entry.TerrainDefName;
             });
 
             var result = SettlementMapDamageService.ReconcileFacilityDamage(
                 state,
                 new SettlementMapDamageRequest(
-                    group.Key,
+                    facilityId,
                     total,
-                    surviving,
+                    survivingThings + survivingFloors,
                     reason));
             if (result.Status == SettlementMapDamageStatus.Success)
             {
                 updates++;
             }
-        }
-
-        foreach (var pair in trackedForMap)
-        {
-            ThingsByThingId.Remove(pair.Key);
         }
 
         return updates;

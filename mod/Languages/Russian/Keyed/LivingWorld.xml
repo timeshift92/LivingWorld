@@ -237,6 +237,11 @@
   <LW_SettlementVisitSiteFloatMenu>Посетить базу Living World в {0}</LW_SettlementVisitSiteFloatMenu>
   <LW_SettlementVisitSiteUnavailable>Визит в поселение Living World недоступен: {0}</LW_SettlementVisitSiteUnavailable>
   <LW_SettlementVisitSiteOpened>Открыта карта {0}</LW_SettlementVisitSiteOpened>
+  <LW_SettlementVisitUnavailableMissing>Поселение больше не существует.</LW_SettlementVisitUnavailableMissing>
+  <LW_SettlementVisitUnavailableNotVisitable>Это поселение сейчас не принимает посетителей.</LW_SettlementVisitUnavailableNotVisitable>
+  <LW_SettlementVisitUnavailableHostile>Враждебное поселение можно атаковать, но нельзя посетить мирно.</LW_SettlementVisitUnavailableHostile>
+  <LW_SettlementVisitUnavailableMapActive>У этого поселения уже открыта активная карта.</LW_SettlementVisitUnavailableMapActive>
+  <LW_SettlementVisitUnavailableNoLedger>Поселение не связано с реестром Living World.</LW_SettlementVisitUnavailableNoLedger>
   <LW_OpenRealSettlementMap>Посетить базу Living World</LW_OpenRealSettlementMap>
   <LW_OpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует комнаты, склады, защитников и животных, а последствия сохраняются для следующих визитов.</LW_OpenRealSettlementMapTooltip>
   <LW_OpenRealSettlementMapFloatMenu>Посетить базу Living World в {0}</LW_OpenRealSettlementMapFloatMenu>

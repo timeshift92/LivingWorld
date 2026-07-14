@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
@@ -8,27 +7,54 @@ namespace LivingWorld.RimWorld;
 
 public static class LivingWorldSettlementMapResourceTracker
 {
-    private sealed record TrackedResource(int MapId, EntityId ReturnOwnerId, string ResourceKey);
-
-    private static readonly Dictionary<int, TrackedResource> ResourcesByThingId = new();
-
     public static void Track(Thing? thing, EntityId returnOwnerId, string resourceKey)
     {
-        if (thing == null || returnOwnerId.Value <= 0 || string.IsNullOrWhiteSpace(resourceKey))
+        var map = thing?.MapHeld;
+        if (thing == null || map == null)
         {
             return;
         }
 
-        var map = thing.Map;
-        if (map == null)
+        LivingWorldSettlementVisitMapComponent.For(map)?.TrackResource(thing, returnOwnerId, resourceKey);
+    }
+
+    public static void TrackSplit(Thing? source, Thing? split)
+    {
+        if (source == null || split == null || !TryGetTrackedResource(source, out var tracked, out var component))
         {
             return;
         }
 
-        ResourcesByThingId[thing.thingIDNumber] = new TrackedResource(
-            map.uniqueID,
-            returnOwnerId,
-            resourceKey.Trim());
+        component.TrackResource(split, tracked.ReturnOwnerId, tracked.ResourceKey);
+    }
+
+    public static bool AllowStack(Thing? destination, Thing? source)
+    {
+        var destinationTracked = TryGetTrackedResource(destination, out var destinationInfo, out _);
+        var sourceTracked = TryGetTrackedResource(source, out var sourceInfo, out _);
+        if (!destinationTracked && !sourceTracked)
+        {
+            return true;
+        }
+
+        if (destinationTracked != sourceTracked)
+        {
+            return false;
+        }
+
+        return destinationInfo.ReturnOwnerKind == sourceInfo.ReturnOwnerKind
+            && destinationInfo.ReturnOwnerValue == sourceInfo.ReturnOwnerValue
+            && destinationInfo.ResourceKey == sourceInfo.ResourceKey;
+    }
+
+    public static void NotifyAbsorbed(Thing? source)
+    {
+        if (source == null || !source.Destroyed || !TryGetTrackedResource(source, out _, out var component))
+        {
+            return;
+        }
+
+        component.RemoveResource(source.thingIDNumber);
     }
 
     public static int ReconcileMap(WorldState state, Map? map, string reason)
@@ -38,28 +64,64 @@ public static class LivingWorldSettlementMapResourceTracker
             return 0;
         }
 
-        var returned = 0;
-        foreach (var pair in ResourcesByThingId.ToList())
+        var component = LivingWorldSettlementVisitMapComponent.For(map);
+        if (component == null || component.Resources.Count == 0)
         {
-            if (pair.Value.MapId != map.uniqueID)
-            {
-                continue;
-            }
+            return 0;
+        }
 
-            ResourcesByThingId.Remove(pair.Key);
-            var thing = map.listerThings?.AllThings
-                .FirstOrDefault(candidate => candidate?.thingIDNumber == pair.Key);
+        var allThings = map.listerThings?.AllThings ?? new List<Thing>();
+        var returned = 0;
+        foreach (var tracked in component.Resources.ToList())
+        {
+            var thing = allThings.FirstOrDefault(candidate => candidate?.thingIDNumber == tracked.ThingId);
+            component.RemoveResource(tracked.ThingId);
             if (thing == null || !thing.Spawned || thing.Map != map || thing.stackCount <= 0)
             {
                 continue;
             }
 
-            var ownerId = ResolveReturnOwner(state, pair.Value.ReturnOwnerId);
-            ResourceLedgerService.AddResource(state, ownerId, pair.Value.ResourceKey, thing.stackCount);
+            var ownerId = ResolveReturnOwner(state, tracked.ReturnOwnerId);
+            ResourceLedgerService.AddResource(state, ownerId, tracked.ResourceKey, thing.stackCount);
             returned += thing.stackCount;
         }
 
         return returned;
+    }
+
+    private static bool TryGetTrackedResource(
+        Thing? thing,
+        out LivingWorldTrackedMapResource tracked,
+        out LivingWorldSettlementVisitMapComponent component)
+    {
+        tracked = null!;
+        component = null!;
+        if (thing == null)
+        {
+            return false;
+        }
+
+        var map = thing.MapHeld;
+        if (map != null)
+        {
+            component = LivingWorldSettlementVisitMapComponent.For(map)!;
+            if (component != null && component.TryGetResource(thing.thingIDNumber, out tracked))
+            {
+                return true;
+            }
+        }
+
+        foreach (var candidateMap in Find.Maps)
+        {
+            var candidate = LivingWorldSettlementVisitMapComponent.For(candidateMap);
+            if (candidate != null && candidate.TryGetResource(thing.thingIDNumber, out tracked))
+            {
+                component = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static EntityId ResolveReturnOwner(WorldState state, EntityId originalOwnerId)

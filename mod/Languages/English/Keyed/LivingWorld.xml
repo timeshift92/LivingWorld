@@ -237,6 +237,11 @@
   <LW_SettlementVisitSiteFloatMenu>Visit Living World base at {0}</LW_SettlementVisitSiteFloatMenu>
   <LW_SettlementVisitSiteUnavailable>Living World settlement visit unavailable: {0}</LW_SettlementVisitSiteUnavailable>
   <LW_SettlementVisitSiteOpened>Opened {0}</LW_SettlementVisitSiteOpened>
+  <LW_SettlementVisitUnavailableMissing>The settlement no longer exists.</LW_SettlementVisitUnavailableMissing>
+  <LW_SettlementVisitUnavailableNotVisitable>This settlement cannot currently receive visitors.</LW_SettlementVisitUnavailableNotVisitable>
+  <LW_SettlementVisitUnavailableHostile>Hostile settlements must be attacked, not visited peacefully.</LW_SettlementVisitUnavailableHostile>
+  <LW_SettlementVisitUnavailableMapActive>This settlement already has an active map.</LW_SettlementVisitUnavailableMapActive>
+  <LW_SettlementVisitUnavailableNoLedger>The settlement is not linked to the Living World ledger.</LW_SettlementVisitUnavailableNoLedger>
   <LW_OpenRealSettlementMap>Visit Living World base</LW_OpenRealSettlementMap>
   <LW_OpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World materializes rooms, stores, defenders and animals there, and later visits keep the map consequences.</LW_OpenRealSettlementMapTooltip>
   <LW_OpenRealSettlementMapFloatMenu>Visit Living World base at {0}</LW_OpenRealSettlementMapFloatMenu>

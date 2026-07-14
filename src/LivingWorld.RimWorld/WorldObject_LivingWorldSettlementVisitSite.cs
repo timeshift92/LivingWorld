@@ -1,4 +1,6 @@
+using System.Linq;
 using LivingWorld.Core;
+using RimWorld;
 using RimWorld.Planet;
 using Verse;
 
@@ -17,6 +19,8 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     private string settlementLabel = string.Empty;
     private int materializedVersion;
     private bool reconciled;
+    private bool activeMapSession;
+    private bool playerCaravanEntered;
 
     public EntityId? SettlementId => settlementIdValue > 0
         ? EntityId.Create(EntityKind.Settlement, settlementIdValue)
@@ -31,6 +35,10 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     public int MaterializedVersion => materializedVersion;
 
     public bool Reconciled => reconciled;
+
+    public bool ActiveMapSession => activeMapSession;
+
+    protected override bool UseGenericEnterMapFloatMenuOption => false;
 
     public override string Label => string.IsNullOrWhiteSpace(settlementLabel)
         ? "LW_SettlementVisitSiteLabel".Translate().ToString()
@@ -52,7 +60,28 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         this.settlementLabel = settlementLabel ?? string.Empty;
         this.materializedVersion = materializedVersion;
         this.reconciled = reconciled;
+        activeMapSession = false;
+        playerCaravanEntered = false;
         Tile = sourceTile;
+    }
+
+    public void BeginMapSession()
+    {
+        activeMapSession = true;
+        playerCaravanEntered = false;
+        reconciled = false;
+    }
+
+    public void MarkPlayerCaravanEntered()
+    {
+        activeMapSession = true;
+        playerCaravanEntered = true;
+    }
+
+    public void AbortMapSession()
+    {
+        activeMapSession = false;
+        playerCaravanEntered = false;
     }
 
     public void MarkMaterialized(int version)
@@ -63,6 +92,39 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     public void MarkReconciled()
     {
         reconciled = true;
+    }
+
+    public override void Notify_CaravanFormed(Caravan caravan)
+    {
+        base.Notify_CaravanFormed(caravan);
+        // Keep the session eligible for removal. Resetting this flag here prevented
+        // ShouldRemoveMapNow from ever reconciling and removing a completed visit map.
+        playerCaravanEntered = true;
+    }
+
+    public override void Notify_MyMapRemoved(Map map)
+    {
+        base.Notify_MyMapRemoved(map);
+        activeMapSession = false;
+        playerCaravanEntered = false;
+        reconciled = true;
+    }
+
+    public override bool ShouldRemoveMapNow(out bool alsoRemoveWorldObject)
+    {
+        alsoRemoveWorldObject = false;
+        if (!activeMapSession || !playerCaravanEntered || Map == null)
+        {
+            return false;
+        }
+
+        if (Map.mapPawns.PawnsInFaction(Faction.OfPlayer)
+            .Any(pawn => pawn != null && pawn.Spawned && !pawn.Dead))
+        {
+            return false;
+        }
+
+        return !TransporterUtility.IncomingTransporterPreventingMapRemoval(Map);
     }
 
     public override string GetInspectString()
@@ -83,5 +145,7 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         Scribe_Values.Look(ref settlementLabel, "livingWorld_settlementLabel", string.Empty);
         Scribe_Values.Look(ref materializedVersion, "livingWorld_materializedVersion", 0);
         Scribe_Values.Look(ref reconciled, "livingWorld_reconciled", false);
+        Scribe_Values.Look(ref activeMapSession, "livingWorld_activeMapSession", false);
+        Scribe_Values.Look(ref playerCaravanEntered, "livingWorld_playerCaravanEntered", false);
     }
 }
