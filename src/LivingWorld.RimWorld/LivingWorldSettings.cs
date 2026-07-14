@@ -42,6 +42,7 @@ public sealed class LivingWorldSettings : ModSettings
     public int mobilizationBigRaidThreshold = 12;
     public float mobilizationAtBaseRadius = 18f;
     public int mobilizationDeescalateRechecks = 2;
+    public float mobilizationDangerousAnimalBodySize = 2f;
 
     public LivingWorldSettings()
     {
@@ -86,6 +87,7 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref mobilizationBigRaidThreshold, "mobilizationBigRaidThreshold", 12);
         Scribe_Values.Look(ref mobilizationAtBaseRadius, "mobilizationAtBaseRadius", 18f);
         Scribe_Values.Look(ref mobilizationDeescalateRechecks, "mobilizationDeescalateRechecks", 2);
+        Scribe_Values.Look(ref mobilizationDangerousAnimalBodySize, "mobilizationDangerousAnimalBodySize", 2f);
 
         if (worldMapSpeedMultiplier != 3 && worldMapSpeedMultiplier != 5 && worldMapSpeedMultiplier != 10)
         {

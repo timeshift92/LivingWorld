@@ -313,4 +313,9 @@
   <LW_MobilizeTooltip>Отправить боеспособных колонистов к их манекену — экипироваться и в бой. Колония также мобилизуется сама, пока на карте опасность, и после отбоя возвращается к гражданской одежде.</LW_MobilizeTooltip>
   <LW_FighterToggle>Боец</LW_FighterToggle>
   <LW_FighterTooltip>Пометить колониста как бойца. Бойцы экипируются с манекена и воюют при мобилизации; остальные уходят в укрытие. Колонисты с боевым навыком — бойцы по умолчанию, переключи чтобы изменить.</LW_FighterTooltip>
+  <LW_MobilizedLetterLabel>Колония мобилизована</LW_MobilizedLetterLabel>
+  <LW_MobilizedLetterText>На карте опасность ({0}, врагов: {1}). Бойцы вооружаются и выдвигаются, небоевые уходят в укрытие. После отбоя колония вернётся к гражданской жизни.</LW_MobilizedLetterText>
+  <LW_StoodDownMessage>Угроза миновала — колония возвращается к работе.</LW_StoodDownMessage>
+  <LW_Settings_DangerousAnimalBodySize>Порог размера тела «опасного» зверя</LW_Settings_DangerousAnimalBodySize>
+  <LW_Settings_DangerousAnimalBodySizeTip>Одиночный дикий зверь с размером тела не меньше этого порога считается серьёзной угрозой (рейд), а не мелкой докукой. По умолчанию 2.0 — ловит слонов, трумбо, носорогов, медведей; мелочь (крысы, белки) остаётся докукой.</LW_Settings_DangerousAnimalBodySizeTip>
 </LanguageData>

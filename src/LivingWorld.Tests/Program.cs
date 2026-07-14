@@ -395,6 +395,8 @@ var tests = new List<(string Name, Action Test)>
     ("threat: no hostiles is None", TestThreatNone),
     ("threat: a small animal pack is Nuisance", TestThreatNuisanceAnimals),
     ("threat: a big animal pack escalates past Nuisance", TestThreatBigAnimalPackSerious),
+    ("threat: a lone dangerous beast (elephant) is Raid, not Nuisance", TestThreatDangerousAnimalRaid),
+    ("threat: a small critter pack stays Nuisance even flagged not-dangerous", TestThreatSmallCritterNuisance),
     ("threat: a normal humanlike raid is Raid", TestThreatRaid),
     ("threat: mechanoids are Serious", TestThreatMechSerious),
     ("threat: Anomaly entities are Serious", TestThreatEntitySerious),
@@ -10922,6 +10924,20 @@ static void TestThreatBigAnimalPackSerious()
 {
     var s = new ThreatSignals { AnyHostile = true, OnlyAnimals = true, HostileCount = 20, BigRaid = true };
     AssertEqual(ThreatTier.Serious, ThreatClassifier.Classify(s));
+}
+
+static void TestThreatDangerousAnimalRaid()
+{
+    // A single revenge-seeking megafauna (elephant/thrumbo) is a real fight, not a squirrel-tier nuisance.
+    var s = new ThreatSignals { AnyHostile = true, OnlyAnimals = true, AnyDangerousAnimal = true, HostileCount = 1 };
+    AssertEqual(ThreatTier.Raid, ThreatClassifier.Classify(s));
+}
+
+static void TestThreatSmallCritterNuisance()
+{
+    // Small critters (rats, squirrels) — not dangerous — stay a nuisance the fighters shrug off.
+    var s = new ThreatSignals { AnyHostile = true, OnlyAnimals = true, AnyDangerousAnimal = false, HostileCount = 4 };
+    AssertEqual(ThreatTier.Nuisance, ThreatClassifier.Classify(s));
 }
 
 static void TestThreatRaid()

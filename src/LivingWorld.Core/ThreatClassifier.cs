@@ -21,6 +21,10 @@ public readonly struct ThreatSignals
     /// <summary>Every hostile is a wild animal (manhunter pack).</summary>
     public bool OnlyAnimals { get; init; }
 
+    /// <summary>At least one hostile is a large/dangerous animal (big body size — elephant, thrumbo, rhino,
+    /// bear...). A single revenge-seeking megafauna is a real fight, not a squirrel-tier nuisance.</summary>
+    public bool AnyDangerousAnimal { get; init; }
+
     /// <summary>A mechanoid is present.</summary>
     public bool AnyMechanoid { get; init; }
 
@@ -62,10 +66,11 @@ public static class ThreatClassifier
             return ThreatTier.Serious;
         }
 
-        // A small wild-animal pack is a nuisance — fighters handle it, the colony keeps working.
+        // All-animal threat: a big dangerous beast (elephant/thrumbo/bear) is a proper Raid-tier fight; a
+        // small pack (squirrels, rats) is a nuisance the fighters shrug off while the colony keeps working.
         if (s.OnlyAnimals)
         {
-            return ThreatTier.Nuisance;
+            return s.AnyDangerousAnimal ? ThreatTier.Raid : ThreatTier.Nuisance;
         }
 
         // Otherwise a normal humanlike raid.

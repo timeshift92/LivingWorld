@@ -22,6 +22,7 @@ public sealed class MobilizationMapComponent : MapComponent
 
     private bool manualMobilized;
     private bool threatPresent;
+    private bool announcedThreat;
     private ThreatTier currentTier;
     private int belowCount;
     private ThreatSignals lastSignals;
@@ -78,8 +79,44 @@ public sealed class MobilizationMapComponent : MapComponent
             Log.Warning($"[LivingWorld] Mobilization threat check failed safely: {ex.Message}");
         }
 
+        AnnounceThreatEdge(settings);
+
         driver.Drive(map, IsMobilized, currentTier);
         shelterDriver.Drive(map, currentTier);
+    }
+
+    // Fire a one-shot alert on the rising/falling edge of an AUTOMATIC threat so the player notices the colony
+    // arming itself (a manual toggle stays silent — they initiated it). Rising edge = a letter (draws the eye,
+    // can pause); falling edge = a lightweight message. Edge-tracked via announcedThreat, which is persisted so
+    // a mid-raid reload does not re-announce.
+    private void AnnounceThreatEdge(LivingWorldSettings settings)
+    {
+        if (!settings.armoryMobilizationEnabled || !settings.autoMobilizeOnThreat)
+        {
+            announcedThreat = threatPresent;
+            return;
+        }
+
+        try
+        {
+            if (threatPresent && !announcedThreat)
+            {
+                Find.LetterStack?.ReceiveLetter(
+                    "LW_MobilizedLetterLabel".Translate(),
+                    "LW_MobilizedLetterText".Translate(currentTier.ToStringSafe(), lastSignals.HostileCount),
+                    LetterDefOf.ThreatSmall);
+            }
+            else if (!threatPresent && announcedThreat)
+            {
+                Messages.Message("LW_StoodDownMessage".Translate(), MessageTypeDefOf.NeutralEvent, false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Mobilization alert failed safely: {ex.Message}");
+        }
+
+        announcedThreat = threatPresent;
     }
 
     private ThreatSignals ComputeSignals(Map liveMap, LivingWorldSettings settings)
@@ -100,10 +137,13 @@ public sealed class MobilizationMapComponent : MapComponent
         var center = liveMap.Center;
         var atBaseRadius = settings.mobilizationAtBaseRadius;
 
+        var dangerBody = settings.mobilizationDangerousAnimalBodySize;
         return new ThreatSignals
         {
             AnyHostile = true,
             OnlyAnimals = hostiles.All(p => p.RaceProps?.Animal == true),
+            AnyDangerousAnimal = hostiles.Any(p => p.RaceProps?.Animal == true
+                                                   && (p.RaceProps?.baseBodySize ?? 0f) >= dangerBody),
             AnyMechanoid = hostiles.Any(p => p.RaceProps?.IsMechanoid == true),
             AnyEntity = hostiles.Any(p => p.IsEntity || p.IsMutant),
             AnyInsect = hostiles.Any(p => p.RaceProps?.Insect == true),
@@ -153,6 +193,7 @@ public sealed class MobilizationMapComponent : MapComponent
     {
         base.ExposeData();
         Scribe_Values.Look(ref manualMobilized, "livingWorld_manualMobilized", false);
+        Scribe_Values.Look(ref announcedThreat, "livingWorld_announcedThreat", false);
 
         if (Scribe.mode == LoadSaveMode.Saving)
         {

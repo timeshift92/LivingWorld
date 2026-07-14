@@ -313,4 +313,9 @@
   <LW_MobilizeTooltip>Send combat-capable colonists to their outfit stand to gear up and fight. The colony also mobilizes automatically while the map is in danger, and stands down to civilian clothes afterwards.</LW_MobilizeTooltip>
   <LW_FighterToggle>Fighter</LW_FighterToggle>
   <LW_FighterTooltip>Mark this colonist as a fighter. Fighters arm up from their outfit stand and fight when the colony mobilizes; everyone else takes shelter. Combat-skilled colonists are fighters by default — toggle to override.</LW_FighterTooltip>
+  <LW_MobilizedLetterLabel>Colony mobilized</LW_MobilizedLetterLabel>
+  <LW_MobilizedLetterText>Danger on the map ({0}, hostiles: {1}). Fighters are arming and moving out, non-combatants are taking shelter. The colony returns to civilian life once the threat passes.</LW_MobilizedLetterText>
+  <LW_StoodDownMessage>Threat has passed — the colony is standing down.</LW_StoodDownMessage>
+  <LW_Settings_DangerousAnimalBodySize>Dangerous-animal body-size threshold</LW_Settings_DangerousAnimalBodySize>
+  <LW_Settings_DangerousAnimalBodySizeTip>A lone wild beast whose body size is at least this threshold counts as a serious threat (a raid) rather than a nuisance. Default 2.0 — catches elephants, thrumbos, rhinos, bears; small critters (rats, squirrels) stay a nuisance.</LW_Settings_DangerousAnimalBodySizeTip>
 </LanguageData>
