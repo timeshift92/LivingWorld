@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using HarmonyLib;
 using LivingWorld.Core;
 using RimWorld;
@@ -41,6 +42,21 @@ public static class LivingWorldRaidIncidentPatch
             return;
         }
 
+        var ownsFactionPopulation = component.State.Settlements.Any(settlement =>
+            settlement.IsActive
+            && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal));
+        if (ownsFactionPopulation
+            && (LivingWorldSettings.Instance ?? new LivingWorldSettings()).travelingRaidsEnabled
+            && !ApproachingRaidRuntime.FiringArrival)
+        {
+            // The vanilla incident has now resolved its real human faction. Convert it to the same
+            // prepared, visible travel path as LivingWorld_FactionRaid. Returning false only aborts
+            // vanilla's immediate pawn spawn; the committed pending raid remains in the world.
+            component.TryLaunchApproachingRaid(parms, parms.faction);
+            __result = false;
+            return;
+        }
+
         RaidPopulationAllocationResult reservation;
         try
         {
@@ -59,8 +75,7 @@ public static class LivingWorldRaidIncidentPatch
             return;
         }
 
-        // Living World never cancels the raid. If it cannot supply combatants it steps aside and
-        // lets vanilla generate the raid unchanged (__result stays true).
+        // Immediate mode is retained only when the user explicitly disables travelling raids.
         if (reservation.Status != RaidPopulationAllocationStatus.Success
             || reservation.Army == null
             || reservation.ReservedCombatants <= 0)

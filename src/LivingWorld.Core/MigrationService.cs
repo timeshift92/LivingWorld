@@ -135,7 +135,8 @@ public static class MigrationService
         {
             var group = arrival.Group;
             var target = arrival.Target;
-            if (target == null)
+            if (target?.IsActive != true
+                || !string.Equals(target.FactionId, group.FactionId, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -174,6 +175,7 @@ public static class MigrationService
         return state.Settlements
             .Where(settlement =>
                 settlement.Id != source.Id
+                && settlement.IsActive
                 && string.Equals(settlement.FactionId, source.FactionId, StringComparison.Ordinal)
                 && !state.GetSettlementFoodStatus(settlement.Id, request.FoodResourceKey, request.FoodPerCitizen).IsShortage)
             .OrderByDescending(settlement => state.GetSettlementFoodStatus(settlement.Id, request.FoodResourceKey, request.FoodPerCitizen).FoodDays)

@@ -23,7 +23,8 @@ public sealed record BattleOutcome(
 public enum BattleResolutionStatus
 {
     Resolved,
-    BlockedPlayerSettlement
+    BlockedPlayerSettlement,
+    CancelledInvalidTarget
 }
 
 public sealed record BattleResolutionResult(BattleResolutionStatus Status, BattleOutcome? Outcome);
@@ -47,7 +48,7 @@ public static class WorldBattleService
     public static BattleOutcome Resolve(WorldState state, EntityId armyId)
     {
         var result = TryResolve(state, armyId);
-        if (result.Status == BattleResolutionStatus.BlockedPlayerSettlement)
+        if (result.Status != BattleResolutionStatus.Resolved)
         {
             throw new InvalidOperationException("Battle against player faction settlement requires active-map materialization.");
         }
@@ -84,6 +85,19 @@ public static class WorldBattleService
             TransferSurvivingAttackers(state, blockedAttackers, army.Id, army.SourceSettlementId);
             state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
             return new BattleResolutionResult(BattleResolutionStatus.BlockedPlayerSettlement, null);
+        }
+
+        if (!targetSettlement.IsActive
+            || string.Equals(army.FactionId, targetSettlement.FactionId, StringComparison.Ordinal)
+            || (!string.IsNullOrWhiteSpace(movement.ExpectedTargetFactionId)
+                && !string.Equals(targetSettlement.FactionId, movement.ExpectedTargetFactionId, StringComparison.Ordinal))
+            || DiplomacyService.GetStance(state, army.FactionId, targetSettlement.FactionId) == RelationStance.Ally
+            || ConflictService.IsTruceActive(state, army.FactionId, targetSettlement.FactionId, state.CurrentTick)
+            || (movement.RequiresHostileRelation
+                && DiplomacyService.GetStance(state, army.FactionId, targetSettlement.FactionId) != RelationStance.Hostile))
+        {
+            ArmyMovementService.RecallArmy(state, armyId, "battle cancelled because target ownership or relations changed");
+            return new BattleResolutionResult(BattleResolutionStatus.CancelledInvalidTarget, null);
         }
 
         var attackers = Combatants(state, armyId);

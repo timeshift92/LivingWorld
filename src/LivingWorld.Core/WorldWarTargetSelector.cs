@@ -34,6 +34,7 @@ public static class WorldWarTargetSelector
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Hostile)
+            .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
             .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
             .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("trade", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
@@ -78,6 +79,7 @@ public static class WorldWarTargetSelector
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(factionId))
+            .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
             .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
             .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("diplomacy-faction", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
@@ -95,6 +97,7 @@ public static class WorldWarTargetSelector
         return state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, targetFactionId, StringComparison.Ordinal))
+            .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
             .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
             .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("diplomacy-settlement", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)

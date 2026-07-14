@@ -62,20 +62,8 @@ public static class RaidIntentService
             return true;
         }
 
-        if (request.Hostility is FactionHostility.Hostile or FactionHostility.Irreconcilable)
-        {
-            intent = new RaidIntent(
-                request.FactionId,
-                RaidIntentReason.GenericHostility,
-                null,
-                1,
-                1,
-                state.CurrentTick,
-                state.CurrentTick + RaidIntelService.DefaultTradeIntelLifetimeTicks,
-                "Generic hostility raid intent.");
-            return true;
-        }
-
+        // Hostility alone is not knowledge. A faction must first learn about the player through a
+        // scout, trader, captured traveller, or another explicit intel source.
         intent = null;
         return false;
     }

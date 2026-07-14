@@ -123,22 +123,68 @@ public static class RaidPreparationService
 
         foreach (var preparation in expired)
         {
-            var availableSupplies = state.GetOwnedResourceQuantity(preparation.ArmyId, preparation.SupplyResourceKey);
-            var suppliesToReturn = Math.Min(preparation.ReservedSupplies, availableSupplies);
-            if (suppliesToReturn > 0)
-            {
-                state.TransferResource(
-                    preparation.ArmyId,
-                    preparation.SourceSettlementId,
-                    preparation.SupplyResourceKey,
-                    suppliesToReturn,
-                    "expired raid preparation released");
-            }
-
-            RaidReconciliationService.ReleaseUndeployedReserves(state, preparation.ArmyId);
-            state.ReleaseRaidPreparation(preparation.Id);
+            ReleasePreparation(state, preparation.Id, "expired raid preparation released");
         }
 
         return expired.Count;
+    }
+
+    public static RaidPreparation ReleasePreparation(WorldState state, EntityId preparationId, string reason)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var preparation = state.GetRaidPreparation(preparationId)
+            ?? throw new InvalidOperationException($"Raid preparation {preparationId} does not exist.");
+        if (preparation.Status != RaidPreparationStatus.Ready)
+        {
+            return preparation;
+        }
+
+        var availableSupplies = state.GetOwnedResourceQuantity(preparation.ArmyId, preparation.SupplyResourceKey);
+        var suppliesToReturn = Math.Min(preparation.ReservedSupplies, availableSupplies);
+        if (suppliesToReturn > 0)
+        {
+            state.TransferResource(
+                preparation.ArmyId,
+                preparation.SourceSettlementId,
+                preparation.SupplyResourceKey,
+                suppliesToReturn,
+                reason);
+        }
+
+        RaidReconciliationService.ReleaseUndeployedReserves(state, preparation.ArmyId);
+        return state.ReleaseRaidPreparation(preparation.Id);
+    }
+
+    public static RaidPreparation LaunchPreparedRaid(WorldState state, EntityId preparationId)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var preparation = state.GetRaidPreparation(preparationId)
+            ?? throw new InvalidOperationException($"Raid preparation {preparationId} does not exist.");
+        if (preparation.Status != RaidPreparationStatus.Ready)
+        {
+            return preparation;
+        }
+
+        var supplies = Math.Min(
+            preparation.ReservedSupplies,
+            state.GetOwnedResourceQuantity(preparation.ArmyId, preparation.SupplyResourceKey));
+        if (supplies > 0)
+        {
+            state.ConsumeResource(
+                preparation.ArmyId,
+                preparation.SupplyResourceKey,
+                supplies,
+                "raid travel supplies consumed");
+        }
+
+        return state.LaunchRaidPreparation(preparation.Id);
     }
 }

@@ -77,6 +77,7 @@ var tests = new List<(string Name, Action Test)>
     ("records faction knowledge from trade intel without exact values", TestFactionKnowledgeRecordsTradeIntelAboutPlayer),
     ("queries active faction raid intel facts", TestFactionKnowledgeServiceListsActiveRaidIntelFacts),
     ("expired raid intel does not create new raid intent", TestRaidIntelExpiresAndStopsCreatingNewIntent),
+    ("hostility without player intel does not create a raid intent", TestHostilityWithoutIntelDoesNotCreateRaidIntent),
     ("raid preparation reserves real citizens and supplies", TestRaidPreparationReservesRealCitizensAndSupplies),
     ("raid preparation fails without leaking citizens when supplies are insufficient", TestRaidPreparationFailsWithoutLeakingCitizensWhenSuppliesInsufficient),
     ("stale raid preparation returns reserved citizens and supplies", TestStaleRaidPreparationReturnsReservedCitizensAndResources),
@@ -164,6 +165,8 @@ var tests = new List<(string Name, Action Test)>
     ("maps faction behavior archetypes to profiles", TestFactionBehaviorProfiles),
     ("excludes passive faction behaviors from world war", TestFactionBehaviorNonParticipants),
     ("army arrives at its target when the eta passes", TestArmyMovementArrivesOnEta),
+    ("army recalls its exact people and cargo when target ownership changes", TestArmyRecallsWhenTargetOwnershipChanges),
+    ("army recalls when diplomacy makes its target an ally", TestArmyRecallsWhenTargetBecomesAlly),
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
     ("prunes old resolved army movements without losing history", TestArmyMovementPrunesOldResolvedMovements),
     ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
@@ -2647,7 +2650,7 @@ static void TestLaunchedRaidPreparationIsNotExpiredAsStale()
         state,
         new RaidPreparationRequest(intent!, "PackagedSurvivalMeal", 1, 10));
 
-    var launched = state.LaunchRaidPreparation(preparation.Id);
+    var launched = RaidPreparationService.LaunchPreparedRaid(state, preparation.Id);
     state.AdvanceToTick(preparation.ExpiresTick + 1);
     var released = RaidPreparationService.ReleaseExpiredPreparations(state, state.CurrentTick);
 
@@ -2655,7 +2658,7 @@ static void TestLaunchedRaidPreparationIsNotExpiredAsStale()
     AssertEqual(0, released);
     AssertEqual(RaidPreparationStatus.Launched, state.GetRaidPreparation(preparation.Id)!.Status);
     AssertEqual(2, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == preparation.ArmyId));
-    AssertEqual(2, state.GetOwnedResourceQuantity(preparation.ArmyId, "PackagedSurvivalMeal"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(preparation.ArmyId, "PackagedSurvivalMeal"));
 }
 
 static void TestRaidPreparationTerminalLifecycleCannotBeReversed()
@@ -5561,6 +5564,7 @@ static void TestFactionActionPlansCarryConcreteTrafficTargets()
         }
 
         state.AddResource(merchantHome.Id, "Steel", 40);
+        state.RecordFactionSettlementIntel("Merchants", target.Id, IntelSourceKind.Scout, 0, 70);
         state.AssignFactionBehavior("Merchants", FactionBehavior.Merchant);
         var caravan = FactionActionPlanner.Plan(state, "Merchants", 60_000);
         AssertEqual(WarAction.Caravan, caravan.Action);
@@ -5577,6 +5581,7 @@ static void TestFactionActionPlansCarryConcreteTrafficTargets()
         }
 
         state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
+        state.RecordFactionSettlementIntel("Envoys", target.Id, IntelSourceKind.Scout, 0, 70);
         var diplomat = FactionActionPlanner.Plan(state, "Envoys", 4 * 60_000);
         AssertEqual(WarAction.Diplomat, diplomat.Action);
         AssertEqual(target.Id, diplomat.TargetSettlementId);
@@ -5791,6 +5796,7 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
     }
 
     state.AddResource(market.Id, "Steel", 40);
+    state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
 
@@ -5819,6 +5825,7 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
     }
 
     state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
+    state.RecordFactionSettlementIntel("Envoys", village.Id, IntelSourceKind.Scout, 180_000, 70);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
     WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
     AssertEqual(null, state.GetKnownSettlementInfo(scoutMission.TargetSettlementId));
@@ -6566,6 +6573,60 @@ static void TestSettlerExpeditionSurvivesSaveLoadBeforeFounding()
     AssertEqual(0, restored.Validate().Count());
 }
 
+static void TestArmyRecallsWhenTargetOwnershipChanges()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    var raider = state.CreateCitizen("Raider", 30, Sex.Male, "raider", source.Id);
+    state.AddResource(source.Id, "PackagedSurvivalMeal", 5);
+    var army = state.CreateArmy("Raiders", "Pirates", source.Id);
+    state.TransferAsset(raider.Id, source.Id, army.Id, "army mobilized");
+    state.TransferResource(source.Id, army.Id, "PackagedSurvivalMeal", 5, "army supplied");
+    state.DispatchArmy(army.Id, target.Id, arrivalTick: 5 * 60_000);
+
+    state.CaptureSettlement(target.Id, "ThirdFaction");
+    var result = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(2 * 60_000));
+
+    AssertEqual(1, result.Recalled);
+    AssertEqual(ArmyMovementStatus.Recalled, state.GetArmyMovement(army.Id)!.Status);
+    AssertEqual(source.Id, state.GetOwner(raider.Id));
+    AssertEqual(5, state.GetOwnedResourceQuantity(source.Id, "PackagedSurvivalMeal"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(army.Id, "PackagedSurvivalMeal"));
+}
+
+static void TestArmyRecallsWhenTargetBecomesAlly()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    var raider = state.CreateCitizen("Raider", 30, Sex.Male, "raider", source.Id);
+    var army = state.CreateArmy("Raiders", "Pirates", source.Id);
+    state.TransferAsset(raider.Id, source.Id, army.Id, "army mobilized");
+    state.DispatchArmy(army.Id, target.Id, arrivalTick: 5 * 60_000);
+
+    DiplomacyService.AdjustGoodwill(state, "Pirates", "Outlanders", 100);
+    var result = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(2 * 60_000));
+
+    AssertEqual(1, result.Recalled);
+    AssertEqual(ArmyMovementStatus.Recalled, state.GetArmyMovement(army.Id)!.Status);
+    AssertEqual(source.Id, state.GetOwner(raider.Id));
+}
+
+static void TestHostilityWithoutIntelDoesNotCreateRaidIntent()
+{
+    var state = new WorldState(12345);
+    state.AdvanceToTick(60_000);
+
+    var created = RaidIntentService.TryCreateBestIntent(
+        state,
+        new RaidIntentRequest("Pirate", FactionHostility.Irreconcilable),
+        out var intent);
+
+    AssertEqual(false, created);
+    AssertEqual(null, intent);
+}
+
 static void TestPhysicalSettlerExpeditionWaitsForBoundWorldTile()
 {
     var state = new WorldState(4242);
@@ -6619,6 +6680,7 @@ static void TestWorldWarCaravanTransfersRealGoods()
 
     state.AddResource(market.Id, "Steel", 40);
     var village = state.CreateSettlement("village", "Village", "Settlers");
+    state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
 
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
@@ -6650,6 +6712,7 @@ static void TestWorldWarCaravanReservesAndReturnsRealCrew()
 
     state.AddResource(market.Id, "Steel", 40);
     var village = state.CreateSettlement("village", "Village", "Settlers");
+    state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
 
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
@@ -6675,9 +6738,11 @@ static void TestWorldWarTargetSelectorSkipsInactiveSettlements()
     var source = state.CreateSettlement("source", "Source", "Traders");
     var inactive = state.CreateSettlement("inactive", "Inactive", "Visitors");
     var active = state.CreateSettlement("active", "Active", "Visitors");
+    var unknown = state.CreateSettlement("unknown", "Unknown", "Explorers");
     state.CreateCitizen("Trader", 30, Sex.Female, "merchant", source.Id);
     state.AddResource(source.Id, "Steel", 40);
     SettlementLifecycleService.DestroySettlement(state, inactive.Id, 0, "test");
+    state.RecordFactionSettlementIntel("Traders", active.Id, IntelSourceKind.Scout, 0, 70);
 
     var tradeTarget = WorldWarTargetSelector.FindTradeTarget(state, "Traders");
     var scoutTarget = WorldWarTargetSelector.FindScoutingTarget(state, "Traders");
@@ -6685,7 +6750,7 @@ static void TestWorldWarTargetSelectorSkipsInactiveSettlements()
     var diplomacySettlement = WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, "Traders", "Visitors");
 
     AssertEqual(active.Id, tradeTarget!.Id);
-    AssertEqual(active.Id, scoutTarget!.Id);
+    AssertEqual(unknown.Id, scoutTarget!.Id);
     AssertEqual("Visitors", diplomacyFaction);
     AssertEqual(active.Id, diplomacySettlement!.Id);
 }
@@ -7245,7 +7310,8 @@ static void TestWorldWarDiplomatChangesGoodwill()
         state.CreateCitizen("Envoy " + i, 30, Sex.Female, "diplomat", envoys.Id);
     }
 
-    state.CreateSettlement("neighbor", "Neighbor", "Neighbors");
+    var neighbor = state.CreateSettlement("neighbor", "Neighbor", "Neighbors");
+    state.RecordFactionSettlementIntel("Envoys", neighbor.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
 
     // Day 1: the diplomatic mission is dispatched and travels — goodwill unchanged in transit.
@@ -7286,6 +7352,7 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     }
 
     state.AddResource(market.Id, "Steel", 40);
+    state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
     var caravanTargetId = state.Caravans.Single().TargetSettlementId;
@@ -7296,7 +7363,9 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     var scoutTargetId = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Scout).TargetSettlementId;
 
     state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
+    state.RecordFactionSettlementIntel("Envoys", village.Id, IntelSourceKind.Scout, 180_000, 70);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
+    state.RecordFactionSettlementIntel("Envoys", village.Id, IntelSourceKind.Scout, 0, 70);
     WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
     var diplomatTargetFactionId = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat).TargetFactionId;
 
@@ -7512,13 +7581,14 @@ static void TestRimWorldDailyTickRunsCropAndTechnologyDrivers()
 static void TestRimWorldRaidRoutesThroughPreparation()
 {
     var worker = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldFactionRaid.cs"));
-    // The raid now asks Core for a prepared expedition (intent -> preparation) instead of reserving
-    // citizens ad-hoc; intel scales the size but the storyteller's points set the floor.
-    AssertContains("RaidIntentService.TryCreateBestIntent", worker);
-    AssertContains("RaidPreparationService.PrepareRaid", worker);
+    var component = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    // Departure creates the intent and preparation; arrival consumes that exact persisted force.
+    AssertContains("RaidIntentService.TryCreateBestIntent", component);
+    AssertContains("RaidPreparationService.PrepareRaid", component);
+    AssertContains("ApproachingRaidRuntime.ArrivingRaid", worker);
     AssertContains("preparation.ArmyId", worker);
-    AssertContains("LaunchRaidPreparation", worker);
-    AssertContains("Math.Max(storytellerCombatants", worker);
+    AssertContains("LaunchPreparedRaid", worker);
+    AssertContains("Math.Max(storytellerCombatants", component);
     // Economy bridge: raid points scale with the faction's ledger wealth.
     AssertContains("FactionRaidStrengthService.WealthRaidMultiplier", worker);
     // No more ad-hoc reservation in the incident itself.
@@ -8727,8 +8797,9 @@ static void TestRimWorldRaidIncidentPatch()
     AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", source);
     AssertDoesNotContain("VanillaRaidInterceptor.TryIntercept", source);
     AssertContains("ref bool __result", source);
-    // Living World must never cancel a vanilla raid: it only intercepts or steps aside.
-    AssertDoesNotContain("__result = false", source);
+    // Ledger-owned human raids are deferred to physical travel rather than spawning immediately.
+    AssertContains("component.TryLaunchApproachingRaid", source);
+    AssertContains("__result = false", source);
     AssertContains("parms.faction", source);
     AssertContains("parms.points", source);
     AssertContains("PointsPerCombatant", source);
@@ -10781,12 +10852,12 @@ static void TestRimWorldFactionRaidWorker()
     var source = File.ReadAllText(path);
 
     AssertContains("class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidEnemy", source);
-    // Routes through Core's intel-driven prepared expedition (see TestRimWorldRaidRoutesThroughPreparation).
-    AssertContains("RaidPreparationService.PrepareRaid", source);
+    // Consumes the exact preparation committed by the world component at departure.
+    AssertContains("ApproachingRaidRuntime.ArrivingRaid", source);
+    AssertContains("GetRaidPreparation", source);
     AssertContains("LivingWorldRaidBindingRuntime.TryAddReservation", source);
     AssertContains("base.TryExecuteWorker(parms)", source);
     AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", source);
-    AssertContains("EstimateRequestedCombatants", source);
     AssertContains("humanlikeFaction", source);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_RaidEnemy", "TryExecuteWorker");
 }
@@ -11264,9 +11335,9 @@ static void TestRimWorldTravelingRaids()
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
     AssertContains("public bool TryLaunchApproachingRaid(IncidentParms parms, Faction faction)", component);
     AssertContains("ProcessApproachingRaidArrivals(", component);
-    AssertContains("private void FireArrivedRaid(", component);
+    AssertContains("private RaidArrivalResult FireArrivedRaid(", component);
     AssertContains("SyncApproachingRaidMarkers()", component);
-    AssertContains("NearestFactionSettlementTile(", component);
+    AssertContains("SettlementSlug.ParseTile(source?.Slug)", component);
     AssertContains("ApproachingRaidRuntime.FiringArrival = true", component);
     AssertContains("def.Worker.TryExecute(parms)", component);
     // In-flight raids persist across save/load.
@@ -11274,8 +11345,8 @@ static void TestRimWorldTravelingRaids()
     // The travelling raid honours its own settings toggle.
     AssertContains("settings.travelingRaidsEnabled", component);
 
-    // Fail-open: launching a travelling raid never throws out of the incident path.
-    AssertContains("firing raid immediately", component);
+    // Fail-safe: launch errors roll back the committed preparation instead of spawning from air.
+    AssertContains("approaching raid launch rolled back", component);
 
     // Settings toggle wired and drawn.
     var settings = File.ReadAllText(

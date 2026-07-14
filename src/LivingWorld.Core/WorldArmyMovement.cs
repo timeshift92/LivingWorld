@@ -27,4 +27,8 @@ public sealed record WorldArmyMovement(
     ArmyMovementStatus Status)
 {
     public int StatusTick { get; init; } = DepartTick;
+
+    public string ExpectedTargetFactionId { get; init; } = string.Empty;
+
+    public bool RequiresHostileRelation { get; init; }
 }

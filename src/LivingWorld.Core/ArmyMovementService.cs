@@ -41,9 +41,9 @@ public static class ArmyMovementService
                 state.SetArmyMovementStatus(movement.ArmyId, ArmyMovementStatus.Disbanded);
                 disbanded++;
             }
-            else if (state.GetSettlement(movement.TargetSettlementId) == null)
+            else if (!IsStillValidTarget(state, movement))
             {
-                state.SetArmyMovementStatus(movement.ArmyId, ArmyMovementStatus.Recalled);
+                RecallArmy(state, movement.ArmyId, "army target or diplomatic precondition changed");
                 recalled++;
             }
             else if (request.Tick >= movement.ArrivalTick)
@@ -54,5 +54,65 @@ public static class ArmyMovementService
         }
 
         return new ArmyMovementResult(arrived, recalled, disbanded);
+    }
+
+    public static void RecallArmy(WorldState state, EntityId armyId, string reason)
+    {
+        var army = state.GetArmy(armyId);
+        if (army == null)
+        {
+            return;
+        }
+
+        var destination = state.GetSettlement(army.SourceSettlementId);
+        if (destination?.IsActive != true
+            || !string.Equals(destination.FactionId, army.FactionId, StringComparison.Ordinal))
+        {
+            destination = state.Settlements
+                .Where(settlement => settlement.IsActive)
+                .Where(settlement => string.Equals(settlement.FactionId, army.FactionId, StringComparison.Ordinal))
+                .OrderBy(settlement => settlement.Id.Value)
+                .FirstOrDefault();
+        }
+
+        if (destination != null)
+        {
+            foreach (var citizen in state.GetCitizensOwnedBy(armyId).ToList())
+            {
+                state.TransferAsset(citizen.Id, armyId, destination.Id, reason);
+            }
+
+            foreach (var resource in state.ResourcesForOwner(armyId).ToList())
+            {
+                var transfer = state.TransferResource(
+                    armyId,
+                    destination.Id,
+                    resource.ResourceKey,
+                    resource.Quantity,
+                    reason);
+                if (transfer.Status != OwnershipTransferStatus.Success)
+                {
+                    throw new InvalidOperationException(transfer.Reason);
+                }
+            }
+        }
+
+        state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Recalled);
+    }
+
+    private static bool IsStillValidTarget(WorldState state, WorldArmyMovement movement)
+    {
+        var army = state.GetArmy(movement.ArmyId);
+        var target = state.GetSettlement(movement.TargetSettlementId);
+        return army != null
+            && target?.IsActive == true
+            && !string.Equals(army.FactionId, target.FactionId, StringComparison.Ordinal)
+            && !state.IsPlayerFaction(target.FactionId)
+            && (string.IsNullOrWhiteSpace(movement.ExpectedTargetFactionId)
+                || string.Equals(target.FactionId, movement.ExpectedTargetFactionId, StringComparison.Ordinal))
+            && DiplomacyService.GetStance(state, army.FactionId, target.FactionId) != RelationStance.Ally
+            && !ConflictService.IsTruceActive(state, army.FactionId, target.FactionId, state.CurrentTick)
+            && (!movement.RequiresHostileRelation
+                || DiplomacyService.GetStance(state, army.FactionId, target.FactionId) == RelationStance.Hostile);
     }
 }

@@ -12,6 +12,9 @@ namespace LivingWorld.RimWorld;
 /// </summary>
 public sealed class PendingApproachingRaid : IExposable
 {
+    public long PreparationId;
+    public long ArmyId;
+    public long SourceSettlementId;
     public string FactionDefName = string.Empty;
     public float Points;
     public int TargetTile = -1;
@@ -20,9 +23,14 @@ public sealed class PendingApproachingRaid : IExposable
     public int ArrivalTick;
     public string MarkerKey = string.Empty;
     public string TargetLabel = string.Empty;
+    public int Attempts;
+    public int NextAttemptTick;
 
     public void ExposeData()
     {
+        Scribe_Values.Look(ref PreparationId, "preparationId", 0L);
+        Scribe_Values.Look(ref ArmyId, "armyId", 0L);
+        Scribe_Values.Look(ref SourceSettlementId, "sourceSettlementId", 0L);
         Scribe_Values.Look(ref FactionDefName, "factionDefName", string.Empty);
         Scribe_Values.Look(ref Points, "points", 0f);
         Scribe_Values.Look(ref TargetTile, "targetTile", -1);
@@ -31,6 +39,8 @@ public sealed class PendingApproachingRaid : IExposable
         Scribe_Values.Look(ref ArrivalTick, "arrivalTick", 0);
         Scribe_Values.Look(ref MarkerKey, "markerKey", string.Empty);
         Scribe_Values.Look(ref TargetLabel, "targetLabel", string.Empty);
+        Scribe_Values.Look(ref Attempts, "attempts", 0);
+        Scribe_Values.Look(ref NextAttemptTick, "nextAttemptTick", 0);
     }
 }
 
@@ -53,6 +63,8 @@ public static class ApproachingRaidRuntime
     /// this to skip the "turn into a travelling warband" branch and run the normal spawn path.
     /// </summary>
     public static bool FiringArrival;
+
+    public static PendingApproachingRaid? ArrivingRaid;
 
     public static int TravelTicksFor(float distanceTiles)
     {

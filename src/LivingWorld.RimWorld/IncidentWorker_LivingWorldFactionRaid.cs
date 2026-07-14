@@ -65,31 +65,21 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
             return false;
         }
 
-        // Ask Core for a prepared expedition instead of reserving ad-hoc: intel the faction holds
-        // about the player (from trade/scouting) drives a plunder intent, otherwise generic
-        // hostility. The storyteller's points set the floor; believable intel can scale the raid up.
-        var storytellerCombatants = EstimateRequestedCombatants(parms.points);
-        if (!RaidIntentService.TryCreateBestIntent(
-                component.State,
-                new RaidIntentRequest(faction.def.defName, FactionHostility.Hostile),
-                out var intent)
-            || intent == null)
+        var arrival = ApproachingRaidRuntime.ArrivingRaid;
+        if (arrival == null)
         {
+            // Ledger-backed raids are never spawned immediately. If the departure could not reserve
+            // a physical force and supplies, the incident is rejected instead of generating pawns.
             return false;
         }
 
-        var scaledIntent = intent with { DesiredCombatants = Math.Max(storytellerCombatants, intent.DesiredCombatants) };
-
-        RaidPreparation preparation;
-        try
+        var preparationId = EntityId.Create(EntityKind.RaidPreparation, arrival.PreparationId);
+        var preparation = component.State.GetRaidPreparation(preparationId);
+        if (preparation == null
+            || preparation.Status != RaidPreparationStatus.Ready
+            || preparation.ArmyId.Value != arrival.ArmyId
+            || !string.Equals(preparation.FactionId, faction.def.defName, StringComparison.Ordinal))
         {
-            preparation = RaidPreparationService.PrepareRaid(
-                component.State,
-                new RaidPreparationRequest(scaledIntent, "Silver", 0, RaidIntelService.DefaultTradeIntelLifetimeTicks));
-        }
-        catch (InvalidOperationException)
-        {
-            // Could not reserve real citizens (no eligible adults) — no raid.
             return false;
         }
 
@@ -124,14 +114,10 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
                 Log.Warning($"[LivingWorld] Prepared raid failed after reserving {preparation.ReservedCombatants} citizens; releasing undeployed reserves.");
             }
 
-            RaidReconciliationService.ReleaseUndeployedReserves(component.State, preparation.ArmyId);
             if (executed)
             {
-                component.State.LaunchRaidPreparation(preparation.Id);
-            }
-            else
-            {
-                component.State.ReleaseRaidPreparation(preparation.Id);
+                RaidReconciliationService.ReleaseUndeployedReserves(component.State, preparation.ArmyId);
+                RaidPreparationService.LaunchPreparedRaid(component.State, preparation.Id);
             }
         }
     }

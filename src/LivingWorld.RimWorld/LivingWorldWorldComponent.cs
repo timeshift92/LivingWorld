@@ -45,6 +45,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> offeredAllianceConflictIds = new();
     private List<PendingApproachingRaid> approachingRaids = new();
     private int nextApproachRaidId;
+    private List<PendingPlayerReconnaissance> playerReconnaissance = new();
+    private int nextPlayerReconnaissanceId;
     private List<MechClusterNode> mechClusters = new();
     private int nextMechClusterId;
     private List<int> mechClusterSiteNodeIds = new();
@@ -168,6 +170,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncArmyWorldObjects();
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
+        SyncPlayerReconnaissanceMarkers();
         EnsureMechClusterSites();
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
@@ -193,6 +196,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Materialize any travelling raids that have reached the colony — every tick, ahead of the
         // daily-simulation gate below, so arrival lands on time rather than on the next day rollover.
         ProcessApproachingRaidArrivals(Find.TickManager?.TicksGame ?? 0);
+        ProcessPlayerReconnaissanceArrivals(Find.TickManager?.TicksGame ?? 0);
         ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
@@ -730,6 +734,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 });
         }
 
+        LaunchPlayerReconnaissance(day * TicksPerDay);
+
         // Faction extinction, then its physical consequences: collapsed non-player settlements
         // become ruins, starving non-player settlements relocate to a stable sibling, and stale
         // ruins are pruned. ResolveFactionCollapses folds the collapse pass into the driver (same
@@ -1119,13 +1125,13 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             && (id = EntityId.Create(kind, value)).Value > 0;
     }
 
-    // Called by IncidentWorker_LivingWorldFactionRaid when the storyteller fires a faction raid. Turns
-    // the raid into a warband marching from the faction's nearest settlement to the colony tile, shown
-    // as a world-map marker, and defers the actual raid until it arrives. Returns false (so the raid
-    // fires immediately, unchanged) when travelling raids are off, there is no map target, or the
-    // faction has no settlement to march from — a raid is never cancelled.
+    // Called by IncidentWorker_LivingWorldFactionRaid when the storyteller fires a faction raid.
+    // Departure is committed before the marker appears: Core reserves exact citizens and meals from
+    // one physical source settlement, and the persisted pending record names that preparation/army.
     public bool TryLaunchApproachingRaid(IncidentParms parms, Faction faction)
     {
+        RaidPreparation? committedPreparation = null;
+        var queued = false;
         try
         {
             var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
@@ -1145,19 +1151,59 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 return false;
             }
 
-            int targetTile = map.Tile;
-            var originTile = NearestFactionSettlementTile(faction!, targetTile);
-            if (originTile < 0)
+            var now = Find.TickManager?.TicksGame ?? 0;
+            State.AdvanceToTick(now);
+            var storytellerCombatants = Math.Max(1, (int)Math.Ceiling(Math.Max(1f, parms.points) / 100f));
+            if (!RaidIntentService.TryCreateBestIntent(
+                    State,
+                    new RaidIntentRequest(factionId!, FactionHostility.Hostile),
+                    out var intent)
+                || intent == null)
             {
                 return false;
             }
 
+            var scaledIntent = intent with
+            {
+                DesiredCombatants = Math.Max(storytellerCombatants, intent.DesiredCombatants),
+            };
+            RaidPreparation preparation;
+            try
+            {
+                preparation = RaidPreparationService.PrepareRaid(
+                    State,
+                    new RaidPreparationRequest(
+                        scaledIntent,
+                        FoodResourceKey,
+                        SupplyPerCombatant: 3,
+                        LifetimeTicks: 3 * TicksPerDay));
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            committedPreparation = preparation;
+
+            var source = State.GetSettlement(preparation.SourceSettlementId);
+            var originTile = SettlementSlug.ParseTile(source?.Slug);
+            if (originTile < 0)
+            {
+                RaidPreparationService.ReleasePreparation(
+                    State,
+                    preparation.Id,
+                    "raid departure cancelled because its source has no physical tile");
+                return false;
+            }
+
+            int targetTile = map.Tile;
             var distance = Find.WorldGrid?.ApproxDistanceInTiles(originTile, targetTile) ?? 0f;
             var travelTicks = ApproachingRaidRuntime.TravelTicksFor(distance);
-            var now = Find.TickManager?.TicksGame ?? 0;
 
             var pending = new PendingApproachingRaid
             {
+                PreparationId = preparation.Id.Value,
+                ArmyId = preparation.ArmyId.Value,
+                SourceSettlementId = preparation.SourceSettlementId.Value,
                 FactionDefName = factionId!,
                 Points = parms.points,
                 TargetTile = targetTile,
@@ -1166,8 +1212,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 ArrivalTick = now + travelTicks,
                 MarkerKey = $"{ApproachingRaidRuntime.MarkerKeyPrefix}{nextApproachRaidId++}",
                 TargetLabel = ResolveColonyLabel(map),
+                NextAttemptTick = now + travelTicks,
             };
             approachingRaids.Add(pending);
+            queued = true;
             SyncApproachingRaidMarkers();
 
             if (Current.ProgramState == ProgramState.Playing)
@@ -1187,9 +1235,17 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Approaching-raid launch failed, firing raid immediately: {ex.Message}");
+            if (!queued && committedPreparation?.Status == RaidPreparationStatus.Ready)
+            {
+                RaidPreparationService.ReleasePreparation(
+                    State,
+                    committedPreparation.Id,
+                    "approaching raid launch rolled back after runtime failure");
+            }
+            Log.Warning($"[LivingWorld] Approaching-raid launch failed safely: {ex.Message}");
             return false;
         }
+
     }
 
     // Fires any travelling raids that have reached the colony. Cheap: the pending list is at most a
@@ -1204,7 +1260,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         List<PendingApproachingRaid>? arrived = null;
         foreach (var raid in approachingRaids)
         {
-            if (raid.ArrivalTick <= now)
+            if (raid.ArrivalTick <= now && raid.NextAttemptTick <= now)
             {
                 (arrived ??= new List<PendingApproachingRaid>()).Add(raid);
             }
@@ -1217,8 +1273,25 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         foreach (var raid in arrived)
         {
-            approachingRaids.Remove(raid);
-            FireArrivedRaid(raid);
+            var result = FireArrivedRaid(raid);
+            if (result == RaidArrivalResult.Succeeded || result == RaidArrivalResult.Cancelled)
+            {
+                approachingRaids.Remove(raid);
+                if (result == RaidArrivalResult.Cancelled)
+                {
+                    ReleasePendingRaid(raid, "approaching raid cancelled before materialization");
+                }
+            }
+            else
+            {
+                raid.Attempts++;
+                raid.NextAttemptTick = now + 2_500;
+                if (raid.Attempts >= 3)
+                {
+                    approachingRaids.Remove(raid);
+                    ReleasePendingRaid(raid, "approaching raid materialization retries exhausted");
+                }
+            }
         }
 
         SyncApproachingRaidMarkers();
@@ -1227,27 +1300,37 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // Re-fires the Living World faction raid at its destination map with FiringArrival set so the
     // incident worker skips the travel branch and spawns raiders now. Fail-open: if the map is gone
     // (colony abandoned) or anything throws, the raid simply does not land — nothing is left dangling.
-    private void FireArrivedRaid(PendingApproachingRaid raid)
+    private RaidArrivalResult FireArrivedRaid(PendingApproachingRaid raid)
     {
         try
         {
             var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == raid.TargetTile);
             if (map == null)
             {
-                return;
+                return RaidArrivalResult.Cancelled;
             }
 
             var faction = Find.FactionManager?.AllFactionsListForReading
                 .FirstOrDefault(candidate => candidate.def?.defName == raid.FactionDefName);
             if (faction == null)
             {
-                return;
+                return RaidArrivalResult.Cancelled;
+            }
+
+            var preparation = State.GetRaidPreparation(
+                EntityId.Create(EntityKind.RaidPreparation, raid.PreparationId));
+            if (preparation == null
+                || preparation.Status != RaidPreparationStatus.Ready
+                || preparation.ArmyId.Value != raid.ArmyId
+                || !string.Equals(preparation.FactionId, raid.FactionDefName, StringComparison.Ordinal))
+            {
+                return RaidArrivalResult.Cancelled;
             }
 
             var def = DefDatabase<IncidentDef>.GetNamedSilentFail("LivingWorld_FactionRaid");
             if (def?.Worker == null)
             {
-                return;
+                return RaidArrivalResult.Retry;
             }
 
             var parms = StorytellerUtility.DefaultParmsNow(IncidentCategoryDefOf.ThreatBig, map);
@@ -1260,18 +1343,237 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             parms.target = map;
 
             ApproachingRaidRuntime.FiringArrival = true;
+            ApproachingRaidRuntime.ArrivingRaid = raid;
             try
             {
-                def.Worker.TryExecute(parms);
+                return def.Worker.TryExecute(parms)
+                    ? RaidArrivalResult.Succeeded
+                    : RaidArrivalResult.Retry;
             }
             finally
             {
+                ApproachingRaidRuntime.ArrivingRaid = null;
                 ApproachingRaidRuntime.FiringArrival = false;
             }
         }
         catch (Exception ex)
         {
             Log.Warning($"[LivingWorld] Arrived raid failed to materialize: {ex.Message}");
+            return RaidArrivalResult.Retry;
+        }
+    }
+
+    private void ReleasePendingRaid(PendingApproachingRaid raid, string reason)
+    {
+        if (raid.PreparationId <= 0)
+        {
+            return;
+        }
+
+        var preparation = State.GetRaidPreparation(
+            EntityId.Create(EntityKind.RaidPreparation, raid.PreparationId));
+        if (preparation?.Status == RaidPreparationStatus.Ready)
+        {
+            RaidPreparationService.ReleasePreparation(State, preparation.Id, reason);
+        }
+    }
+
+    private enum RaidArrivalResult
+    {
+        Succeeded,
+        Retry,
+        Cancelled,
+    }
+
+    private void LaunchPlayerReconnaissance(int tick)
+    {
+        if (RimWarIsActive || tick <= 0 || (tick / TicksPerDay) % 4 != 1)
+        {
+            return;
+        }
+
+        var map = Find.Maps?.Where(candidate => candidate.IsPlayerHome)
+            .OrderBy(candidate => (int)candidate.Tile)
+            .FirstOrDefault();
+        if (map == null)
+        {
+            return;
+        }
+
+        var activeFacts = new HashSet<string>(
+            State.RaidIntelFacts
+                .Where(fact => fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(tick))
+                .Select(fact => fact.FactionId),
+            StringComparer.Ordinal);
+        var pendingFactions = new HashSet<string>(
+            playerReconnaissance.Select(scout => scout.FactionDefName),
+            StringComparer.Ordinal);
+        var source = State.Settlements
+            .Where(settlement => settlement.IsActive && SettlementSlug.ParseTile(settlement.Slug) >= 0)
+            .Where(settlement => !activeFacts.Contains(settlement.FactionId))
+            .Where(settlement => !pendingFactions.Contains(settlement.FactionId))
+            .Where(settlement =>
+            {
+                var faction = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == settlement.FactionId);
+                return faction?.def?.humanlikeFaction == true
+                    && faction != Faction.OfPlayer
+                    && faction.HostileTo(Faction.OfPlayer);
+            })
+            .OrderBy(settlement => settlement.Id.Value)
+            .FirstOrDefault();
+        if (source == null)
+        {
+            return;
+        }
+
+        var markerKey = $"playerscout:{nextPlayerReconnaissanceId++}";
+        var originTile = SettlementSlug.ParseTile(source.Slug);
+        var distance = Find.WorldGrid?.ApproxDistanceInTiles(originTile, map.Tile) ?? 0f;
+        var travelTicks = ApproachingRaidRuntime.TravelTicksFor(distance);
+        var leases = MaterializationLeaseService.CreateLeases(
+            State,
+            new MaterializationLeaseRequest(
+                source.Id,
+                source.Id,
+                MaterializationPurpose.ScoutingParty,
+                markerKey,
+                Count: 1,
+                LifetimeTicks: travelTicks + TicksPerDay));
+        if (leases.Status != MaterializationLeaseStatus.Success || leases.Leases.Count != 1)
+        {
+            return;
+        }
+
+        playerReconnaissance.Add(new PendingPlayerReconnaissance
+        {
+            FactionDefName = source.FactionId,
+            SourceSettlementId = source.Id.Value,
+            LeaseId = leases.Leases[0].Id.Value,
+            OriginTile = originTile,
+            TargetTile = map.Tile,
+            DepartTick = tick,
+            ArrivalTick = tick + travelTicks,
+            MarkerKey = markerKey,
+            TargetLabel = ResolveColonyLabel(map),
+        });
+        SyncPlayerReconnaissanceMarkers();
+    }
+
+    private void ProcessPlayerReconnaissanceArrivals(int tick)
+    {
+        var arrived = playerReconnaissance
+            .Where(scout => scout.ArrivalTick <= tick)
+            .OrderBy(scout => scout.ArrivalTick)
+            .ThenBy(scout => scout.MarkerKey, StringComparer.Ordinal)
+            .ToList();
+        foreach (var scout in arrived)
+        {
+            var leaseId = EntityId.Create(EntityKind.MaterializationLease, scout.LeaseId);
+            var lease = State.GetMaterializationLease(leaseId);
+            var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == scout.TargetTile);
+            if (lease?.IsActive == true && map != null)
+            {
+                State.AdvanceToTick(tick);
+                var wealth = Math.Max(0f, map.wealthWatcher?.WealthTotal ?? 0f);
+                var valueBand = wealth >= 250_000f
+                    ? RaidIntelValueBand.Extreme
+                    : wealth >= 100_000f
+                        ? RaidIntelValueBand.High
+                        : wealth >= 30_000f
+                            ? RaidIntelValueBand.Moderate
+                            : RaidIntelValueBand.Low;
+                var demand = Math.Max(1, Math.Min(12, (int)Math.Ceiling(wealth / 25_000f)));
+                State.RecordRaidIntelFact(
+                    IntelSourceKind.Scout,
+                    scout.FactionDefName,
+                    RaidIntelTargetKind.PlayerColony,
+                    $"player-colony:{scout.TargetTile}",
+                    valueBand,
+                    confidence: 55,
+                    lifetimeTicks: RaidIntelService.DefaultTradeIntelLifetimeTicks,
+                    combatantDemand: demand,
+                    summary: $"Scout reached the player colony and reported {valueBand.ToString().ToLowerInvariant()} value.");
+            }
+
+            if (lease?.IsActive == true)
+            {
+                MaterializationLeaseService.Release(
+                    State,
+                    lease.Id,
+                    map == null ? "player scout target disappeared" : "player scout returned with intel");
+            }
+
+            playerReconnaissance.Remove(scout);
+        }
+
+        if (arrived.Count > 0)
+        {
+            SyncPlayerReconnaissanceMarkers();
+        }
+    }
+
+    private void SyncPlayerReconnaissanceMarkers()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var existing = worldObjects.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .Where(marker => marker.MarkerKey.StartsWith("playerscout:", StringComparison.Ordinal))
+            .ToDictionary(marker => marker.MarkerKey, StringComparer.Ordinal);
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        var markerDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker");
+        if (markerDef != null)
+        {
+            foreach (var scout in playerReconnaissance)
+            {
+                if (scout.OriginTile < 0 || scout.TargetTile < 0)
+                {
+                    continue;
+                }
+
+                live.Add(scout.MarkerKey);
+                var faction = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == scout.FactionDefName);
+                var isNew = !existing.TryGetValue(scout.MarkerKey, out var marker);
+                marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+                marker.Tile = scout.OriginTile;
+                if (faction != null)
+                {
+                    marker.SetFaction(faction);
+                }
+
+                marker.Configure(
+                    scout.MarkerKey,
+                    "World/LivingWorld_Scout",
+                    "LW_MissionKind_Scout".Translate(),
+                    scout.OriginTile,
+                    scout.TargetTile,
+                    scout.DepartTick,
+                    scout.ArrivalTick,
+                    faction?.Name ?? scout.FactionDefName,
+                    scout.TargetLabel,
+                    0,
+                    0,
+                    string.Empty,
+                    "LW_MissionReason_Scout".Translate(1.Named("amount")));
+                if (isNew)
+                {
+                    worldObjects.Add(marker);
+                }
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
         }
     }
 
@@ -2247,6 +2549,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref approachingRaids, "livingWorld_approachingRaids", LookMode.Deep);
         approachingRaids ??= new List<PendingApproachingRaid>();
         Scribe_Values.Look(ref nextApproachRaidId, "livingWorld_nextApproachRaidId", 0);
+        Scribe_Collections.Look(ref playerReconnaissance, "livingWorld_playerReconnaissance", LookMode.Deep);
+        playerReconnaissance ??= new List<PendingPlayerReconnaissance>();
+        Scribe_Values.Look(ref nextPlayerReconnaissanceId, "livingWorld_nextPlayerReconnaissanceId", 0);
         Scribe_Collections.Look(ref mechClusters, "livingWorld_mechClusters", LookMode.Deep);
         mechClusters ??= new List<MechClusterNode>();
         Scribe_Values.Look(ref nextMechClusterId, "livingWorld_nextMechClusterId", 0);

@@ -811,7 +811,11 @@ public sealed class WorldState
         return destroyed;
     }
 
-    public WorldArmyMovement DispatchArmy(EntityId armyId, EntityId targetSettlementId, int arrivalTick)
+    public WorldArmyMovement DispatchArmy(
+        EntityId armyId,
+        EntityId targetSettlementId,
+        int arrivalTick,
+        bool requiresHostileRelation = false)
     {
         if (!_armies.ContainsKey(armyId))
         {
@@ -823,6 +827,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {targetSettlementId} is not active.");
         }
 
+        var target = GetSettlement(targetSettlementId)!;
         var movement = new WorldArmyMovement(
             armyId,
             targetSettlementId,
@@ -830,7 +835,9 @@ public sealed class WorldState
             Math.Max(CurrentTick, arrivalTick),
             ArmyMovementStatus.Traveling)
         {
-            StatusTick = CurrentTick
+            StatusTick = CurrentTick,
+            ExpectedTargetFactionId = target.FactionId,
+            RequiresHostileRelation = requiresHostileRelation,
         };
 
         _armyMovements[armyId] = movement;

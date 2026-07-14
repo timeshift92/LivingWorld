@@ -563,7 +563,13 @@ public static class WorldStateCodec
                                 new XAttribute("departTick", movement.DepartTick),
                                 new XAttribute("arrivalTick", movement.ArrivalTick),
                                 new XAttribute("status", movement.Status),
-                                new XAttribute("statusTick", movement.StatusTick)))),
+                                new XAttribute("statusTick", movement.StatusTick),
+                                string.IsNullOrWhiteSpace(movement.ExpectedTargetFactionId)
+                                    ? null
+                                    : new XAttribute("expectedTargetFactionId", movement.ExpectedTargetFactionId),
+                                movement.RequiresHostileRelation
+                                    ? new XAttribute("requiresHostileRelation", true)
+                                    : null))),
                 new XElement(
                     "FactionBehaviors",
                     state.FactionBehaviors
@@ -1042,7 +1048,9 @@ public static class WorldStateCodec
                 RequiredInt(element, "arrivalTick"),
                 RequiredEnum<ArmyMovementStatus>(element, "status"))
             {
-                StatusTick = OptionalInt(element, "statusTick", RequiredInt(element, "departTick"))
+                StatusTick = OptionalInt(element, "statusTick", RequiredInt(element, "departTick")),
+                ExpectedTargetFactionId = OptionalString(element, "expectedTargetFactionId") ?? string.Empty,
+                RequiresHostileRelation = OptionalBool(element, "requiresHostileRelation", false),
             });
         }
 

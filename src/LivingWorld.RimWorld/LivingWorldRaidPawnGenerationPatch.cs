@@ -28,7 +28,10 @@ public static class LivingWorldRaidPawnGenerationPatch
 
         if (!__result || pawns == null || pawns.Count == 0)
         {
-            RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.ArmyId);
+            if (ApproachingRaidRuntime.ArrivingRaid == null)
+            {
+                RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.ArmyId);
+            }
             return;
         }
 

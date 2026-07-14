@@ -106,7 +106,7 @@ public static class WorldWarService
             var defenderFaction = state.GetSettlement(movement.TargetSettlementId)?.FactionId;
 
             var battle = WorldBattleService.TryResolve(state, movement.ArmyId);
-            if (battle.Status == BattleResolutionStatus.BlockedPlayerSettlement)
+            if (battle.Status != BattleResolutionStatus.Resolved)
             {
                 continue;
             }

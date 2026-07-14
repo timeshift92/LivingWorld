@@ -43,6 +43,14 @@ public static class WorldMissionService
                 continue;
             }
 
+            var target = state.GetSettlement(mission.TargetSettlementId)!;
+            if (mission.Kind == WorldMissionKind.Diplomat
+                && !string.Equals(target.FactionId, mission.TargetFactionId, StringComparison.Ordinal))
+            {
+                state.FailMission(mission.Id, "diplomatic target changed ownership");
+                continue;
+            }
+
             switch (mission.Kind)
             {
                 case WorldMissionKind.Scout:
