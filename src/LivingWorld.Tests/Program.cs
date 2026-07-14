@@ -218,6 +218,7 @@ var tests = new List<(string Name, Action Test)>
     ("expansion rejects empty or insufficient colonies", TestExpandSettlementRejectsEmptyOrInsufficientSettlers),
     ("settler expedition creates unique colony slugs on arrival", TestSettlerExpeditionUsesUniqueColonySlugsOnArrival),
     ("settler expedition survives save load before founding", TestSettlerExpeditionSurvivesSaveLoadBeforeFounding),
+    ("physical settler expedition waits for a bound world tile", TestPhysicalSettlerExpeditionWaitsForBoundWorldTile),
     ("world war caravan transfers real settlement goods", TestWorldWarCaravanTransfersRealGoods),
     ("world war caravan reserves and returns real crew", TestWorldWarCaravanReservesAndReturnsRealCrew),
     ("world war target selector skips inactive settlements", TestWorldWarTargetSelectorSkipsInactiveSettlements),
@@ -6565,6 +6566,48 @@ static void TestSettlerExpeditionSurvivesSaveLoadBeforeFounding()
     AssertEqual(0, restored.Validate().Count());
 }
 
+static void TestPhysicalSettlerExpeditionWaitsForBoundWorldTile()
+{
+    var state = new WorldState(4242);
+    var home = state.CreateSettlement("worldobject:Settlement:10:Settlers", "Home", "Settlers");
+    for (var i = 0; i < 30; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "settler", home.Id);
+    }
+
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Expansionist);
+    var request = new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 6, SettlerCount: 6)
+    {
+        RequirePhysicalSettlementDestinations = true,
+    };
+    WorldWarService.SimulateDay(state, request);
+    var expedition = state.MigrationGroups.Single(group =>
+        group.Reason == MigrationService.ReasonSettlementFounding);
+
+    var beforeBinding = WorldWarService.SimulateDay(
+        state,
+        request with { Tick = 120_000 });
+    AssertEqual(0, beforeBinding.ColoniesFounded);
+    AssertEqual(MigrationGroupStatus.Traveling, state.GetMigrationGroup(expedition.Id)!.Status);
+    AssertEqual(1, state.Settlements.Count);
+
+    state.BindSettlementExpeditionLocation(
+        expedition.Id,
+        "worldobject:Settlement:25:Settlers");
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredExpedition = restored.GetMigrationGroup(expedition.Id)!;
+    AssertEqual(true, restoredExpedition.PhysicalDestinationRequired);
+    AssertEqual("worldobject:Settlement:25:Settlers", restoredExpedition.PhysicalStableKey);
+
+    var afterBinding = WorldWarService.SimulateDay(
+        restored,
+        request with { Tick = 180_000 });
+    AssertEqual(1, afterBinding.ColoniesFounded);
+    AssertEqual(true, restored.Settlements.Any(settlement =>
+        settlement.Slug == "worldobject:Settlement:25:Settlers"));
+    AssertEqual(MigrationGroupStatus.Arrived, restored.GetMigrationGroup(expedition.Id)!.Status);
+}
+
 static void TestWorldWarCaravanTransfersRealGoods()
 {
     var state = new WorldState(4242);
@@ -8407,7 +8450,7 @@ static void TestRimWorldWorldComponent()
     AssertContains("MigrationSimulationRequest", source);
     AssertContains("DrifterArrivalService.SimulateArrivals", source);
     AssertContains("AddDrifterArrivalReservoir", source);
-    AssertContains("DrifterFoundingService.SimulateFounding", source);
+    AssertContains("LivingWorldDrifterFoundingWorldBridge.Simulate", source);
     AssertContains("DrifterAssimilationService.SimulateAssimilation", source);
     // Faction collapse now runs through the lifecycle driver (ResolveFactionCollapses), which also
     // turns collapsed settlements into ruins and relocates starving ones.

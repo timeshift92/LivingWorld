@@ -3,6 +3,7 @@ namespace LivingWorld.Core;
 public enum WorldEventKind
 {
     SettlementCreated,
+    SettlementLocationBound,
     CitizenCreated,
     CitizenImported,
     ArmyCreated,

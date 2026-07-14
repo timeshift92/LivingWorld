@@ -244,6 +244,40 @@ public static class SettlementLifecycleService
         return updated;
     }
 
+    public static WorldSettlement BindPhysicalLocation(
+        WorldState state,
+        EntityId settlementId,
+        string stableKey,
+        int tick,
+        string reason)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        ThrowIfNullOrWhiteSpace(stableKey, nameof(stableKey));
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (SettlementSlug.ParseTile(stableKey) < 0)
+        {
+            throw new ArgumentException("A physical settlement location must contain a valid tile.", nameof(stableKey));
+        }
+
+        state.AdvanceToTick(Math.Max(0, tick));
+        var before = state.GetSettlement(settlementId)
+            ?? throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        var updated = state.SetSettlementSlugForLedger(settlementId, stableKey);
+        if (!string.Equals(before.Slug, updated.Slug, StringComparison.Ordinal))
+        {
+            state.RecordEvent(
+                WorldEventKind.SettlementLocationBound,
+                settlementId,
+                $"Settlement {settlementId} bound to {stableKey}: {reason}.");
+        }
+
+        return updated;
+    }
+
     public static WorldSettlement AbandonSettlement(
         WorldState state,
         EntityId settlementId,

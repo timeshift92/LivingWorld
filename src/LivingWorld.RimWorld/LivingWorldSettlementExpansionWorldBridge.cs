@@ -181,6 +181,9 @@ internal static class LivingWorldSettlementExpansionWorldBridge
             OriginTile = originTile,
             TargetTile = targetTile,
         };
+        state.BindSettlementExpeditionLocation(
+            group.Id,
+            BuildStableKey(targetTile, group.FactionId));
         return true;
     }
 
@@ -258,7 +261,9 @@ internal static class LivingWorldSettlementExpansionWorldBridge
         var colony = state.Settlements
             .Where(settlement => string.Equals(settlement.FactionId, group.FactionId, StringComparison.Ordinal))
             .FirstOrDefault(settlement =>
-                string.Equals(settlement.Slug, group.PlannedSettlementSlug, StringComparison.Ordinal));
+                string.Equals(settlement.Slug, group.PlannedSettlementSlug, StringComparison.Ordinal)
+                || (!string.IsNullOrWhiteSpace(group.PhysicalStableKey)
+                    && string.Equals(settlement.Slug, group.PhysicalStableKey, StringComparison.Ordinal)));
         if (colony == null || !colony.IsActive)
         {
             Log.Warning(
@@ -309,6 +314,13 @@ internal static class LivingWorldSettlementExpansionWorldBridge
             worldSettlement.Tile = binding.TargetTile;
             worldSettlement.SetFaction(faction);
             worldSettlement.Name = CleanName(colony.Name, group.PlannedSettlementName);
+            var stableKey = BuildStableKey(binding.TargetTile, faction.def?.defName ?? group.FactionId);
+            SettlementLifecycleService.BindPhysicalLocation(
+                state,
+                colony.Id,
+                stableKey,
+                Find.TickManager?.TicksGame ?? state.CurrentTick,
+                "settler expedition reached its physical destination");
             Find.WorldObjects.Add(worldSettlement);
             FinishLink(state, group, binding, colony, worldSettlement, faction);
             DebugLog(
@@ -337,8 +349,13 @@ internal static class LivingWorldSettlementExpansionWorldBridge
         binding.TargetTile = worldSettlement.Tile;
         binding.WorldObjectStableKey = BuildStableKey(worldSettlement.Tile, faction.def?.defName ?? group.FactionId);
 
-        // Core deliberately keeps its original stable slug immutable. The persisted binding above is
-        // therefore the lossless linkage between the ledger entity and the concrete world object.
+        colony = SettlementLifecycleService.BindPhysicalLocation(
+            state,
+            colony.Id,
+            binding.WorldObjectStableKey,
+            Find.TickManager?.TicksGame ?? state.CurrentTick,
+            "settler expedition linked to vanilla settlement");
+
         // Replace only environmental production fields with the actual destination tile while
         // retaining the colony's inherited economic character.
         var currentProfile = state.GetSettlementProductionProfile(colony.Id);
@@ -411,7 +428,7 @@ internal static class LivingWorldSettlementExpansionWorldBridge
         return originTile >= 0;
     }
 
-    private static bool TrySelectFreeTile(
+    internal static bool TrySelectFreeTile(
         string locationToken,
         int originTile,
         HashSet<int> reservedTiles,
@@ -596,7 +613,7 @@ internal static class LivingWorldSettlementExpansionWorldBridge
         return parts.Length >= 3 && int.TryParse(parts[2], out var tile) ? tile : -1;
     }
 
-    private static string BuildStableKey(int tile, string factionDefName)
+    internal static string BuildStableKey(int tile, string factionDefName)
     {
         return $"worldobject:Settlement:{tile}:{factionDefName}";
     }

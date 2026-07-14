@@ -164,7 +164,13 @@ public static class WorldStateCodec
                                 : new XAttribute("plannedSettlementSlug", group.PlannedSettlementSlug),
                             string.IsNullOrWhiteSpace(group.PlannedSettlementName)
                                 ? null
-                                : new XAttribute("plannedSettlementName", group.PlannedSettlementName)))),
+                                : new XAttribute("plannedSettlementName", group.PlannedSettlementName),
+                            group.PhysicalDestinationRequired
+                                ? new XAttribute("physicalDestinationRequired", true)
+                                : null,
+                            string.IsNullOrWhiteSpace(group.PhysicalStableKey)
+                                ? null
+                                : new XAttribute("physicalStableKey", group.PhysicalStableKey)))),
                 new XElement(
                     "IntelReports",
                     snapshot.IntelReports.Select(report =>
@@ -634,7 +640,9 @@ public static class WorldStateCodec
                     RequiredString(element, "reason"))
                 {
                     PlannedSettlementSlug = OptionalString(element, "plannedSettlementSlug") ?? string.Empty,
-                    PlannedSettlementName = OptionalString(element, "plannedSettlementName") ?? string.Empty
+                    PlannedSettlementName = OptionalString(element, "plannedSettlementName") ?? string.Empty,
+                    PhysicalDestinationRequired = OptionalBool(element, "physicalDestinationRequired", false),
+                    PhysicalStableKey = OptionalString(element, "physicalStableKey") ?? string.Empty
                 })
                 .ToList(),
             OptionalContainer(root, "IntelReports")
@@ -1442,6 +1450,12 @@ public static class WorldStateCodec
     private static bool RequiredBool(XElement element, string name)
     {
         return bool.Parse(RequiredString(element, name));
+    }
+
+    private static bool OptionalBool(XElement element, string name, bool fallback)
+    {
+        var attribute = element.Attribute(name);
+        return attribute == null ? fallback : bool.Parse(attribute.Value);
     }
 
     private static long RequiredLong(XElement element, string name)

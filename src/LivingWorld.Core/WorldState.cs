@@ -1036,6 +1036,33 @@ public sealed class WorldState
         return updated;
     }
 
+    internal WorldSettlement SetSettlementSlugForLedger(EntityId settlementId, string slug)
+    {
+        ThrowIfNullOrWhiteSpace(slug, nameof(slug));
+        if (!_settlements.TryGetValue(settlementId, out var settlement))
+        {
+            throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        }
+
+        var normalized = slug.Trim();
+        var duplicate = _settlements.Values.FirstOrDefault(candidate =>
+            candidate.Id != settlementId
+            && string.Equals(candidate.Slug, normalized, StringComparison.Ordinal));
+        if (duplicate != null)
+        {
+            throw new InvalidOperationException($"Settlement slug '{normalized}' already belongs to {duplicate.Id}.");
+        }
+
+        if (string.Equals(settlement.Slug, normalized, StringComparison.Ordinal))
+        {
+            return settlement;
+        }
+
+        var updated = settlement with { Slug = normalized };
+        _settlements[settlementId] = updated;
+        return updated;
+    }
+
     internal WorldRuin CreateRuinForLedger(
         WorldSettlement settlement,
         string claimFactionId,
@@ -1232,7 +1259,8 @@ public sealed class WorldState
         string name,
         int settlerCount,
         int createdTick,
-        int arrivalTick)
+        int arrivalTick,
+        bool requirePhysicalDestination = false)
     {
         ThrowIfNullOrWhiteSpace(slug, nameof(slug));
         ThrowIfNullOrWhiteSpace(name, nameof(name));
@@ -1289,7 +1317,8 @@ public sealed class WorldState
             reason: MigrationService.ReasonSettlementFounding) with
         {
             PlannedSettlementSlug = slug,
-            PlannedSettlementName = name
+            PlannedSettlementName = name,
+            PhysicalDestinationRequired = requirePhysicalDestination
         };
         _migrationGroups[group.Id] = group;
 
@@ -1312,6 +1341,37 @@ public sealed class WorldState
         MarkDerivedAggregatesDirty();
 
         return group;
+    }
+
+    public WorldMigrationGroup BindSettlementExpeditionLocation(EntityId groupId, string stableKey)
+    {
+        ThrowIfNullOrWhiteSpace(stableKey, nameof(stableKey));
+        if (SettlementSlug.ParseTile(stableKey) < 0)
+        {
+            throw new ArgumentException("A settlement expedition location must contain a valid tile.", nameof(stableKey));
+        }
+
+        if (!_migrationGroups.TryGetValue(groupId, out var group)
+            || !string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal)
+            || group.Status != MigrationGroupStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Migration group {groupId} is not a traveling settlement expedition.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(group.PhysicalStableKey)
+            && !string.Equals(group.PhysicalStableKey, stableKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Settlement expedition {groupId} is already bound to {group.PhysicalStableKey}.");
+        }
+
+        var updated = group with { PhysicalStableKey = stableKey.Trim() };
+        _migrationGroups[groupId] = updated;
+        AppendEvent(
+            WorldEventKind.SettlementLocationBound,
+            groupId,
+            $"Settlement expedition {groupId} reserved {updated.PhysicalStableKey}.");
+        return updated;
     }
 
     public WorldSettlement CompleteSettlementExpedition(EntityId groupId)
@@ -1357,6 +1417,12 @@ public sealed class WorldState
             return false;
         }
 
+        if (!group.PhysicalDestinationReady)
+        {
+            reason = $"Settlement expedition {groupId} has not reserved a physical destination yet.";
+            return false;
+        }
+
         var settlers = _citizens.Values
             .Where(citizen => citizen.Status == CitizenStatus.Migrating && GetOwner(citizen.Id) == group.Id)
             .OrderBy(citizen => citizen.Id.Value)
@@ -1394,7 +1460,10 @@ public sealed class WorldState
                 $"Settlement expedition {group.Id} rerouted through active settlement {source.Id} to {group.PlannedLocationToken}.");
         }
 
-        var slug = UniqueSettlementSlug(group.PlannedSettlementSlug);
+        var requestedSlug = string.IsNullOrWhiteSpace(group.PhysicalStableKey)
+            ? group.PlannedSettlementSlug
+            : group.PhysicalStableKey;
+        var slug = UniqueSettlementSlug(requestedSlug);
         if (!string.Equals(slug, group.PlannedSettlementSlug, StringComparison.Ordinal))
         {
             group = group with { PlannedSettlementSlug = slug };

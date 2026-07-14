@@ -699,9 +699,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             DrifterArrivalService.SimulateArrivals(
                 State,
                 new DrifterArrivalRequest(dayTick, flowTarget.TargetPopulation, flowTarget.HardCeiling, settings.maxDrifterArrivalsPerDay));
-            DrifterFoundingService.SimulateFounding(
+            LivingWorldDrifterFoundingWorldBridge.Simulate(
                 State,
-                new DrifterFoundingRequest(dayTick, settings.drifterMinFounders, settings.drifterLeaderAptitudeThreshold));
+                new DrifterFoundingRequest(dayTick, settings.drifterMinFounders, settings.drifterLeaderAptitudeThreshold),
+                settlementExpansionWorldBindings);
             DrifterAssimilationService.SimulateAssimilation(
                 State,
                 new DrifterAssimilationRequest(dayTick, settings.maxDrifterAssimilationsPerDay));
@@ -723,7 +724,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     day * TicksPerDay,
                     settings.worldWarTravelDays,
                     settings.worldWarRaidCombatants,
-                    settings.worldWarWarbandCooldownDays));
+                    settings.worldWarWarbandCooldownDays)
+                {
+                    RequirePhysicalSettlementDestinations = true,
+                });
         }
 
         // Faction extinction, then its physical consequences: collapsed non-player settlements

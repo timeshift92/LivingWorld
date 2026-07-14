@@ -11,6 +11,8 @@ public sealed record WorldWarRequest(
     int DiplomatGoodwill = 5,
     int ResolvedMovementRetentionDays = 30)
 {
+    public bool RequirePhysicalSettlementDestinations { get; init; }
+
     public string DevelopmentFoodResourceKey { get; init; } = "PackagedSurvivalMeal";
 
     public string DevelopmentSilverResourceKey { get; init; } = "Silver";

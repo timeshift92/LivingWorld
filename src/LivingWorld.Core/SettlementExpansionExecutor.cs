@@ -59,7 +59,8 @@ internal static class SettlementExpansionExecutor
             $"{factionId} colony {ordinal}",
             settlers,
             request.Tick,
-            request.Tick + Math.Max(1, request.TravelDays) * 60_000);
+            request.Tick + Math.Max(1, request.TravelDays) * 60_000,
+            request.RequirePhysicalSettlementDestinations);
 
         // Force the concrete location identity to be resolved while the departure is still being
         // committed. The value is derived from persisted fields and remains stable after save/load.
