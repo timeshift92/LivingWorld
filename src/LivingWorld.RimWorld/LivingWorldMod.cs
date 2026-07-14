@@ -8,6 +8,8 @@ public sealed class LivingWorldMod : Mod
 {
     private const float ScrollbarWidth = 20f;
 
+    public static LivingWorldSettings? Settings => LivingWorldSettings.Instance;
+
     private readonly LivingWorldSettings settings;
     private Vector2 settingsScrollPosition;
 
