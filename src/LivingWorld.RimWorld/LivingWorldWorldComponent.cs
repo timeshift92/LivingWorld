@@ -51,6 +51,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<int> mechClusterSiteWorldObjectIds = new();
     private List<PendingApproachingGroup> approachingGroups = new();
     private int nextApproachGroupId;
+    private List<LivingWorldSettlementExpansionWorldBinding> settlementExpansionWorldBindings = new();
     private List<string> notifiedPlayerCaravanMarkerContacts = new();
     private int lastPlayerCaravanMarkerContactCheckTick;
 
@@ -778,7 +779,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             if (worldObject is WorldObject_LivingWorldArmy marker
                 && !string.IsNullOrEmpty(marker.MarkerKey)
                 && !marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
-                && !marker.MarkerKey.StartsWith(ApproachingGroupRuntime.MarkerKeyPrefix, StringComparison.Ordinal))
+                && !marker.MarkerKey.StartsWith(ApproachingGroupRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
+                && !marker.MarkerKey.StartsWith(LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal))
             {
                 // Approaching-raid markers are managed by SyncApproachingRaidMarkers (they are keyed to
                 // RW incident state, not ledger travels); this ledger reconcile must not remove them.
@@ -877,6 +879,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 worldObjects.Remove(pair.Value);
             }
         }
+
+        LivingWorldSettlementExpansionWorldBridge.Synchronize(State, settlementExpansionWorldBindings);
     }
 
     private void EnsureMissionMarker(
@@ -2142,6 +2146,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref approachingGroups, "livingWorld_approachingGroups", LookMode.Deep);
         approachingGroups ??= new List<PendingApproachingGroup>();
         Scribe_Values.Look(ref nextApproachGroupId, "livingWorld_nextApproachGroupId", 0);
+        Scribe_Collections.Look(
+            ref settlementExpansionWorldBindings,
+            "livingWorld_settlementExpansionWorldBindings",
+            LookMode.Deep);
+        settlementExpansionWorldBindings ??= new List<LivingWorldSettlementExpansionWorldBinding>();
         Scribe_Collections.Look(ref notifiedPlayerCaravanMarkerContacts, "livingWorld_notifiedPlayerCaravanMarkerContacts", LookMode.Value);
         notifiedPlayerCaravanMarkerContacts ??= new List<string>();
         Scribe_Values.Look(ref lastPlayerCaravanMarkerContactCheckTick, "livingWorld_lastPlayerCaravanMarkerContactCheckTick", 0);
