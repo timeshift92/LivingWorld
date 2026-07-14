@@ -345,6 +345,7 @@ var tests = new List<(string Name, Action Test)>
     ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
     ("materializes full npc city layout surface", TestRimWorldSettlementMapFullCitySurface),
     ("cleans orphaned lord references before save", TestRimWorldCleansOrphanedLordReferences),
+    ("flushes orphaned references via a save-game harmony prefix", TestRimWorldCleansOrphanedReferencesBeforeSave),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -9222,6 +9223,10 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("thing.Destroy(DestroyMode.Vanish)", cleaner);
     AssertContains("CleanOrphanedLordOwnedPawns", cleaner);
     AssertContains("CleanOrphanedDirectPawnRelations", cleaner);
+    // World pawns (colonists in caravans, world settlement pawns) also hold orphaned
+    // reciprocal relations, so the cleaner scans Find.WorldPawns too, not only map pawns.
+    AssertContains("CleanOrphanedDirectPawnRelationsForWorldPawns", cleaner);
+    AssertContains("Find.WorldPawns?.AllPawnsAliveOrDead", cleaner);
     AssertContains("AccessTools.Field(relation.GetType(), \"otherPawn\")", cleaner);
     AssertContains("directRelations.RemoveAt(index)", cleaner);
     AssertContains("IsPawnSavedAnywhere", cleaner);
@@ -9234,6 +9239,25 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("Scribe.mode == LoadSaveMode.Saving", component);
     AssertContains("currentTick % 250 == 0", component);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
+}
+
+static void TestRimWorldCleansOrphanedReferencesBeforeSave()
+{
+    var root = FindRepoRoot();
+    var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSaveHygienePatch.cs");
+    AssertFileExists(patchPath);
+    var patch = File.ReadAllText(patchPath);
+
+    // A Harmony prefix on the save entry point flushes orphaned references from every
+    // map (and world pawns) right before the scribe walks the graph, so a relation
+    // orphaned since the last cleaner tick never reaches the save file.
+    AssertContains("[HarmonyPatch(typeof(GameDataSaveLoader)", patch);
+    AssertContains("nameof(GameDataSaveLoader.SaveGame)", patch);
+    AssertContains("public static void Prefix", patch);
+    AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", patch);
+
+    // The real RimWorld save entry point exists in this build.
+    AssertRimWorldMethodExists("Verse.GameDataSaveLoader", "SaveGame");
 }
 
 static void TestRimWorldDrifterFlowSettings()

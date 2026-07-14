@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
 using Verse;
@@ -12,17 +13,22 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
 
     public static int CleanAllMaps()
     {
+        var cleaned = 0;
+
         var maps = Find.Maps;
-        if (maps == null || maps.Count == 0)
+        if (maps != null)
         {
-            return 0;
+            foreach (var map in maps)
+            {
+                cleaned += CleanMap(map);
+            }
         }
 
-        var cleaned = 0;
-        foreach (var map in maps)
-        {
-            cleaned += CleanMap(map);
-        }
+        // World pawns (colonists away in a caravan, world settlement pawns) also hold
+        // reciprocal DirectPawnRelations whose otherPawn can dangle. CleanMap only scans
+        // map pawns, so scan the world-pawn pool once here — before a save flushes them all.
+        // Not gated on maps existing: world pawns must be swept regardless.
+        cleaned += CleanOrphanedDirectPawnRelationsForWorldPawns();
 
         return cleaned;
     }
@@ -67,8 +73,19 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
 
     private static int CleanOrphanedDirectPawnRelations(Map map)
     {
-        var pawns = map.mapPawns?.AllPawns;
-        if (pawns == null || pawns.Count == 0)
+        return CleanOrphanedDirectPawnRelations(map.mapPawns?.AllPawns);
+    }
+
+    private static int CleanOrphanedDirectPawnRelationsForWorldPawns()
+    {
+        // AllPawnsAliveOrDead covers pawns that are saved but not on any map — the exact
+        // holders of orphaned relations that map-only scans miss.
+        return CleanOrphanedDirectPawnRelations(Find.WorldPawns?.AllPawnsAliveOrDead);
+    }
+
+    private static int CleanOrphanedDirectPawnRelations(IEnumerable<Pawn>? pawns)
+    {
+        if (pawns == null)
         {
             return 0;
         }
