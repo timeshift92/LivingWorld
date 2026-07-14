@@ -65,10 +65,11 @@ public sealed class MobilizationMapComponent : MapComponent
             lastSignals = settings.autoMobilizeOnThreat ? ComputeSignals(map, settings) : default;
             var rawTier = ThreatClassifier.Classify(lastSignals);
             (currentTier, belowCount) = ThreatDebounce.Step(currentTier, rawTier, belowCount, settings.mobilizationDeescalateRechecks);
-            // Phase A has no fighter/non-combatant split yet, so mobilizing means EVERY combat-capable
-            // colonist gears up — too heavy for a lone nuisance animal. Only Raid+ mobilizes; proportionate
-            // Nuisance handling lands with the roster in Phase B. (A big animal pack classifies as Serious.)
-            threatPresent = currentTier >= ThreatTier.Raid;
+            // Proportionate response (now that the Fighters roster exists): any real threat — including a lone
+            // nuisance animal like a revenge-seeking elephant — mobilizes the FIGHTERS to deal with it, while
+            // non-combatants only take shelter at Raid or worse (ShelterDriver gates on tier >= Raid). So a
+            // manhunter animal gets a fighter response without sending the whole colony to cover.
+            threatPresent = currentTier != ThreatTier.None;
         }
         catch (Exception ex)
         {
