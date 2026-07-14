@@ -12,7 +12,7 @@
   <LW_DebugLedgerCreated>Visible test ledger created.</LW_DebugLedgerCreated>
   <LW_DebugSettlementName>Living World Test Settlement</LW_DebugSettlementName>
   <LW_DebugCitizenName>Test citizen {index}</LW_DebugCitizenName>
-  <LW_RaidHookStatus>Enemy vanilla raids use Living World: an intel or trade opportunity is required first, then adult citizens are reserved from faction settlements and raid strength is capped by available people.</LW_RaidHookStatus>
+  <LW_RaidHookStatus>Ledger-backed faction raids use Living World preparation, travel and real citizens when the incident can be linked safely. Unsupported or external mod incidents remain under their original system.</LW_RaidHookStatus>
   <LW_SettlementsHeader>Settlements</LW_SettlementsHeader>
   <LW_ArmiesHeader>Armies</LW_ArmiesHeader>
   <LW_RaidOutcomesHeader>Recent raids</LW_RaidOutcomesHeader>
@@ -209,6 +209,15 @@
   <LW_MissionMarkerInspect>{faction} {kind}: heading to {target} - arrives in about {days} day(s).</LW_MissionMarkerInspect>
   <LW_MissionMarkerStrengthLine>Force: {combatants} people, strength {strength}</LW_MissionMarkerStrengthLine>
   <LW_MissionMarkerResourceLine>Cargo/supplies: {resources}</LW_MissionMarkerResourceLine>
+  <LW_MissionMarkerStrengthBandLine>Estimated force: {band}</LW_MissionMarkerStrengthBandLine>
+  <LW_MissionMarkerCargoBandLine>Estimated cargo: {band}</LW_MissionMarkerCargoBandLine>
+  <LW_MarkerBand_Small>small</LW_MarkerBand_Small>
+  <LW_MarkerBand_Medium>medium</LW_MarkerBand_Medium>
+  <LW_MarkerBand_Large>large</LW_MarkerBand_Large>
+  <LW_MarkerBand_Massive>massive</LW_MarkerBand_Massive>
+  <LW_MarkerCargo_Light>light</LW_MarkerCargo_Light>
+  <LW_MarkerCargo_Loaded>loaded</LW_MarkerCargo_Loaded>
+  <LW_MarkerCargo_Heavy>heavy</LW_MarkerCargo_Heavy>
   <LW_MissionMarkerReasonLine>Purpose: {reason}</LW_MissionMarkerReasonLine>
   <LW_MissionMarkerDetails>Details</LW_MissionMarkerDetails>
   <LW_PlayerCaravanMarkerContactLabel>Caravan contact</LW_PlayerCaravanMarkerContactLabel>
@@ -270,12 +279,16 @@
   <LW_DebugOpenRealSettlementMap>DEV: open real LW base map</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World will materialize rooms, stores, defenders and animals there. This creates a real save-map and is meant for testing.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>World actions</LW_WorldActionsHeader>
-  <LW_WorldActionLegendLine>Active world actions: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}, settlers {settlers}. Marker visibility is configurable in Mod Settings.</LW_WorldActionLegendLine>
+  <LW_WorldActionLegendLine>World actions: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}, settlers {settlers}, developments today {developments}. Marker visibility is configurable in Mod Settings.</LW_WorldActionLegendLine>
   <LW_WorldActionRow>{kind}: {faction} to {target}, about {days} day(s)</LW_WorldActionRow>
+  <LW_WorldActionCompletedRow>{kind}: {faction} completed work at {target}</LW_WorldActionCompletedRow>
+  <LW_MissionKind_Develop>development</LW_MissionKind_Develop>
   <LW_EconomyWindowTitle>World population and economy</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Faction</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Settlements</LW_EconomyCol_Settlements>
+  <LW_EconomyCol_KnownSettlements>Known sites</LW_EconomyCol_KnownSettlements>
   <LW_EconomyCol_Population>Population</LW_EconomyCol_Population>
+  <LW_EconomyCol_KnownPopulation>Known pop.</LW_EconomyCol_KnownPopulation>
   <LW_EconomyCol_PopTrend>Pop/day</LW_EconomyCol_PopTrend>
   <LW_EconomyCol_Tier>Top tier</LW_EconomyCol_Tier>
   <LW_EconomyCol_Output>Output/day</LW_EconomyCol_Output>
@@ -289,6 +302,15 @@
   <LW_SettlementObserver_Production>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_SettlementObserver_Production>
   <LW_SettlementObserver_FoodMigration>Food {food}, daily need {need}, days left {days} | migration pressure {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
   <LW_SettlementObserver_DailyTrend>Last day: births +{births}, losses -{losses}, migration {moves}, building {builds}, damage/repair {damage}, resources {resources}, animals {animals}, active travel {travels}</LW_SettlementObserver_DailyTrend>
+  <LW_SettlementObserver_SnapshotNotice>Observed snapshot from tick {tick}; age {ageDays} day(s). Values below do not update remotely.</LW_SettlementObserver_SnapshotNotice>
+  <LW_SettlementObserver_SnapshotFood>Observed food {food}, daily need {need}, reserve {days} day(s); migration state {migration}</LW_SettlementObserver_SnapshotFood>
+  <LW_SettlementObserver_SnapshotTrend>At observation: daily demographic change +{births}/-{losses}; migration events {moves}</LW_SettlementObserver_SnapshotTrend>
+  <LW_SettlementObserver_SnapshotCounts>Observed facilities {facilities}; animals {animals}; active projects {projects}</LW_SettlementObserver_SnapshotCounts>
+  <LW_InspectFacilitiesSnapshotLine>Observed facilities: {facilities}; active projects: {projects}</LW_InspectFacilitiesSnapshotLine>
+  <LW_InspectAnimalsSnapshotLine>Observed animals: {animals}</LW_InspectAnimalsSnapshotLine>
+  <LW_ArmyBandLine>{name} [{faction}] - estimated force {strength}, cargo {cargo}</LW_ArmyBandLine>
+  <LW_FactionStrengthKnownLine>{faction}: known force potential {strength}</LW_FactionStrengthKnownLine>
+  <LW_FactionEconomyKnownLine>{faction}: known economy {wealth}</LW_FactionEconomyKnownLine>
   <LW_SettlementObserver_Projects>Projects</LW_SettlementObserver_Projects>
   <LW_SettlementObserver_NoActiveProject>No active construction or repair project.</LW_SettlementObserver_NoActiveProject>
   <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, {progress}% complete, about {days} day(s) left</LW_SettlementObserver_ProjectProgress>

@@ -63,10 +63,9 @@ public static class LivingWorldSettlementDirectVisitPatch
         }
 
         var known = component.State.GetKnownSettlementInfo(settlementId);
-        var freshness = known == null
-            ? default
-            : PlayerKnowledgeService.GetFreshness(known, component.State.CurrentTick, 1_800_000);
-        var exactAndFresh = known?.ExactValuesVisible == true && !freshness.IsStale;
+        var exactAndFresh = PlayerKnowledgeService.HasFreshExactSnapshot(
+            known,
+            component.State.CurrentTick);
         Find.WindowStack.Add(new LivingWorldSettlementObserverWindow(settlementId, exactAndFresh));
     }
 

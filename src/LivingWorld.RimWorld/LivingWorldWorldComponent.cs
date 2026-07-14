@@ -1015,7 +1015,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         var markers = worldObjects.AllWorldObjects
             .OfType<WorldObject_LivingWorldArmy>()
-            .Where(marker => !string.IsNullOrWhiteSpace(marker.MarkerKey))
+            .Where(marker => marker.IsVisibleByFilter
+                && !string.IsNullOrWhiteSpace(marker.MarkerKey))
             .ToList();
         var liveMarkerKeys = new HashSet<string>(
             markers.Select(marker => marker.MarkerKey),

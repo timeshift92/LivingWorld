@@ -3886,9 +3886,25 @@ public sealed class WorldState
         KnownSettlementInfo existing,
         KnownSettlementInfo incoming)
     {
-        return existing.ExactValuesVisible
-            && !incoming.ExactValuesVisible
-            && existing.Confidence >= incoming.Confidence;
+        if (incoming.Tick < existing.Tick)
+        {
+            return true;
+        }
+
+        if (incoming.Tick == existing.Tick)
+        {
+            if (existing.ExactSnapshot != null && incoming.ExactSnapshot == null)
+            {
+                return true;
+            }
+
+            return existing.Confidence >= incoming.Confidence;
+        }
+
+        var exactStillFresh = existing.ExactSnapshot != null
+            && incoming.ExactSnapshot == null
+            && incoming.Tick - existing.Tick <= PlayerKnowledgeService.ExactIntelStaleAfterTicks;
+        return exactStillFresh && existing.Confidence >= incoming.Confidence;
     }
 
     private static SettlementCapability Normalize(SettlementCapability capability)

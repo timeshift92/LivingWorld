@@ -364,8 +364,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             {
                 var known = state.GetKnownSettlementInfo(settlement.Id);
                 var knowledgeLine = FormatKnowledgeLine(known, currentTick);
-                var productionLine = known?.ExactValuesVisible == true
-                    ? FormatProductionLine(state.GetSettlementProductionStatus(settlement.Id))
+                var productionLine = PlayerKnowledgeService.HasFreshExactSnapshot(known, currentTick)
+                    ? FormatProductionLine(known!.ExactSnapshot!)
                     : "LW_ProductionHiddenLine".Translate().ToString();
                 return "LW_SettlementLine".Translate(
                     settlement.Name.Named("name"),
@@ -391,7 +391,12 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     info.Summary.Named("summary")).ToString();
             })
             .ToList();
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        var travelingArmyIds = new HashSet<EntityId>(state.ArmyMovements
+            .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
+            .Select(movement => movement.ArmyId));
         cachedArmyRows = state.Armies
+            .Where(army => debugExact || travelingArmyIds.Contains(army.Id))
             .OrderBy(army => army.Id.Value)
             .Take(MaxArmyRows)
             .Select(army =>
@@ -410,6 +415,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     && link.Status == RaidPawnLinkStatus.Prisoner);
                 var meals = state.GetOwnedResourceQuantity(army.Id, "PackagedSurvivalMeal");
                 var steel = state.GetOwnedResourceQuantity(army.Id, "Steel");
+                if (!debugExact)
+                {
+                    return "LW_ArmyBandLine".Translate(
+                        army.Name.Named("name"),
+                        army.FactionId.Named("faction"),
+                        StrengthBand((aliveCitizens * 100) + (deadCitizens * 20)).Named("strength"),
+                        CargoBand(meals + steel).Named("cargo")).ToString();
+                }
+
                 return "LW_ArmyLine".Translate(
                     army.Name.Named("name"),
                     army.FactionId.Named("faction"),
@@ -449,7 +463,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     record.Tick.Named("tick"),
                     record.Reason.Named("reason")).ToString())
             .ToList();
-        cachedDrifterRows = state.Drifters
+        cachedDrifterRows = (debugExact ? state.Drifters : System.Array.Empty<Drifter>())
             .OrderBy(drifter => drifter.ArrivalTick)
             .ThenBy(drifter => drifter.Id.Value)
             .Take(MaxDrifterRows)
@@ -461,7 +475,11 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     drifter.CombatAptitude.Named("combat"),
                     drifter.OrganizationAptitude.Named("organization")).ToString())
             .ToList();
+        var knownSettlementIds = new HashSet<EntityId>(state.KnownSettlementInfos.Select(info => info.SettlementId));
         cachedEventRows = state.Events
+            .Where(worldEvent => debugExact
+                || (worldEvent.SettlementId.HasValue && knownSettlementIds.Contains(worldEvent.SettlementId.Value))
+                || worldEvent.Kind == WorldEventKind.SettlementIntelUpdated)
             .Skip(System.Math.Max(0, state.Events.Count - MaxEventRows))
             .Take(MaxEventRows)
             .Select(worldEvent =>
@@ -489,19 +507,26 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             })
             .ToList();
 
-        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
-        var strengthRaw = state.Settlements
+        var strengthSettlements = debugExact
+            ? state.Settlements.Where(settlement => settlement.IsActive)
+            : state.Settlements.Where(settlement => settlement.IsActive && knownSettlementIds.Contains(settlement.Id));
+        var strengthRaw = strengthSettlements
             .Select(settlement => settlement.FactionId)
             .Distinct(System.StringComparer.Ordinal)
             .OrderBy(factionId => factionId, System.StringComparer.Ordinal)
             .Take(MaxWarRows)
             .Select(factionId =>
             {
-                var power = state.Settlements
-                    .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
-                    .Sum(settlement => SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower);
+                var power = debugExact
+                    ? state.Settlements
+                        .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
+                        .Sum(settlement => SettlementPowerService.GetSettlementPower(state, settlement.Id).CombatPower)
+                    : state.KnownSettlementInfos
+                        .Where(info => state.GetSettlement(info.SettlementId)?.FactionId == factionId)
+                        .Sum(info => PopulationBandMinimum(info.PopulationBand) * 100);
                 var strength = debugExact ? power.ToString() : StrengthBand(power);
-                return (FactionId: factionId, Text: "LW_FactionStrengthLine".Translate(
+                var strengthKey = debugExact ? "LW_FactionStrengthLine" : "LW_FactionStrengthKnownLine";
+                return (FactionId: factionId, Text: strengthKey.Translate(
                     factionId.Named("faction"),
                     strength.Named("strength")).ToString(), Value: power);
             })
@@ -513,9 +538,11 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         cachedWarHistoryRows = state.Events
             .Where(worldEvent =>
-                worldEvent.Kind == WorldEventKind.SettlementCaptured
-                || worldEvent.Kind == WorldEventKind.WarbandLaunched
-                || worldEvent.Kind == WorldEventKind.FactionCollapsed)
+                (worldEvent.Kind == WorldEventKind.SettlementCaptured
+                    || worldEvent.Kind == WorldEventKind.WarbandLaunched
+                    || worldEvent.Kind == WorldEventKind.FactionCollapsed)
+                && (debugExact
+                    || (worldEvent.SettlementId.HasValue && knownSettlementIds.Contains(worldEvent.SettlementId.Value))))
             .OrderByDescending(worldEvent => worldEvent.Tick)
             .ThenByDescending(worldEvent => worldEvent.Id.Value)
             .Take(MaxWarRows)
@@ -526,7 +553,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     worldEvent.Summary.Named("summary")).ToString())
             .ToList();
 
-        var economyRaw = state.Settlements
+        var economyRaw = strengthSettlements
             .Select(settlement => settlement.FactionId)
             .Distinct(System.StringComparer.Ordinal)
             .OrderBy(factionId => factionId, System.StringComparer.Ordinal)
@@ -536,17 +563,29 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 // E4b: read the priced ledger wealth (silver + valued material) the economy sim
                 // records each day; fall back to a raw material sum only before the first daily
                 // refresh has run.
-                var stock = state.GetFactionWealth(factionId)?.TotalWealth
-                    ?? state.Settlements
-                        .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
-                        .Sum(settlement => FactionMaterialStock(state, settlement.Id));
-                var wealth = debugExact ? stock.ToString() : WealthBand(stock);
-                return (FactionId: factionId, Text: "LW_FactionEconomyLine".Translate(
+                var known = state.KnownSettlementInfos
+                    .Where(info => state.GetSettlement(info.SettlementId)?.FactionId == factionId)
+                    .ToList();
+                var freshSnapshots = known
+                    .Where(info => PlayerKnowledgeService.HasFreshExactSnapshot(info, currentTick))
+                    .Select(info => info.ExactSnapshot!)
+                    .ToList();
+                var stock = debugExact
+                    ? state.GetFactionWealth(factionId)?.TotalWealth
+                        ?? state.Settlements
+                            .Where(settlement => string.Equals(settlement.FactionId, factionId, System.StringComparison.Ordinal))
+                            .Sum(settlement => FactionMaterialStock(state, settlement.Id))
+                    : freshSnapshots.Sum(snapshot => snapshot.Wealth);
+                var wealth = debugExact || freshSnapshots.Count == known.Count
+                    ? (debugExact ? stock.ToString() : WealthBand(stock))
+                    : known.Select(info => info.Production).DefaultIfEmpty(SettlementProductionKnowledge.Unknown).Max().ToString();
+                var economyKey = debugExact ? "LW_FactionEconomyLine" : "LW_FactionEconomyKnownLine";
+                return (FactionId: factionId, Text: economyKey.Translate(
                     factionId.Named("faction"),
                     wealth.Named("wealth")).ToString(), Value: stock);
             })
             .ToList();
-        var maxStock = economyRaw.Count > 0 ? economyRaw.Max(row => row.Value) : 0;
+        var maxStock = debugExact && economyRaw.Count > 0 ? economyRaw.Max(row => row.Value) : 0;
         cachedFactionEconomyRows = economyRaw
             .Select(row => (row.FactionId, row.Text, maxStock > 0 ? (float)row.Value / maxStock : 0f))
             .ToList();
@@ -648,6 +687,13 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .OrderBy(group => group.ArrivalTick)
             .ThenBy(group => group.Id.Value)
             .ToList();
+        var developments = state.Events
+            .Where(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDeveloped
+                && worldEvent.Tick >= System.Math.Max(0, state.CurrentTick - 60_000)
+                && worldEvent.SettlementId.HasValue)
+            .OrderByDescending(worldEvent => worldEvent.Tick)
+            .ThenByDescending(worldEvent => worldEvent.Id.Value)
+            .ToList();
 
         var rows = new List<string>
         {
@@ -656,7 +702,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 caravans.Count.Named("caravans"),
                 scouts.Count.Named("scouts"),
                 diplomats.Count.Named("diplomats"),
-                settlers.Count.Named("settlers")).ToString(),
+                settlers.Count.Named("settlers"),
+                developments.Count.Named("developments")).ToString(),
         };
 
         rows.AddRange(warbands.Take(4).Select(movement =>
@@ -708,6 +755,17 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     ? group.PlannedSettlementSlug
                     : group.PlannedSettlementName).Named("target"),
                 DaysUntil(group.ArrivalTick, state.CurrentTick).Named("days")).ToString()));
+
+        rows.AddRange(developments.Take(3).Select(worldEvent =>
+        {
+            var settlement = worldEvent.SettlementId.HasValue
+                ? state.GetSettlement(worldEvent.SettlementId.Value)
+                : null;
+            return "LW_WorldActionCompletedRow".Translate(
+                "LW_MissionKind_Develop".Translate().Named("kind"),
+                (settlement?.FactionId ?? "?").Named("faction"),
+                (settlement?.Name ?? "?").Named("target")).ToString();
+        }));
 
         return rows;
     }
@@ -896,16 +954,40 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             known.Production.Named("production")).ToString();
     }
 
-    private static string FormatProductionLine(SettlementProductionStatus production)
+    private static string FormatProductionLine(SettlementKnowledgeSnapshot snapshot)
     {
         return "LW_ProductionLine".Translate(
-            production.AdultWorkers.Named("workers"),
-            production.FoodPerDay.Named("food"),
-            production.SteelPerDay.Named("steel"),
-            production.MedicinePerDay.Named("medicine"),
-            production.ComponentsPerDay.Named("components"),
-            production.Biome.Named("biome"),
-            production.Hilliness.Named("hilliness"),
-            production.TechLevel.Named("tech")).ToString();
+            snapshot.AdultWorkers.Named("workers"),
+            snapshot.FoodPerDay.Named("food"),
+            snapshot.SteelPerDay.Named("steel"),
+            snapshot.MedicinePerDay.Named("medicine"),
+            snapshot.ComponentsPerDay.Named("components"),
+            snapshot.Biome.Named("biome"),
+            snapshot.Hilliness.Named("hilliness"),
+            snapshot.TechLevel.Named("tech")).ToString();
+    }
+
+    private static string CargoBand(int quantity)
+    {
+        if (quantity <= 25)
+        {
+            return "LW_MarkerCargo_Light".Translate();
+        }
+
+        return quantity <= 100
+            ? "LW_MarkerCargo_Loaded".Translate()
+            : "LW_MarkerCargo_Heavy".Translate();
+    }
+
+    private static int PopulationBandMinimum(SettlementPopulationBand band)
+    {
+        return band switch
+        {
+            SettlementPopulationBand.Tiny => 1,
+            SettlementPopulationBand.Small => 8,
+            SettlementPopulationBand.Medium => 20,
+            SettlementPopulationBand.Large => 60,
+            _ => 0,
+        };
     }
 }

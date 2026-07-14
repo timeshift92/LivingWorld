@@ -115,6 +115,8 @@ var tests = new List<(string Name, Action Test)>
     ("updates settlement knowledge from traders with confidence", TestTraderSettlementKnowledgeUpdatesConfidence),
     ("records production knowledge without exact values unless directly visited", TestProductionKnowledgeVisibility),
     ("does not downgrade direct settlement knowledge with weaker intel", TestSettlementKnowledgeDoesNotDowngradeDirectVisit),
+    ("replaces stale direct knowledge with fresh lower precision intel", TestStaleDirectKnowledgeIsReplacedByFreshIntel),
+    ("keeps direct visit exact values as an immutable save snapshot", TestDirectVisitKnowledgeUsesImmutableSnapshot),
     ("marks old settlement knowledge as stale", TestSettlementKnowledgeFreshness),
     ("binds generated raid pawns to reserved citizens", TestRaidPawnBindingLinksPawnsToCitizens),
     ("marks bound raid citizen dead when pawn dies", TestRaidPawnDeathMarksCitizenDead),
@@ -1778,6 +1780,7 @@ static void TestWorldActivitySummaryGroupsRecentEvents()
     state.AddResource(settlement.Id, "Steel", 20);
     state.RecordEvent(WorldEventKind.SettlementProjectCompleted, settlement.Id, "workshop completed");
     state.RecordEvent(WorldEventKind.CaravanLaunched, settlement.Id, "caravan departed");
+    state.RecordEvent(WorldEventKind.MigrationStarted, settlement.Id, "migrants departed");
     state.RecordEvent(WorldEventKind.DiplomaticMissionSent, settlement.Id, "envoys departed");
     state.RecordEvent(WorldEventKind.AnimalHunted, settlement.Id, "hunted muffalo");
     state.RecordEvent(WorldEventKind.TechnologyDiffused, settlement.Id, "industrial farming diffused");
@@ -1793,10 +1796,11 @@ static void TestWorldActivitySummaryGroupsRecentEvents()
     AssertEqual(1, summary.ConstructionEvents);
     AssertEqual(0, summary.MilitaryEvents);
     AssertEqual(1, summary.TradeEvents);
+    AssertEqual(1, summary.MigrationEvents);
     AssertEqual(1, summary.DiplomacyEvents);
     AssertEqual(1, summary.EcologyEvents);
     AssertEqual(1, summary.TechnologyEvents);
-    AssertEqual(7, summary.TotalEvents);
+    AssertEqual(8, summary.TotalEvents);
 }
 
 static void TestSettlementFacilitiesModifyProductionOutput()
@@ -3869,6 +3873,7 @@ static void TestPublicSettlementKnowledgeUsesEstimates()
     AssertEqual(SettlementFoodKnowledge.Shortage, known.Food);
     AssertEqual(SettlementProductionKnowledge.Unknown, known.Production);
     AssertEqual(false, known.ExactValuesVisible);
+    AssertEqual(null, known.ExactSnapshot);
     AssertEqual(1, state.KnownSettlementInfos.Count);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementIntelUpdated));
 }
@@ -3931,10 +3936,13 @@ static void TestProductionKnowledgeVisibility()
     AssertEqual(false, publicInfo.ExactValuesVisible);
     AssertEqual(SettlementProductionKnowledge.Strong, directInfo.Production);
     AssertEqual(true, directInfo.ExactValuesVisible);
+    AssertEqual(4, directInfo.ExactSnapshot!.Population);
+    AssertEqual(4, directInfo.ExactSnapshot.AdultWorkers);
     AssertEqual(KnowledgeConfidence.Confirmed, directInfo.Confidence);
     AssertEqual(IntelSourceKind.DirectVisit, directInfo.SourceKind);
     AssertEqual(SettlementProductionKnowledge.Strong, savedKnown.Production);
     AssertEqual(true, savedKnown.ExactValuesVisible);
+    AssertEqual(directInfo.ExactSnapshot, savedKnown.ExactSnapshot);
 }
 
 static void TestSettlementKnowledgeDoesNotDowngradeDirectVisit()
@@ -3962,6 +3970,56 @@ static void TestSettlementKnowledgeDoesNotDowngradeDirectVisit()
     AssertEqual(KnowledgeConfidence.Confirmed, current.Confidence);
     AssertEqual(true, current.ExactValuesVisible);
     AssertEqual("direct visit", current.Summary);
+}
+
+static void TestStaleDirectKnowledgeIsReplacedByFreshIntel()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    state.CreateCitizen("Worker", 31, Sex.Female, "worker", settlement.Id);
+
+    var direct = PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+        state,
+        settlement.Id,
+        "direct visit");
+    state.AdvanceToTick(direct.Tick + PlayerKnowledgeService.ExactIntelStaleAfterTicks + 1);
+    var fresh = PlayerKnowledgeService.RecordTraderSettlementInfo(
+        state,
+        settlement.Id,
+        "fresh trader report");
+
+    AssertEqual(IntelSourceKind.Trade, fresh.SourceKind);
+    AssertEqual(KnowledgeConfidence.High, fresh.Confidence);
+    AssertEqual(false, fresh.ExactValuesVisible);
+    AssertEqual(null, fresh.ExactSnapshot);
+    AssertEqual("fresh trader report", state.GetKnownSettlementInfo(settlement.Id)!.Summary);
+}
+
+static void TestDirectVisitKnowledgeUsesImmutableSnapshot()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("forge-town", "Forge Town", "Outlander");
+    state.CreateCitizen("Worker", 31, Sex.Female, "worker", settlement.Id);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 30);
+    state.RecordSettlementProductionProfile(SettlementProductionProfile.FromEnvironment(
+        settlement.Id,
+        new SettlementProductionEnvironment("TemperateForest", "SmallHills", "Industrial", 55, 850, 21)));
+
+    var direct = PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+        state,
+        settlement.Id,
+        "direct visit");
+    var observed = direct.ExactSnapshot!;
+    state.CreateCitizen("Later arrival", 28, Sex.Male, "worker", settlement.Id);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 500);
+
+    var current = state.GetKnownSettlementInfo(settlement.Id)!;
+    AssertEqual(1, current.ExactSnapshot!.Population);
+    AssertEqual(30, current.ExactSnapshot.FoodStock);
+    AssertEqual(observed, current.ExactSnapshot);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    AssertEqual(observed, restored.GetKnownSettlementInfo(settlement.Id)!.ExactSnapshot);
 }
 
 static void TestSettlementKnowledgeFreshness()
@@ -8562,7 +8620,11 @@ static void TestRimWorldMainTab()
     AssertContains("GetKnownSettlementInfo", source);
     AssertContains("KnownSettlementInfo", source);
     AssertContains("LW_KnowledgeUnknown", source);
-    AssertContains("ExactValuesVisible", source);
+    AssertContains("HasFreshExactSnapshot", source);
+    AssertContains("known!.ExactSnapshot!", source);
+    AssertContains("LW_ArmyBandLine", source);
+    AssertContains("CargoBand(meals + steel)", source);
+    AssertContains("knownSettlementIds", source);
     AssertContains("LW_ProductionHiddenLine", source);
     AssertContains("LW_RaidOutcomesHeader", source);
     AssertContains("LW_RaidOutcomeLine", source);
@@ -8673,8 +8735,9 @@ static void TestRimWorldSettlementInspectPatch()
     AssertContains("LW_ProductionLine", source);
     AssertContains("LW_ProductionHiddenLine", source);
     AssertContains("RecordDirectVisitSettlementInfo", source);
-    AssertContains("ExactValuesVisible", source);
-    AssertContains("GetSettlementProductionStatus", source);
+    AssertContains("HasFreshExactSnapshot", source);
+    AssertContains("ExactSnapshot", source);
+    AssertDoesNotContain("GetSettlementProductionStatus", source);
     AssertContains("AllPawnsSpawned", source);
     AssertContains("RaceProps?.Humanlike", source);
     AssertDoesNotContain("GetSettlementFoodStatus", source);
@@ -8721,29 +8784,18 @@ static void TestRimWorldSettlementFacilitiesInspection()
     var root = FindRepoRoot();
     var source = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementInspectPatch.cs"));
 
-    // Reads the Core facility/project ledger.
-    AssertContains("state.GetSettlementFacilities(settlementId)", source);
-    AssertContains("SettlementProjectStatus.Active", source);
-    // Gating: exact detail only behind ExactValuesVisible, coarse band otherwise.
-    AssertContains("known.ExactValuesVisible", source);
-    AssertContains("LW_InspectFacilitiesExactLine", source);
-    AssertContains("LW_InspectFacilitiesBandLine", source);
-    AssertContains("FacilityDevelopmentBand", source);
-    // Hidden entirely for unknown settlements, like the production line.
-    AssertContains("if (known == null)", source);
-    // Project note distinguishes build vs repair when exact, generic when coarse.
-    AssertContains("LW_InspectFacilityProjectBuildExact", source);
-    AssertContains("LW_InspectFacilityProjectRepairExact", source);
-    AssertContains("LW_InspectFacilityProjectCoarseLine", source);
+    // Remote inspection reads only the immutable direct-visit snapshot, never live facilities.
+    AssertContains("SettlementKnowledgeSnapshot? snapshot", source);
+    AssertContains("snapshot.FacilityCount", source);
+    AssertContains("snapshot.ActiveProjectCount", source);
+    AssertContains("LW_InspectFacilitiesSnapshotLine", source);
+    AssertDoesNotContain("state.GetSettlementFacilities(settlementId)", source);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     foreach (var key in new[]
     {
-        "LW_InspectFacilitiesExactLine", "LW_InspectFacilitiesBandLine", "LW_InspectFacilityItem",
-        "LW_InspectFacilityProjectBuildExact", "LW_InspectFacilityProjectCoarseLine",
-        "LW_FacilityDevBand_Basic", "LW_FacilityDevBand_Advanced",
-        "LW_FacilityKind_Farm", "LW_FacilityKind_Workshop", "LW_FacilityKind_Storage",
+        "LW_InspectFacilitiesSnapshotLine",
     })
     {
         AssertContains($"<{key}>", en);
@@ -8759,18 +8811,15 @@ static void TestRimWorldSettlementAnimalsInspection()
     var source = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementInspectPatch.cs"));
 
     AssertContains("BuildAnimalsLine", source);
-    AssertContains("state.AnimalCohorts", source);
-    AssertContains("known.ExactValuesVisible", source);
-    AssertContains("LW_InspectAnimalsExactLine", source);
-    AssertContains("LW_InspectAnimalsBandLine", source);
-    AssertContains("AnimalAbundanceBand", source);
+    AssertContains("snapshot.AnimalCount", source);
+    AssertContains("LW_InspectAnimalsSnapshotLine", source);
+    AssertDoesNotContain("state.AnimalCohorts", source);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
     foreach (var key in new[]
     {
-        "LW_InspectAnimalsExactLine", "LW_InspectAnimalItem", "LW_InspectAnimalsBandLine",
-        "LW_AnimalBand_Sparse", "LW_AnimalBand_Teeming",
+        "LW_InspectAnimalsSnapshotLine",
     })
     {
         AssertContains($"<{key}>", en);
@@ -9544,9 +9593,12 @@ static void TestRimWorldEconomyWindow()
     AssertContains("GetFactionWealth", window);
     AssertContains("exactVisible ? data.Population.ToString() : data.PopulationBand.ToString()", window);
     AssertContains("exactVisible ? data.Wealth.ToString() : \"?\"", window);
-    AssertContains("PlayerKnowledgeService.GetFreshness", window);
+    AssertContains("PlayerKnowledgeService.HasFreshExactSnapshot", window);
+    AssertContains("info.ExactSnapshot!", window);
+    AssertContains("LW_EconomyCol_KnownSettlements", window);
+    AssertContains("AggregatePopulationBand", window);
     AssertContains("LW_EconomyCol_Faction", window);
-    AssertContains("LW_EconomyCol_Population", window);
+    AssertContains("LW_EconomyCol_KnownPopulation", window);
     AssertContains("LW_EconomyCol_Wealth", window);
     // It must show economic motion, not only identical starting stockpiles.
     AssertContains("LW_EconomyCol_Output", window);
@@ -9564,7 +9616,7 @@ static void TestRimWorldEconomyWindow()
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
-    foreach (var key in new[] { "LW_EconomyWindowTitle", "LW_EconomyCol_Settlements", "LW_EconomyCol_Tier", "LW_EconomyCol_Output", "LW_EconomyCol_Change", "LW_Tier_City", "LW_OpenEconomyWindow" })
+    foreach (var key in new[] { "LW_EconomyWindowTitle", "LW_EconomyCol_KnownSettlements", "LW_EconomyCol_KnownPopulation", "LW_EconomyCol_Tier", "LW_EconomyCol_Output", "LW_EconomyCol_Change", "LW_Tier_City", "LW_OpenEconomyWindow" })
     {
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);
@@ -9581,14 +9633,14 @@ static void TestRimWorldWorldActivityTrends()
     AssertContains("DailyPopulationChange", economyWindow);
     AssertContains("WorldEventKind.CitizenBorn", economyWindow);
     AssertContains("WorldEventKind.CitizenDied", economyWindow);
-    AssertContains("WorldEventKind.MigrationCompleted", economyWindow);
+    AssertDoesNotContain("WorldEventKind.MigrationCompleted => 1", economyWindow);
     AssertContains("FormatSigned(data.DailyPopulationChange)", economyWindow);
 
     AssertContains("LW_SettlementObserver_DailyTrend", observerWindow);
     AssertContains("BuildDailyTrend", observerWindow);
     AssertContains("WorldActivitySummaryService.Summarize", observerWindow);
     AssertContains("WorldActivitySummaryRequest", observerWindow);
-    AssertContains("summary.TradeEvents", observerWindow);
+    AssertContains("summary.MigrationEvents", observerWindow);
     AssertContains("summary.ConstructionEvents", observerWindow);
     AssertContains("summary.EconomyEvents", observerWindow);
     AssertContains("summary.EcologyEvents", observerWindow);
@@ -9721,6 +9773,8 @@ static void TestRimWorldDirectSettlementObserver()
     AssertContains("LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)", window);
     AssertContains("if (!debugLogging && !allowExactWithoutDebug && !scopedSettlementId.HasValue)", window);
     AssertContains("BuildKnowledgeLines", window);
+    AssertContains("BuildSnapshotLines", window);
+    AssertContains("HasFreshExactSnapshot", window);
     AssertContains("!scopedSettlementId.HasValue || settlement.Id == scopedSettlementId.Value", window);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
@@ -9763,6 +9817,7 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     AssertContains("private bool reconciled", site);
     AssertContains("public EntityId? SettlementId", site);
     AssertContains("public void Configure(", site);
+    AssertContains("public void RefreshSource(", site);
     AssertContains("Scribe_Values.Look(ref settlementIdValue", site);
     AssertContains("Scribe_Values.Look(ref sourceSettlementWorldObjectId", site);
     AssertContains("Scribe_Values.Look(ref sourceTile", site);
@@ -9786,6 +9841,8 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     AssertContains("candidate.SettlementId == settlementId", service);
     AssertContains("candidate.SourceSettlementWorldObjectId == sourceSettlement.ID", service);
     AssertContains("site.Configure(", service);
+    AssertContains("site!.RefreshSource(", service);
+    AssertContains("site.Faction != sourceSettlement.Faction", service);
     AssertContains("site.SetFaction(sourceSettlement.Faction)", service);
     AssertDoesNotContain("MapGenerator.GenerateMap", service);
     AssertDoesNotContain("CaravanEnterMapUtility.Enter", service);
@@ -9940,15 +9997,16 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("texture.mipMapBias", marker);
     AssertContains("public override void ExposeData()", marker);
     AssertContains("LW_MissionMarkerInspect", marker);
-    AssertContains("LW_MissionMarkerStrengthLine", marker);
-    AssertContains("LW_MissionMarkerResourceLine", marker);
+    AssertContains("LW_MissionMarkerStrengthBandLine", marker);
+    AssertContains("LW_MissionMarkerCargoBandLine", marker);
     AssertContains("LW_MissionMarkerReasonLine", marker);
     AssertContains("public override IEnumerable<Gizmo> GetGizmos()", marker);
     AssertContains("LW_MissionMarkerDetails", marker);
     AssertContains("Dialog_MessageBox", marker);
-    AssertContains("combatants.Named(\"combatants\")", marker);
-    AssertContains("strength.Named(\"strength\")", marker);
-    AssertContains("resourceSummary.Named(\"resources\")", marker);
+    AssertContains("ForceBand().Named(\"band\")", marker);
+    AssertContains("CargoBand().Named(\"band\")", marker);
+    AssertDoesNotContain("combatants.Named(\"combatants\")", marker);
+    AssertDoesNotContain("resourceSummary.Named(\"resources\")", marker);
     AssertContains("reason.Named(\"reason\")", marker);
     AssertContains("Scribe_Values.Look(ref combatants", marker);
     AssertContains("Scribe_Values.Look(ref strength", marker);
@@ -10094,7 +10152,12 @@ static void TestRimWorldPlayerCaravanMarkerContacts()
     AssertContains("playerCaravan.AddPawnOrItem", service);
     AssertContains("state.AddResource(ledgerCaravanId, ThingDefOf.Silver.defName", service);
     AssertContains("PlayerKnowledgeService.RecordTraderSettlementInfo", service);
+    AssertContains("\"settler:\", EntityKind.MigrationGroup", service);
+    AssertContains("GetMigrationGroup(groupId)?.SourceSettlementId", service);
     AssertContains("DiplomacyService.AdjustGoodwill", service);
+
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("marker.IsVisibleByFilter", component);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -10136,6 +10199,9 @@ static void TestRimWorldWorldActionMarkerLegendAndFilters()
     AssertContains("ArmyMovementStatus.Traveling", mainTab);
     AssertContains("CaravanStatus.Traveling", mainTab);
     AssertContains("WorldMissionStatus.Traveling", mainTab);
+    AssertContains("WorldEventKind.SettlementDeveloped", mainTab);
+    AssertContains("LW_MissionKind_Develop", mainTab);
+    AssertContains("LW_WorldActionCompletedRow", mainTab);
 
     AssertContains("World/LivingWorld_Settler", component);
     AssertDoesNotContain("LW_WorldActionSettlersImmediate", mainTab);

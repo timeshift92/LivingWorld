@@ -12,7 +12,7 @@
   <LW_DebugLedgerCreated>Видимый тестовый ledger создан.</LW_DebugLedgerCreated>
   <LW_DebugSettlementName>Тестовое поселение Living World</LW_DebugSettlementName>
   <LW_DebugCitizenName>Тестовый житель {index}</LW_DebugCitizenName>
-  <LW_RaidHookStatus>Вражеские ванильные рейды используют Living World: сначала нужен повод из разведки или торговли, затем взрослые жители резервируются из поселений фракции, а сила рейда ограничивается доступными людьми.</LW_RaidHookStatus>
+  <LW_RaidHookStatus>Рейды фракций из ledger используют подготовку, перемещение и реальных жителей Living World, когда инцидент можно безопасно связать. Неподдерживаемые инциденты и рейды внешних модов остаются в своей исходной системе.</LW_RaidHookStatus>
   <LW_SettlementsHeader>Поселения</LW_SettlementsHeader>
   <LW_ArmiesHeader>Армии</LW_ArmiesHeader>
   <LW_RaidOutcomesHeader>Последние рейды</LW_RaidOutcomesHeader>
@@ -209,6 +209,15 @@
   <LW_MissionMarkerInspect>{faction}, {kind}: движется к {target} - прибытие примерно через {days} дн.</LW_MissionMarkerInspect>
   <LW_MissionMarkerStrengthLine>Сила: людей {combatants}, мощь {strength}</LW_MissionMarkerStrengthLine>
   <LW_MissionMarkerResourceLine>Груз/припасы: {resources}</LW_MissionMarkerResourceLine>
+  <LW_MissionMarkerStrengthBandLine>Оценка сил: {band}</LW_MissionMarkerStrengthBandLine>
+  <LW_MissionMarkerCargoBandLine>Оценка груза: {band}</LW_MissionMarkerCargoBandLine>
+  <LW_MarkerBand_Small>малые</LW_MarkerBand_Small>
+  <LW_MarkerBand_Medium>средние</LW_MarkerBand_Medium>
+  <LW_MarkerBand_Large>крупные</LW_MarkerBand_Large>
+  <LW_MarkerBand_Massive>огромные</LW_MarkerBand_Massive>
+  <LW_MarkerCargo_Light>лёгкий</LW_MarkerCargo_Light>
+  <LW_MarkerCargo_Loaded>значительный</LW_MarkerCargo_Loaded>
+  <LW_MarkerCargo_Heavy>тяжёлый</LW_MarkerCargo_Heavy>
   <LW_MissionMarkerReasonLine>Цель: {reason}</LW_MissionMarkerReasonLine>
   <LW_MissionMarkerDetails>Подробности</LW_MissionMarkerDetails>
   <LW_PlayerCaravanMarkerContactLabel>Контакт каравана</LW_PlayerCaravanMarkerContactLabel>
@@ -270,12 +279,16 @@
   <LW_DebugOpenRealSettlementMap>DEV: открыть реальную карту базы LW</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует там комнаты, склады, защитников и животных. Это создаёт реальную карту в сохранении и предназначено для проверки.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>Действия мира</LW_WorldActionsHeader>
-  <LW_WorldActionLegendLine>Активные действия мира: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}, поселенцы {settlers}. Видимость маркеров настраивается в настройках мода.</LW_WorldActionLegendLine>
+  <LW_WorldActionLegendLine>Действия мира: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}, поселенцы {settlers}, развитие за сутки {developments}. Видимость маркеров настраивается в настройках мода.</LW_WorldActionLegendLine>
   <LW_WorldActionRow>{kind}: {faction} к {target}, около {days} дн.</LW_WorldActionRow>
+  <LW_WorldActionCompletedRow>{kind}: {faction} завершила работу в {target}</LW_WorldActionCompletedRow>
+  <LW_MissionKind_Develop>развитие</LW_MissionKind_Develop>
   <LW_EconomyWindowTitle>Население и экономика мира</LW_EconomyWindowTitle>
   <LW_EconomyCol_Faction>Фракция</LW_EconomyCol_Faction>
   <LW_EconomyCol_Settlements>Поселения</LW_EconomyCol_Settlements>
+  <LW_EconomyCol_KnownSettlements>Известно</LW_EconomyCol_KnownSettlements>
   <LW_EconomyCol_Population>Население</LW_EconomyCol_Population>
+  <LW_EconomyCol_KnownPopulation>Изв. насел.</LW_EconomyCol_KnownPopulation>
   <LW_EconomyCol_PopTrend>Нас./день</LW_EconomyCol_PopTrend>
   <LW_EconomyCol_Tier>Макс. уровень</LW_EconomyCol_Tier>
   <LW_EconomyCol_Output>Выпуск/день</LW_EconomyCol_Output>
@@ -289,6 +302,15 @@
   <LW_SettlementObserver_Production>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_SettlementObserver_Production>
   <LW_SettlementObserver_FoodMigration>Еда {food}, расход/день {need}, дней запаса {days} | давление миграции {pressure} ({reason})</LW_SettlementObserver_FoodMigration>
   <LW_SettlementObserver_DailyTrend>За сутки: рождения +{births}, потери -{losses}, миграция {moves}, стройка {builds}, урон/ремонт {damage}, ресурсы {resources}, животные {animals}, активных движений {travels}</LW_SettlementObserver_DailyTrend>
+  <LW_SettlementObserver_SnapshotNotice>Снимок на тике {tick}; давность {ageDays} дн. Значения ниже не обновляются удалённо.</LW_SettlementObserver_SnapshotNotice>
+  <LW_SettlementObserver_SnapshotFood>На момент наблюдения: еда {food}, расход/день {need}, запас {days} дн.; миграция {migration}</LW_SettlementObserver_SnapshotFood>
+  <LW_SettlementObserver_SnapshotTrend>На момент наблюдения: демография за сутки +{births}/-{losses}; событий миграции {moves}</LW_SettlementObserver_SnapshotTrend>
+  <LW_SettlementObserver_SnapshotCounts>Наблюдалось построек {facilities}; животных {animals}; активных проектов {projects}</LW_SettlementObserver_SnapshotCounts>
+  <LW_InspectFacilitiesSnapshotLine>Наблюдалось построек: {facilities}; активных проектов: {projects}</LW_InspectFacilitiesSnapshotLine>
+  <LW_InspectAnimalsSnapshotLine>Наблюдалось животных: {animals}</LW_InspectAnimalsSnapshotLine>
+  <LW_ArmyBandLine>{name} [{faction}] - оценка сил: {strength}, груз: {cargo}</LW_ArmyBandLine>
+  <LW_FactionStrengthKnownLine>{faction}: известный потенциал сил {strength}</LW_FactionStrengthKnownLine>
+  <LW_FactionEconomyKnownLine>{faction}: известная экономика {wealth}</LW_FactionEconomyKnownLine>
   <LW_SettlementObserver_Projects>Проекты</LW_SettlementObserver_Projects>
   <LW_SettlementObserver_NoActiveProject>Нет активной стройки или ремонта.</LW_SettlementObserver_NoActiveProject>
   <LW_SettlementObserver_ProjectProgress>{kind}: {facility}, готово {progress}%, осталось около {days} дн.</LW_SettlementObserver_ProjectProgress>

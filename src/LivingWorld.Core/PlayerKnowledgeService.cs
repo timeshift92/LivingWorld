@@ -3,6 +3,7 @@ namespace LivingWorld.Core;
 public static class PlayerKnowledgeService
 {
     private const int TicksPerDay = 60_000;
+    public const int ExactIntelStaleAfterTicks = 1_800_000;
 
     public static KnownSettlementInfo RecordPublicSettlementInfo(
         WorldState state,
@@ -72,6 +73,13 @@ public static class PlayerKnowledgeService
             staleAfterTicks > 0 && ageTicks > staleAfterTicks);
     }
 
+    public static bool HasFreshExactSnapshot(KnownSettlementInfo? info, int currentTick)
+    {
+        return info?.ExactValuesVisible == true
+            && info.ExactSnapshot != null
+            && !GetFreshness(info, currentTick, ExactIntelStaleAfterTicks).IsStale;
+    }
+
     private static KnownSettlementInfo RecordSettlementInfo(
         WorldState state,
         EntityId settlementId,
@@ -107,13 +115,18 @@ public static class PlayerKnowledgeService
             ToMigrationKnowledge(migration),
             ToProductionKnowledge(production),
             exactValuesVisible,
-            summary);
+            summary)
+        {
+            ExactSnapshot = exactValuesVisible
+                ? CreateExactSnapshot(state, settlement.Id, population, food, production)
+                : null
+        };
 
         state.RecordKnownSettlementInfo(info);
         return state.GetKnownSettlementInfo(settlement.Id) ?? info;
     }
 
-    private static SettlementPopulationBand ToPopulationBand(int population)
+    public static SettlementPopulationBand ToPopulationBand(int population)
     {
         if (population <= 0)
         {
@@ -136,6 +149,48 @@ public static class PlayerKnowledgeService
         }
 
         return SettlementPopulationBand.Large;
+    }
+
+    private static SettlementKnowledgeSnapshot CreateExactSnapshot(
+        WorldState state,
+        EntityId settlementId,
+        SettlementPopulation population,
+        SettlementFoodStatus food,
+        SettlementProductionStatus production)
+    {
+        var summary = WorldActivitySummaryService.Summarize(
+            state,
+            new WorldActivitySummaryRequest(state.CurrentTick, TicksPerDay, settlementId));
+        var wealth = state.GetSettlementWealth(settlementId)?.TotalWealth
+            ?? state.ResourcesForOwner(settlementId).Sum(resource =>
+                resource.Quantity * SettlementWealthService.DefaultPriceBook.PriceOf(resource.ResourceKey));
+
+        return new SettlementKnowledgeSnapshot(
+            population.Total,
+            population.Children,
+            population.Adults,
+            population.Elderly,
+            food.Food,
+            food.DailyNeed,
+            food.FoodDays,
+            production.AdultWorkers,
+            production.FoodPerDay,
+            production.SteelPerDay,
+            production.MedicinePerDay,
+            production.ComponentsPerDay,
+            production.Biome,
+            production.Hilliness,
+            production.TechLevel,
+            wealth,
+            SettlementDevelopmentService.GetTier(state, settlementId),
+            state.GetSettlementFacilities(settlementId).Count,
+            state.AnimalCohorts
+                .Where(cohort => cohort.OwnerId == settlementId)
+                .Sum(cohort => cohort.Count),
+            state.SettlementProjects.Count(project =>
+                project.SettlementId == settlementId && project.Status == SettlementProjectStatus.Active),
+            summary.PopulationDelta,
+            summary.MigrationEvents);
     }
 
     private static SettlementMigrationKnowledge ToMigrationKnowledge(SettlementMigrationStatus migration)

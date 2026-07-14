@@ -72,6 +72,24 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         reconciled = false;
     }
 
+    public void RefreshSource(
+        EntityId settlementId,
+        int sourceSettlementWorldObjectId,
+        int sourceTile,
+        string visitKind,
+        string settlementLabel)
+    {
+        settlementIdValue = settlementId.Kind == EntityKind.Settlement ? settlementId.Value : 0;
+        this.sourceSettlementWorldObjectId = sourceSettlementWorldObjectId;
+        this.sourceTile = sourceTile;
+        this.visitKind = string.IsNullOrWhiteSpace(visitKind) ? "observe" : visitKind;
+        this.settlementLabel = settlementLabel ?? string.Empty;
+        if (!HasMap)
+        {
+            Tile = sourceTile;
+        }
+    }
+
     public void MarkPlayerCaravanEntered()
     {
         activeMapSession = true;

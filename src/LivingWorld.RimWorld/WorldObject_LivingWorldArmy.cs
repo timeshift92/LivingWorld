@@ -254,15 +254,15 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
             if (combatants > 0 || strength > 0)
             {
                 builder.AppendLine();
-                builder.Append("LW_MissionMarkerStrengthLine".Translate(
-                    combatants.Named("combatants"),
-                    strength.Named("strength")));
+                builder.Append("LW_MissionMarkerStrengthBandLine".Translate(
+                    ForceBand().Named("band")));
             }
 
             if (!string.IsNullOrWhiteSpace(resourceSummary))
             {
                 builder.AppendLine();
-                builder.Append("LW_MissionMarkerResourceLine".Translate(resourceSummary.Named("resources")));
+                builder.Append("LW_MissionMarkerCargoBandLine".Translate(
+                    CargoBand().Named("band")));
             }
 
             if (!string.IsNullOrWhiteSpace(reason))
@@ -273,6 +273,59 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
 
             return builder.ToString();
         }
+    }
+
+    private string ForceBand()
+    {
+        var score = System.Math.Max(strength, combatants * 100);
+        if (score < 500)
+        {
+            return "LW_MarkerBand_Small".Translate();
+        }
+
+        if (score < 1_500)
+        {
+            return "LW_MarkerBand_Medium".Translate();
+        }
+
+        return score < 4_000
+            ? "LW_MarkerBand_Large".Translate()
+            : "LW_MarkerBand_Massive".Translate();
+    }
+
+    private string CargoBand()
+    {
+        var quantity = 0;
+        var current = 0;
+        var readingNumber = false;
+        foreach (var character in resourceSummary)
+        {
+            if (character >= '0' && character <= '9')
+            {
+                current = System.Math.Min(100_000, (current * 10) + (character - '0'));
+                readingNumber = true;
+            }
+            else if (readingNumber)
+            {
+                quantity = System.Math.Min(100_000, quantity + current);
+                current = 0;
+                readingNumber = false;
+            }
+        }
+
+        if (readingNumber)
+        {
+            quantity = System.Math.Min(100_000, quantity + current);
+        }
+
+        if (quantity <= 25)
+        {
+            return "LW_MarkerCargo_Light".Translate();
+        }
+
+        return quantity <= 100
+            ? "LW_MarkerCargo_Loaded".Translate()
+            : "LW_MarkerCargo_Heavy".Translate();
     }
 
     public override IEnumerable<Gizmo> GetGizmos()

@@ -44,6 +44,17 @@ public static class LivingWorldSettlementVisitSiteService
 
         if (FindExisting(sourceSettlement, settlementId, out site))
         {
+            site!.RefreshSource(
+                settlementId,
+                sourceSettlement.ID,
+                sourceSettlement.Tile,
+                visitKind,
+                sourceSettlement.Label);
+            if (sourceSettlement.Faction != null && site.Faction != sourceSettlement.Faction)
+            {
+                site.SetFaction(sourceSettlement.Faction);
+            }
+
             failureReason = string.Empty;
             return true;
         }

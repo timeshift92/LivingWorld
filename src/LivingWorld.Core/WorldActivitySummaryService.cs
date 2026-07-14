@@ -11,6 +11,7 @@ public sealed record WorldActivitySummary(
     int ConstructionEvents,
     int MilitaryEvents,
     int TradeEvents,
+    int MigrationEvents,
     int DiplomacyEvents,
     int EcologyEvents,
     int TechnologyEvents,
@@ -31,6 +32,7 @@ public static class WorldActivitySummaryService
         var construction = 0;
         var military = 0;
         var trade = 0;
+        var migration = 0;
         var diplomacy = 0;
         var ecology = 0;
         var technology = 0;
@@ -53,6 +55,7 @@ public static class WorldActivitySummaryService
                     ref construction,
                     ref military,
                     ref trade,
+                    ref migration,
                     ref diplomacy,
                     ref ecology,
                     ref technology,
@@ -88,6 +91,7 @@ public static class WorldActivitySummaryService
                     ref construction,
                     ref military,
                     ref trade,
+                    ref migration,
                     ref diplomacy,
                     ref ecology,
                     ref technology,
@@ -115,6 +119,7 @@ public static class WorldActivitySummaryService
                 ref construction,
                 ref military,
                 ref trade,
+                ref migration,
                 ref diplomacy,
                 ref ecology,
                 ref technology,
@@ -127,6 +132,7 @@ public static class WorldActivitySummaryService
             construction,
             military,
             trade,
+            migration,
             diplomacy,
             ecology,
             technology,
@@ -188,6 +194,7 @@ public static class WorldActivitySummaryService
         ref int construction,
         ref int military,
         ref int trade,
+        ref int migration,
         ref int diplomacy,
         ref int ecology,
         ref int technology,
@@ -199,7 +206,6 @@ public static class WorldActivitySummaryService
         {
             case WorldEventKind.CitizenBorn:
             case WorldEventKind.DrifterAssimilated:
-            case WorldEventKind.MigrationCompleted:
                 populationDelta = SaturatingAdd(populationDelta, boundedCount);
                 counted = true;
                 break;
@@ -210,6 +216,13 @@ public static class WorldActivitySummaryService
                 populationDelta = SaturatingAdd(populationDelta, -boundedCount);
                 counted = true;
                 break;
+        }
+
+        if (kind is WorldEventKind.MigrationStarted
+            or WorldEventKind.MigrationCompleted)
+        {
+            migration = SaturatingAdd(migration, boundedCount);
+            counted = true;
         }
 
         if (IsEconomy(kind))

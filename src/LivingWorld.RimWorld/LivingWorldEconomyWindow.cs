@@ -14,11 +14,10 @@ namespace LivingWorld.RimWorld;
 /// with faction icons and comparative wealth bars. This is the "at a glance" companion to the
 /// scrolling label lists on the main tab (inspired by Economics-and-Demography's population tab).
 ///
-/// It derives bands from live ledger data: population from <c>GetSettlementPopulation</c>, tier from
-/// <c>SettlementDevelopmentService.GetTier</c>, and wealth from the faction wealth snapshot when the
-/// Core sim has recorded one, otherwise a live material-stock fallback. Exact population and wealth
-/// values are shown only while debug logging is enabled. Rows are cached on a tick throttle so the
-/// popup never recomputes aggregates every frame.
+/// Outside debug mode it aggregates only the player's persisted settlement-intel snapshots. Exact
+/// values remain frozen at observation time and disappear when stale; incomplete knowledge is shown
+/// as conservative bands and explicitly labelled as known sites/population. Debug mode may read the
+/// live ledger. Rows are cached on a tick throttle so the popup never recomputes every frame.
 /// </summary>
 public sealed class LivingWorldEconomyWindow : Window
 {
@@ -142,9 +141,12 @@ public sealed class LivingWorldEconomyWindow : Window
 
         if (isHeader)
         {
+            var debugHeaders = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
             Widgets.Label(new Rect(rect.x, rect.y, xSettlements - rect.x, rect.height), "LW_EconomyCol_Faction".Translate());
-            Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), "LW_EconomyCol_Settlements".Translate());
-            Widgets.Label(new Rect(xPopulation, rect.y, xPopTrend - xPopulation, rect.height), "LW_EconomyCol_Population".Translate());
+            Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height),
+                (debugHeaders ? "LW_EconomyCol_Settlements" : "LW_EconomyCol_KnownSettlements").Translate());
+            Widgets.Label(new Rect(xPopulation, rect.y, xPopTrend - xPopulation, rect.height),
+                (debugHeaders ? "LW_EconomyCol_Population" : "LW_EconomyCol_KnownPopulation").Translate());
             Widgets.Label(new Rect(xPopTrend, rect.y, xTier - xPopTrend, rect.height), "LW_EconomyCol_PopTrend".Translate());
             Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), "LW_EconomyCol_Tier".Translate());
             Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height), "LW_EconomyCol_Output".Translate());
@@ -217,36 +219,40 @@ public sealed class LivingWorldEconomyWindow : Window
         var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
         var visibleSettlements = debugExact ? state.Settlements.Where(settlement => settlement.IsActive) : KnownSettlementsForPlayer(state);
         var knownBySettlement = state.KnownSettlementInfos.ToDictionary(info => info.SettlementId);
-        var activeSettlementCounts = state.Settlements
-            .Where(settlement => settlement.IsActive)
-            .GroupBy(settlement => settlement.FactionId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var rows = visibleSettlements
             .GroupBy(settlement => settlement.FactionId, System.StringComparer.Ordinal)
             .Select(group =>
             {
                 var settlements = group.ToList();
-                var population = settlements.Sum(settlement => state.GetSettlementPopulation(settlement.Id).Total);
-                var dailyPopulationChange = DailyPopulationChange(state, settlements, currentTick);
-                var topTier = settlements
-                    .Select(settlement => SettlementDevelopmentService.GetTier(state, settlement.Id))
-                    .DefaultIfEmpty(SettlementTier.Camp)
-                    .Max();
-                var dailyOutputValue = settlements.Sum(settlement => DailyOutputValue(state.GetSettlementProductionStatus(settlement.Id)));
-                var dailyFoodCost = DailyFoodCost(state, settlements);
-                var wealth = FactionWealth(state, group.Key, settlements);
                 var known = settlements
                     .Select(settlement => knownBySettlement.TryGetValue(settlement.Id, out var info) ? info : null)
                     .Where(info => info != null)
                     .Cast<KnownSettlementInfo>()
                     .ToList();
                 var exactVisible = debugExact
-                    || (activeSettlementCounts.TryGetValue(group.Key, out var activeCount)
-                        && activeCount == settlements.Count
-                        && known.Count == settlements.Count
-                        && known.All(info =>
-                            info.ExactValuesVisible
-                            && !PlayerKnowledgeService.GetFreshness(info, currentTick, 1_800_000).IsStale));
+                    || (known.Count == settlements.Count
+                        && known.All(info => PlayerKnowledgeService.HasFreshExactSnapshot(info, currentTick)));
+                var exactSnapshots = exactVisible && !debugExact
+                    ? known.Select(info => info.ExactSnapshot!).ToList()
+                    : new List<SettlementKnowledgeSnapshot>();
+                var population = debugExact
+                    ? settlements.Sum(settlement => state.GetSettlementPopulation(settlement.Id).Total)
+                    : exactSnapshots.Sum(snapshot => snapshot.Population);
+                var dailyPopulationChange = debugExact
+                    ? DailyPopulationChange(state, settlements, currentTick)
+                    : exactSnapshots.Sum(snapshot => snapshot.RecentPopulationDelta);
+                var topTier = debugExact
+                    ? settlements.Select(settlement => SettlementDevelopmentService.GetTier(state, settlement.Id)).DefaultIfEmpty(SettlementTier.Camp).Max()
+                    : exactSnapshots.Select(snapshot => snapshot.Tier).DefaultIfEmpty(SettlementTier.Camp).Max();
+                var dailyOutputValue = debugExact
+                    ? settlements.Sum(settlement => DailyOutputValue(state.GetSettlementProductionStatus(settlement.Id)))
+                    : exactSnapshots.Sum(DailyOutputValue);
+                var dailyFoodCost = debugExact
+                    ? DailyFoodCost(state, settlements)
+                    : exactSnapshots.Sum(snapshot => snapshot.DailyFoodNeed * SettlementWealthService.DefaultPriceBook.PriceOf("PackagedSurvivalMeal"));
+                var wealth = debugExact
+                    ? FactionWealth(state, group.Key, settlements)
+                    : exactSnapshots.Sum(snapshot => snapshot.Wealth);
                 return (
                     FactionId: group.Key,
                     Settlements: settlements.Count,
@@ -257,12 +263,13 @@ public sealed class LivingWorldEconomyWindow : Window
                     DailyWealthChange: dailyOutputValue - dailyFoodCost,
                     Wealth: wealth,
                     ExactVisible: exactVisible,
-                    PopulationBand: known.Select(info => info.PopulationBand).DefaultIfEmpty(SettlementPopulationBand.Unknown).Max(),
+                    PopulationBand: AggregatePopulationBand(known),
                     MigrationKnowledge: known.Select(info => info.Migration).DefaultIfEmpty(SettlementMigrationKnowledge.Unknown).Max(),
                     ProductionKnowledge: known.Select(info => info.Production).DefaultIfEmpty(SettlementProductionKnowledge.Unknown).Max());
             })
-            .OrderByDescending(row => row.Wealth)
-            .ThenByDescending(row => row.Population)
+            .OrderBy(row => debugExact ? string.Empty : row.FactionId, StringComparer.Ordinal)
+            .ThenByDescending(row => debugExact ? row.Wealth : 0)
+            .ThenByDescending(row => debugExact ? row.Population : 0)
             .Take(MaxRows)
             .ToList();
 
@@ -302,6 +309,33 @@ public sealed class LivingWorldEconomyWindow : Window
             + (production.ComponentsPerDay * prices.PriceOf("ComponentIndustrial"));
     }
 
+    private static int DailyOutputValue(SettlementKnowledgeSnapshot snapshot)
+    {
+        var prices = SettlementWealthService.DefaultPriceBook;
+        return (snapshot.FoodPerDay * prices.PriceOf("PackagedSurvivalMeal"))
+            + (snapshot.SteelPerDay * prices.PriceOf("Steel"))
+            + (snapshot.MedicinePerDay * prices.PriceOf("MedicineIndustrial"))
+            + (snapshot.ComponentsPerDay * prices.PriceOf("ComponentIndustrial"));
+    }
+
+    private static SettlementPopulationBand AggregatePopulationBand(IEnumerable<KnownSettlementInfo> known)
+    {
+        var minimumKnownPopulation = 0;
+        foreach (var info in known)
+        {
+            minimumKnownPopulation += info.PopulationBand switch
+            {
+                SettlementPopulationBand.Tiny => 1,
+                SettlementPopulationBand.Small => 8,
+                SettlementPopulationBand.Medium => 20,
+                SettlementPopulationBand.Large => 60,
+                _ => 0,
+            };
+        }
+
+        return PlayerKnowledgeService.ToPopulationBand(minimumKnownPopulation);
+    }
+
     private static int DailyPopulationChange(WorldState state, List<WorldSettlement> settlements, int currentTick)
     {
         var effectiveTick = Math.Max(currentTick, state.CurrentTick);
@@ -310,13 +344,7 @@ public sealed class LivingWorldEconomyWindow : Window
         var change = 0;
         foreach (var worldEvent in state.Events.Where(worldEvent => worldEvent.Tick >= cutoff))
         {
-            if (!worldEvent.SubjectId.HasValue)
-            {
-                continue;
-            }
-
-            var citizen = state.GetCitizen(worldEvent.SubjectId.Value);
-            if (citizen == null || !settlementIds.Contains(citizen.SettlementId))
+            if (!worldEvent.SettlementId.HasValue || !settlementIds.Contains(worldEvent.SettlementId.Value))
             {
                 continue;
             }
@@ -324,7 +352,6 @@ public sealed class LivingWorldEconomyWindow : Window
             change += worldEvent.Kind switch
             {
                 WorldEventKind.CitizenBorn => 1,
-                WorldEventKind.MigrationCompleted => 1,
                 WorldEventKind.DrifterAssimilated => 1,
                 WorldEventKind.CitizenDied => -1,
                 WorldEventKind.RefugeeCreated => -1,

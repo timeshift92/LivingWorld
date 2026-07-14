@@ -131,9 +131,13 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         }
 
         var currentTick = Find.TickManager?.TicksGame ?? state.CurrentTick;
-        var lines = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || allowExactWithoutDebug
+        var debugLogging = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        var known = state.GetKnownSettlementInfo(settlement.Id);
+        var lines = debugLogging
             ? BuildDetailLines(state, settlement, currentTick)
-            : BuildKnowledgeLines(state, settlement, currentTick);
+            : allowExactWithoutDebug && PlayerKnowledgeService.HasFreshExactSnapshot(known, currentTick)
+                ? BuildSnapshotLines(settlement, known!, currentTick)
+                : BuildKnowledgeLines(state, settlement, currentTick);
         var viewRect = new Rect(0f, 0f, rect.width - 16f, Math.Max(rect.height, lines.Sum(line => line.Height)));
         Widgets.BeginScrollView(rect, ref detailScroll, viewRect);
 
@@ -151,6 +155,58 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         }
 
         Widgets.EndScrollView();
+    }
+
+    private static List<DetailLine> BuildSnapshotLines(
+        WorldSettlement settlement,
+        KnownSettlementInfo known,
+        int currentTick)
+    {
+        var snapshot = known.ExactSnapshot!;
+        var freshness = PlayerKnowledgeService.GetFreshness(
+            known,
+            currentTick,
+            PlayerKnowledgeService.ExactIntelStaleAfterTicks);
+        var births = Math.Max(0, snapshot.RecentPopulationDelta);
+        var losses = Math.Max(0, -snapshot.RecentPopulationDelta);
+        return new List<DetailLine>
+        {
+            Header($"{settlement.Name} [{settlement.FactionId}]"),
+            Line("LW_SettlementObserver_SnapshotNotice".Translate(
+                known.Tick.Named("tick"),
+                freshness.AgeDays.Named("ageDays")).ToString(), 42f),
+            Line("LW_SettlementObserver_Overview".Translate(
+                settlement.Status.Named("status"),
+                snapshot.Tier.Named("tier"),
+                snapshot.Population.Named("total"),
+                snapshot.Adults.Named("adults"),
+                snapshot.Children.Named("children"),
+                snapshot.Elderly.Named("elderly"),
+                snapshot.Wealth.Named("wealth")).ToString()),
+            Line("LW_SettlementObserver_Production".Translate(
+                snapshot.AdultWorkers.Named("workers"),
+                snapshot.FoodPerDay.Named("food"),
+                snapshot.SteelPerDay.Named("steel"),
+                snapshot.MedicinePerDay.Named("medicine"),
+                snapshot.ComponentsPerDay.Named("components"),
+                snapshot.Biome.Named("biome"),
+                snapshot.Hilliness.Named("hilliness"),
+                snapshot.TechLevel.Named("tech")).ToString(), 58f),
+            Line("LW_SettlementObserver_SnapshotFood".Translate(
+                snapshot.FoodStock.Named("food"),
+                snapshot.DailyFoodNeed.Named("need"),
+                snapshot.FoodDays.Named("days"),
+                known.Migration.Named("migration")).ToString()),
+            Line("LW_SettlementObserver_SnapshotTrend".Translate(
+                births.Named("births"),
+                losses.Named("losses"),
+                snapshot.RecentMigrationEvents.Named("moves")).ToString()),
+            Line("LW_SettlementObserver_SnapshotCounts".Translate(
+                snapshot.FacilityCount.Named("facilities"),
+                snapshot.AnimalCount.Named("animals"),
+                snapshot.ActiveProjectCount.Named("projects")).ToString()),
+            Line(known.Summary),
+        };
     }
 
     private static List<DetailLine> BuildDetailLines(WorldState state, WorldSettlement settlement, int currentTick)
@@ -337,7 +393,10 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             return lines;
         }
 
-        var freshness = PlayerKnowledgeService.GetFreshness(known, currentTick, 1_800_000);
+        var freshness = PlayerKnowledgeService.GetFreshness(
+            known,
+            currentTick,
+            PlayerKnowledgeService.ExactIntelStaleAfterTicks);
         lines.Add(Line("LW_SettlementObserver_KnowledgeSummary".Translate(
             known.SourceKind.Named("source"),
             known.Confidence.Named("confidence"),
@@ -386,7 +445,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         return "LW_SettlementObserver_DailyTrend".Translate(
             births.Named("births"),
             losses.Named("losses"),
-            summary.TradeEvents.Named("moves"),
+            summary.MigrationEvents.Named("moves"),
             summary.ConstructionEvents.Named("builds"),
             damage.Named("damage"),
             summary.EconomyEvents.Named("resources"),

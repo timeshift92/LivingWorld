@@ -197,7 +197,29 @@ public static class WorldStateCodec
                             new XAttribute("migration", info.Migration),
                             new XAttribute("production", info.Production),
                             new XAttribute("exactValuesVisible", info.ExactValuesVisible),
-                            new XAttribute("summary", info.Summary)))),
+                            new XAttribute("summary", info.Summary),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotPopulation", info.ExactSnapshot.Population),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotChildren", info.ExactSnapshot.Children),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotAdults", info.ExactSnapshot.Adults),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotElderly", info.ExactSnapshot.Elderly),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotFoodStock", info.ExactSnapshot.FoodStock),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotDailyFoodNeed", info.ExactSnapshot.DailyFoodNeed),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotFoodDays", info.ExactSnapshot.FoodDays),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotAdultWorkers", info.ExactSnapshot.AdultWorkers),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotFoodPerDay", info.ExactSnapshot.FoodPerDay),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotSteelPerDay", info.ExactSnapshot.SteelPerDay),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotMedicinePerDay", info.ExactSnapshot.MedicinePerDay),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotComponentsPerDay", info.ExactSnapshot.ComponentsPerDay),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotBiome", info.ExactSnapshot.Biome),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotHilliness", info.ExactSnapshot.Hilliness),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotTechLevel", info.ExactSnapshot.TechLevel),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotWealth", info.ExactSnapshot.Wealth),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotTier", info.ExactSnapshot.Tier),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotFacilityCount", info.ExactSnapshot.FacilityCount),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotAnimalCount", info.ExactSnapshot.AnimalCount),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotActiveProjectCount", info.ExactSnapshot.ActiveProjectCount),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotRecentPopulationDelta", info.ExactSnapshot.RecentPopulationDelta),
+                            info.ExactSnapshot == null ? null : new XAttribute("snapshotRecentMigrationEvents", info.ExactSnapshot.RecentMigrationEvents)))),
                 new XElement(
                     "FactionSettlementIntel",
                     snapshot.FactionSettlementIntel.Select(intel =>
@@ -663,17 +685,21 @@ public static class WorldStateCodec
                 .ToList(),
             OptionalContainer(root, "KnownSettlementInfos")
                 .Elements("KnownSettlementInfo")
-                .Select(element => new KnownSettlementInfo(
-                    ReadEntityId(element, "settlementKind", "settlementId"),
-                    RequiredEnum<IntelSourceKind>(element, "sourceKind"),
-                    RequiredInt(element, "tick"),
-                    RequiredEnum<KnowledgeConfidence>(element, "confidence"),
-                    RequiredEnum<SettlementPopulationBand>(element, "populationBand"),
-                    RequiredEnum<SettlementFoodKnowledge>(element, "food"),
-                    RequiredEnum<SettlementMigrationKnowledge>(element, "migration"),
-                    OptionalEnum(element, "production", SettlementProductionKnowledge.Unknown),
-                    RequiredBool(element, "exactValuesVisible"),
-                    RequiredString(element, "summary")))
+                .Select(element =>
+                {
+                    var info = new KnownSettlementInfo(
+                        ReadEntityId(element, "settlementKind", "settlementId"),
+                        RequiredEnum<IntelSourceKind>(element, "sourceKind"),
+                        RequiredInt(element, "tick"),
+                        RequiredEnum<KnowledgeConfidence>(element, "confidence"),
+                        RequiredEnum<SettlementPopulationBand>(element, "populationBand"),
+                        RequiredEnum<SettlementFoodKnowledge>(element, "food"),
+                        RequiredEnum<SettlementMigrationKnowledge>(element, "migration"),
+                        OptionalEnum(element, "production", SettlementProductionKnowledge.Unknown),
+                        RequiredBool(element, "exactValuesVisible"),
+                        RequiredString(element, "summary"));
+                    return info with { ExactSnapshot = ReadKnowledgeSnapshot(element) };
+                })
                 .ToList(),
             OptionalContainer(root, "RaidOpportunities")
                 .Elements("RaidOpportunity")
@@ -1432,6 +1458,38 @@ public static class WorldStateCodec
     private static string? OptionalString(XElement element, string name)
     {
         return element.Attribute(name)?.Value;
+    }
+
+    private static SettlementKnowledgeSnapshot? ReadKnowledgeSnapshot(XElement element)
+    {
+        if (element.Attribute("snapshotPopulation") == null)
+        {
+            return null;
+        }
+
+        return new SettlementKnowledgeSnapshot(
+            OptionalInt(element, "snapshotPopulation", 0),
+            OptionalInt(element, "snapshotChildren", 0),
+            OptionalInt(element, "snapshotAdults", 0),
+            OptionalInt(element, "snapshotElderly", 0),
+            OptionalInt(element, "snapshotFoodStock", 0),
+            OptionalInt(element, "snapshotDailyFoodNeed", 0),
+            OptionalInt(element, "snapshotFoodDays", 0),
+            OptionalInt(element, "snapshotAdultWorkers", 0),
+            OptionalInt(element, "snapshotFoodPerDay", 0),
+            OptionalInt(element, "snapshotSteelPerDay", 0),
+            OptionalInt(element, "snapshotMedicinePerDay", 0),
+            OptionalInt(element, "snapshotComponentsPerDay", 0),
+            OptionalString(element, "snapshotBiome") ?? "UnknownBiome",
+            OptionalString(element, "snapshotHilliness") ?? "UnknownHilliness",
+            OptionalString(element, "snapshotTechLevel") ?? "UnknownTech",
+            OptionalInt(element, "snapshotWealth", 0),
+            OptionalEnum(element, "snapshotTier", SettlementTier.Camp),
+            OptionalInt(element, "snapshotFacilityCount", 0),
+            OptionalInt(element, "snapshotAnimalCount", 0),
+            OptionalInt(element, "snapshotActiveProjectCount", 0),
+            OptionalInt(element, "snapshotRecentPopulationDelta", 0),
+            OptionalInt(element, "snapshotRecentMigrationEvents", 0));
     }
 
     private static int RequiredInt(XElement element, string name)

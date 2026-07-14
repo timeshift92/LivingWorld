@@ -269,6 +269,10 @@ internal static class LivingWorldPlayerCaravanContactService
             {
                 settlementId = state.GetCaravan(caravanId)?.TargetSettlementId;
             }
+            else if (TryParseMarkerEntity(marker.MarkerKey, "settler:", EntityKind.MigrationGroup, out var groupId))
+            {
+                settlementId = state.GetMigrationGroup(groupId)?.SourceSettlementId;
+            }
 
             if (settlementId.HasValue && state.GetSettlement(settlementId.Value) != null)
             {
