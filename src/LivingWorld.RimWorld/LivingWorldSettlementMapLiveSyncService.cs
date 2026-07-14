@@ -65,8 +65,22 @@ internal static class LivingWorldSettlementMapLiveSyncService
             }
 
             var citizen = state.GetCitizen(identity.LedgerId);
+            if (pawn.Dead)
+            {
+                if (citizen?.Status == CitizenStatus.Alive)
+                {
+                    LivingWorldPawnSyncService.Apply(
+                        state,
+                        new PawnFateSyncRequest(
+                            identity.LedgerId,
+                            PawnFateKind.Dead,
+                            "loaded settlement recovered an unsynchronized pawn death"));
+                }
+
+                continue;
+            }
+
             if (citizen?.Status == CitizenStatus.Alive
-                || pawn.Dead
                 || (citizen?.Status == CitizenStatus.Prisoner && pawn.IsPrisoner))
             {
                 continue;
@@ -208,6 +222,13 @@ internal static class LivingWorldSettlementMapLiveSyncService
         {
             pawn.GetLord()?.Notify_PawnLost(pawn, PawnLostCondition.ForcedToJoinOtherLord);
             if (pawn.jobs == null || pawn.InMentalState || pawn.IsPrisoner)
+            {
+                continue;
+            }
+
+            if (pawn.CurJob != null
+                && pawn.CurJobDef != JobDefOf.Goto
+                && pawn.CurJobDef != JobDefOf.LayDown)
             {
                 continue;
             }

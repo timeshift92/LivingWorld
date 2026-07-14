@@ -3931,7 +3931,7 @@ static void TestSettlementMapDamageLowersFacilityCondition()
         settlement.Id,
         SettlementFacilityKind.Workshop,
         Level: 2,
-        ConditionPercent: 100,
+        ConditionPercent: 80,
         BuiltTick: 10_000));
 
     var result = SettlementMapDamageService.ReconcileFacilityDamage(
@@ -3943,8 +3943,8 @@ static void TestSettlementMapDamageLowersFacilityCondition()
             Reason: "attacked settlement map deinit"));
 
     AssertEqual(SettlementMapDamageStatus.Success, result.Status);
-    AssertEqual(60, result.DamagePercent);
-    AssertEqual(40, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
+    AssertEqual(48, result.DamagePercent);
+    AssertEqual(32, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityDamaged));
 }
 
@@ -10671,9 +10671,12 @@ static void TestRimWorldSettlementVisitCaravanRoute()
     AssertContains("LivingWorldSettlementVisitMapEntryService.OpenOrEnter", action);
     AssertContains("LW_SettlementVisitSiteUnavailable", action);
     AssertContains("sourceSettlementWorldObjectId", action);
+    AssertContains("sourceTileValue", action);
     AssertContains("ledgerSettlementIdValue", action);
+    AssertContains("sourceLabel", action);
     AssertContains("TryResolveLiveSource", action);
     AssertDoesNotContain("Scribe_References.Look(ref sourceSettlement", action);
+    AssertDoesNotContain("new LookTargets", action);
     AssertContains("StillValid(Caravan caravan, PlanetTile destinationTile)", action);
     AssertDoesNotContain("OpenRealSettlementMap", action);
     AssertDoesNotContain("MapGenerator.GenerateMap", action);
@@ -10699,6 +10702,7 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     AssertContains("CameraJumper.TryJump", entry);
     AssertContains("enteredPlayerPawns.Count > 0", entry);
     AssertContains("visitSite.MarkPlayerCaravanEntered", entry);
+    AssertContains("visitSite.AbortMapSession", entry);
     AssertContains("Current.Game.DeinitAndRemoveMap", entry);
     AssertDoesNotContain("Settlement worldObject", entry);
     AssertDoesNotContain("worldObject.Map", entry);
@@ -10713,7 +10717,10 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     AssertContains("SettlementResidentMaterializationService.PrepareResidents", materializer);
     AssertContains("AssignSettlementLord", materializer);
     AssertContains("ClearGeneratedSettlementContent", materializer);
-    AssertContains("canGeneratePawnRelations: false", materializer);
+    AssertEqual(
+        3,
+        materializer.Split("canGeneratePawnRelations: false", StringSplitOptions.None).Length - 1);
+    AssertContains("Notify_PawnLost", materializer);
     AssertContains("pawn.relations?.ClearAllRelations()", materializer);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
@@ -10722,7 +10729,8 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     {
         "LW_SettlementVisitSiteFloatMenu",
         "LW_SettlementVisitSiteUnavailable",
-        "LW_SettlementVisitSiteOpened"
+        "LW_SettlementVisitSiteOpened",
+        "LW_SettlementVisitSitePartialEntry"
     })
     {
         AssertContains($"<{key}>", en);
@@ -10753,6 +10761,11 @@ static void TestRimWorldSettlementVisitLiveLifecycle()
         "src",
         "LivingWorld.RimWorld",
         "LivingWorldSettlementVisitSiteLifecyclePatch.cs"));
+    var site = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "WorldObject_LivingWorldSettlementVisitSite.cs"));
     var contact = File.ReadAllText(Path.Combine(
         root,
         "src",
@@ -10764,12 +10777,19 @@ static void TestRimWorldSettlementVisitLiveLifecycle()
     AssertContains("override void MapComponentTick", component);
     AssertContains("LivingWorldSettlementMapLiveSyncService.Sync", component);
     AssertContains("SettlementResidentMaterializationService.PrepareResidents", liveSync);
+    AssertContains("loaded settlement recovered an unsynchronized pawn death", liveSync);
     AssertContains("BuildResourceRequest", liveSync);
     AssertContains("loaded settlement warehouse sync", liveSync);
     AssertContains("JobDefOf.LayDown", liveSync);
     AssertContains("JobDefOf.Goto", liveSync);
-    AssertContains("result.Status is not SettlementMapDamageStatus.NoDamage", facilityTracker);
+    AssertContains("pawn.CurJobDef != JobDefOf.Goto", liveSync);
+    AssertContains("ConfigureWarehouseManifest", component);
+    AssertContains("RefreshWarehouseMaterializedCounts", component);
+    AssertContains("SettlementMapDamageStatus.Success", facilityTracker);
+    AssertContains("SettlementMapDamageStatus.NoDamage", facilityTracker);
     AssertContains("CloseProxiesForRemovedSource", siteLifecycle);
+    AssertContains("sourceRemoved", site);
+    AssertContains("alsoRemoveWorldObject = canRemove", site);
     AssertDoesNotContain("new LookTargets(playerCaravan)", contact);
     AssertDoesNotContain("new LookTargets((PlanetTile)marker.Tile)", contact);
 }

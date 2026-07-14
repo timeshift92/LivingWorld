@@ -522,7 +522,6 @@ public enum LivingWorldTrackedResourceState
     Credited,
     Removed
 }
-
 public sealed class LivingWorldTrackedMapResource : IExposable
 {
     private const int CurrentTrackingVersion = 1;
