@@ -54,7 +54,12 @@ public static class WorldMissionService
                         IntelSourceKind.Scout,
                         request.Tick,
                         Math.Max(1, Math.Min(100, mission.Amount)));
-                    PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId, summary);
+                    // NPC scouts inform their own faction ledger. They must not grant the player
+                    // omniscient knowledge merely because the mission exists in the simulation.
+                    if (state.IsPlayerFaction(mission.FactionId))
+                    {
+                        PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId, summary);
+                    }
                     scouting++;
                     break;
 

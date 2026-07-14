@@ -345,7 +345,7 @@ var tests = new List<(string Name, Action Test)>
     ("tracks settlement map floors and reconciles facility damage", TestRimWorldSettlementMapFloorDamageReconciliation),
     ("reconciles unlooted settlement map resources on map deinit", TestRimWorldSettlementMapResourceReconciliation),
     ("materializes full npc city layout surface", TestRimWorldSettlementMapFullCitySurface),
-    ("cleans orphaned lord references before save", TestRimWorldCleansOrphanedLordReferences),
+    ("repairs only orphaned dormancy lord signals", TestRimWorldCleansOrphanedLordReferences),
     ("player defeat of an NPC settlement registers a conflict", TestRimWorldPlayerAttackRegistersConflict),
     ("alliances and victories apply real RimWorld faction goodwill", TestRimWorldRealFactionRelationsBridge),
     ("settlement visit lease resolves through the pawn fate sync", TestSettlementVisitLeaseResolvesThroughPawnSync),
@@ -5032,7 +5032,8 @@ static void TestWorldMissionReservesAndReturnsRealCitizen()
     AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
     AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
     AssertEqual(0, state.Missions.Count);
-    AssertEqual(IntelSourceKind.Scout, state.GetKnownSettlementInfo(target.Id)!.SourceKind);
+    AssertEqual(null, state.GetKnownSettlementInfo(target.Id));
+    AssertEqual(true, state.HasFactionSettlementIntel("Scouts", target.Id));
     AssertEqual(0, state.Validate().Count());
 }
 
@@ -5429,7 +5430,8 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
     state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
     WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
-    AssertEqual(IntelSourceKind.Scout, state.GetKnownSettlementInfo(scoutMission.TargetSettlementId)!.SourceKind);
+    AssertEqual(null, state.GetKnownSettlementInfo(scoutMission.TargetSettlementId));
+    AssertEqual(true, state.HasFactionSettlementIntel("Scouts", scoutMission.TargetSettlementId));
     var diplomaticMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat);
     AssertEqual(false, state.IsPlayerFaction(state.GetSettlement(diplomaticMission.TargetSettlementId)!.FactionId));
     AssertEqual(false, string.Equals("PlayerFaction", diplomaticMission.TargetFactionId, StringComparison.Ordinal));
@@ -6388,7 +6390,8 @@ static void TestWorldMissionSurvivesSaveLoadAndArrives()
 
     // ...and still arrives and applies its effect (and is removed) after load.
     WorldMissionService.SimulateDay(restored, new WorldMissionRequest(60_000));
-    AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(target.Id)!.SourceKind);
+    AssertEqual(null, restored.GetKnownSettlementInfo(target.Id));
+    AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", target.Id));
     AssertEqual(0, restored.Missions.Count);
 }
 
@@ -6792,10 +6795,7 @@ static void TestWorldWarScoutingRecordsIntel()
     // Day 2: the party arrives and records intel about the target.
     WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
 
-    var known = state.GetKnownSettlementInfo(village.Id)!;
-    AssertEqual(IntelSourceKind.Scout, known.SourceKind);
-    AssertEqual(KnowledgeConfidence.High, known.Confidence);
-    AssertEqual(SettlementPopulationBand.Small, known.PopulationBand);
+    AssertEqual(null, state.GetKnownSettlementInfo(village.Id));
     AssertEqual(true, state.HasFactionSettlementIntel("Scouts", village.Id));
     AssertEqual(1, state.IntelReports.Count(report => report.SourceKind == IntelSourceKind.Scout));
 }
@@ -6871,7 +6871,7 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
 
     AssertEqual(10, restored.GetOwnedResourceQuantity(caravanTargetId, "Steel"));
-    AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(scoutTargetId)!.SourceKind);
+    AssertEqual(null, restored.GetKnownSettlementInfo(scoutTargetId));
     AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", scoutTargetId));
     AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", diplomatTargetFactionId));
 }
@@ -8047,7 +8047,9 @@ static void TestRimWorldRaidIncidentPatch()
     AssertContains("public static void Postfix(IncidentParms parms, ref bool __result)", source);
     AssertDoesNotContain("public static bool Prefix", source);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_RaidEnemy", "TryResolveRaidFaction");
-    AssertContains("VanillaRaidInterceptor.TryIntercept", source);
+    AssertContains("RaidPopulationAllocator.ReserveForRaid", source);
+    AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", source);
+    AssertDoesNotContain("VanillaRaidInterceptor.TryIntercept", source);
     AssertContains("ref bool __result", source);
     // Living World must never cancel a vanilla raid: it only intercepts or steps aside.
     AssertDoesNotContain("__result = false", source);
@@ -8709,8 +8711,9 @@ static void TestRimWorldEconomyWindow()
     AssertContains("SettlementDevelopmentService.GetTier", window);
     // Prefers the Core wealth snapshot, falls back to a live material sum so it is never empty.
     AssertContains("GetFactionWealth", window);
-    AssertContains("debugExact ? data.Population.ToString() : PopulationBand(data.Population)", window);
-    AssertContains("debugExact ? data.Wealth.ToString() : WealthBand(data.Wealth)", window);
+    AssertContains("exactVisible ? data.Population.ToString() : data.PopulationBand.ToString()", window);
+    AssertContains("exactVisible ? data.Wealth.ToString() : \"?\"", window);
+    AssertContains("PlayerKnowledgeService.GetFreshness", window);
     AssertContains("LW_EconomyCol_Faction", window);
     AssertContains("LW_EconomyCol_Population", window);
     AssertContains("LW_EconomyCol_Wealth", window);
@@ -8860,8 +8863,9 @@ static void TestRimWorldDirectSettlementObserver()
     AssertContains("public static void Postfix(Settlement __instance, ref IEnumerable<Gizmo> __result)", patch);
     AssertContains("ResolveLedgerSettlement(component.State, worldObject, factionId)", patch);
     AssertContains("string.Equals(settlement.Name, label, StringComparison.Ordinal)", patch);
-    AssertContains("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
-    AssertContains("new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true)", patch);
+    AssertDoesNotContain("PlayerKnowledgeService.RecordDirectVisitSettlementInfo", patch);
+    AssertContains("GetKnownSettlementInfo", patch);
+    AssertContains("new LivingWorldSettlementObserverWindow(settlementId, exactAndFresh)", patch);
     AssertDoesNotContain("Prefs.DevMode", patch);
     AssertDoesNotContain("HarmonyPatch(typeof(Settlement), \"GetFloatMenuOptions\")", patch);
     AssertDoesNotContain("public static void Postfix(Settlement __instance, Caravan caravan, ref IEnumerable<FloatMenuOption> __result)", patch);
@@ -8884,7 +8888,8 @@ static void TestRimWorldDirectSettlementObserver()
 
     var window = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementObserverWindow.cs"));
     AssertContains("LivingWorldSettlementObserverWindow(EntityId scopedSettlementId, bool allowExactWithoutDebug)", window);
-    AssertContains("if (!debugLogging && !allowExactWithoutDebug)", window);
+    AssertContains("if (!debugLogging && !allowExactWithoutDebug && !scopedSettlementId.HasValue)", window);
+    AssertContains("BuildKnowledgeLines", window);
     AssertContains("!scopedSettlementId.HasValue || settlement.Id == scopedSettlementId.Value", window);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
@@ -9260,19 +9265,12 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("map.lordManager?.lords", cleaner);
     AssertContains("!savedLords.Contains(lord)", cleaner);
     AssertContains("thing.Destroy(DestroyMode.Vanish)", cleaner);
-    AssertContains("CleanOrphanedLordOwnedPawns", cleaner);
-    AssertContains("CleanOrphanedDirectPawnRelations", cleaner);
-    AssertContains("AccessTools.Field(relation.GetType(), \"otherPawn\")", cleaner);
-    AssertContains("directRelations.RemoveAt(index)", cleaner);
-    AssertContains("IsPawnSavedAnywhere", cleaner);
-    AssertContains("WorldObjects?.Caravans", cleaner);
-    AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
-    AssertContains("ownedPawns.RemoveAt(index)", cleaner);
-    AssertContains("IsPawnDeepSavedByMap", cleaner);
-    AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
+    AssertDoesNotContain("CleanOrphanedLordOwnedPawns", cleaner);
+    AssertDoesNotContain("CleanOrphanedDirectPawnRelations", cleaner);
+    AssertDoesNotContain("otherPawn", cleaner);
+    AssertDoesNotContain("ownedPawns.RemoveAt", cleaner);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
-    AssertContains("Scribe.mode == LoadSaveMode.Saving", component);
-    AssertContains("currentTick % 250 == 0", component);
+    AssertDoesNotContain("CleanOrphanedDirectPawnRelations", component);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
 }
 

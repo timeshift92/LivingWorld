@@ -232,8 +232,8 @@
   <LW_InspectThreatLine>Under threat: a warband is inbound - arrives in about {days} day(s).</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Open population and economy table</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Open settlement observer</LW_OpenSettlementObserverWindow>
-  <LW_DirectVisitObserver>Observe Living World settlement</LW_DirectVisitObserver>
-  <LW_DirectVisitObserverTooltip>Record a direct visit to this settlement and open its Living World ledger view. This reveals exact population, projects, animals and stores for this settlement only.</LW_DirectVisitObserverTooltip>
+  <LW_DirectVisitObserver>Living World intelligence</LW_DirectVisitObserver>
+  <LW_DirectVisitObserverTooltip>Open the information your colony has actually learned about this settlement. Selecting it does not reveal new facts; exact values require a fresh physical visit.</LW_DirectVisitObserverTooltip>
   <LW_SettlementVisitSiteFloatMenu>Visit Living World base at {0}</LW_SettlementVisitSiteFloatMenu>
   <LW_SettlementVisitSiteUnavailable>Living World settlement visit unavailable: {0}</LW_SettlementVisitSiteUnavailable>
   <LW_SettlementVisitSiteOpened>Opened {0}</LW_SettlementVisitSiteOpened>
@@ -242,6 +242,8 @@
   <LW_SettlementVisitUnavailableHostile>Hostile settlements must be attacked, not visited peacefully.</LW_SettlementVisitUnavailableHostile>
   <LW_SettlementVisitUnavailableMapActive>This settlement already has an active map.</LW_SettlementVisitUnavailableMapActive>
   <LW_SettlementVisitUnavailableNoLedger>The settlement is not linked to the Living World ledger.</LW_SettlementVisitUnavailableNoLedger>
+  <LW_SettlementObserver_KnowledgeOnly>Only information actually learned by your colony is shown. Visit with a caravan or gather fresh intelligence for exact values.</LW_SettlementObserver_KnowledgeOnly>
+  <LW_SettlementObserver_KnowledgeSummary>Source: {source} | confidence: {confidence} | age: {ageDays} d | stale: {stale}\nPopulation: {population} | food: {food} | migration: {migration} | production: {production}</LW_SettlementObserver_KnowledgeSummary>
   <LW_OpenRealSettlementMap>Visit Living World base</LW_OpenRealSettlementMap>
   <LW_OpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World materializes rooms, stores, defenders and animals there, and later visits keep the map consequences.</LW_OpenRealSettlementMapTooltip>
   <LW_OpenRealSettlementMapFloatMenu>Visit Living World base at {0}</LW_OpenRealSettlementMapFloatMenu>

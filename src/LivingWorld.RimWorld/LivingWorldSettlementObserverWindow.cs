@@ -49,7 +49,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
         }
 
         var debugLogging = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
-        if (!debugLogging && !allowExactWithoutDebug)
+        if (!debugLogging && !allowExactWithoutDebug && !scopedSettlementId.HasValue)
         {
             Widgets.Label(inRect, "LW_SettlementObserver_DebugOnly".Translate());
             var debugCloseRect = new Rect(inRect.center.x - 80f, inRect.yMax - 38f, 160f, 34f);
@@ -130,7 +130,10 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             return;
         }
 
-        var lines = BuildDetailLines(state, settlement, Find.TickManager?.TicksGame ?? state.CurrentTick);
+        var currentTick = Find.TickManager?.TicksGame ?? state.CurrentTick;
+        var lines = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || allowExactWithoutDebug
+            ? BuildDetailLines(state, settlement, currentTick)
+            : BuildKnowledgeLines(state, settlement, currentTick);
         var viewRect = new Rect(0f, 0f, rect.width - 16f, Math.Max(rect.height, lines.Sum(line => line.Height)));
         Widgets.BeginScrollView(rect, ref detailScroll, viewRect);
 
@@ -314,6 +317,37 @@ public sealed class LivingWorldSettlementObserverWindow : Window
                 worldEvent.Kind.Named("kind"),
                 worldEvent.Summary.Named("summary")).ToString(), 36f)));
 
+        return lines;
+    }
+
+    private static List<DetailLine> BuildKnowledgeLines(
+        WorldState state,
+        WorldSettlement settlement,
+        int currentTick)
+    {
+        var lines = new List<DetailLine>
+        {
+            Header($"{settlement.Name} [{settlement.FactionId}]"),
+            Line("LW_SettlementObserver_KnowledgeOnly".Translate().ToString(), 42f),
+        };
+        var known = state.GetKnownSettlementInfo(settlement.Id);
+        if (known == null)
+        {
+            lines.Add(Line("LW_KnowledgeUnknown".Translate().ToString()));
+            return lines;
+        }
+
+        var freshness = PlayerKnowledgeService.GetFreshness(known, currentTick, 1_800_000);
+        lines.Add(Line("LW_SettlementObserver_KnowledgeSummary".Translate(
+            known.SourceKind.Named("source"),
+            known.Confidence.Named("confidence"),
+            freshness.AgeDays.Named("ageDays"),
+            freshness.IsStale.Named("stale"),
+            known.PopulationBand.Named("population"),
+            known.Food.Named("food"),
+            known.Migration.Named("migration"),
+            known.Production.Named("production")).ToString(), 92f));
+        lines.Add(Line(known.Summary));
         return lines;
     }
 

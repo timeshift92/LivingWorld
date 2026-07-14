@@ -45,29 +45,34 @@ public static class LivingWorldSettlementVisitFloatMenuPatch
     {
         if (settlement == null || !settlement.Spawned)
         {
-            return "LW_SettlementVisitUnavailableMissing".Translate().ToString();
+            return Reject("LW_SettlementVisitUnavailableMissing");
         }
 
         if (!settlement.Visitable)
         {
-            return "LW_SettlementVisitUnavailableNotVisitable".Translate().ToString();
+            return Reject("LW_SettlementVisitUnavailableNotVisitable");
         }
 
         if (settlement.Faction == null || settlement.Faction.HostileTo(Faction.OfPlayer))
         {
-            return "LW_SettlementVisitUnavailableHostile".Translate().ToString();
+            return Reject("LW_SettlementVisitUnavailableHostile");
         }
 
         if (settlement.HasMap)
         {
-            return "LW_SettlementVisitUnavailableMapActive".Translate().ToString();
+            return Reject("LW_SettlementVisitUnavailableMapActive");
         }
 
         if (!LivingWorldSettlementDirectVisitPatch.TryResolveLedgerSettlement(settlement, out _))
         {
-            return "LW_SettlementVisitUnavailableNoLedger".Translate().ToString();
+            return Reject("LW_SettlementVisitUnavailableNoLedger");
         }
 
         return true;
+    }
+
+    private static FloatMenuAcceptanceReport Reject(string translationKey)
+    {
+        return FloatMenuAcceptanceReport.WithFailReason(translationKey.Translate().ToString());
     }
 }

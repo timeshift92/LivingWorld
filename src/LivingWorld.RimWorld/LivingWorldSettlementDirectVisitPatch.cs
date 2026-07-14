@@ -10,9 +10,9 @@ using Verse;
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// Player-facing direct settlement observation. This is deliberately an explicit command on a selected
-/// NPC settlement: it records DirectVisit intel and opens an exact observer scoped to that settlement,
-/// rather than turning the global ledger UI into omniscient information.
+/// Player-facing settlement intelligence. Selecting a world object never creates knowledge: the
+/// observer only displays facts already learned through public disclosure, trade, scouting or a
+/// physical visit.
 /// </summary>
 [HarmonyPatch(typeof(Settlement), "GetGizmos")]
 public static class LivingWorldSettlementDirectVisitPatch
@@ -39,7 +39,7 @@ public static class LivingWorldSettlementDirectVisitPatch
                     defaultLabel = "LW_DirectVisitObserver".Translate(),
                     defaultDesc = "LW_DirectVisitObserverTooltip".Translate(),
                     icon = TexButton.Search,
-                    action = () => OpenDirectObserver(settlementId),
+                    action = () => OpenKnownObserver(settlementId),
                 };
             }
         }
@@ -54,7 +54,7 @@ public static class LivingWorldSettlementDirectVisitPatch
         }
     }
 
-    private static void OpenDirectObserver(EntityId settlementId)
+    private static void OpenKnownObserver(EntityId settlementId)
     {
         var component = LivingWorldWorldComponent.Instance;
         if (component == null)
@@ -62,11 +62,12 @@ public static class LivingWorldSettlementDirectVisitPatch
             return;
         }
 
-        PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
-            component.State,
-            settlementId,
-            "player directly inspected the settlement");
-        Find.WindowStack.Add(new LivingWorldSettlementObserverWindow(settlementId, allowExactWithoutDebug: true));
+        var known = component.State.GetKnownSettlementInfo(settlementId);
+        var freshness = known == null
+            ? default
+            : PlayerKnowledgeService.GetFreshness(known, component.State.CurrentTick, 1_800_000);
+        var exactAndFresh = known?.ExactValuesVisible == true && !freshness.IsStale;
+        Find.WindowStack.Add(new LivingWorldSettlementObserverWindow(settlementId, exactAndFresh));
     }
 
     internal static bool TryResolveLedgerSettlement(Settlement worldObject, out EntityId settlementId)

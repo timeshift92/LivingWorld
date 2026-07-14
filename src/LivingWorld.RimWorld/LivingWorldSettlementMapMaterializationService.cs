@@ -36,10 +36,6 @@ public static class LivingWorldSettlementMapMaterializationService
         if (context.VisitSite != null)
         {
             visitMapComponent?.ConfigureFrom(context.VisitSite);
-            PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
-                component.State,
-                context.LedgerSettlement.Id,
-                "player visited a real Living World settlement map");
         }
         else
         {

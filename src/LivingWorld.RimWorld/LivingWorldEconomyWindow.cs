@@ -54,7 +54,11 @@ public sealed class LivingWorldEconomyWindow : Window
             int dailyOutputValue,
             int dailyWealthChange,
             int wealth,
-            float fill)
+            float fill,
+            bool exactVisible,
+            SettlementPopulationBand populationBand,
+            SettlementMigrationKnowledge migrationKnowledge,
+            SettlementProductionKnowledge productionKnowledge)
         {
             FactionId = factionId;
             Settlements = settlements;
@@ -65,6 +69,10 @@ public sealed class LivingWorldEconomyWindow : Window
             DailyWealthChange = dailyWealthChange;
             Wealth = wealth;
             Fill = fill;
+            ExactVisible = exactVisible;
+            PopulationBand = populationBand;
+            MigrationKnowledge = migrationKnowledge;
+            ProductionKnowledge = productionKnowledge;
         }
 
         public string FactionId { get; }
@@ -76,6 +84,10 @@ public sealed class LivingWorldEconomyWindow : Window
         public int DailyWealthChange { get; }
         public int Wealth { get; }
         public float Fill { get; }
+        public bool ExactVisible { get; }
+        public SettlementPopulationBand PopulationBand { get; }
+        public SettlementMigrationKnowledge MigrationKnowledge { get; }
+        public SettlementProductionKnowledge ProductionKnowledge { get; }
     }
 
     public override void DoWindowContents(Rect inRect)
@@ -161,19 +173,22 @@ public sealed class LivingWorldEconomyWindow : Window
         var factionName = faction?.Name ?? data.FactionId;
         Widgets.Label(new Rect(nameX, rect.y, xSettlements - nameX, rect.height), factionName);
         var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
-        var population = debugExact ? data.Population.ToString() : PopulationBand(data.Population);
-        var wealth = debugExact ? data.Wealth.ToString() : WealthBand(data.Wealth);
+        var exactVisible = debugExact || data.ExactVisible;
+        var population = exactVisible ? data.Population.ToString() : data.PopulationBand.ToString();
+        var wealth = exactVisible ? data.Wealth.ToString() : "?";
 
         Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), data.Settlements.ToString());
         Widgets.Label(new Rect(xPopulation, rect.y, xPopTrend - xPopulation, rect.height), population);
-        Widgets.Label(new Rect(xPopTrend, rect.y, xTier - xPopTrend, rect.height), FormatSigned(data.DailyPopulationChange));
-        Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), TierLabel(data.TopTier));
-        Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height), FormatSigned(data.DailyOutputValue));
-        Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), FormatSigned(data.DailyWealthChange));
+        Widgets.Label(new Rect(xPopTrend, rect.y, xTier - xPopTrend, rect.height),
+            exactVisible ? FormatSigned(data.DailyPopulationChange) : data.MigrationKnowledge.ToString());
+        Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), exactVisible ? TierLabel(data.TopTier) : "?");
+        Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height),
+            exactVisible ? FormatSigned(data.DailyOutputValue) : data.ProductionKnowledge.ToString());
+        Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), exactVisible ? FormatSigned(data.DailyWealthChange) : "?");
 
         // Wealth cell: comparative faction-coloured bar (share of the richest faction) + value.
         var wealthRect = new Rect(xWealth, rect.y, rect.xMax - xWealth, rect.height);
-        if (data.Fill > 0f)
+        if (exactVisible && data.Fill > 0f)
         {
             var barColor = faction != null ? faction.Color : new Color(0.5f, 0.5f, 0.55f);
             barColor.a = 0.3f;
@@ -201,6 +216,11 @@ public sealed class LivingWorldEconomyWindow : Window
 
         var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
         var visibleSettlements = debugExact ? state.Settlements.Where(settlement => settlement.IsActive) : KnownSettlementsForPlayer(state);
+        var knownBySettlement = state.KnownSettlementInfos.ToDictionary(info => info.SettlementId);
+        var activeSettlementCounts = state.Settlements
+            .Where(settlement => settlement.IsActive)
+            .GroupBy(settlement => settlement.FactionId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var rows = visibleSettlements
             .GroupBy(settlement => settlement.FactionId, System.StringComparer.Ordinal)
             .Select(group =>
@@ -215,6 +235,18 @@ public sealed class LivingWorldEconomyWindow : Window
                 var dailyOutputValue = settlements.Sum(settlement => DailyOutputValue(state.GetSettlementProductionStatus(settlement.Id)));
                 var dailyFoodCost = DailyFoodCost(state, settlements);
                 var wealth = FactionWealth(state, group.Key, settlements);
+                var known = settlements
+                    .Select(settlement => knownBySettlement.TryGetValue(settlement.Id, out var info) ? info : null)
+                    .Where(info => info != null)
+                    .Cast<KnownSettlementInfo>()
+                    .ToList();
+                var exactVisible = debugExact
+                    || (activeSettlementCounts.TryGetValue(group.Key, out var activeCount)
+                        && activeCount == settlements.Count
+                        && known.Count == settlements.Count
+                        && known.All(info =>
+                            info.ExactValuesVisible
+                            && !PlayerKnowledgeService.GetFreshness(info, currentTick, 1_800_000).IsStale));
                 return (
                     FactionId: group.Key,
                     Settlements: settlements.Count,
@@ -223,7 +255,11 @@ public sealed class LivingWorldEconomyWindow : Window
                     TopTier: topTier,
                     DailyOutputValue: dailyOutputValue,
                     DailyWealthChange: dailyOutputValue - dailyFoodCost,
-                    Wealth: wealth);
+                    Wealth: wealth,
+                    ExactVisible: exactVisible,
+                    PopulationBand: known.Select(info => info.PopulationBand).DefaultIfEmpty(SettlementPopulationBand.Unknown).Max(),
+                    MigrationKnowledge: known.Select(info => info.Migration).DefaultIfEmpty(SettlementMigrationKnowledge.Unknown).Max(),
+                    ProductionKnowledge: known.Select(info => info.Production).DefaultIfEmpty(SettlementProductionKnowledge.Unknown).Max());
             })
             .OrderByDescending(row => row.Wealth)
             .ThenByDescending(row => row.Population)
@@ -233,7 +269,7 @@ public sealed class LivingWorldEconomyWindow : Window
         var maxWealth = rows.Count > 0 ? rows.Max(row => row.Wealth) : 0;
         foreach (var row in rows)
         {
-            var fill = maxWealth > 0 ? (float)row.Wealth / maxWealth : 0f;
+            var fill = row.ExactVisible && maxWealth > 0 ? (float)row.Wealth / maxWealth : 0f;
             cachedRows.Add(new EconomyRow(
                 row.FactionId,
                 row.Settlements,
@@ -243,7 +279,11 @@ public sealed class LivingWorldEconomyWindow : Window
                 row.DailyOutputValue,
                 row.DailyWealthChange,
                 row.Wealth,
-                fill));
+                fill,
+                row.ExactVisible,
+                row.PopulationBand,
+                row.MigrationKnowledge,
+                row.ProductionKnowledge));
         }
     }
 

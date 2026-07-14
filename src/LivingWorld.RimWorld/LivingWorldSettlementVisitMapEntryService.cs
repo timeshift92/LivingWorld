@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LivingWorld.Core;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -94,6 +95,18 @@ public static class LivingWorldSettlementVisitMapEntryService
             }
 
             visitSite.MarkPlayerCaravanEntered();
+            if (mapComponent.SettlementId.HasValue)
+            {
+                var worldComponent = LivingWorldWorldComponent.Instance;
+                if (worldComponent != null)
+                {
+                    PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
+                        worldComponent.State,
+                        mapComponent.SettlementId.Value,
+                        "player caravan entered a real Living World settlement map");
+                }
+            }
+
             Current.Game.CurrentMap = map;
             CameraJumper.TryJump(map.Center, map);
             Messages.Message(

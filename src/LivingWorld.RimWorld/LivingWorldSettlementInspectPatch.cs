@@ -68,12 +68,28 @@ public static class LivingWorldSettlementInspectPatch
         }
 
         var known = state.GetKnownSettlementInfo(settlement.Id);
-        if (worldObject.HasMap && known?.ExactValuesVisible != true)
+        if (worldObject.HasMap
+            && (known?.ExactValuesVisible != true
+                || PlayerKnowledgeService.GetFreshness(
+                    known,
+                    Find.TickManager?.TicksGame ?? 0,
+                    KnowledgeStaleAfterTicks).IsStale))
         {
             known = PlayerKnowledgeService.RecordDirectVisitSettlementInfo(
                 state,
                 settlement.Id,
                 "settlement map is loaded");
+        }
+
+        var freshness = known == null
+            ? default
+            : PlayerKnowledgeService.GetFreshness(
+                known,
+                Find.TickManager?.TicksGame ?? 0,
+                KnowledgeStaleAfterTicks);
+        if (known?.ExactValuesVisible == true && freshness.IsStale)
+        {
+            known = known with { ExactValuesVisible = false };
         }
 
         var knowledgeLine = known == null
@@ -82,14 +98,8 @@ public static class LivingWorldSettlementInspectPatch
                 known.SourceKind.Named("source"),
                 known.Confidence.Named("confidence"),
                 known.Tick.Named("tick"),
-                PlayerKnowledgeService.GetFreshness(
-                    known,
-                    Find.TickManager?.TicksGame ?? 0,
-                    KnowledgeStaleAfterTicks).AgeDays.Named("ageDays"),
-                PlayerKnowledgeService.GetFreshness(
-                    known,
-                    Find.TickManager?.TicksGame ?? 0,
-                    KnowledgeStaleAfterTicks).IsStale.Named("stale"),
+                freshness.AgeDays.Named("ageDays"),
+                freshness.IsStale.Named("stale"),
                 known.PopulationBand.Named("populationBand"),
                 known.Food.Named("food"),
                 known.Migration.Named("migration"),

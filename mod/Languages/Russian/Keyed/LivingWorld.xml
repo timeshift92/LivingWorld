@@ -232,8 +232,8 @@
   <LW_InspectThreatLine>Под угрозой: приближается варбанд - прибытие примерно через {days} дн.</LW_InspectThreatLine>
   <LW_OpenEconomyWindow>Открыть таблицу населения и экономики</LW_OpenEconomyWindow>
   <LW_OpenSettlementObserverWindow>Открыть наблюдение за поселениями</LW_OpenSettlementObserverWindow>
-  <LW_DirectVisitObserver>Осмотреть поселение Living World</LW_DirectVisitObserver>
-  <LW_DirectVisitObserverTooltip>Записать прямой визит в это поселение и открыть его ledger-просмотр Living World. Это раскрывает точное население, проекты, животных и склады только для этого поселения.</LW_DirectVisitObserverTooltip>
+  <LW_DirectVisitObserver>Сведения Living World</LW_DirectVisitObserver>
+  <LW_DirectVisitObserverTooltip>Открыть только сведения, которые ваша колония реально узнала об этом поселении. Сам выбор объекта не раскрывает новые данные; точные значения требуют свежего физического визита.</LW_DirectVisitObserverTooltip>
   <LW_SettlementVisitSiteFloatMenu>Посетить базу Living World в {0}</LW_SettlementVisitSiteFloatMenu>
   <LW_SettlementVisitSiteUnavailable>Визит в поселение Living World недоступен: {0}</LW_SettlementVisitSiteUnavailable>
   <LW_SettlementVisitSiteOpened>Открыта карта {0}</LW_SettlementVisitSiteOpened>
@@ -242,6 +242,8 @@
   <LW_SettlementVisitUnavailableHostile>Враждебное поселение можно атаковать, но нельзя посетить мирно.</LW_SettlementVisitUnavailableHostile>
   <LW_SettlementVisitUnavailableMapActive>У этого поселения уже открыта активная карта.</LW_SettlementVisitUnavailableMapActive>
   <LW_SettlementVisitUnavailableNoLedger>Поселение не связано с реестром Living World.</LW_SettlementVisitUnavailableNoLedger>
+  <LW_SettlementObserver_KnowledgeOnly>Показаны только сведения, реально полученные вашей колонией. Для точных данных посетите поселение караваном или добудьте свежую разведку.</LW_SettlementObserver_KnowledgeOnly>
+  <LW_SettlementObserver_KnowledgeSummary>Источник: {source} | достоверность: {confidence} | давность: {ageDays} дн. | устарело: {stale}\nНаселение: {population} | еда: {food} | миграция: {migration} | производство: {production}</LW_SettlementObserver_KnowledgeSummary>
   <LW_OpenRealSettlementMap>Посетить базу Living World</LW_OpenRealSettlementMap>
   <LW_OpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует комнаты, склады, защитников и животных, а последствия сохраняются для следующих визитов.</LW_OpenRealSettlementMapTooltip>
   <LW_OpenRealSettlementMapFloatMenu>Посетить базу Living World в {0}</LW_OpenRealSettlementMapFloatMenu>
