@@ -352,6 +352,9 @@ var tests = new List<(string Name, Action Test)>
     ("parses settlement tile from slug", TestSettlementSlugParsesTile),
     ("rejects malformed settlement slug", TestSettlementSlugRejectsMalformedSlug),
     ("rejects empty settlement slug", TestSettlementSlugRejectsEmptySlug),
+    ("finds active settlement by tile", TestFindActiveSettlementByTileMatches),
+    ("find by tile returns null without match", TestFindActiveSettlementByTileReturnsNullWhenNoTile),
+    ("find by tile ignores destroyed settlements", TestFindActiveSettlementByTileIgnoresDestroyed),
     ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
     ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
@@ -10683,4 +10686,32 @@ static void TestSettlementSlugRejectsEmptySlug()
 {
     AssertEqual(-1, SettlementSlug.ParseTile(null));
     AssertEqual(-1, SettlementSlug.ParseTile(""));
+}
+
+static void TestFindActiveSettlementByTileMatches()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    var found = state.FindActiveSettlementByTile(512);
+
+    AssertEqual(settlement.Id, found!.Id);
+}
+
+static void TestFindActiveSettlementByTileReturnsNullWhenNoTile()
+{
+    var state = new WorldState(12345);
+    state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    AssertEqual(true, state.FindActiveSettlementByTile(999) is null);
+    AssertEqual(true, state.FindActiveSettlementByTile(-1) is null);
+}
+
+static void TestFindActiveSettlementByTileIgnoresDestroyed()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "test");
+
+    AssertEqual(true, state.FindActiveSettlementByTile(512) is null);
 }
