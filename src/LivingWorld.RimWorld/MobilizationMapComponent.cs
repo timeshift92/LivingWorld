@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using LivingWorld.Core;
 using RimWorld;
 using Verse;
 
@@ -18,6 +21,9 @@ public sealed class MobilizationMapComponent : MapComponent
 
     private bool manualMobilized;
     private bool threatPresent;
+    private ThreatTier currentTier;
+    private int belowCount;
+    private List<int> savedDraftedIds = new();
     private readonly MobilizationDriver driver = new();
 
     public MobilizationMapComponent(Map map)
@@ -30,6 +36,8 @@ public sealed class MobilizationMapComponent : MapComponent
     public bool ThreatPresent => threatPresent;
 
     public bool IsMobilized => manualMobilized || threatPresent;
+
+    public ThreatTier CurrentTier => currentTier;
 
     public void ToggleManual()
     {
@@ -50,23 +58,56 @@ public sealed class MobilizationMapComponent : MapComponent
 
         try
         {
-            threatPresent = settings.autoMobilizeOnThreat
-                && map.dangerWatcher != null
-                && map.dangerWatcher.DangerRating >= StoryDanger.Low;
+            var rawTier = settings.autoMobilizeOnThreat ? ThreatClassifier.Classify(ComputeSignals(map, settings)) : ThreatTier.None;
+            (currentTier, belowCount) = ThreatDebounce.Step(currentTier, rawTier, belowCount, settings.mobilizationDeescalateRechecks);
+            threatPresent = currentTier != ThreatTier.None;
         }
         catch (Exception ex)
         {
+            currentTier = ThreatTier.None;
             threatPresent = false;
             Log.Warning($"[LivingWorld] Mobilization threat check failed safely: {ex.Message}");
         }
 
-        driver.Drive(map, IsMobilized);
+        driver.Drive(map, IsMobilized, currentTier);
+    }
+
+    private ThreatSignals ComputeSignals(Map liveMap, LivingWorldSettings settings)
+    {
+        var player = Faction.OfPlayer;
+        var pawns = liveMap.mapPawns?.AllPawnsSpawned;
+        if (player == null || pawns == null)
+        {
+            return default;
+        }
+
+        var hostiles = pawns.Where(p => p != null && !p.Downed && !p.IsPrisoner && p.HostileTo(player)).ToList();
+        if (hostiles.Count == 0)
+        {
+            return default;
+        }
+
+        var center = liveMap.Center;
+        var atBaseRadius = settings.mobilizationAtBaseRadius;
+
+        return new ThreatSignals
+        {
+            AnyHostile = true,
+            OnlyAnimals = hostiles.All(p => p.RaceProps?.Animal == true),
+            AnyMechanoid = hostiles.Any(p => p.RaceProps?.IsMechanoid == true),
+            AnyEntity = hostiles.Any(p => p.IsEntity || p.IsMutant),
+            AnyInsect = hostiles.Any(p => p.RaceProps?.Insect == true),
+            AnySapper = false,
+            EnemyAtBase = hostiles.Any(p => (p.Position - center).LengthHorizontal <= atBaseRadius),
+            HostileCount = hostiles.Count,
+            BigRaid = hostiles.Count >= settings.mobilizationBigRaidThreshold,
+        };
     }
 
     // Dev diagnostics: the driver's derived phase + transient tracking for one pawn (see OutfitStandDebugActions).
     public string DiagnosePawn(Pawn pawn)
     {
-        return $"phase={driver.PeekPhase(pawn, IsMobilized)}, "
+        return $"phase={driver.PeekPhase(pawn, IsMobilized, currentTier)}, tier={currentTier}, "
                + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}";
     }
 
@@ -74,6 +115,20 @@ public sealed class MobilizationMapComponent : MapComponent
     {
         base.ExposeData();
         Scribe_Values.Look(ref manualMobilized, "livingWorld_manualMobilized", false);
+
+        if (Scribe.mode == LoadSaveMode.Saving)
+        {
+            savedDraftedIds = driver.ExportDraftedIds();
+        }
+
+        Scribe_Collections.Look(ref savedDraftedIds, "livingWorld_draftedByUs", LookMode.Value);
+        savedDraftedIds ??= new List<int>();
+    }
+
+    public override void FinalizeInit()
+    {
+        base.FinalizeInit();
+        driver.ImportDraftedIds(savedDraftedIds, map);
     }
 
     public static MobilizationMapComponent? For(Map map)
