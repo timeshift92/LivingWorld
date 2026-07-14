@@ -39,6 +39,9 @@ public sealed class LivingWorldSettings : ModSettings
     public int settlementHousingHeadroom = 4;
     public bool worldMapSpeedTestEnabled = false;
     public int worldMapSpeedMultiplier = 5;
+    public int mobilizationBigRaidThreshold = 12;
+    public float mobilizationAtBaseRadius = 18f;
+    public int mobilizationDeescalateRechecks = 2;
 
     public LivingWorldSettings()
     {
@@ -80,6 +83,9 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref settlementHousingHeadroom, "settlementHousingHeadroom", 4);
         Scribe_Values.Look(ref worldMapSpeedTestEnabled, "worldMapSpeedTestEnabled", false);
         Scribe_Values.Look(ref worldMapSpeedMultiplier, "worldMapSpeedMultiplier", 5);
+        Scribe_Values.Look(ref mobilizationBigRaidThreshold, "mobilizationBigRaidThreshold", 12);
+        Scribe_Values.Look(ref mobilizationAtBaseRadius, "mobilizationAtBaseRadius", 18f);
+        Scribe_Values.Look(ref mobilizationDeescalateRechecks, "mobilizationDeescalateRechecks", 2);
 
         if (worldMapSpeedMultiplier != 3 && worldMapSpeedMultiplier != 5 && worldMapSpeedMultiplier != 10)
         {
