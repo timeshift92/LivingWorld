@@ -56,6 +56,41 @@ public static class MobilizationCandidates
         }
     }
 
+    // "In the combat kit" = holding a weapon AND wearing at least one armor piece — the state the outfit-stand
+    // swap produces. Stricter than IsArmed so a colonist habitually carrying a weapon (e.g. Simple Sidearms, a
+    // hunter's rifle) but wearing no armor still reads as "not equipped" and is sent to their stand to gear up.
+    public static bool IsInCombatKit(Pawn pawn)
+    {
+        try
+        {
+            if (pawn?.equipment?.Primary == null)
+            {
+                return false;
+            }
+
+            var worn = pawn.apparel?.WornApparel;
+            if (worn == null)
+            {
+                return false;
+            }
+
+            foreach (var apparel in worn)
+            {
+                var cats = apparel?.def?.thingCategories;
+                if (cats != null && cats.Contains(ThingCategoryDefOf.ApparelArmor))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // On a life-or-base-saving job we must not yank them off: firefighting, tending a patient, rescuing downed.
     public static bool IsBusyUrgent(Pawn pawn)
     {
