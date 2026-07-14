@@ -7,3 +7,6 @@ obj/
 *.suo
 TestResults/
 tools/reference-src/
+
+# superpowers SDD scratch (progress ledger, task briefs, review packages)
+.superpowers/

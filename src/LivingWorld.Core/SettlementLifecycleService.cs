@@ -204,6 +204,80 @@ public static class SettlementLifecycleService
         return new RuinPruneResult(toPrune.Count);
     }
 
+    public static WorldSettlement ChangeSettlementFaction(
+        WorldState state,
+        EntityId settlementId,
+        string newFactionId,
+        int tick,
+        string reason)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        ThrowIfNullOrWhiteSpace(newFactionId, nameof(newFactionId));
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        state.AdvanceToTick(Math.Max(0, tick));
+
+        var settlement = state.GetSettlement(settlementId)
+            ?? throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        if (settlement.Status != SettlementLifecycleStatus.Active)
+        {
+            // Destroyed/abandoned settlements must not be resurrected by a faction change; only
+            // ReclaimRuin (an explicit action) may bring them back to Active.
+            return settlement;
+        }
+
+        if (string.Equals(settlement.FactionId, newFactionId, StringComparison.Ordinal))
+        {
+            return settlement;
+        }
+
+        var updated = state.SetSettlementFactionAndStatusForLedger(
+            settlementId,
+            newFactionId,
+            SettlementLifecycleStatus.Active);
+        state.RecordEvent(
+            WorldEventKind.SettlementCaptured,
+            settlementId,
+            $"Settlement {settlementId} captured by {newFactionId}: {reason}.");
+
+        return updated;
+    }
+
+    public static WorldSettlement AbandonSettlement(
+        WorldState state,
+        EntityId settlementId,
+        int tick,
+        string reason)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        state.AdvanceToTick(Math.Max(0, tick));
+
+        var settlement = state.GetSettlement(settlementId)
+            ?? throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        if (settlement.Status != SettlementLifecycleStatus.Active)
+        {
+            return settlement;
+        }
+
+        var updated = state.SetSettlementLifecycleStatusForLedger(
+            settlementId,
+            SettlementLifecycleStatus.Abandoned);
+        state.RecordEvent(
+            WorldEventKind.SettlementAbandoned,
+            settlementId,
+            $"Settlement {settlementId} abandoned: {reason}.");
+
+        return updated;
+    }
+
     private static int MoveAllResources(WorldState state, EntityId fromOwnerId, EntityId toOwnerId, string reason)
     {
         var moved = 0;

@@ -64,11 +64,14 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         rimWorld = world;
         Instance = this;
         State = new WorldState(ResolveWorldSeed(rimWorld));
+        SettlementSync = new SettlementSyncCoordinator(this);
     }
 
     public static LivingWorldWorldComponent? Instance { get; private set; }
 
     public WorldState State { get; private set; }
+
+    public SettlementSyncCoordinator SettlementSync { get; }
 
     public bool IsBootstrapped => bootstrapped;
 
@@ -167,6 +170,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
         LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
+        // One-shot: clear ghost ledger entries for settlements removed by other mods before this
+        // fix existed, and import/re-faction any that drifted while saved. Safe at load time — every
+        // real settlement is present and scannable.
+        SettlementSync.ReconcileWithDestructions();
     }
 
     public override void WorldComponentTick()
@@ -203,6 +210,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             SimulateWorldDay(lastSimulatedDay);
             simulatedDays++;
         }
+
+        // Safety net for any add/capture the hooks missed (mods bypassing the standard API). Never
+        // destroys — removal is driven solely by the authoritative Remove hook — so a transiently
+        // unscannable settlement is never wrongly ruined.
+        SettlementSync.ReconcileNonDestructive();
 
         if (lastSimulatedDay < currentDay && (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
@@ -1951,13 +1963,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // tile is embedded even though Core itself has no tile geometry. Returns -1 when unparseable.
     private static int ParseSettlementTile(string? slug)
     {
-        if (string.IsNullOrEmpty(slug))
-        {
-            return -1;
-        }
-
-        var parts = slug!.Split(':');
-        return parts.Length >= 3 && int.TryParse(parts[2], out var tile) ? tile : -1;
+        return SettlementSlug.ParseTile(slug);
     }
 
     // Turns the ledger's active ruins into REAL, lootable RimWorld sites (abandoned settlements the
@@ -2331,84 +2337,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 return;
             }
 
-            foreach (var settlement in candidates)
+            // Iterate the Empire-filtered `candidates` list (not raw scan.Candidates) so bootstrap keeps
+            // main's defense-in-depth PColony exclusion, while reusing the extracted SeedImportedSettlement.
+            foreach (var candidate in candidates)
             {
-                var faction = Find.FactionManager.AllFactionsListForReading
-                    .FirstOrDefault(candidate => candidate.def?.defName == settlement.FactionId);
-                var configuredAdults = faction?.def?.humanlikeFaction == true
-                    ? settings.baselineHumanSettlementAdults
-                    : settings.baselineNonHumanSettlementAdults;
-                var worldSettlement = State.CreateSettlement(settlement.StableKey, settlement.Name, settlement.FactionId);
-                var settlementStableSeed = SettlementPopulationSeedingService.StableSettlementSeed(settlement.StableKey);
-                var baselineAdults = SettlementPopulationSeedingService.CalculateAdultCount(
-                    State.WorldSeed,
-                    settlementStableSeed,
-                    configuredAdults,
-                    settings.minSettlementAdults,
-                    settings.maxSettlementAdults);
-                var baselineChildren = faction?.def?.humanlikeFaction == true
-                    ? SettlementPopulationSeedingService.CalculateChildCount(
-                        State.WorldSeed,
-                        settlementStableSeed,
-                        baselineAdults)
-                    : 0;
-                var productionProfile = ApplyEconomicCharacter(RimWorldSettlementProductionProfileFactory.Create(
-                    settlement,
-                    worldSettlement.Id,
-                    faction));
-
-                State.RunInitialWorldSeeding(() =>
-                {
-                    // initial world seeding is bulk ledger setup, not runtime world history.
-                    State.RecordSettlementProductionProfile(productionProfile);
-
-                    for (var i = 0; i < baselineAdults; i++)
-                    {
-                        var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
-                        var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, settlementStableSeed, i);
-                        State.CreateCitizen($"{settlement.Name} citizen {i + 1}", age, sex, "settler", worldSettlement.Id);
-                    }
-
-                    for (var i = 0; i < baselineChildren; i++)
-                    {
-                        var sex = i % 2 == 0 ? Sex.Female : Sex.Male;
-                        var age = SettlementPopulationSeedingService.CalculateChildAge(State.WorldSeed, settlementStableSeed, i);
-                        State.CreateCitizen($"{settlement.Name} child {i + 1}", age, sex, "child", worldSettlement.Id);
-                    }
-
-                    if (settings.foodPerCitizen > 0)
-                    {
-                        State.AddResource(worldSettlement.Id, FoodResourceKey, (baselineAdults + baselineChildren) * settings.foodPerCitizen);
-                    }
-
-                    if (settings.steelPerCitizen > 0)
-                    {
-                        State.AddResource(
-                            worldSettlement.Id,
-                            SteelResourceKey,
-                            ScaleEconomicEndowment(worldSettlement.Id, baselineAdults * settings.steelPerCitizen));
-                    }
-
-                    var silverEndowment = EconomicSilverEndowment(worldSettlement.Id, baselineAdults);
-                    if (silverEndowment > 0)
-                    {
-                        State.AddResource(worldSettlement.Id, SilverResourceKey, silverEndowment);
-                    }
-
-                    SettlementBootstrapPrimer.PrimeSettlement(
-                        State,
-                        new SettlementBootstrapPrimerRequest(
-                            Tick: 0,
-                            SettlementId: worldSettlement.Id,
-                            FoodResourceKey: FoodResourceKey,
-                            SteelResourceKey: SteelResourceKey,
-                            ComponentResourceKey: ComponentResourceKey));
-                });
-
-                PlayerKnowledgeService.RecordPublicSettlementInfo(
-                    State,
-                    worldSettlement.Id,
-                    "settlement public disclosure");
+                SeedImportedSettlement(candidate, settings);
             }
 
             var initialDrifterReservoir = Math.Max(
@@ -2444,6 +2377,86 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             LastBootstrapError = $"{ex.GetType().Name}: {ex.Message}";
             Log.Error($"[LivingWorld] Ledger bootstrap failed safely: {LastBootstrapError}");
         }
+    }
+
+    public void SeedImportedSettlement(WorldObjectSettlementCandidate candidate, LivingWorldSettings settings)
+    {
+        var faction = Find.FactionManager.AllFactionsListForReading
+            .FirstOrDefault(f => f.def?.defName == candidate.FactionId);
+        var configuredAdults = faction?.def?.humanlikeFaction == true
+            ? settings.baselineHumanSettlementAdults
+            : settings.baselineNonHumanSettlementAdults;
+        var worldSettlement = State.CreateSettlement(candidate.StableKey, candidate.Name, candidate.FactionId);
+        var settlementStableSeed = SettlementPopulationSeedingService.StableSettlementSeed(candidate.StableKey);
+        var baselineAdults = SettlementPopulationSeedingService.CalculateAdultCount(
+            State.WorldSeed,
+            settlementStableSeed,
+            configuredAdults,
+            settings.minSettlementAdults,
+            settings.maxSettlementAdults);
+        var baselineChildren = faction?.def?.humanlikeFaction == true
+            ? SettlementPopulationSeedingService.CalculateChildCount(
+                State.WorldSeed,
+                settlementStableSeed,
+                baselineAdults)
+            : 0;
+        var productionProfile = ApplyEconomicCharacter(RimWorldSettlementProductionProfileFactory.Create(
+            candidate,
+            worldSettlement.Id,
+            faction));
+
+        State.RunInitialWorldSeeding(() =>
+        {
+            // initial world seeding is bulk ledger setup, not runtime world history.
+            State.RecordSettlementProductionProfile(productionProfile);
+
+            for (var i = 0; i < baselineAdults; i++)
+            {
+                var sex = i % 2 == 0 ? Sex.Male : Sex.Female;
+                var age = SettlementPopulationSeedingService.CalculateAdultAge(State.WorldSeed, settlementStableSeed, i);
+                State.CreateCitizen($"{candidate.Name} citizen {i + 1}", age, sex, "settler", worldSettlement.Id);
+            }
+
+            for (var i = 0; i < baselineChildren; i++)
+            {
+                var sex = i % 2 == 0 ? Sex.Female : Sex.Male;
+                var age = SettlementPopulationSeedingService.CalculateChildAge(State.WorldSeed, settlementStableSeed, i);
+                State.CreateCitizen($"{candidate.Name} child {i + 1}", age, sex, "child", worldSettlement.Id);
+            }
+
+            if (settings.foodPerCitizen > 0)
+            {
+                State.AddResource(worldSettlement.Id, FoodResourceKey, (baselineAdults + baselineChildren) * settings.foodPerCitizen);
+            }
+
+            if (settings.steelPerCitizen > 0)
+            {
+                State.AddResource(
+                    worldSettlement.Id,
+                    SteelResourceKey,
+                    ScaleEconomicEndowment(worldSettlement.Id, baselineAdults * settings.steelPerCitizen));
+            }
+
+            var silverEndowment = EconomicSilverEndowment(worldSettlement.Id, baselineAdults);
+            if (silverEndowment > 0)
+            {
+                State.AddResource(worldSettlement.Id, SilverResourceKey, silverEndowment);
+            }
+
+            SettlementBootstrapPrimer.PrimeSettlement(
+                State,
+                new SettlementBootstrapPrimerRequest(
+                    Tick: 0,
+                    SettlementId: worldSettlement.Id,
+                    FoodResourceKey: FoodResourceKey,
+                    SteelResourceKey: SteelResourceKey,
+                    ComponentResourceKey: ComponentResourceKey));
+        });
+
+        PlayerKnowledgeService.RecordPublicSettlementInfo(
+            State,
+            worldSettlement.Id,
+            "settlement public disclosure");
     }
 
     // Stamps a freshly created production profile with its deterministic economic character (archetype +

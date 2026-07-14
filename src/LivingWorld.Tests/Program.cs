@@ -218,6 +218,11 @@ var tests = new List<(string Name, Action Test)>
     ("persistent caravan still delivers after load", TestPersistentCaravanArrivesAfterLoad),
     ("derived aggregates track capture and expansion", TestDerivedAggregatesTrackCaptureAndExpansion),
     ("destroyed settlement leaves ruin and refugees", TestDestroyedSettlementLeavesRuinAndRefugees),
+    ("change settlement faction records capture", TestChangeSettlementFactionUpdatesFactionAndRecordsCapture),
+    ("change settlement faction no-op when unchanged", TestChangeSettlementFactionIsNoOpWhenUnchanged),
+    ("change settlement faction no-op when not active", TestChangeSettlementFactionIsNoOpWhenNotActive),
+    ("abandon settlement marks abandoned without ruin", TestAbandonSettlementMarksAbandonedWithoutRuin),
+    ("abandon settlement no-op when not active", TestAbandonSettlementIsNoOpWhenNotActive),
     ("relocation moves citizens and resources through migration group", TestRelocationMovesCitizensAndResourcesThroughMigrationGroup),
     ("ruin can be reclaimed without duplicating resources", TestRuinCanBeReclaimedWithoutDuplicatingResources),
     ("old inactive ruins can be pruned after history is recorded", TestOldInactiveRuinsCanBePrunedAfterHistoryIsRecorded),
@@ -352,6 +357,12 @@ var tests = new List<(string Name, Action Test)>
     ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
     ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
     ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
+    ("parses settlement tile from slug", TestSettlementSlugParsesTile),
+    ("rejects malformed settlement slug", TestSettlementSlugRejectsMalformedSlug),
+    ("rejects empty settlement slug", TestSettlementSlugRejectsEmptySlug),
+    ("finds active settlement by tile", TestFindActiveSettlementByTileMatches),
+    ("find by tile returns null without match", TestFindActiveSettlementByTileReturnsNullWhenNoTile),
+    ("find by tile ignores destroyed settlements", TestFindActiveSettlementByTileIgnoresDestroyed),
     ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
     ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
@@ -405,6 +416,13 @@ var tests = new List<(string Name, Action Test)>
     ("shelter: not needed and we never touched the area -> None", TestShelterNoRestoreNeeded),
     ("shelter: a pawn promoted to fighter while sheltered is restored", TestShelterPromotedFighterRestored),
     ("shelter: restore fires even for a busy pawn (area change does not yank them)", TestShelterRestoreIgnoresBusy),
+    ("reconcile imports new physical settlement", TestReconcilePlansImportForNewPhysicalSettlement),
+    ("reconcile destroys missing physical when enabled", TestReconcilePlansDestructionForMissingPhysicalWhenEnabled),
+    ("reconcile skips destruction when disabled", TestReconcileSkipsDestructionWhenDisabled),
+    ("reconcile plans faction change on mismatch", TestReconcilePlansFactionChangeOnMismatch),
+    ("reconcile no action when matched", TestReconcileNoActionWhenMatched),
+    ("reconcile ignores destroyed ledger entries", TestReconcileIgnoresDestroyedLedgerEntries),
+    ("reconcile mixed scenario produces all actions", TestReconcileMixedScenarioProducesAllActions),
 };
 
 var failures = new List<string>();
@@ -6410,6 +6428,68 @@ static void TestDestroyedSettlementLeavesRuinAndRefugees()
     AssertEqual(0, state.Validate().Count());
 }
 
+static void TestChangeSettlementFactionUpdatesFactionAndRecordsCapture()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    var updated = SettlementLifecycleService.ChangeSettlementFaction(
+        state, settlement.Id, "Outlander", 100, "captured");
+
+    AssertEqual("Outlander", updated.FactionId);
+    AssertEqual(SettlementLifecycleStatus.Active, updated.Status);
+    var captured = state.Events.Single(e => e.Kind == WorldEventKind.SettlementCaptured);
+    AssertEqual(settlement.Id, captured.SubjectId);
+}
+
+static void TestChangeSettlementFactionIsNoOpWhenUnchanged()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    SettlementLifecycleService.ChangeSettlementFaction(state, settlement.Id, "Pirate", 100, "captured");
+
+    AssertEqual(0, state.Events.Count(e => e.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestChangeSettlementFactionIsNoOpWhenNotActive()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "destroyed");
+    var capturedBefore = state.Events.Count(e => e.Kind == WorldEventKind.SettlementCaptured);
+
+    SettlementLifecycleService.ChangeSettlementFaction(state, settlement.Id, "Outlander", 200, "captured");
+
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(settlement.Id)!.Status);
+    AssertEqual("Pirate", state.GetSettlement(settlement.Id)!.FactionId);
+    AssertEqual(capturedBefore, state.Events.Count(e => e.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestAbandonSettlementMarksAbandonedWithoutRuin()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    var updated = SettlementLifecycleService.AbandonSettlement(state, settlement.Id, 100, "captured by player");
+
+    AssertEqual(SettlementLifecycleStatus.Abandoned, updated.Status);
+    AssertEqual(1, state.Events.Count(e => e.Kind == WorldEventKind.SettlementAbandoned));
+    AssertEqual(0, state.Ruins.Count);
+}
+
+static void TestAbandonSettlementIsNoOpWhenNotActive()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "destroyed");
+
+    var abandonEventsBefore = state.Events.Count(e => e.Kind == WorldEventKind.SettlementAbandoned);
+    SettlementLifecycleService.AbandonSettlement(state, settlement.Id, 200, "captured by player");
+
+    AssertEqual(abandonEventsBefore, state.Events.Count(e => e.Kind == WorldEventKind.SettlementAbandoned));
+}
+
 static void TestRelocationMovesCitizensAndResourcesThroughMigrationGroup()
 {
     var state = new WorldState(4242);
@@ -9230,7 +9310,7 @@ static void TestRimWorldBootstrapPrimesImmediateDynamics()
 
     var source = File.ReadAllText(componentPath);
 
-    AssertContains("SettlementPopulationSeedingService.StableSettlementSeed(settlement.StableKey)", source);
+    AssertContains("SettlementPopulationSeedingService.StableSettlementSeed(candidate.StableKey)", source);
     AssertContains("SettlementPopulationSeedingService.CalculateChildCount", source);
     AssertContains("SettlementPopulationSeedingService.CalculateChildAge", source);
     AssertContains("SettlementBootstrapPrimer.PrimeSettlement", source);
@@ -11048,4 +11128,152 @@ static void TestShelterRestoreIgnoresBusy()
         IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = true, IsBusyUrgent = true,
     };
     AssertEqual(ShelterPhase.Restore, ShelterPlan.NextAction(s));
+}
+
+static void TestSettlementSlugParsesTile()
+{
+    AssertEqual(4211, SettlementSlug.ParseTile("worldobject:Settlement:4211:Pirate"));
+}
+
+static void TestSettlementSlugRejectsMalformedSlug()
+{
+    AssertEqual(-1, SettlementSlug.ParseTile("not-a-slug"));
+    AssertEqual(-1, SettlementSlug.ParseTile("worldobject:Settlement:notanumber:Pirate"));
+}
+
+static void TestSettlementSlugRejectsEmptySlug()
+{
+    AssertEqual(-1, SettlementSlug.ParseTile(null));
+    AssertEqual(-1, SettlementSlug.ParseTile(""));
+}
+
+static void TestFindActiveSettlementByTileMatches()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    var found = state.FindActiveSettlementByTile(512);
+
+    AssertEqual(settlement.Id, found!.Id);
+}
+
+static void TestFindActiveSettlementByTileReturnsNullWhenNoTile()
+{
+    var state = new WorldState(12345);
+    state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+
+    AssertEqual(true, state.FindActiveSettlementByTile(999) is null);
+    AssertEqual(true, state.FindActiveSettlementByTile(-1) is null);
+}
+
+static void TestFindActiveSettlementByTileIgnoresDestroyed()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "test");
+
+    AssertEqual(true, state.FindActiveSettlementByTile(512) is null);
+}
+
+static PhysicalSettlementFact Fact(int tile, string faction) =>
+    new($"worldobject:Settlement:{tile}:{faction}", $"Town{tile}", faction, tile);
+
+static void TestReconcilePlansImportForNewPhysicalSettlement()
+{
+    var state = new WorldState(12345);
+    var physical = new List<PhysicalSettlementFact> { Fact(700, "Pirate") };
+
+    var plan = SettlementReconciliationService.ComputePlan(physical, state, includeDestructions: true);
+
+    AssertEqual(1, plan.Imports.Count);
+    AssertEqual(700, plan.Imports[0].Tile);
+    AssertEqual(0, plan.Destructions.Count);
+    AssertEqual(0, plan.FactionChanges.Count);
+}
+
+static void TestReconcilePlansDestructionForMissingPhysicalWhenEnabled()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:700:Pirate", "Redwater", "Pirate");
+
+    var plan = SettlementReconciliationService.ComputePlan(
+        new List<PhysicalSettlementFact>(), state, includeDestructions: true);
+
+    AssertEqual(1, plan.Destructions.Count);
+    AssertEqual(settlement.Id, plan.Destructions[0]);
+}
+
+static void TestReconcileSkipsDestructionWhenDisabled()
+{
+    var state = new WorldState(12345);
+    state.CreateSettlement("worldobject:Settlement:700:Pirate", "Redwater", "Pirate");
+
+    var plan = SettlementReconciliationService.ComputePlan(
+        new List<PhysicalSettlementFact>(), state, includeDestructions: false);
+
+    AssertEqual(0, plan.Destructions.Count);
+}
+
+static void TestReconcilePlansFactionChangeOnMismatch()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:700:Pirate", "Redwater", "Pirate");
+
+    var plan = SettlementReconciliationService.ComputePlan(
+        new List<PhysicalSettlementFact> { Fact(700, "Outlander") }, state, includeDestructions: true);
+
+    AssertEqual(0, plan.Imports.Count);
+    AssertEqual(0, plan.Destructions.Count);
+    AssertEqual(1, plan.FactionChanges.Count);
+    AssertEqual(settlement.Id, plan.FactionChanges[0].SettlementId);
+    AssertEqual("Outlander", plan.FactionChanges[0].NewFactionId);
+}
+
+static void TestReconcileNoActionWhenMatched()
+{
+    var state = new WorldState(12345);
+    state.CreateSettlement("worldobject:Settlement:700:Pirate", "Redwater", "Pirate");
+
+    var plan = SettlementReconciliationService.ComputePlan(
+        new List<PhysicalSettlementFact> { Fact(700, "Pirate") }, state, includeDestructions: true);
+
+    AssertEqual(0, plan.Imports.Count);
+    AssertEqual(0, plan.Destructions.Count);
+    AssertEqual(0, plan.FactionChanges.Count);
+}
+
+static void TestReconcileIgnoresDestroyedLedgerEntries()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:700:Pirate", "Redwater", "Pirate");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "gone");
+
+    var plan = SettlementReconciliationService.ComputePlan(
+        new List<PhysicalSettlementFact>(), state, includeDestructions: true);
+
+    AssertEqual(0, plan.Destructions.Count);
+}
+
+static void TestReconcileMixedScenarioProducesAllActions()
+{
+    var state = new WorldState(12345);
+    var captured = state.CreateSettlement("worldobject:Settlement:100:Pirate", "Cap", "Pirate");
+    var missing = state.CreateSettlement("worldobject:Settlement:200:Pirate", "Miss", "Pirate");
+    state.CreateSettlement("worldobject:Settlement:300:Pirate", "Same", "Pirate");
+
+    var physical = new List<PhysicalSettlementFact>
+    {
+        Fact(100, "Outlander"), // faction change
+        Fact(300, "Pirate"),    // unchanged
+        Fact(400, "Tribe"),     // import
+    };
+
+    var plan = SettlementReconciliationService.ComputePlan(physical, state, includeDestructions: true);
+
+    AssertEqual(1, plan.Imports.Count);
+    AssertEqual(400, plan.Imports[0].Tile);
+    AssertEqual(1, plan.Destructions.Count);
+    AssertEqual(missing.Id, plan.Destructions[0]);
+    AssertEqual(1, plan.FactionChanges.Count);
+    AssertEqual(captured.Id, plan.FactionChanges[0].SettlementId);
 }

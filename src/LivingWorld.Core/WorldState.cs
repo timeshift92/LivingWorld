@@ -1619,6 +1619,17 @@ public sealed class WorldState
             : null;
     }
 
+    public WorldSettlement? FindActiveSettlementByTile(int tile)
+    {
+        if (tile < 0)
+        {
+            return null;
+        }
+
+        return _settlements.Values.FirstOrDefault(settlement =>
+            settlement.IsActive && SettlementSlug.ParseTile(settlement.Slug) == tile);
+    }
+
     public bool IsActiveSettlement(EntityId id)
     {
         return _settlements.TryGetValue(id, out var settlement) && settlement.IsActive;

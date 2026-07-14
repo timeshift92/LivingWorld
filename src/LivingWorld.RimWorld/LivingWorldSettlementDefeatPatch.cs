@@ -103,15 +103,16 @@ public static class LivingWorldSettlementDefeatPatch
     }
 
     // Ledger settlement slugs embed the RimWorld tile ("worldobject:{defName}:{tile}:{factionId}"),
-    // so match the destroyed base by its faction plus that tile token. Returns null when unmatched.
+    // so match the destroyed base by tile, then confirm the faction still agrees. Returns null when unmatched.
     private static WorldSettlement? ResolveLedgerSettlement(WorldState state, Settlement worldObject)
     {
+        var ledger = state.FindActiveSettlementByTile(worldObject.Tile);
+        if (ledger == null)
+        {
+            return null;
+        }
+
         var factionId = worldObject.Faction?.def?.defName ?? "UnknownFaction";
-        var tileToken = $":{worldObject.Tile}:";
-        return state.Settlements.FirstOrDefault(candidate =>
-            candidate.IsActive
-            &&
-            string.Equals(candidate.FactionId, factionId, StringComparison.Ordinal)
-            && candidate.Slug.Contains(tileToken));
+        return string.Equals(ledger.FactionId, factionId, StringComparison.Ordinal) ? ledger : null;
     }
 }
