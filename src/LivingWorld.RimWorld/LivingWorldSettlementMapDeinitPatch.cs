@@ -1,17 +1,21 @@
+using System;
+using System.Linq;
 using HarmonyLib;
 using LivingWorld.Core;
-using System.Linq;
+using RimWorld.Planet;
 using Verse;
 
 namespace LivingWorld.RimWorld;
 
 [HarmonyPatch(typeof(MapDeiniter), "Deinit")]
+[HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
+[HarmonyPriority(Priority.Last)]
 public static class LivingWorldSettlementMapDeinitPatch
 {
     public static void Prefix(Map map)
     {
         var component = LivingWorldWorldComponent.Instance;
-        if (component == null || map == null)
+        if (component == null || map == null || !OwnsMapLifecycle(map.Parent))
         {
             return;
         }
@@ -24,19 +28,27 @@ public static class LivingWorldSettlementMapDeinitPatch
             return;
         }
 
-        LivingWorldSettlementMapResourceTracker.ReconcileMap(
-            component.State,
-            map,
-            "settlement map deinit");
-        LivingWorldSettlementMapFacilityTracker.ReconcileMap(
-            component.State,
-            map,
-            "settlement map deinit");
-        LivingWorldAnimalMapPawnTracker.ReconcileMap(
-            component.State,
-            map,
-            "settlement map deinit");
-        ReconcileResidents(component.State, map, mapComponent.PurposeKey);
+        TryReconcile(
+            () => LivingWorldSettlementMapResourceTracker.ReconcileMap(
+                component.State,
+                map,
+                "settlement map deinit"),
+            "resources");
+        TryReconcile(
+            () => LivingWorldSettlementMapFacilityTracker.ReconcileMap(
+                component.State,
+                map,
+                "settlement map deinit"),
+            "facilities and floors");
+        TryReconcile(
+            () => LivingWorldAnimalMapPawnTracker.ReconcileMap(
+                component.State,
+                map,
+                "settlement map deinit"),
+            "animals");
+        TryReconcile(
+            () => ReconcileResidents(component.State, map, mapComponent.PurposeKey),
+            "residents");
 
         mapComponent.MarkReconciled();
         var visitSite = Find.WorldObjects?.AllWorldObjects
@@ -50,7 +62,7 @@ public static class LivingWorldSettlementMapDeinitPatch
         var leases = state.MaterializationLeases
             .Where(lease =>
                 lease.IsActive
-                && string.Equals(lease.PurposeKey, purposeKey, System.StringComparison.Ordinal))
+                && string.Equals(lease.PurposeKey, purposeKey, StringComparison.Ordinal))
             .OrderBy(lease => lease.Id.Value)
             .ToList();
         var pawns = map.mapPawns.AllPawns.ToList();
@@ -76,6 +88,34 @@ public static class LivingWorldSettlementMapDeinitPatch
                     lease.CitizenId,
                     fate,
                     "settlement map deinitialized"));
+        }
+    }
+
+    private static bool OwnsMapLifecycle(MapParent parent)
+    {
+        if (parent is WorldObject_LivingWorldSettlementVisitSite)
+        {
+            return true;
+        }
+
+        if (parent is not Settlement || parent.GetType() != typeof(Settlement))
+        {
+            return false;
+        }
+
+        return !ModsConfig.IsActive("helldan.economicsdemography")
+            && !ModsConfig.IsActive("Torann.RimWar");
+    }
+
+    private static void TryReconcile(Action reconcile, string layer)
+    {
+        try
+        {
+            reconcile();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Settlement map {layer} reconciliation skipped safely: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

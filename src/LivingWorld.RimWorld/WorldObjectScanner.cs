@@ -56,7 +56,7 @@ public sealed class WorldObjectScanner
             .Where(obj => obj != null)
             .ToList();
         var scanErrorCount = 0;
-        var vanillaSettlements = worldObjects.Count(obj => obj is Settlement);
+        var vanillaSettlements = worldObjects.Count(IsExactVanillaSettlement);
         var factionWorldObjects = worldObjects.Count(obj => SafeRead(() => obj.Faction, ref scanErrorCount) != null);
         var candidates = worldObjects
             .Select(obj => ToCandidateOrNull(obj, ref scanErrorCount))
@@ -83,12 +83,20 @@ public sealed class WorldObjectScanner
     {
         foreach (var importer in importers)
         {
-            if (!importer.CanImport(obj))
+            try
             {
-                continue;
-            }
+                if (!importer.CanImport(obj))
+                {
+                    continue;
+                }
 
-            return importer.ImportCandidate(obj, ref scanErrorCount);
+                return importer.ImportCandidate(obj, ref scanErrorCount);
+            }
+            catch (Exception ex)
+            {
+                scanErrorCount++;
+                Log.Warning($"[LivingWorld] World object importer {importer.GetType().Name} skipped {obj.GetType().Name} safely: {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         return null;
@@ -142,7 +150,8 @@ public sealed class WorldObjectScanner
         var rejectedCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var obj in worldObjects)
         {
-            if (candidateKeys.Contains(BuildStableKey(obj, ref scanErrorCount)))
+            if (IsExactVanillaSettlement(obj)
+                && candidateKeys.Contains(BuildStableKey(obj, ref scanErrorCount)))
             {
                 continue;
             }
@@ -184,18 +193,25 @@ public sealed class WorldObjectScanner
             ? countComparison
             : string.CompareOrdinal(left.Key, right.Key);
     }
+
+    private static bool IsExactVanillaSettlement(WorldObject obj)
+    {
+        // Subclasses such as Empire's WorldSettlementFC are separate ownership domains. They need
+        // explicit importers; treating every "obj is Settlement" as vanilla would double-drive them.
+        return obj is Settlement && obj.GetType() == typeof(Settlement);
+    }
 }
 
 public sealed class VanillaSettlementImporter : IWorldObjectImporter
 {
     public bool CanImport(WorldObject obj)
     {
-        return obj is Settlement;
+        return obj is Settlement && obj.GetType() == typeof(Settlement);
     }
 
     public WorldObjectSettlementCandidate? ImportCandidate(WorldObject obj, ref int scanErrorCount)
     {
-        if (obj is not Settlement)
+        if (obj is not Settlement || obj.GetType() != typeof(Settlement))
         {
             return null;
         }

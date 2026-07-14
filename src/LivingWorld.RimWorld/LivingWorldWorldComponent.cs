@@ -169,7 +169,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         EnsureMechClusterSites();
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
-        LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
+        if (fromLoad)
+        {
+            LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
+        }
         // One-shot: clear ghost ledger entries for settlements removed by other mods before this
         // fix existed, and import/re-faction any that drifted while saved. Safe at load time — every
         // real settlement is present and scannable.
@@ -191,11 +194,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
-        if (currentTick % 250 == 0)
-        {
-            LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
-        }
-
         CheckPlayerCaravanMarkerContacts(currentTick);
         var currentDay = currentTick / TicksPerDay;
         if (currentDay <= 0 || currentDay <= lastSimulatedDay)
@@ -2108,7 +2106,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         if (Scribe.mode == LoadSaveMode.Saving)
         {
-            LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
             serializedState = WorldStateCodec.Serialize(State);
         }
 

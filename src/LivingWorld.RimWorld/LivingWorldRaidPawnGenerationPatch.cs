@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
@@ -8,15 +9,12 @@ using Verse;
 namespace LivingWorld.RimWorld;
 
 [HarmonyPatch(typeof(IncidentWorker_Raid), "TryGenerateRaidInfo")]
+[HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
+[HarmonyPriority(Priority.Last)]
 public static class LivingWorldRaidPawnGenerationPatch
 {
     public static void Postfix(IncidentParms parms, ref List<Pawn> pawns, bool __result)
     {
-        if (!__result || pawns == null || pawns.Count == 0)
-        {
-            return;
-        }
-
         var component = LivingWorldWorldComponent.Instance;
         if (component == null)
         {
@@ -28,30 +26,39 @@ public static class LivingWorldRaidPawnGenerationPatch
             return;
         }
 
-        RaidPawnBindingService.BindRaidPawns(
-            component.State,
-            reservation.ArmyId,
-            pawns.Select(pawn => pawn.thingIDNumber));
-        foreach (var pawn in pawns)
+        if (!__result || pawns == null || pawns.Count == 0)
         {
-            var link = component.State.GetRaidPawnLink(pawn.thingIDNumber);
-            if (link == null)
-            {
-                continue;
-            }
-
-            var identityComp = pawn.GetComp<CompLivingWorldIdentity>();
-            if (identityComp == null)
-            {
-                identityComp = new CompLivingWorldIdentity { parent = pawn };
-                pawn.AllComps.Add(identityComp);
-            }
-
-            identityComp.SetLedgerId(link.CitizenId);
+            RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.ArmyId);
+            return;
         }
 
-        // Any reservist that did not get a generated pawn stands down and returns to its settlement,
-        // so reserving more combatants than vanilla spawns never strands citizens in the army.
-        RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.ArmyId);
+        try
+        {
+            RaidPawnBindingService.BindRaidPawns(
+                component.State,
+                reservation.ArmyId,
+                pawns.Select(pawn => pawn.thingIDNumber));
+            foreach (var pawn in pawns)
+            {
+                var link = component.State.GetRaidPawnLink(pawn.thingIDNumber);
+                if (link == null)
+                {
+                    continue;
+                }
+
+                // Human ThingDefs declare CompLivingWorldIdentity. Modded races without the comp
+                // keep the persisted raid-link/thingID fallback; never mutate their comp schema.
+                pawn.GetComp<CompLivingWorldIdentity>()?.SetLedgerId(link.CitizenId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Raid pawn binding skipped safely: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            // Any reservist that did not get a generated pawn stands down and returns to its source.
+            RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.ArmyId);
+        }
     }
 }

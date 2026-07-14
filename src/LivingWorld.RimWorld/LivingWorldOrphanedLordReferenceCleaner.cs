@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Linq;
 using HarmonyLib;
 using Verse;
@@ -21,7 +20,14 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         var cleaned = 0;
         foreach (var map in maps)
         {
-            cleaned += CleanMap(map);
+            try
+            {
+                cleaned += CleanMap(map);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"[LivingWorld] Orphan dormancy signal repair skipped safely for map {map?.uniqueID}: {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         return cleaned;
@@ -35,8 +41,6 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         }
 
         var cleaned = 0;
-        cleaned += CleanOrphanedLordOwnedPawns(map);
-        cleaned += CleanOrphanedDirectPawnRelations(map);
         foreach (var thing in map.listerThings.AllThings
             .Where(IsDormancyWakeUpSignal)
             .ToList())
@@ -65,96 +69,6 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         return cleaned;
     }
 
-    private static int CleanOrphanedDirectPawnRelations(Map map)
-    {
-        var pawns = map.mapPawns?.AllPawns;
-        if (pawns == null || pawns.Count == 0)
-        {
-            return 0;
-        }
-
-        var cleaned = 0;
-        foreach (var pawn in pawns.ToList())
-        {
-            var directRelations = pawn?.relations?.DirectRelations;
-            if (directRelations == null || directRelations.Count == 0)
-            {
-                continue;
-            }
-
-            for (var index = directRelations.Count - 1; index >= 0; index--)
-            {
-                var relation = directRelations[index];
-                if (relation == null)
-                {
-                    directRelations.RemoveAt(index);
-                    cleaned++;
-                    continue;
-                }
-
-                var otherPawnField = AccessTools.Field(relation.GetType(), "otherPawn");
-                if (otherPawnField?.GetValue(relation) is not Pawn otherPawn)
-                {
-                    continue;
-                }
-
-                if (IsPawnSavedAnywhere(otherPawn))
-                {
-                    continue;
-                }
-
-                directRelations.RemoveAt(index);
-                cleaned++;
-            }
-        }
-
-        return cleaned;
-    }
-
-    private static int CleanOrphanedLordOwnedPawns(Map map)
-    {
-        var lords = map.lordManager?.lords;
-        if (lords == null || lords.Count == 0)
-        {
-            return 0;
-        }
-
-        var cleaned = 0;
-        foreach (var lord in lords.ToList())
-        {
-            if (lord == null)
-            {
-                continue;
-            }
-
-            var ownedPawnsField = AccessTools.Field(lord.GetType(), "ownedPawns");
-            if (ownedPawnsField?.GetValue(lord) is not IList ownedPawns)
-            {
-                continue;
-            }
-
-            for (var index = ownedPawns.Count - 1; index >= 0; index--)
-            {
-                if (ownedPawns[index] is not Pawn pawn)
-                {
-                    ownedPawns.RemoveAt(index);
-                    cleaned++;
-                    continue;
-                }
-
-                if (IsPawnDeepSavedByMap(map, pawn))
-                {
-                    continue;
-                }
-
-                ownedPawns.RemoveAt(index);
-                cleaned++;
-            }
-        }
-
-        return cleaned;
-    }
-
     private static bool IsDormancyWakeUpSignal(Thing thing)
     {
         return thing?.def?.defName == DormancyWakeUpDefName;
@@ -162,50 +76,31 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
 
     private static bool HasOrphanedLordReference(Thing thing, Map map)
     {
-        var lordField = AccessTools.Field(thing.GetType(), "lord");
-        if (lordField == null)
+        try
         {
+            var lordField = AccessTools.Field(thing.GetType(), "lord");
+            if (lordField == null)
+            {
+                return false;
+            }
+
+            var lord = lordField.GetValue(thing);
+            if (lord == null)
+            {
+                return false;
+            }
+
+            var savedLords = map.lordManager?.lords;
+            return savedLords == null || !savedLords.Contains(lord);
+        }
+        catch (Exception ex)
+        {
+            if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
+            {
+                Log.Warning($"[LivingWorld] Could not inspect dormancy wake-up signal {thing.ThingID}: {ex.Message}");
+            }
+
             return false;
         }
-
-        var lord = lordField.GetValue(thing);
-        if (lord == null)
-        {
-            return false;
-        }
-
-        var savedLords = map.lordManager?.lords;
-        return savedLords == null || !savedLords.Contains(lord);
-    }
-
-    private static bool IsPawnDeepSavedByMap(Map map, Pawn pawn)
-    {
-        if (pawn.Destroyed || pawn.Discarded || pawn.Map != map)
-        {
-            return false;
-        }
-
-        return map.mapPawns?.AllPawns?.Contains(pawn) == true;
-    }
-
-    private static bool IsPawnSavedAnywhere(Pawn pawn)
-    {
-        if (pawn.Destroyed || pawn.Discarded)
-        {
-            return false;
-        }
-
-        if (Find.Maps?.Any(map => IsPawnDeepSavedByMap(map, pawn)) == true)
-        {
-            return true;
-        }
-
-        if (Find.WorldPawns?.Contains(pawn) == true)
-        {
-            return true;
-        }
-
-        return Find.WorldObjects?.Caravans?.Any(caravan =>
-            caravan?.PawnsListForReading?.Contains(pawn) == true) == true;
     }
 }

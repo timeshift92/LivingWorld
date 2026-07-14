@@ -2,11 +2,14 @@ using System;
 using HarmonyLib;
 using LivingWorld.Core;
 using RimWorld;
+using RimWorld.Planet;
 using Verse;
 
 namespace LivingWorld.RimWorld;
 
 [HarmonyPatch(typeof(IncidentWorker_RaidEnemy), "TryResolveRaidFaction")]
+[HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
+[HarmonyPriority(Priority.Last)]
 public static class LivingWorldRaidIncidentPatch
 {
     private const float PointsPerCombatant = 100f;
@@ -27,7 +30,7 @@ public static class LivingWorldRaidIncidentPatch
         }
 
         var component = LivingWorldWorldComponent.Instance;
-        if (component == null)
+        if (component == null || ShouldYieldRaidOwnership(component, parms))
         {
             return;
         }
@@ -38,23 +41,42 @@ public static class LivingWorldRaidIncidentPatch
             return;
         }
 
-        var interception = VanillaRaidInterceptor.TryIntercept(
-            component.State,
-            new VanillaRaidInterceptionRequest(
-                factionId!,
-                EstimateRequestedCombatants(parms.points),
-                $"Vanilla raid {Find.TickManager?.TicksGame ?? 0}"));
+        RaidPopulationAllocationResult reservation;
+        try
+        {
+            // Reserve only for this raid. VanillaRaidInterceptor performs a global stale-reserve
+            // sweep that cannot distinguish aborted vanilla raids from live world-war armies.
+            reservation = RaidPopulationAllocator.ReserveForRaid(
+                component.State,
+                new RaidPopulationAllocationRequest(
+                    factionId!,
+                    $"Vanilla raid {Find.TickManager?.TicksGame ?? 0}",
+                    EstimateRequestedCombatants(parms.points)));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] Vanilla raid population reservation skipped safely: {ex.GetType().Name}: {ex.Message}");
+            return;
+        }
 
         // Living World never cancels the raid. If it cannot supply combatants it steps aside and
         // lets vanilla generate the raid unchanged (__result stays true).
-        if (interception.Action != VanillaRaidInterceptionAction.Intercepted || interception.Army == null)
+        if (reservation.Status != RaidPopulationAllocationStatus.Success
+            || reservation.Army == null
+            || reservation.ReservedCombatants <= 0)
         {
             return;
         }
 
-        LivingWorldRaidBindingRuntime.TryAddReservation(parms, interception.Army.Id);
+        if (!LivingWorldRaidBindingRuntime.TryAddReservation(parms, reservation.Army.Id))
+        {
+            RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.Army.Id);
+            return;
+        }
 
-        var cappedPoints = Math.Max(MinimumRaidPoints, interception.ReservedCombatants * PointsPerCombatant);
+        RaidOpportunityService.TryConsumeBestOpportunity(component.State, factionId!, out _);
+
+        var cappedPoints = Math.Max(MinimumRaidPoints, reservation.ReservedCombatants * PointsPerCombatant);
         if (cappedPoints < parms.points)
         {
             parms.points = cappedPoints;
@@ -69,5 +91,19 @@ public static class LivingWorldRaidIncidentPatch
         }
 
         return Math.Max(1, (int)Math.Ceiling(raidPoints / PointsPerCombatant));
+    }
+
+    private static bool ShouldYieldRaidOwnership(LivingWorldWorldComponent component, IncidentParms parms)
+    {
+        if (component.IsRimWarActive || ModsConfig.IsActive("helldan.economicsdemography"))
+        {
+            // Both mods reserve/price vanilla raids from their own world state. Running the fallback
+            // interception too would withdraw the same conceptual population twice.
+            return true;
+        }
+
+        return parms.target is Map map
+            && map.Parent is Settlement settlement
+            && settlement.GetType() != typeof(Settlement);
     }
 }

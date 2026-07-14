@@ -12,6 +12,8 @@ namespace LivingWorld.RimWorld;
 /// see. Never alters or cancels the raid — purely additive and fail-open.
 /// </summary>
 [HarmonyPatch(typeof(IncidentWorker_RaidEnemy), "TryExecuteWorker")]
+[HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
+[HarmonyPriority(Priority.Last)]
 public static class LivingWorldMechRaidPatch
 {
     public static void Postfix(IncidentParms parms, bool __result)
@@ -28,7 +30,13 @@ public static class LivingWorldMechRaidPatch
 
         try
         {
-            LivingWorldWorldComponent.Instance?.NotifyMechanoidRaid(parms);
+            var component = LivingWorldWorldComponent.Instance;
+            if (component == null || component.IsRimWarActive)
+            {
+                return;
+            }
+
+            component.NotifyMechanoidRaid(parms);
         }
         catch (Exception ex)
         {
