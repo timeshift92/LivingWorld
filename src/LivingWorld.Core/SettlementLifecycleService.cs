@@ -222,6 +222,13 @@ public static class SettlementLifecycleService
 
         var settlement = state.GetSettlement(settlementId)
             ?? throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
+        if (settlement.Status != SettlementLifecycleStatus.Active)
+        {
+            // Destroyed/abandoned settlements must not be resurrected by a faction change; only
+            // ReclaimRuin (an explicit action) may bring them back to Active.
+            return settlement;
+        }
+
         if (string.Equals(settlement.FactionId, newFactionId, StringComparison.Ordinal))
         {
             return settlement;

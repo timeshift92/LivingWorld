@@ -200,6 +200,14 @@ public sealed class SettlementSyncCoordinator
             return false;
         }
 
+        // A disabled/dormant ledger (bootstrapLedgerDuringWorldGeneration == false) must never be
+        // populated by runtime sync — bootstrap deliberately left the ledger empty, and hooks or
+        // reconcile passes treating every physical settlement as a new import would defeat that.
+        if (!Settings().bootstrapLedgerDuringWorldGeneration)
+        {
+            return false;
+        }
+
         syncing = true;
         return true;
     }

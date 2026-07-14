@@ -220,6 +220,7 @@ var tests = new List<(string Name, Action Test)>
     ("destroyed settlement leaves ruin and refugees", TestDestroyedSettlementLeavesRuinAndRefugees),
     ("change settlement faction records capture", TestChangeSettlementFactionUpdatesFactionAndRecordsCapture),
     ("change settlement faction no-op when unchanged", TestChangeSettlementFactionIsNoOpWhenUnchanged),
+    ("change settlement faction no-op when not active", TestChangeSettlementFactionIsNoOpWhenNotActive),
     ("abandon settlement marks abandoned without ruin", TestAbandonSettlementMarksAbandonedWithoutRuin),
     ("abandon settlement no-op when not active", TestAbandonSettlementIsNoOpWhenNotActive),
     ("relocation moves citizens and resources through migration group", TestRelocationMovesCitizensAndResourcesThroughMigrationGroup),
@@ -6418,6 +6419,20 @@ static void TestChangeSettlementFactionIsNoOpWhenUnchanged()
     SettlementLifecycleService.ChangeSettlementFaction(state, settlement.Id, "Pirate", 100, "captured");
 
     AssertEqual(0, state.Events.Count(e => e.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestChangeSettlementFactionIsNoOpWhenNotActive()
+{
+    var state = new WorldState(12345);
+    var settlement = state.CreateSettlement("worldobject:Settlement:512:Pirate", "Redwater", "Pirate");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "destroyed");
+    var capturedBefore = state.Events.Count(e => e.Kind == WorldEventKind.SettlementCaptured);
+
+    SettlementLifecycleService.ChangeSettlementFaction(state, settlement.Id, "Outlander", 200, "captured");
+
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(settlement.Id)!.Status);
+    AssertEqual("Pirate", state.GetSettlement(settlement.Id)!.FactionId);
+    AssertEqual(capturedBefore, state.Events.Count(e => e.Kind == WorldEventKind.SettlementCaptured));
 }
 
 static void TestAbandonSettlementMarksAbandonedWithoutRuin()
