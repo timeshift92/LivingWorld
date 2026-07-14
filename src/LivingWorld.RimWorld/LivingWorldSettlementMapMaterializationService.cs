@@ -110,11 +110,17 @@ public static class LivingWorldSettlementMapMaterializationService
             var reservedResources = 0;
             if (prepared.Status == SettlementDefenseMaterializationStatus.Success)
             {
-                bound = BindDefenders(component.State, prepared.DefenderLeases, bindableDefenders);
+                bound = BindDefenders(
+                    component.State,
+                    map,
+                    context.LedgerSettlement.Id,
+                    prepared.DefenderLeases,
+                    bindableDefenders);
                 spawnedDefenders = SpawnGeneratedDefenders(
                     component.State,
                     map,
                     context.Faction,
+                    context.LedgerSettlement.Id,
                     prepared.DefenderLeases.Skip(bound).ToList());
 
                 if (bound + spawnedDefenders == 0)
@@ -140,7 +146,12 @@ public static class LivingWorldSettlementMapMaterializationService
                     DefenseLeaseLifetimeTicks,
                     purposeKey));
             var spawnedResidents = residents.Status == SettlementResidentMaterializationStatus.Success
-                ? SpawnGeneratedResidents(component.State, map, context.Faction, residents.Leases)
+                ? SpawnGeneratedResidents(
+                    component.State,
+                    map,
+                    context.Faction,
+                    context.LedgerSettlement.Id,
+                    residents.Leases)
                 : 0;
             SettlementResidentMaterializationService.ReleaseUnmaterialized(component.State, purposeKey);
 
@@ -409,7 +420,12 @@ public static class LivingWorldSettlementMapMaterializationService
         return false;
     }
 
-    private static int BindDefenders(WorldState state, IReadOnlyList<MaterializationLease> leases, IReadOnlyList<Pawn> pawns)
+    private static int BindDefenders(
+        WorldState state,
+        Map map,
+        EntityId settlementId,
+        IReadOnlyList<MaterializationLease> leases,
+        IReadOnlyList<Pawn> pawns)
     {
         var bound = 0;
         for (var i = 0; i < leases.Count && i < pawns.Count; i++)
@@ -423,6 +439,7 @@ public static class LivingWorldSettlementMapMaterializationService
             }
 
             StampIdentity(pawn, lease.CitizenId);
+            ConservePawnGear(state, map, pawn, settlementId);
             bound++;
         }
 
@@ -444,6 +461,7 @@ public static class LivingWorldSettlementMapMaterializationService
         WorldState state,
         Map map,
         Faction faction,
+        EntityId settlementId,
         IReadOnlyList<MaterializationLease> leases)
     {
         var spawned = 0;
@@ -462,6 +480,7 @@ public static class LivingWorldSettlementMapMaterializationService
             }
 
             StampIdentity(pawn, lease.CitizenId);
+            ConservePawnGear(state, map, pawn, settlementId);
             spawned++;
         }
 
@@ -472,6 +491,7 @@ public static class LivingWorldSettlementMapMaterializationService
         WorldState state,
         Map map,
         Faction faction,
+        EntityId settlementId,
         IReadOnlyList<MaterializationLease> leases)
     {
         var spawned = 0;
@@ -519,6 +539,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 }
 
                 StampIdentity(pawn, lease.CitizenId);
+                ConservePawnGear(state, map, pawn, settlementId);
                 spawned++;
             }
             catch (Exception error)
@@ -657,6 +678,52 @@ public static class LivingWorldSettlementMapMaterializationService
         }
 
         identity.SetLedgerId(citizenId);
+    }
+
+    private static void ConservePawnGear(WorldState state, Map map, Pawn pawn, EntityId settlementId)
+    {
+        var heldThings = (pawn.equipment?.AllEquipmentListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+            .Concat(pawn.apparel?.WornApparel.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+            .Concat(pawn.inventory?.innerContainer.InnerListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+            .Where(thing => thing != null && !thing.Destroyed)
+            .OrderBy(thing => thing.thingIDNumber)
+            .ToList();
+        foreach (var thing in heldThings)
+        {
+            var isLooseInventory = thing.def.category == ThingCategory.Item
+                && thing is not Apparel
+                && thing.def.IsWeapon == false;
+            var preferredResource = isLooseInventory ? thing.def.defName : thing.Stuff?.defName;
+            var resourceKey = !string.IsNullOrWhiteSpace(preferredResource)
+                && ResourceLedgerService.GetQuantity(state, settlementId, preferredResource!) > 0
+                    ? preferredResource!
+                    : "Steel";
+            var quantity = isLooseInventory
+                ? Math.Max(1, thing.stackCount)
+                : thing.def.IsWeapon ? 10 : 1;
+            var consumed = ResourceLedgerService.ConsumeResource(
+                state,
+                settlementId,
+                resourceKey,
+                quantity,
+                "pawn gear materialized on settlement map");
+            if (consumed != quantity)
+            {
+                if (consumed > 0)
+                {
+                    ResourceLedgerService.AddResource(state, settlementId, resourceKey, consumed);
+                }
+
+                thing.Destroy(DestroyMode.Vanish);
+                continue;
+            }
+
+            LivingWorldSettlementMapResourceTracker.Track(
+                thing,
+                settlementId,
+                resourceKey,
+                reservedQuantity: quantity);
+        }
     }
 
     private static void ReleaseUnboundLeases(WorldState state, IReadOnlyList<MaterializationLease> leases)
@@ -918,9 +985,13 @@ public static class LivingWorldSettlementMapMaterializationService
         }
 
         var spawned = 0;
+        var conditionByFacility = layout.Facilities.ToDictionary(
+            feature => feature.FacilityId,
+            feature => feature.ConditionPercent);
         foreach (var room in layout.Rooms)
         {
-            if (TrySpawnRoomShell(map, faction, room))
+            var condition = conditionByFacility.TryGetValue(room.FacilityId, out var value) ? value : 100;
+            if (TrySpawnRoomShell(map, faction, room, condition))
             {
                 spawned++;
             }
@@ -989,10 +1060,14 @@ public static class LivingWorldSettlementMapMaterializationService
         return true;
     }
 
-    private static bool TrySpawnRoomShell(Map map, Faction faction, SettlementMapRoom room)
+    private static bool TrySpawnRoomShell(
+        Map map,
+        Faction faction,
+        SettlementMapRoom room,
+        int conditionPercent)
     {
         var anyPlaced = false;
-        TrySetRoomTerrain(map, room);
+        TrySetRoomTerrain(map, room, conditionPercent);
 
         var doorX = room.MinX + room.Width / 2;
         var doorZ = room.MinZ;
@@ -1010,6 +1085,11 @@ public static class LivingWorldSettlementMapMaterializationService
                 }
 
                 var isDoor = x == doorX && z == doorZ;
+                if (!isDoor && !ShouldMaterialize(conditionPercent, room.FacilityId, x, z, salt: 1))
+                {
+                    continue;
+                }
+
                 if (TrySpawnStructure(
                     map,
                     faction,
@@ -1027,7 +1107,7 @@ public static class LivingWorldSettlementMapMaterializationService
         return anyPlaced;
     }
 
-    private static void TrySetRoomTerrain(Map map, SettlementMapRoom room)
+    private static void TrySetRoomTerrain(Map map, SettlementMapRoom room, int conditionPercent)
     {
         var terrain = DefDatabase<TerrainDef>.GetNamedSilentFail(room.FloorTerrainDefName);
         if (terrain == null)
@@ -1040,7 +1120,9 @@ public static class LivingWorldSettlementMapMaterializationService
             for (var z = room.MinZ + 1; z < room.MinZ + room.Height - 1; z++)
             {
                 var cell = new IntVec3(x, 0, z);
-                if (cell.InBounds(map) && !cell.Fogged(map))
+                if (cell.InBounds(map)
+                    && !cell.Fogged(map)
+                    && ShouldMaterialize(conditionPercent, room.FacilityId, x, z, salt: 2))
                 {
                     map.terrainGrid.SetTerrain(cell, terrain);
                     LivingWorldSettlementMapFloorTracker.Track(map, room.FacilityId, cell, room.FloorTerrainDefName);
@@ -1118,7 +1200,13 @@ public static class LivingWorldSettlementMapMaterializationService
 
     private static bool TrySpawnFacilityThing(Map map, Faction faction, SettlementMapFacilityFeature feature)
     {
-        if (!TryFindFacilityCell(map, feature, out var cell))
+        if (!ShouldMaterialize(
+                feature.ConditionPercent,
+                feature.FacilityId,
+                feature.AnchorX,
+                feature.AnchorZ,
+                salt: 3)
+            || !TryFindFacilityCell(map, feature, out var cell))
         {
             return false;
         }
@@ -1182,9 +1270,16 @@ public static class LivingWorldSettlementMapMaterializationService
         }
 
         var spawned = 0;
+        var conditionByFacility = layout.Facilities.ToDictionary(
+            feature => feature.FacilityId,
+            feature => feature.ConditionPercent);
         foreach (var feature in layout.CityFeatures.OrderBy(feature => feature.Order))
         {
-            if (TrySpawnCityFeatureThing(map, faction, feature))
+            var condition = feature.FacilityId.HasValue
+                && conditionByFacility.TryGetValue(feature.FacilityId.Value, out var value)
+                    ? value
+                    : 100;
+            if (TrySpawnCityFeatureThing(map, faction, feature, condition))
             {
                 spawned++;
             }
@@ -1193,9 +1288,24 @@ public static class LivingWorldSettlementMapMaterializationService
         return spawned;
     }
 
-    private static bool TrySpawnCityFeatureThing(Map map, Faction faction, SettlementMapCityFeature feature)
+    private static bool TrySpawnCityFeatureThing(
+        Map map,
+        Faction faction,
+        SettlementMapCityFeature feature,
+        int conditionPercent)
     {
         var cell = new IntVec3(feature.X, 0, feature.Z);
+        if (feature.FacilityId.HasValue
+            && !ShouldMaterialize(
+                conditionPercent,
+                feature.FacilityId.Value,
+                feature.X,
+                feature.Z,
+                salt: 4 + (int)feature.Kind))
+        {
+            return false;
+        }
+
         var isPowerConduit = feature.Kind == SettlementMapCityFeatureKind.PowerConduit;
         var isPowerGenerator = feature.Kind == SettlementMapCityFeatureKind.PowerGenerator;
         var isGuardPost = feature.Kind == SettlementMapCityFeatureKind.GuardPost;
@@ -1245,6 +1355,36 @@ public static class LivingWorldSettlementMapMaterializationService
         catch
         {
             return false;
+        }
+    }
+
+    private static bool ShouldMaterialize(
+        int conditionPercent,
+        EntityId facilityId,
+        int x,
+        int z,
+        int salt)
+    {
+        conditionPercent = Math.Max(0, Math.Min(100, conditionPercent));
+        if (conditionPercent <= 0)
+        {
+            return false;
+        }
+
+        if (conditionPercent >= 100)
+        {
+            return true;
+        }
+
+        unchecked
+        {
+            uint hash = 2166136261;
+            hash = (hash ^ (uint)facilityId.Value) * 16777619;
+            hash = (hash ^ (uint)(facilityId.Value >> 32)) * 16777619;
+            hash = (hash ^ (uint)x) * 16777619;
+            hash = (hash ^ (uint)z) * 16777619;
+            hash = (hash ^ (uint)salt) * 16777619;
+            return hash % 100 < conditionPercent;
         }
     }
 

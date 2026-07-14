@@ -1,13 +1,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
+using RimWorld;
 using Verse;
 
 namespace LivingWorld.RimWorld;
 
 public static class LivingWorldSettlementMapResourceTracker
 {
-    public static void Track(Thing? thing, EntityId returnOwnerId, string resourceKey)
+    public static void Track(Thing? thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = 0)
     {
         var map = thing?.MapHeld;
         if (thing == null || map == null)
@@ -15,7 +16,11 @@ public static class LivingWorldSettlementMapResourceTracker
             return;
         }
 
-        LivingWorldSettlementVisitMapComponent.For(map)?.TrackResource(thing, returnOwnerId, resourceKey);
+        LivingWorldSettlementVisitMapComponent.For(map)?.TrackResource(
+            thing,
+            returnOwnerId,
+            resourceKey,
+            reservedQuantity);
     }
 
     public static void TrackSplit(Thing? source, Thing? split)
@@ -70,24 +75,69 @@ public static class LivingWorldSettlementMapResourceTracker
             return 0;
         }
 
-        var allThings = map.listerThings?.AllThings ?? new List<Thing>();
         var returned = 0;
         foreach (var tracked in component.Resources.ToList())
         {
-            var thing = allThings.FirstOrDefault(candidate => candidate?.thingIDNumber == tracked.ThingId);
-            if (thing == null || !thing.Spawned || thing.Map != map || thing.stackCount <= 0)
+            var thing = FindTrackedThing(map, tracked.ThingId, out var heldByPlayer);
+            if (thing == null || thing.Destroyed || heldByPlayer)
+            {
+                component.RemoveResource(tracked.ThingId);
+                continue;
+            }
+
+            var quantity = tracked.ReservedQuantity > 0
+                ? tracked.ReservedQuantity
+                : thing.stackCount;
+            if (quantity <= 0)
             {
                 component.RemoveResource(tracked.ThingId);
                 continue;
             }
 
             var ownerId = ResolveReturnOwner(state, tracked.ReturnOwnerId);
-            ResourceLedgerService.AddResource(state, ownerId, tracked.ResourceKey, thing.stackCount);
+            ResourceLedgerService.AddResource(state, ownerId, tracked.ResourceKey, quantity);
             component.RemoveResource(tracked.ThingId);
-            returned += thing.stackCount;
+            returned += quantity;
+            if (!thing.Destroyed)
+            {
+                thing.Destroy(DestroyMode.Vanish);
+            }
         }
 
         return returned;
+    }
+
+    private static Thing? FindTrackedThing(Map map, int thingId, out bool heldByPlayer)
+    {
+        heldByPlayer = false;
+        var spawned = (map.listerThings?.AllThings ?? new List<Thing>())
+            .FirstOrDefault(candidate => candidate?.thingIDNumber == thingId);
+        if (spawned != null)
+        {
+            return spawned;
+        }
+
+        foreach (var pawn in map.mapPawns.AllPawns)
+        {
+            if (pawn == null)
+            {
+                continue;
+            }
+
+            var held = (pawn.equipment?.AllEquipmentListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+                .Concat(pawn.apparel?.WornApparel.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+                .Concat(pawn.inventory?.innerContainer.InnerListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+                .FirstOrDefault(candidate => candidate.thingIDNumber == thingId);
+            if (held == null)
+            {
+                continue;
+            }
+
+            heldByPlayer = pawn.Faction == Faction.OfPlayer;
+            return held;
+        }
+
+        return null;
     }
 
     private static bool TryGetTrackedResource(

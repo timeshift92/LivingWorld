@@ -448,7 +448,7 @@ public static class SettlementMapLayoutService
                 SettlementMapCityFeatureKind.Bed,
                 bedDef,
                 bedStuff,
-                null,
+                housingRoom.FacilityId,
                 cell.X,
                 cell.Z,
                 order++);
@@ -465,7 +465,7 @@ public static class SettlementMapLayoutService
                 SettlementMapCityFeatureKind.Defense,
                 techScore >= 3 ? "Barricade" : "Sandbags",
                 techScore >= 3 ? "Steel" : "WoodLog",
-                null,
+                defenseRoom.FacilityId,
                 cell.X,
                 cell.Z,
                 order++);
@@ -549,7 +549,7 @@ public static class SettlementMapLayoutService
                 SettlementMapCityFeatureKind.PowerConduit,
                 "PowerConduit",
                 "Steel",
-                null,
+                powerRoom?.FacilityId ?? defenseRoom.FacilityId,
                 pathCell.X,
                 pathCell.Z,
                 order++);
@@ -561,7 +561,7 @@ public static class SettlementMapLayoutService
                 SettlementMapCityFeatureKind.Light,
                 "StandingLamp",
                 "Steel",
-                district.FacilityId,
+                district.FacilityId ?? housingRoom.FacilityId,
                 district.CenterX,
                 district.CenterZ,
                 order++);
@@ -576,7 +576,7 @@ public static class SettlementMapLayoutService
                     SettlementMapCityFeatureKind.GuardPost,
                     techScore >= 3 ? "Barricade" : "Sandbags",
                     techScore >= 3 ? "Steel" : "WoodLog",
-                    null,
+                    defenseRoom.FacilityId,
                     cell.X,
                     cell.Z,
                     order++);
@@ -589,7 +589,7 @@ public static class SettlementMapLayoutService
                     SettlementMapCityFeatureKind.PerimeterWall,
                     "Wall",
                     securityDistrict.WallStuffDefName,
-                    null,
+                    defenseRoom.FacilityId,
                     cell.X,
                     cell.Z,
                     order++);
@@ -607,7 +607,7 @@ public static class SettlementMapLayoutService
                         SettlementMapCityFeatureKind.Turret,
                         "MiniTurret",
                         "Steel",
-                        null,
+                        defenseRoom.FacilityId,
                         cell.X,
                         cell.Z,
                         order++);
@@ -624,7 +624,7 @@ public static class SettlementMapLayoutService
                     SettlementMapCityFeatureKind.Activity,
                     techScore >= 3 ? "TableShort" : "Campfire",
                     techScore >= 3 ? "Steel" : "WoodLog",
-                    null,
+                    workshopRoom?.FacilityId ?? storageRoom?.FacilityId ?? housingRoom.FacilityId,
                     cell.X,
                     cell.Z,
                     order++);
@@ -641,7 +641,7 @@ public static class SettlementMapLayoutService
                     SettlementMapCityFeatureKind.Barracks,
                     techScore >= 3 ? "EndTable" : "TorchLamp",
                     techScore >= 3 ? "Steel" : "WoodLog",
-                    null,
+                    housingRoom.FacilityId,
                     cell.X,
                     cell.Z,
                     order++);

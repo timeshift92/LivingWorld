@@ -187,7 +187,7 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         }
     }
 
-    public void TrackResource(Thing thing, EntityId returnOwnerId, string resourceKey)
+    public void TrackResource(Thing thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = 0)
     {
         if (thing == null || returnOwnerId.Value <= 0 || string.IsNullOrWhiteSpace(resourceKey))
         {
@@ -199,7 +199,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             thing.thingIDNumber,
             (int)returnOwnerId.Kind,
             returnOwnerId.Value,
-            resourceKey.Trim()));
+            resourceKey.Trim(),
+            Math.Max(0, reservedQuantity)));
     }
 
     public bool TryGetResource(int thingId, out LivingWorldTrackedMapResource resource)
@@ -368,23 +369,31 @@ public sealed class LivingWorldTrackedMapResource : IExposable
     private int returnOwnerKind;
     private long returnOwnerValue;
     private string resourceKey = string.Empty;
+    private int reservedQuantity;
 
     public LivingWorldTrackedMapResource()
     {
     }
 
-    public LivingWorldTrackedMapResource(int thingId, int returnOwnerKind, long returnOwnerValue, string resourceKey)
+    public LivingWorldTrackedMapResource(
+        int thingId,
+        int returnOwnerKind,
+        long returnOwnerValue,
+        string resourceKey,
+        int reservedQuantity = 0)
     {
         this.thingId = thingId;
         this.returnOwnerKind = returnOwnerKind;
         this.returnOwnerValue = returnOwnerValue;
         this.resourceKey = resourceKey;
+        this.reservedQuantity = Math.Max(0, reservedQuantity);
     }
 
     public int ThingId => thingId;
     public int ReturnOwnerKind => returnOwnerKind;
     public long ReturnOwnerValue => returnOwnerValue;
     public string ResourceKey => resourceKey;
+    public int ReservedQuantity => reservedQuantity;
 
     public EntityId ReturnOwnerId => EntityId.Create((EntityKind)returnOwnerKind, returnOwnerValue);
 
@@ -394,6 +403,7 @@ public sealed class LivingWorldTrackedMapResource : IExposable
         Scribe_Values.Look(ref returnOwnerKind, "returnOwnerKind", 0);
         Scribe_Values.Look(ref returnOwnerValue, "returnOwnerValue", 0L);
         Scribe_Values.Look(ref resourceKey, "resourceKey", string.Empty);
+        Scribe_Values.Look(ref reservedQuantity, "reservedQuantity", 0);
     }
 }
 

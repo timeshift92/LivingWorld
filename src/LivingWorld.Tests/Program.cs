@@ -3655,6 +3655,7 @@ static void TestSettlementMapLayoutBuildsCityInfrastructure()
 
     AssertContains("Battery", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
     AssertContains("Table", string.Join("|", layout.CityFeatures.Select(feature => feature.ThingDefName)));
+    AssertEqual(true, layout.CityFeatures.All(feature => feature.FacilityId.HasValue));
 }
 
 static void TestSettlementMapLayoutBuildsDistrictRoadStylePowerAndActivity()
@@ -9445,8 +9446,10 @@ static void TestRimWorldSettlementMapResourceReconciliation()
     var tracker = File.ReadAllText(trackerPath);
     AssertContains("public static void Track", tracker);
     AssertContains("public static int ReconcileMap", tracker);
-    AssertContains("thing.Spawned", tracker);
-    AssertContains("thing.Map != map", tracker);
+    AssertContains("FindTrackedThing", tracker);
+    AssertContains("heldByPlayer", tracker);
+    AssertContains("tracked.ReservedQuantity", tracker);
+    AssertContains("thing.Destroy(DestroyMode.Vanish)", tracker);
     AssertContains("ResolveReturnOwner", tracker);
     AssertContains("ResourceLedgerService.AddResource", tracker);
     AssertEqual(
@@ -9463,6 +9466,9 @@ static void TestRimWorldSettlementMapResourceReconciliation()
     AssertContains("var consumed = ResourceLedgerService.ConsumeResource", service);
     AssertContains("var remainder = consumed - spawned", service);
     AssertContains("LivingWorldSettlementMapResourceTracker.Track", service);
+    AssertContains("ConservePawnGear", service);
+    AssertContains("pawn gear materialized on settlement map", service);
+    AssertContains("ShouldMaterialize", service);
     AssertContains("RollbackFailedMaterialization", service);
     AssertContains("LivingWorldAnimalMapPawnTracker.ReconcileMap", service);
     AssertContains("MaterializationLeaseService.Release", service);
