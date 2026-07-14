@@ -53,6 +53,12 @@ public sealed record MaterializationLeaseResolveResult(
     string Reason,
     MaterializationLease? Lease);
 
+public sealed record MaterializationLeaseReleaseResult(
+    MaterializationLeaseResolveStatus Status,
+    string Reason,
+    MaterializationLease? Lease,
+    IReadOnlyList<ResourceStack> ReturnedResources);
+
 public static class MaterializationLeaseService
 {
     public static int ReleaseExpiredLeases(WorldState state, int currentTick)
@@ -64,13 +70,15 @@ public static class MaterializationLeaseService
 
         state.AdvanceToTick(currentTick);
         var expired = state.MaterializationLeases
-            .Where(lease => lease.IsActive && lease.ExpiresTick < currentTick)
+            .Where(lease =>
+                lease.Lifecycle == MaterializationLeaseLifecycle.Reserved
+                && lease.ExpiresTick < currentTick)
             .OrderBy(lease => lease.Id.Value)
             .ToList();
 
         foreach (var lease in expired)
         {
-            state.ReleaseMaterializationLease(lease.Id);
+            Release(state, lease.Id, "materialization reservation expired before a pawn was bound");
         }
 
         return expired.Count;
@@ -223,5 +231,56 @@ public static class MaterializationLeaseService
             MaterializationLeaseResolveStatus.Success,
             $"Materialization lease {request.LeaseId} resolved as {request.Fate}.",
             updated);
+    }
+
+    public static MaterializationLeaseReleaseResult Release(
+        WorldState state,
+        EntityId leaseId,
+        string reason)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return new MaterializationLeaseReleaseResult(
+                MaterializationLeaseResolveStatus.InvalidRequest,
+                "Materialization lease release reason cannot be empty.",
+                null,
+                Array.Empty<ResourceStack>());
+        }
+
+        var lease = state.GetMaterializationLease(leaseId);
+        if (lease == null)
+        {
+            return new MaterializationLeaseReleaseResult(
+                MaterializationLeaseResolveStatus.UnknownLease,
+                $"Materialization lease {leaseId} does not exist.",
+                null,
+                Array.Empty<ResourceStack>());
+        }
+
+        if (!lease.IsActive)
+        {
+            return new MaterializationLeaseReleaseResult(
+                MaterializationLeaseResolveStatus.AlreadyResolved,
+                $"Materialization lease {leaseId} is already {lease.Lifecycle}.",
+                lease,
+                Array.Empty<ResourceStack>());
+        }
+
+        var returnedResources = MaterializationLeaseResourceReturnService.ReturnOwnedResources(
+            state,
+            lease,
+            reason);
+        var released = state.ReleaseMaterializationLease(leaseId);
+
+        return new MaterializationLeaseReleaseResult(
+            MaterializationLeaseResolveStatus.Success,
+            $"Materialization lease {leaseId} released.",
+            released,
+            returnedResources);
     }
 }

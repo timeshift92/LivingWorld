@@ -24,10 +24,23 @@ internal static class WarbandActionExecutor
             return false;
         }
 
-        state.DispatchArmy(
-            reservation.Army.Id,
-            plan.TargetSettlementId.Value,
-            request.Tick + (Math.Max(0, request.TravelDays) * 60_000));
+        try
+        {
+            state.DispatchArmy(
+                reservation.Army.Id,
+                plan.TargetSettlementId.Value,
+                request.Tick + (Math.Max(0, request.TravelDays) * 60_000));
+            ArmyReservationPurposeService.Mark(
+                state,
+                reservation.Army.Id,
+                ArmyReservationPurpose.WorldWarMovement);
+        }
+        catch
+        {
+            RaidReconciliationService.ReleaseUndeployedReserves(state, reservation.Army.Id);
+            throw;
+        }
+
         return true;
     }
 

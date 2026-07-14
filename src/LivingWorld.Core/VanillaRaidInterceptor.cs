@@ -40,9 +40,12 @@ public static class VanillaRaidInterceptor
             throw new ArgumentNullException(nameof(state));
         }
 
-        // Hand back any reservists stranded by an earlier raid that reserved combatants but never
-        // deployed them (e.g. it was aborted after the faction was resolved).
-        RaidReconciliationService.ReleaseAllUndeployedReserves(state);
+        // Hand back only reservists owned by earlier vanilla-incident reservations. World-war
+        // armies share the population allocator but are a different lifecycle and must remain in
+        // transit even while they have no pawn links.
+        ArmyReservationPurposeService.ReleaseUndeployedReservations(
+            state,
+            ArmyReservationPurpose.VanillaIncidentRaid);
 
         if (string.IsNullOrWhiteSpace(request.FactionId) || state.Settlements.Count == 0)
         {
@@ -50,15 +53,23 @@ public static class VanillaRaidInterceptor
         }
 
         var requested = Math.Max(1, request.EstimatedCombatants);
+        var armyName = request.ArmyName.StartsWith("Vanilla raid", StringComparison.OrdinalIgnoreCase)
+            ? request.ArmyName
+            : $"Vanilla raid: {request.ArmyName}";
         var reservation = RaidPopulationAllocator.ReserveForRaid(
             state,
-            new RaidPopulationAllocationRequest(request.FactionId, request.ArmyName, requested));
+            new RaidPopulationAllocationRequest(request.FactionId, armyName, requested));
 
         if (reservation.Status != RaidPopulationAllocationStatus.Success || reservation.ReservedCombatants <= 0)
         {
             return PassThrough(
                 $"No Living World combatants available for {request.FactionId}; vanilla raid left untouched.");
         }
+
+        ArmyReservationPurposeService.Mark(
+            state,
+            reservation.Army!.Id,
+            ArmyReservationPurpose.VanillaIncidentRaid);
 
         // Only spend an opportunity once we know the raid is actually going ahead, so a pass-through
         // never wastes it.

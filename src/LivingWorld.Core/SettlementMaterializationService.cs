@@ -134,24 +134,13 @@ public static class SettlementMaterializationService
 
         foreach (var lease in activeLeases)
         {
-            foreach (var resource in ResourceLedgerService.GetResources(state, lease.Id).ToList())
+            var release = MaterializationLeaseService.Release(state, lease.Id, reason);
+            if (release.Status != MaterializationLeaseResolveStatus.Success)
             {
-                var transfer = state.TransferResource(
-                    lease.Id,
-                    lease.ReturnOwnerId,
-                    resource.ResourceKey,
-                    resource.Quantity,
-                    reason);
-                if (transfer.Status == OwnershipTransferStatus.Success)
-                {
-                    returned.Add(new ResourceStack(lease.ReturnOwnerId, resource.ResourceKey, resource.Quantity));
-                }
+                throw new InvalidOperationException(release.Reason);
             }
-        }
 
-        foreach (var lease in activeLeases)
-        {
-            state.ReleaseMaterializationLease(lease.Id);
+            returned.AddRange(release.ReturnedResources);
         }
 
         return new SettlementDefenseAbortResult(activeLeases.Count, returned);
