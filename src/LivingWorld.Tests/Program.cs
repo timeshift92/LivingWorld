@@ -349,6 +349,9 @@ var tests = new List<(string Name, Action Test)>
     ("draws wanderers from the outside-world reservoir", TestDrifterReservoirTakeForArrival),
     ("sources the vanilla wanderer-join from the reservoir", TestRimWorldSourcedWanderers),
     ("gates caravan meetings behind a nearby settlement", TestRimWorldCaravanMeetingGate),
+    ("parses settlement tile from slug", TestSettlementSlugParsesTile),
+    ("rejects malformed settlement slug", TestSettlementSlugRejectsMalformedSlug),
+    ("rejects empty settlement slug", TestSettlementSlugRejectsEmptySlug),
     ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
     ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
@@ -10663,4 +10666,21 @@ static void TestMobPlanEmptyStandEngages()
         InCombatKit = false, CaiAvailable = true, HasLwDuty = false,
     };
     AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestSettlementSlugParsesTile()
+{
+    AssertEqual(4211, SettlementSlug.ParseTile("worldobject:Settlement:4211:Pirate"));
+}
+
+static void TestSettlementSlugRejectsMalformedSlug()
+{
+    AssertEqual(-1, SettlementSlug.ParseTile("not-a-slug"));
+    AssertEqual(-1, SettlementSlug.ParseTile("worldobject:Settlement:notanumber:Pirate"));
+}
+
+static void TestSettlementSlugRejectsEmptySlug()
+{
+    AssertEqual(-1, SettlementSlug.ParseTile(null));
+    AssertEqual(-1, SettlementSlug.ParseTile(""));
 }

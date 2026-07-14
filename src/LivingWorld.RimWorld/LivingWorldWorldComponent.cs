@@ -1949,13 +1949,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // tile is embedded even though Core itself has no tile geometry. Returns -1 when unparseable.
     private static int ParseSettlementTile(string? slug)
     {
-        if (string.IsNullOrEmpty(slug))
-        {
-            return -1;
-        }
-
-        var parts = slug!.Split(':');
-        return parts.Length >= 3 && int.TryParse(parts[2], out var tile) ? tile : -1;
+        return SettlementSlug.ParseTile(slug);
     }
 
     // Turns the ledger's active ruins into REAL, lootable RimWorld sites (abandoned settlements the
