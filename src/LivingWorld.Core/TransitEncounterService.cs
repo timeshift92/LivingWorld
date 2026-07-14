@@ -14,6 +14,54 @@ public sealed record TransitEncounterResult(
 /// </summary>
 public static class TransitEncounterService
 {
+    public static bool TryResolvePhysicalContact(
+        WorldState state,
+        EntityId armyId,
+        EntityId trafficId,
+        int tick)
+    {
+        if (state == null || tick < 0)
+        {
+            return false;
+        }
+
+        var movement = state.GetArmyMovement(armyId);
+        var army = state.GetArmy(armyId);
+        if (movement?.Status != ArmyMovementStatus.Traveling || army == null)
+        {
+            return false;
+        }
+
+        state.AdvanceToTick(tick);
+        if (trafficId.Kind == EntityKind.Caravan)
+        {
+            var caravan = state.GetCaravan(trafficId);
+            if (caravan?.Status != CaravanStatus.Traveling
+                || !IsHostile(state, army.FactionId, caravan.FactionId))
+            {
+                return false;
+            }
+
+            state.DestroyCaravan(caravan.Id, $"physically intercepted by {armyId}");
+            return true;
+        }
+
+        if (trafficId.Kind == EntityKind.Mission)
+        {
+            var mission = state.GetMission(trafficId);
+            if (mission?.Status != WorldMissionStatus.Traveling
+                || !IsHostile(state, army.FactionId, mission.FactionId))
+            {
+                return false;
+            }
+
+            state.FailMission(mission.Id, $"physically disrupted by {armyId}");
+            return true;
+        }
+
+        return false;
+    }
+
     public static TransitEncounterResult SimulateDay(WorldState state, TransitEncounterRequest request)
     {
         if (state == null)

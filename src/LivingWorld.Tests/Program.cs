@@ -164,8 +164,10 @@ var tests = new List<(string Name, Action Test)>
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
     ("opposing armies intercept each other in transit", TestOpposingArmiesInterceptInTransit),
+    ("physical marker contact resolves crossing armies", TestPhysicalMarkerContactResolvesCrossingArmies),
     ("hostile armies contest the same target in transit", TestHostileArmiesContestSameTargetInTransit),
     ("hostile armies can intercept caravans in transit", TestHostileArmiesInterceptCaravansInTransit),
+    ("physical marker contact resolves army traffic", TestPhysicalMarkerContactResolvesArmyTraffic),
     ("hostile armies can intercept same-target caravans in transit", TestHostileArmiesInterceptSameTargetCaravansInTransit),
     ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
     ("travelling missions reserve and return real citizens", TestWorldMissionReservesAndReturnsRealCitizen),
@@ -9182,6 +9184,60 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_PlayerCaravanMarkerContactText>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
+}
+
+static void TestPhysicalMarkerContactResolvesCrossingArmies()
+{
+    var state = new WorldState(4242);
+    var redHome = state.CreateSettlement("red-cross", "Red", "Red");
+    var blueHome = state.CreateSettlement("blue-cross", "Blue", "Blue");
+    var redTarget = state.CreateSettlement("red-target", "Red Target", "NeutralA");
+    var blueTarget = state.CreateSettlement("blue-target", "Blue Target", "NeutralB");
+    for (var i = 0; i < 8; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "fighter", redHome.Id);
+        state.CreateCitizen("B" + i, 30, Sex.Male, "fighter", blueHome.Id);
+    }
+
+    var red = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Red", "Red crossing", 6, FoodPerCitizen: 0)).Army!;
+    var blue = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Blue", "Blue crossing", 6, FoodPerCitizen: 0)).Army!;
+    state.DispatchArmy(red.Id, redTarget.Id, 10 * 60_000);
+    state.DispatchArmy(blue.Id, blueTarget.Id, 10 * 60_000);
+
+    AssertEqual(true, ArmyInterceptionService.TryResolvePhysicalContact(state, red.Id, blue.Id, 60_000));
+    AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Traveling));
+    AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Recalled));
+    AssertEqual(true, state.Citizens.Any(citizen => citizen.Status == CitizenStatus.Dead));
+    AssertEqual(false, ArmyInterceptionService.TryResolvePhysicalContact(state, red.Id, blue.Id, 60_001));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestPhysicalMarkerContactResolvesArmyTraffic()
+{
+    var state = new WorldState(4242);
+    var armyHome = state.CreateSettlement("army-home-contact", "Army", "Raiders");
+    var traderHome = state.CreateSettlement("trade-home-contact", "Trade", "Traders");
+    var armyTarget = state.CreateSettlement("army-target-contact", "Army Target", "NeutralA");
+    var tradeTarget = state.CreateSettlement("trade-target-contact", "Trade Target", "NeutralB");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("Raider" + i, 30, Sex.Male, "fighter", armyHome.Id);
+    }
+
+    state.AddResource(traderHome.Id, "Steel", 20);
+    var caravan = state.CreateCaravan("Crossing caravan", "Traders", traderHome.Id, tradeTarget.Id, 0, 600_000);
+    state.TransferResource(traderHome.Id, caravan.Id, "Steel", 20, "cargo");
+    var army = RaidPopulationAllocator.ReserveForRaid(
+        state, new RaidPopulationAllocationRequest("Raiders", "Crossing army", 4, FoodPerCitizen: 0)).Army!;
+    state.DispatchArmy(army.Id, armyTarget.Id, 600_000);
+
+    AssertEqual(true, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, caravan.Id, 60_000));
+    AssertEqual(CaravanStatus.Destroyed, state.GetCaravan(caravan.Id)!.Status);
+    AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
+    AssertEqual(false, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, caravan.Id, 60_001));
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestRimWorldPlayerCaravanMarkerContacts()

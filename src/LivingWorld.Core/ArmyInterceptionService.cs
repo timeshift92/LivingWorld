@@ -56,24 +56,64 @@ public static class ArmyInterceptionService
         return new ArmyInterceptionResult(interceptions);
     }
 
+    /// <summary>
+    /// Resolves a contact confirmed by the RimWorld globe geometry. Core normally has no tile
+    /// coordinates, so the daily approximation only knows about opposite/same-target routes.
+    /// This entry point lets the adapter report an actual marker overlap without duplicating the
+    /// casualty, ownership, conflict, or recall rules.
+    /// </summary>
+    public static bool TryResolvePhysicalContact(
+        WorldState state,
+        EntityId leftArmyId,
+        EntityId rightArmyId,
+        int tick)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        if (leftArmyId == rightArmyId || tick < 0)
+        {
+            return false;
+        }
+
+        var left = state.GetArmyMovement(leftArmyId);
+        var right = state.GetArmyMovement(rightArmyId);
+        if (left?.Status != ArmyMovementStatus.Traveling
+            || right?.Status != ArmyMovementStatus.Traveling
+            || !ForcesCanFight(state, left, right))
+        {
+            return false;
+        }
+
+        state.AdvanceToTick(tick);
+        ResolveInterception(state, left, right, tick);
+        return true;
+    }
+
     private static bool RoutesConflict(WorldState state, WorldArmyMovement left, WorldArmyMovement right)
     {
-        var leftArmy = state.GetArmy(left.ArmyId);
-        var rightArmy = state.GetArmy(right.ArmyId);
-        if (leftArmy == null || rightArmy == null)
+        if (!ForcesCanFight(state, left, right))
         {
             return false;
         }
 
-        if (string.Equals(leftArmy.FactionId, rightArmy.FactionId, StringComparison.Ordinal)
-            || DiplomacyService.GetStance(state, leftArmy.FactionId, rightArmy.FactionId) == RelationStance.Ally)
-        {
-            return false;
-        }
-
+        var leftArmy = state.GetArmy(left.ArmyId)!;
+        var rightArmy = state.GetArmy(right.ArmyId)!;
         return (leftArmy.SourceSettlementId == right.TargetSettlementId
                 && rightArmy.SourceSettlementId == left.TargetSettlementId)
             || left.TargetSettlementId == right.TargetSettlementId;
+    }
+
+    private static bool ForcesCanFight(WorldState state, WorldArmyMovement left, WorldArmyMovement right)
+    {
+        var leftArmy = state.GetArmy(left.ArmyId);
+        var rightArmy = state.GetArmy(right.ArmyId);
+        return leftArmy != null
+            && rightArmy != null
+            && !string.Equals(leftArmy.FactionId, rightArmy.FactionId, StringComparison.Ordinal)
+            && DiplomacyService.GetStance(state, leftArmy.FactionId, rightArmy.FactionId) != RelationStance.Ally;
     }
 
     private static void ResolveInterception(

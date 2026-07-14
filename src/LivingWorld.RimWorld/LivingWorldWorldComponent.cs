@@ -54,6 +54,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<LivingWorldSettlementExpansionWorldBinding> settlementExpansionWorldBindings = new();
     private List<string> notifiedPlayerCaravanMarkerContacts = new();
     private int lastPlayerCaravanMarkerContactCheckTick;
+    private int lastLivingWorldMarkerContactCheckTick;
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -196,6 +197,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
         CheckPlayerCaravanMarkerContacts(currentTick);
+        CheckLivingWorldMarkerContacts(currentTick);
         var currentDay = currentTick / TicksPerDay;
         if (currentDay <= 0 || currentDay <= lastSimulatedDay)
         {
@@ -1002,6 +1004,105 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 }
             }
         }
+    }
+
+    private void CheckLivingWorldMarkerContacts(int now)
+    {
+        if (now - lastLivingWorldMarkerContactCheckTick < PlayerCaravanMarkerContactCheckIntervalTicks)
+        {
+            return;
+        }
+
+        lastLivingWorldMarkerContactCheckTick = now;
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null || Current.ProgramState != ProgramState.Playing)
+        {
+            return;
+        }
+
+        var markers = worldObjects.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .Where(marker => marker.MarkerKey.StartsWith("army:", StringComparison.Ordinal)
+                || marker.MarkerKey.StartsWith("caravan:", StringComparison.Ordinal)
+                || marker.MarkerKey.StartsWith("mission:", StringComparison.Ordinal))
+            .OrderBy(marker => marker.MarkerKey, StringComparer.Ordinal)
+            .ToList();
+        var consumed = new HashSet<string>(StringComparer.Ordinal);
+        for (var leftIndex = 0; leftIndex < markers.Count; leftIndex++)
+        {
+            var left = markers[leftIndex];
+            if (consumed.Contains(left.MarkerKey))
+            {
+                continue;
+            }
+
+            for (var rightIndex = leftIndex + 1; rightIndex < markers.Count; rightIndex++)
+            {
+                var right = markers[rightIndex];
+                if (consumed.Contains(right.MarkerKey) || !MarkersOverlap(left, right))
+                {
+                    continue;
+                }
+
+                if (!TryResolveMarkerContact(left.MarkerKey, right.MarkerKey, now))
+                {
+                    continue;
+                }
+
+                consumed.Add(left.MarkerKey);
+                consumed.Add(right.MarkerKey);
+                break;
+            }
+        }
+
+        if (consumed.Count > 0)
+        {
+            SyncArmyWorldObjects();
+        }
+    }
+
+    private bool TryResolveMarkerContact(string leftKey, string rightKey, int now)
+    {
+        if (TryParseMarkerId(leftKey, "army:", EntityKind.Army, out var leftArmy)
+            && TryParseMarkerId(rightKey, "army:", EntityKind.Army, out var rightArmy))
+        {
+            return ArmyInterceptionService.TryResolvePhysicalContact(State, leftArmy, rightArmy, now);
+        }
+
+        if (TryParseMarkerId(leftKey, "army:", EntityKind.Army, out var army)
+            && TryParseTrafficMarkerId(rightKey, out var traffic))
+        {
+            return TransitEncounterService.TryResolvePhysicalContact(State, army, traffic, now);
+        }
+
+        if (TryParseMarkerId(rightKey, "army:", EntityKind.Army, out army)
+            && TryParseTrafficMarkerId(leftKey, out traffic))
+        {
+            return TransitEncounterService.TryResolvePhysicalContact(State, army, traffic, now);
+        }
+
+        return false;
+    }
+
+    private static bool MarkersOverlap(WorldObject_LivingWorldArmy left, WorldObject_LivingWorldArmy right)
+    {
+        var contactDistance = Math.Min(left.Tile.Layer.AverageTileSize, right.Tile.Layer.AverageTileSize) * 0.55f;
+        return Vector3.Distance(left.DrawPos, right.DrawPos) <= contactDistance;
+    }
+
+    private static bool TryParseTrafficMarkerId(string key, out EntityId id)
+    {
+        return TryParseMarkerId(key, "caravan:", EntityKind.Caravan, out id)
+            || TryParseMarkerId(key, "mission:", EntityKind.Mission, out id);
+    }
+
+    private static bool TryParseMarkerId(string key, string prefix, EntityKind kind, out EntityId id)
+    {
+        id = default;
+        return key.StartsWith(prefix, StringComparison.Ordinal)
+            && long.TryParse(key.Substring(prefix.Length), out var value)
+            && value > 0
+            && (id = EntityId.Create(kind, value)).Value > 0;
     }
 
     // Called by IncidentWorker_LivingWorldFactionRaid when the storyteller fires a faction raid. Turns
