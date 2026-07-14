@@ -367,6 +367,10 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: stand-down returns the kit to the stand", TestMobPlanReturnKit),
     ("mob plan: a stood-down civilian holds steady", TestMobPlanSteadyCivilian),
     ("mob plan: a stand with no kit does not stall the pawn on equip", TestMobPlanEmptyStandEngages),
+    ("mob plan: a non-candidate we drafted is still unwound", TestMobPlanNonCandidateDraftedUnwinds),
+    ("mob plan: a non-candidate we engaged is still unwound", TestMobPlanNonCandidateEngagedUnwinds),
+    ("mob plan: a non-candidate on combat policy is still unwound", TestMobPlanNonCandidatePolicyUnwinds),
+    ("mob plan: a busy-urgent pawn is never touched even if engaged", TestMobPlanBusyUrgentNeverTouched),
     ("loadout: best skill at threshold is combat eligible", TestLoadoutEligibleAtThreshold),
     ("loadout: best skill below threshold is not eligible", TestLoadoutNotEligibleBelowThreshold),
     ("loadout: a strong melee skill qualifies", TestLoadoutMeleeQualifies),
@@ -10520,6 +10524,33 @@ static void TestMobPlanEmptyStandEngages()
         InCombatKit = false, CaiAvailable = true, HasLwDuty = false,
     };
     AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanNonCandidateDraftedUnwinds()
+{
+    // Was drafted-by-us, then stopped being a candidate mid-alert (downed / removed from roster).
+    var s = new PawnMobState { IsCandidate = false, DraftedByUs = true, PolicyIsCivilian = false };
+    AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanNonCandidateEngagedUnwinds()
+{
+    var s = new PawnMobState { IsCandidate = false, HasLwDuty = true, PolicyIsCivilian = false };
+    AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanNonCandidatePolicyUnwinds()
+{
+    // No duty/draft left, but still on the combat apparel policy -> must be put back to civilian.
+    var s = new PawnMobState { IsCandidate = false, PolicyIsCombat = true, PolicyIsCivilian = false };
+    AssertEqual(MobPhase.SetCivilianPolicy, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanBusyUrgentNeverTouched()
+{
+    // Busy-urgent short-circuits to None regardless of engagement (never yank off firefighting/tending/rescue).
+    var s = new PawnMobState { IsCandidate = false, IsBusyUrgent = true, DraftedByUs = true };
+    AssertEqual(MobPhase.None, MobilizationPlan.NextAction(mobilized: true, s));
 }
 
 static void TestThreatNone()

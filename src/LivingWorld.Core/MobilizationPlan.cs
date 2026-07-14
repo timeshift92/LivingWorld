@@ -73,9 +73,20 @@ public static class MobilizationPlan
 {
     public static MobPhase NextAction(bool mobilized, in PawnMobState s)
     {
-        if (!s.IsCandidate || s.IsBusyUrgent)
+        // Never yank a pawn off a life-or-base-saving job, even to unwind.
+        if (s.IsBusyUrgent)
         {
             return MobPhase.None;
+        }
+
+        if (!s.IsCandidate)
+        {
+            // Stopped being a candidate mid-alert (downed -> recovered, removed from the roster, mental break
+            // ended). If we had already touched them (duty / draft / combat policy / kit), unwind through
+            // stand-down so they are never left stranded drafted or armored. A never-touched non-candidate is
+            // left alone.
+            var touched = s.HasLwDuty || s.DraftedByUs || s.InCombatKit || s.PolicyIsCombat;
+            return touched ? StandDown(in s) : MobPhase.None;
         }
 
         return mobilized ? Mobilize(in s) : StandDown(in s);
