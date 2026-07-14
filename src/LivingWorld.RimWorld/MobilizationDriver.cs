@@ -120,6 +120,7 @@ public sealed class MobilizationDriver
             Drafted = pawn.Drafted,
             DraftedByUs = draftedByUs.Contains(pawn),
             HasLwDuty = hasDuty,
+            WasEngagedByUs = engagedByUs.ContainsKey(pawn),
             CaiAvailable = CaiBridge.Available,
         };
     }

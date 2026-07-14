@@ -10,10 +10,11 @@ namespace LivingWorld.RimWorld;
 /// <summary>
 /// Per-map mobilization state for the player colony: whether combat colonists should gear up and fight rather
 /// than work in civvies. Mobilized when the player toggles it manually, or automatically while the map is
-/// genuinely in danger. Danger is read from RimWorld's own <see cref="DangerWatcher"/> so a single wandering
-/// manhunter does not put the whole colony on alert. The recheck is throttled and fail-safe — any error reads
-/// as "no threat", so the colony is never locked in alert. Auto-created for every map (a MapComponent with a
-/// (Map) constructor is instantiated by RimWorld) and persisted per map.
+/// genuinely in danger. Threat is classified per-recheck by <see cref="ThreatClassifier"/> from the live
+/// hostiles (see ComputeSignals), debounced by <see cref="ThreatDebounce"/>; dormant threats are ignored.
+/// Mobilizes on a manual toggle or a Raid-or-worse tier. The recheck is throttled and fail-safe — any error
+/// reads as "no threat", so the colony is never locked in alert. Auto-created for every map (a MapComponent
+/// with a (Map) constructor is instantiated by RimWorld) and persisted per map.
 /// </summary>
 public sealed class MobilizationMapComponent : MapComponent
 {
@@ -23,6 +24,7 @@ public sealed class MobilizationMapComponent : MapComponent
     private bool threatPresent;
     private ThreatTier currentTier;
     private int belowCount;
+    private ThreatSignals lastSignals;
     private List<int> savedDraftedIds = new();
     private readonly MobilizationDriver driver = new();
 
@@ -58,9 +60,13 @@ public sealed class MobilizationMapComponent : MapComponent
 
         try
         {
-            var rawTier = settings.autoMobilizeOnThreat ? ThreatClassifier.Classify(ComputeSignals(map, settings)) : ThreatTier.None;
+            lastSignals = settings.autoMobilizeOnThreat ? ComputeSignals(map, settings) : default;
+            var rawTier = ThreatClassifier.Classify(lastSignals);
             (currentTier, belowCount) = ThreatDebounce.Step(currentTier, rawTier, belowCount, settings.mobilizationDeescalateRechecks);
-            threatPresent = currentTier != ThreatTier.None;
+            // Phase A has no fighter/non-combatant split yet, so mobilizing means EVERY combat-capable
+            // colonist gears up — too heavy for a lone nuisance animal. Only Raid+ mobilizes; proportionate
+            // Nuisance handling lands with the roster in Phase B. (A big animal pack classifies as Serious.)
+            threatPresent = currentTier >= ThreatTier.Raid;
         }
         catch (Exception ex)
         {
@@ -81,7 +87,7 @@ public sealed class MobilizationMapComponent : MapComponent
             return default;
         }
 
-        var hostiles = pawns.Where(p => p != null && !p.Downed && !p.IsPrisoner && p.HostileTo(player)).ToList();
+        var hostiles = pawns.Where(p => p != null && !p.Downed && !p.IsPrisoner && p.HostileTo(player) && IsAwakeThreat(p)).ToList();
         if (hostiles.Count == 0)
         {
             return default;
@@ -104,11 +110,36 @@ public sealed class MobilizationMapComponent : MapComponent
         };
     }
 
+    // A dormant threat (an un-woken mech cluster / Anomaly entity / hive) is hostile-by-faction but not an
+    // active danger — vanilla's DangerWatcher ignored it, so we must too, or the colony stays mobilized
+    // forever staring at a sleeping cluster.
+    private static bool IsAwakeThreat(Pawn p)
+    {
+        try
+        {
+            var dormant = p.GetComp<CompCanBeDormant>();
+            return dormant == null || dormant.Awake;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    public string DescribeThreat()
+    {
+        return $"tier={currentTier}, belowCount={belowCount}, "
+               + $"signals=[hostiles={lastSignals.HostileCount}, onlyAnimals={lastSignals.OnlyAnimals}, "
+               + $"mech={lastSignals.AnyMechanoid}, entity={lastSignals.AnyEntity}, insect={lastSignals.AnyInsect}, "
+               + $"atBase={lastSignals.EnemyAtBase}, big={lastSignals.BigRaid}]";
+    }
+
     // Dev diagnostics: the driver's derived phase + transient tracking for one pawn (see OutfitStandDebugActions).
     public string DiagnosePawn(Pawn pawn)
     {
         return $"phase={driver.PeekPhase(pawn, IsMobilized, currentTier)}, tier={currentTier}, "
-               + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}";
+               + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}, "
+               + $"aiAutoControl={CaiBridge.IsAutoControlled(pawn)}";
     }
 
     public override void ExposeData()

@@ -62,8 +62,7 @@ public static class OutfitStandDebugActions
         }
 
         Log.Message($"[LivingWorld] Mobilization dump — mobilized={component.IsMobilized} "
-                    + $"(manual={component.ManualMobilized}, threat={component.ThreatPresent}, tier={component.CurrentTier}), "
-                    + $"CAI={CaiBridge.Available}");
+                    + $"(manual={component.ManualMobilized}), CAI={CaiBridge.Available} | {component.DescribeThreat()}");
 
         foreach (var pawn in map.mapPawns.FreeColonistsSpawned.ToList())
         {

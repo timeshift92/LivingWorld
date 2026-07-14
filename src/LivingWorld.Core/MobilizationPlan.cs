@@ -59,6 +59,10 @@ public readonly struct PawnMobState
     /// <summary>We have given this pawn a CAI combat duty this alert.</summary>
     public bool HasLwDuty { get; init; }
 
+    /// <summary>We gave this pawn a CAI duty this alert at ANY tier (tier-independent — used for teardown,
+    /// where the tier has dropped to None and <see cref="HasLwDuty"/> would read false).</summary>
+    public bool WasEngagedByUs { get; init; }
+
     /// <summary>CAI 5000 is loaded and its custom-duty API resolved.</summary>
     public bool CaiAvailable { get; init; }
 }
@@ -85,7 +89,7 @@ public static class MobilizationPlan
             // ended). If we had already touched them (duty / draft / combat policy / kit), unwind through
             // stand-down so they are never left stranded drafted or armored. A never-touched non-candidate is
             // left alone.
-            var touched = s.HasLwDuty || s.DraftedByUs || s.InCombatKit || s.PolicyIsCombat;
+            var touched = s.HasLwDuty || s.WasEngagedByUs || s.DraftedByUs || s.InCombatKit || s.PolicyIsCombat;
             return touched ? StandDown(in s) : MobPhase.None;
         }
 
@@ -132,7 +136,7 @@ public static class MobilizationPlan
     private static MobPhase StandDown(in PawnMobState s)
     {
         // Release combat control first (our CAI duty / our draft), then re-dress as a civilian.
-        if (s.HasLwDuty || s.DraftedByUs)
+        if (s.HasLwDuty || s.WasEngagedByUs || s.DraftedByUs)
         {
             return MobPhase.ClearCombat;
         }

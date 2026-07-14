@@ -389,6 +389,8 @@ var tests = new List<(string Name, Action Test)>
     ("debounce: a single low recheck does not drop the tier", TestDebounceHoldsThroughFlicker),
     ("debounce: a fresh high recheck resets the clear counter", TestDebounceResetsCounterOnHigh),
     ("mob plan: exhaustive invariants over the whole state space", TestMobPlanExhaustiveInvariants),
+    ("mob plan: a pawn engaged at a stale tier still tears down on stand-down", TestMobPlanStaleTierEngagedTearsDown),
+    ("mob plan: a non-candidate engaged at a stale tier still unwinds", TestMobPlanNonCandidateStaleEngagedUnwinds),
 };
 
 var failures = new List<string>();
@@ -10654,7 +10656,7 @@ static void TestMobPlanExhaustiveInvariants()
         MobPhase.ClearCombat, MobPhase.SetCivilianPolicy, MobPhase.ReturnKit, MobPhase.SteadyCivilian,
     };
 
-    for (var bits = 0; bits < 4096; bits++)
+    for (var bits = 0; bits < 8192; bits++)
     {
         var s = new PawnMobState
         {
@@ -10670,6 +10672,7 @@ static void TestMobPlanExhaustiveInvariants()
             DraftedByUs = (bits & 512) != 0,
             HasLwDuty = (bits & 1024) != 0,
             CaiAvailable = (bits & 2048) != 0,
+            WasEngagedByUs = (bits & 4096) != 0,
         };
 
         foreach (var mobilized in new[] { true, false })
@@ -10687,7 +10690,7 @@ static void TestMobPlanExhaustiveInvariants()
 
             // Invariant 3: a never-touched non-candidate (and not busy) is left alone.
             if (!s.IsCandidate && !s.IsBusyUrgent
-                && !s.HasLwDuty && !s.DraftedByUs && !s.InCombatKit && !s.PolicyIsCombat)
+                && !s.HasLwDuty && !s.WasEngagedByUs && !s.DraftedByUs && !s.InCombatKit && !s.PolicyIsCombat)
             {
                 AssertEqual(MobPhase.None, phase);
             }
@@ -10705,4 +10708,22 @@ static void TestMobPlanExhaustiveInvariants()
             }
         }
     }
+}
+
+static void TestMobPlanStaleTierEngagedTearsDown()
+{
+    // Engaged this alert (WasEngagedByUs) but HasLwDuty is false because the tier dropped to None on
+    // stand-down. Must still ClearCombat so the CAI duty / aiAutoControl are torn down.
+    var s = new PawnMobState
+    {
+        IsCandidate = true, HasLwDuty = false, WasEngagedByUs = true, PolicyIsCivilian = false,
+    };
+    AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: false, s));
+}
+
+static void TestMobPlanNonCandidateStaleEngagedUnwinds()
+{
+    // Non-candidate now (downed/removed), engaged earlier at a tier that no longer matches -> still unwind.
+    var s = new PawnMobState { IsCandidate = false, HasLwDuty = false, WasEngagedByUs = true };
+    AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: true, s));
 }

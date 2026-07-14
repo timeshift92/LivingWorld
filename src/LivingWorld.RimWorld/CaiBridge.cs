@@ -77,6 +77,24 @@ public static class CaiBridge
 
     public static bool Available => HuntMethod != null && StartMethod != null;
 
+    public static bool IsAutoControlled(Pawn pawn)
+    {
+        try
+        {
+            if (CompType == null || AutoControlField == null || pawn?.AllComps == null)
+            {
+                return false;
+            }
+
+            var comp = pawn.AllComps.FirstOrDefault(c => CompType.IsInstanceOfType(c));
+            return comp != null && AutoControlField.GetValue(comp) is true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static bool TryEngage(Pawn pawn, ThreatTier tier, IntVec3 anchor)
     {
         if (!Available || pawn?.Spawned != true)
