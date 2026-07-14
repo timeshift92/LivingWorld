@@ -173,6 +173,8 @@ var tests = new List<(string Name, Action Test)>
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
     ("war planner keeps scouts and diplomats visible even after attacks unlock", TestFactionActionPlannerDiversifiesVisibleActions),
+    ("world action plans carry concrete traffic targets", TestFactionActionPlansCarryConcreteTrafficTargets),
+    ("same-day scouting plans spread across unknown targets", TestFactionActionPlannerSpreadsScoutingTargets),
     ("warmongers spread targets instead of dogpiling the lowest id", TestFactionActionPlannerSpreadsEnemyTargets),
     ("war planner avoids targets already under pressure", TestFactionActionPlannerAvoidsPressuredEnemyTargets),
     ("war planner scouts instead of dogpiling a saturated target", TestFactionActionPlannerAbstainsWhenTargetSaturated),
@@ -186,6 +188,7 @@ var tests = new List<(string Name, Action Test)>
     ("faction goodwill drifts back toward neutral", TestDiplomacyGoodwillDrifts),
     ("aggression and relations survive a save/load round trip", TestDiplomacyPersists),
     ("world war launches a warband and resolves it into a capture", TestWorldWarLaunchesAndResolvesWarband),
+    ("world war closes the scout to attack to consequence loop", TestWorldWarScoutAttackConsequenceLoop),
     ("repeated losses increase faction war exhaustion", TestRepeatedLossesIncreaseFactionWarExhaustion),
     ("conflict claim tracks captured settlement", TestConflictClaimTracksCapturedSettlement),
     ("player attack pressures the victim's wars as a third party", TestPlayerInterventionPressuresVictimWars),
@@ -307,6 +310,9 @@ var tests = new List<(string Name, Action Test)>
     ("explains empty Living World ledger in main tab", TestRimWorldMainTabExplainsEmptyLedger),
     ("scans RimWorld world objects for bootstrap candidates", TestRimWorldWorldObjectScanner),
     ("imports only whitelisted world object types", TestRimWorldWorldObjectScannerUsesImporterWhitelist),
+    ("excludes the player and Empire vassal colonies from import eligibility", TestSettlementImportEligibilityExcludesPlayerAndEmpire),
+    ("never seeds an Empire (PColony) vassal settlement into the ledger", TestBootstrapExcludesEmpireVassalSettlements),
+    ("world object importer defers eligibility to the Core predicate", TestRimWorldImporterUsesCoreEligibility),
     ("uses explicit world object scanner sorting", TestRimWorldWorldObjectScannerUsesExplicitSorting),
     ("keeps Living World bootstrap failures inside diagnostics", TestRimWorldBootstrapFailureDiagnostics),
     ("reports detailed world object bootstrap diagnostics", TestRimWorldDetailedBootstrapDiagnostics),
@@ -5037,7 +5043,7 @@ static void TestFactionActionPlannerScoutsBeforeUnknownWarTarget()
 
     var unknown = FactionActionPlanner.Plan(state, "Raiders", 60_000);
     AssertEqual(WarAction.ScoutingParty, unknown.Action);
-    AssertEqual(null, unknown.TargetSettlementId);
+    AssertEqual(victim.Id, unknown.TargetSettlementId);
 
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
     AssertEqual(0, state.ArmyMovements.Count);
@@ -5072,9 +5078,99 @@ static void TestFactionActionPlannerDiversifiesVisibleActions()
     AssertEqual(WarAction.Warband, attack.Action);
     AssertEqual(knownVictim.Id, attack.TargetSettlementId);
     AssertEqual(WarAction.ScoutingParty, scout.Action);
-    AssertEqual(null, scout.TargetSettlementId);
+    AssertEqual(true, scout.TargetSettlementId.HasValue);
     AssertEqual(WarAction.Diplomat, diplomat.Action);
-    AssertEqual(null, diplomat.TargetSettlementId);
+    AssertEqual(true, diplomat.TargetSettlementId.HasValue);
+}
+
+static void TestFactionActionPlansCarryConcreteTrafficTargets()
+{
+    {
+        var state = new WorldState(4242);
+        var raiderHome = state.CreateSettlement("raider-home", "Raider Home", "Raiders");
+        var target = state.CreateSettlement("target", "Target", "Settlers");
+        for (var i = 0; i < 6; i++)
+        {
+            state.CreateCitizen("R" + i, 30, Sex.Male, "raider", raiderHome.Id);
+        }
+
+        state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+        var scout = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+        AssertEqual(WarAction.ScoutingParty, scout.Action);
+        AssertEqual(target.Id, scout.TargetSettlementId);
+    }
+
+    {
+        var state = new WorldState(4242);
+        var merchantHome = state.CreateSettlement("merchant-home", "Merchant Home", "Merchants");
+        var target = state.CreateSettlement("target", "Target", "Settlers");
+        for (var i = 0; i < 3; i++)
+        {
+            state.CreateCitizen("M" + i, 30, Sex.Female, "merchant", merchantHome.Id);
+        }
+
+        state.AddResource(merchantHome.Id, "Steel", 40);
+        state.AssignFactionBehavior("Merchants", FactionBehavior.Merchant);
+        var caravan = FactionActionPlanner.Plan(state, "Merchants", 60_000);
+        AssertEqual(WarAction.Caravan, caravan.Action);
+        AssertEqual(target.Id, caravan.TargetSettlementId);
+    }
+
+    {
+        var state = new WorldState(4242);
+        var envoyHome = state.CreateSettlement("envoy-home", "Envoy Home", "Envoys");
+        var target = state.CreateSettlement("target", "Target", "Settlers");
+        for (var i = 0; i < 3; i++)
+        {
+            state.CreateCitizen("E" + i, 30, Sex.Female, "diplomat", envoyHome.Id);
+        }
+
+        state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
+        var diplomat = FactionActionPlanner.Plan(state, "Envoys", 4 * 60_000);
+        AssertEqual(WarAction.Diplomat, diplomat.Action);
+        AssertEqual(target.Id, diplomat.TargetSettlementId);
+        AssertEqual("Settlers", diplomat.TargetFactionId);
+    }
+}
+
+static void TestFactionActionPlannerSpreadsScoutingTargets()
+{
+    var state = new WorldState(4242);
+    var scouts = new[] { "NorthScouts", "SouthScouts", "EastScouts" };
+    foreach (var faction in scouts)
+    {
+        var home = state.CreateSettlement($"home-{faction}", $"{faction} Home", faction);
+        for (var i = 0; i < 3; i++)
+        {
+            state.CreateCitizen($"{faction}-{i}", 30, Sex.Female, "scout", home.Id);
+        }
+
+        state.AssignFactionBehavior(faction, FactionBehavior.Cautious);
+    }
+
+    for (var i = 0; i < scouts.Length; i++)
+    {
+        for (var j = i + 1; j < scouts.Length; j++)
+        {
+            DiplomacyService.AdjustGoodwill(state, scouts[i], scouts[j], 80);
+        }
+    }
+
+    var targets = new[]
+    {
+        state.CreateSettlement("unknown-one", "Unknown One", "TargetOne").Id,
+        state.CreateSettlement("unknown-two", "Unknown Two", "TargetTwo").Id,
+        state.CreateSettlement("unknown-three", "Unknown Three", "TargetThree").Id,
+    };
+
+    var plans = FactionActionPlanner.PlanDay(state, 60_000)
+        .Where(plan => scouts.Contains(plan.FactionId))
+        .ToList();
+
+    AssertEqual(scouts.Length, plans.Count);
+    AssertEqual(true, plans.All(plan => plan.Action == WarAction.ScoutingParty));
+    AssertEqual(true, plans.All(plan => plan.TargetSettlementId.HasValue && targets.Contains(plan.TargetSettlementId.Value)));
+    AssertEqual(true, plans.Select(plan => plan.TargetSettlementId!.Value).Distinct().Count() > 1);
 }
 
 static void TestFactionActionPlannerSpreadsEnemyTargets()
@@ -5179,7 +5275,8 @@ static void TestFactionActionPlannerAbstainsWhenTargetSaturated()
     // which is how it gathers the intel to diversify its targets in later rounds.
     var plan = FactionActionPlanner.Plan(state, "Raiders", 120_000);
     AssertEqual(WarAction.ScoutingParty, plan.Action);
-    AssertEqual(true, plan.TargetSettlementId == null);
+    AssertEqual(true, plan.TargetSettlementId.HasValue);
+    AssertEqual(false, plan.TargetSettlementId == onlyTarget.Id);
 }
 
 static void TestFactionActionPlannerSkipsAlliedTargets()
@@ -5261,7 +5358,7 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
     state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
     WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
     var scoutMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Scout);
-    AssertEqual(village.Id, scoutMission.TargetSettlementId);
+    AssertEqual(false, state.IsPlayerFaction(state.GetSettlement(scoutMission.TargetSettlementId)!.FactionId));
     AssertEqual(null, state.GetKnownSettlementInfo(playerBase.Id));
 
     var envoys = state.CreateSettlement("envoys", "Envoys", "Envoys");
@@ -5273,15 +5370,15 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
     state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
     WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
-    AssertEqual(IntelSourceKind.Scout, state.GetKnownSettlementInfo(village.Id)!.SourceKind);
+    AssertEqual(IntelSourceKind.Scout, state.GetKnownSettlementInfo(scoutMission.TargetSettlementId)!.SourceKind);
     var diplomaticMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat);
-    AssertEqual(village.Id, diplomaticMission.TargetSettlementId);
-    AssertEqual("Villagers", diplomaticMission.TargetFactionId);
+    AssertEqual(false, state.IsPlayerFaction(state.GetSettlement(diplomaticMission.TargetSettlementId)!.FactionId));
+    AssertEqual(false, string.Equals("PlayerFaction", diplomaticMission.TargetFactionId, StringComparison.Ordinal));
     AssertEqual(0, DiplomacyService.GetGoodwill(state, "Envoys", "PlayerFaction"));
 
     state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
     WorldWarService.SimulateDay(state, new WorldWarRequest(300_000, TravelDays: 1, RaidCombatants: 3));
-    AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", "Villagers"));
+    AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", diplomaticMission.TargetFactionId));
 }
 
 static void TestWorldWarScoutingAvoidsPressuredTargets()
@@ -5311,7 +5408,7 @@ static void TestWorldWarScoutingAvoidsPressuredTargets()
     var scoutMission = state.Missions.Single(mission =>
         mission.Kind == WorldMissionKind.Scout
         && string.Equals(mission.FactionId, "Scouts", StringComparison.Ordinal));
-    AssertEqual(targetTwo.Id, scoutMission.TargetSettlementId);
+    AssertEqual(false, scoutMission.TargetSettlementId == targetOne.Id);
 }
 
 static void TestFactionActionPlannerChoosesDevelop()
@@ -5450,6 +5547,65 @@ static void TestWorldWarLaunchesAndResolvesWarband()
     // The war is legible in world history: the warband set out and the settlement fell.
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WarbandLaunched));
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestWorldWarScoutAttackConsequenceLoop()
+{
+    var state = new WorldState(4242);
+    var horde = state.CreateSettlement("horde", "Horde", "Raiders");
+    for (var i = 0; i < 10; i++)
+    {
+        state.CreateCitizen("R" + i, 30, Sex.Male, "raider", horde.Id);
+    }
+
+    var village = state.CreateSettlement("village", "Village", "Settlers");
+    for (var i = 0; i < 2; i++)
+    {
+        state.CreateCitizen("S" + i, 30, Sex.Male, "settler", village.Id);
+    }
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.AssignFactionBehavior("Settlers", FactionBehavior.Excluded);
+    var totalCitizens = state.Citizens.Count;
+
+    // No actionable knowledge: the first concrete action is scouting, not a blind attack.
+    var firstPlan = FactionActionPlanner.Plan(state, "Raiders", 60_000);
+    AssertEqual(WarAction.ScoutingParty, firstPlan.Action);
+    AssertEqual(village.Id, firstPlan.TargetSettlementId);
+
+    var day1 = WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 6));
+    AssertEqual(0, day1.WarbandsLaunched);
+    AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Scout));
+
+    // The scout is persistent: after save/load it still arrives, records intel, and unlocks a warband.
+    var afterScoutLaunch = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var day2 = WorldWarService.SimulateDay(afterScoutLaunch, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 6));
+    AssertEqual(1, day2.ScoutingReports);
+    AssertEqual(1, day2.WarbandsLaunched);
+    AssertEqual(true, afterScoutLaunch.HasFactionSettlementIntel("Raiders", village.Id));
+    AssertEqual(0, afterScoutLaunch.Missions.Count);
+    AssertEqual(1, afterScoutLaunch.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Traveling));
+
+    // The army is persistent too: after another save/load it arrives, resolves combat and writes consequences.
+    var beforeBattle = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(afterScoutLaunch));
+    beforeBattle.AssignFactionBehavior("Raiders", FactionBehavior.Excluded);
+    var day3 = WorldWarService.SimulateDay(beforeBattle, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 6));
+    AssertEqual(1, day3.BattlesResolved);
+    AssertEqual(1, day3.SettlementsCaptured);
+    AssertEqual("Raiders", beforeBattle.GetSettlement(village.Id)!.FactionId);
+    AssertEqual(totalCitizens, beforeBattle.Citizens.Count);
+    AssertEqual(true, beforeBattle.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead) > 0);
+    AssertEqual(true, beforeBattle.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementIntelUpdated) >= 1);
+    AssertEqual(1, beforeBattle.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WarbandLaunched));
+    AssertEqual(1, beforeBattle.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
+    AssertEqual(-WorldWarService.AggressionSeverity, DiplomacyService.GetGoodwill(beforeBattle, "Raiders", "Settlers"));
+
+    var summary = WorldActivitySummaryService.Summarize(
+        beforeBattle,
+        new WorldActivitySummaryRequest(180_000, LookbackTicks: 180_000));
+    AssertEqual(true, summary.MilitaryEvents > 0);
+    AssertEqual(true, summary.TotalEvents > 0);
+    AssertEqual(0, beforeBattle.Validate().Count());
 }
 
 static void TestRepeatedLossesIncreaseFactionWarExhaustion()
@@ -6575,14 +6731,17 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     state.AddResource(market.Id, "Steel", 40);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+    var caravanTargetId = state.Caravans.Single().TargetSettlementId;
 
     state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
     state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
     WorldWarService.SimulateDay(state, new WorldWarRequest(2 * 60_000, TravelDays: 1, RaidCombatants: 3));
+    var scoutTargetId = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Scout).TargetSettlementId;
 
     state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
     WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
+    var diplomatTargetFactionId = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat).TargetFactionId;
 
     // Let the in-flight scout and diplomat missions arrive before saving (they apply on arrival now).
     state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
@@ -6590,10 +6749,10 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
 
     var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
 
-    AssertEqual(10, restored.GetOwnedResourceQuantity(village.Id, "Steel"));
-    AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(village.Id)!.SourceKind);
-    AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", village.Id));
-    AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", "Villagers"));
+    AssertEqual(10, restored.GetOwnedResourceQuantity(caravanTargetId, "Steel"));
+    AssertEqual(IntelSourceKind.Scout, restored.GetKnownSettlementInfo(scoutTargetId)!.SourceKind);
+    AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", scoutTargetId));
+    AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", diplomatTargetFactionId));
 }
 
 static void TestWorldWarServiceSplitExecutors()
@@ -6968,6 +7127,10 @@ static void TestRimWorldEmpireInterop()
     // manages their empire vs the NPC world Living World tracks.
     AssertContains("public bool IsEmpireActive", component);
     AssertContains("Matathias.Empire", component);
+    // The flag is no longer UI-only: when Empire is active the bootstrap re-checks its candidates against
+    // the shared Core constant as defense-in-depth so a player-owned PColony vassal can never be seeded.
+    AssertContains("EmpireIsActive", component);
+    AssertContains("SettlementImportEligibility.EmpirePlayerColonyFactionDefName", component);
 
     var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     AssertContains("IsEmpireActive", mainTab);
@@ -8139,6 +8302,17 @@ static void TestRimWorldRealFactionRelationsBridge()
     AssertContains("FormRealEnmity", bridge);
     AssertContains("EnemyGoodwillTarget", bridge);
 
+    // Mod-compat (Rim War): Torann.RimWar installs a Harmony prefix on Faction.TryAffectGoodwillWith
+    // that takes goodwillChange by ref and can silently dampen/zero/block it, so a forced alliance may
+    // never reach +75 nor a war declaration fall to -80 — with no warning. Living World stands down and
+    // defers real faction diplomacy to Rim War here (the same mutual-exclusion it applies to its own
+    // world-war loop) instead of fighting Rim War's relation-reduction system. The guard must short-
+    // circuit BEFORE any TryAffectGoodwillWith call so no dampened, misleading mutation is attempted.
+    AssertContains("ModsConfig.IsActive(\"Torann.RimWar\")", bridge);
+    AssertRimWorldMethodExists("Verse.ModsConfig", "IsActive");
+    // The stand-down is announced (debug-gated) rather than silent, so the collision is observable.
+    AssertContains("[LivingWorld]", bridge);
+
     // Wired into both ends of the arc.
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     AssertContains("LivingWorldFactionRelations.FormRealAlliance", mainTab);
@@ -9200,6 +9374,92 @@ static void TestRimWorldWorldObjectScannerUsesImporterWhitelist()
     AssertContains("return importer.ImportCandidate(obj, ref scanErrorCount);", source);
     AssertContains("obj is Settlement", source);
     AssertDoesNotContain("return new WorldObjectSettlementCandidate(", source);
+}
+
+// Living World simulates the organic NPC world. The player's own colony is never a ledger NPC settlement,
+// and Empire (Matathias.Empire) manages the player's vassal colonies under the "PColony" faction, which is
+// NOT Faction.OfPlayer and would otherwise be imported and then simulated / warred against / captured out
+// from under the player. The eligibility predicate that gates import must reject both, plus the general
+// class of factions the game never spawns naturally (zero settlement-generation weight AND not randomly
+// creatable — the profile of a player-management / structural faction).
+static void TestSettlementImportEligibilityExcludesPlayerAndEmpire()
+{
+    // The player's own colony faction: never imported.
+    AssertEqual(false, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("PlayerColony", IsPlayer: true, SettlementGenerationWeight: 0f, CanMakeRandomly: false)));
+
+    // Empire's vassal-colony faction (PColony): weight 0, not randomly creatable, and crucially NOT a
+    // player faction — the exact case that slipped through the old IsPlayer-only filter.
+    AssertEqual(false, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor(SettlementImportEligibility.EmpirePlayerColonyFactionDefName, IsPlayer: false, SettlementGenerationWeight: 0f, CanMakeRandomly: false)));
+
+    // Any other faction the game never spawns naturally (structural / mod-placed) is excluded too.
+    AssertEqual(false, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("SomeModStructuralFaction", IsPlayer: false, SettlementGenerationWeight: 0f, CanMakeRandomly: false)));
+
+    // A normal NPC neighbour (weighted, randomly creatable — e.g. OutlanderRough) is imported.
+    AssertEqual(true, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("OutlanderRough", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: true)));
+
+    // A weighted-but-unique NPC faction (e.g. Royalty's Empire: settlementGenerationWeight 1, canMakeRandomly
+    // false) is still a real NPC neighbour with real settlements and MUST keep being imported — the generalized
+    // rule must not over-reach and swallow it.
+    AssertEqual(true, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("Empire", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: false)));
+}
+
+// End-to-end guard at the ledger level: run a realistic candidate set (two ordinary NPC settlements plus an
+// Empire PColony vassal) through the import filter and seed the survivors exactly as the RimWorld bootstrap
+// does (WorldState.CreateSettlement(slug, name, factionId)). The ledger must never contain a PColony entry,
+// so DemographyService / SettlementDailySimulationService / WorldWarService can never touch a player-owned
+// Empire settlement.
+static void TestBootstrapExcludesEmpireVassalSettlements()
+{
+    var candidates = new[]
+    {
+        new SettlementFactionDescriptor("OutlanderRough", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: true),
+        new SettlementFactionDescriptor(SettlementImportEligibility.EmpirePlayerColonyFactionDefName, IsPlayer: false, SettlementGenerationWeight: 0f, CanMakeRandomly: false),
+        new SettlementFactionDescriptor("TribeSavage", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: true),
+    };
+
+    var state = new WorldState(1);
+    var index = 0;
+    foreach (var candidate in candidates)
+    {
+        index++;
+        if (!SettlementImportEligibility.ShouldImport(candidate))
+        {
+            continue;
+        }
+
+        state.CreateSettlement($"worldobject:Settlement:{index}:{candidate.FactionDefName}", $"Settlement {index}", candidate.FactionDefName);
+    }
+
+    AssertEqual(2, state.Settlements.Count);
+    AssertEqual(false, state.Settlements.Any(settlement =>
+        settlement.FactionId == SettlementImportEligibility.EmpirePlayerColonyFactionDefName));
+}
+
+// Locks the wiring: the RimWorld importer must delegate the keep/skip decision to the Core predicate rather
+// than re-implementing an IsPlayer-only filter, so the fix cannot silently regress in the untestable
+// (RimWorld-runtime) assembly.
+static void TestRimWorldImporterUsesCoreEligibility()
+{
+    var scannerPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "WorldObjectScanner.cs");
+
+    var source = File.ReadAllText(scannerPath);
+
+    AssertContains("SettlementImportEligibility.ShouldImport", source);
+    AssertContains("SettlementFactionDescriptor", source);
+    AssertContains("settlementGenerationWeight", source);
+    AssertContains("canMakeRandomly", source);
+    // The old, insufficient filter must be gone from the importer: the decision now lives entirely in the
+    // Core predicate (which still honours IsPlayer via the descriptor).
+    AssertDoesNotContain("if (faction.IsPlayer)", source);
 }
 
 static void TestRimWorldWorldObjectScannerUsesExplicitSorting()
