@@ -206,7 +206,21 @@
   <LW_MissionMarkerReasonLine>Цель: {reason}</LW_MissionMarkerReasonLine>
   <LW_MissionMarkerDetails>Подробности</LW_MissionMarkerDetails>
   <LW_PlayerCaravanMarkerContactLabel>Контакт каравана</LW_PlayerCaravanMarkerContactLabel>
-  <LW_PlayerCaravanMarkerContactText>Ваш караван пересёкся с группой Living World.\n\n{details}\n\nПока это информационный контакт; бой, торговля и переговоры будут строиться поверх этого контакта маркеров.</LW_PlayerCaravanMarkerContactText>
+  <LW_PlayerCaravanMarkerContactText>Ваш караван пересёкся с группой Living World.\n\n{details}</LW_PlayerCaravanMarkerContactText>
+  <LW_PlayerCaravanHostileContactText>Вражеский отряд перекрыл путь каравану. При атаке начнётся настоящая засада с людьми, учтёнными в армии Living World. Если уклониться, отряд продолжит свою миссию.\n\n{details}</LW_PlayerCaravanHostileContactText>
+  <LW_PlayerCaravanTradeContactText>Путевой караван предлагает {quantity} x {resource} за {price} серебра. Товар и оплата будут перенесены физически и в ledger Living World.\n\n{details}</LW_PlayerCaravanTradeContactText>
+  <LW_PlayerCaravanPeacefulContactText>Можно остановиться и обменяться новостями: вы получите свежие, но неточные сведения о маршруте, а отношения немного улучшатся.\n\n{details}</LW_PlayerCaravanPeacefulContactText>
+  <LW_PlayerCaravanContactEngage>Вступить в бой</LW_PlayerCaravanContactEngage>
+  <LW_PlayerCaravanContactAvoid>Уклониться</LW_PlayerCaravanContactAvoid>
+  <LW_PlayerCaravanContactAvoided>Караван уклонился от вражеского отряда.</LW_PlayerCaravanContactAvoided>
+  <LW_PlayerCaravanContactBuy>Купить</LW_PlayerCaravanContactBuy>
+  <LW_PlayerCaravanContactTalk>Поговорить</LW_PlayerCaravanContactTalk>
+  <LW_PlayerCaravanContactPass>Продолжить путь</LW_PlayerCaravanContactPass>
+  <LW_PlayerCaravanContactNoLedgerForce>У встреченного отряда больше нет жителей Living World, способных выйти в бой.</LW_PlayerCaravanContactNoLedgerForce>
+  <LW_PlayerCaravanContactFailed>Встречу не удалось безопасно разрешить; люди и ресурсы не были потрачены.</LW_PlayerCaravanContactFailed>
+  <LW_PlayerCaravanTradeUnavailable>Предложение уже недоступно или в караване недостаточно серебра.</LW_PlayerCaravanTradeUnavailable>
+  <LW_PlayerCaravanTradeCompleted>Куплено: {quantity} x {resource} за {price} серебра.</LW_PlayerCaravanTradeCompleted>
+  <LW_PlayerCaravanConversationCompleted>Разговор принёс полезные сведения о маршруте.</LW_PlayerCaravanConversationCompleted>
   <LW_MissionReason_Warband>военный приказ фракции</LW_MissionReason_Warband>
   <LW_MissionReason_Caravan>перевозит реальные товары между поселениями</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>собирает разведданные для будущих действий (ценность {amount})</LW_MissionReason_Scout>

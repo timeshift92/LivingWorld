@@ -364,6 +364,7 @@ var tests = new List<(string Name, Action Test)>
     ("finds active settlement by tile", TestFindActiveSettlementByTileMatches),
     ("find by tile returns null without match", TestFindActiveSettlementByTileReturnsNullWhenNoTile),
     ("find by tile ignores destroyed settlements", TestFindActiveSettlementByTileIgnoresDestroyed),
+    ("resolves player caravan marker contacts with conserved actions", TestRimWorldPlayerCaravanMarkerContacts),
     ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
     ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
@@ -9138,8 +9139,7 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("CheckPlayerCaravanMarkerContacts", component);
     AssertContains("WorldObject_LivingWorldArmy", component);
     AssertContains("Caravan", component);
-    AssertContains("LW_PlayerCaravanMarkerContactLabel", component);
-    AssertContains("LW_PlayerCaravanMarkerContactText", component);
+    AssertContains("LivingWorldPlayerCaravanContactService.Handle", component);
     AssertContains("ResourceLedgerService.GetResources", component);
     AssertContains("existing.TryGetValue(key", component);
     // Scout and diplomat missions are rendered too, each with its own icon.
@@ -9182,6 +9182,47 @@ static void TestRimWorldWorldArmyMarker()
     AssertContains("<LW_PlayerCaravanMarkerContactText>", ru);
     AssertContains("<LW_MissionKind_Trader>", en);
     AssertContains("<LW_MissionKind_Trader>", ru);
+}
+
+static void TestRimWorldPlayerCaravanMarkerContacts()
+{
+    var root = FindRepoRoot();
+    var servicePath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPlayerCaravanContactService.cs");
+    AssertFileExists(servicePath);
+    var service = File.ReadAllText(servicePath);
+
+    AssertContains("TryStartLedgerAmbush", service);
+    AssertContains("DefDatabase<IncidentDef>.GetNamedSilentFail(\"Ambush\")", service);
+    AssertContains("LivingWorldRaidBindingRuntime.TryAddReservation", service);
+    AssertContains("state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded)", service);
+    AssertContains("HarmonyPatch(typeof(IncidentWorker_Ambush_EnemyFaction), \"GeneratePawns\")", service);
+    AssertContains("component.State.LinkRaidPawn", service);
+    AssertContains("RaidReconciliationService.ReleaseUndeployedReserves", service);
+
+    AssertContains("BuildTradeOffer", service);
+    AssertContains("state.ConsumeResource", service);
+    AssertContains("TryRemoveThing(playerCaravan, ThingDefOf.Silver", service);
+    AssertContains("playerCaravan.AddPawnOrItem", service);
+    AssertContains("state.AddResource(ledgerCaravanId, ThingDefOf.Silver.defName", service);
+    AssertContains("PlayerKnowledgeService.RecordTraderSettlementInfo", service);
+    AssertContains("DiplomacyService.AdjustGoodwill", service);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_PlayerCaravanHostileContactText",
+        "LW_PlayerCaravanTradeContactText",
+        "LW_PlayerCaravanPeacefulContactText",
+        "LW_PlayerCaravanContactEngage",
+        "LW_PlayerCaravanContactBuy",
+        "LW_PlayerCaravanContactTalk",
+        "LW_PlayerCaravanTradeCompleted"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
 }
 
 static void TestRimWorldWorldActionMarkerLegendAndFilters()

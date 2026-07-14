@@ -206,7 +206,21 @@
   <LW_MissionMarkerReasonLine>Purpose: {reason}</LW_MissionMarkerReasonLine>
   <LW_MissionMarkerDetails>Details</LW_MissionMarkerDetails>
   <LW_PlayerCaravanMarkerContactLabel>Caravan contact</LW_PlayerCaravanMarkerContactLabel>
-  <LW_PlayerCaravanMarkerContactText>Your caravan crossed paths with a Living World group.\n\n{details}\n\nThis is currently an informational contact; combat, trade and negotiation choices will build on this marker contact.</LW_PlayerCaravanMarkerContactText>
+  <LW_PlayerCaravanMarkerContactText>Your caravan crossed paths with a Living World group.\n\n{details}</LW_PlayerCaravanMarkerContactText>
+  <LW_PlayerCaravanHostileContactText>A hostile force blocks your caravan's route. Engaging creates a real ambush using the people recorded in its Living World army. Avoiding lets the force continue on its mission.\n\n{details}</LW_PlayerCaravanHostileContactText>
+  <LW_PlayerCaravanTradeContactText>A travelling caravan offers {quantity} x {resource} for {price} silver. The goods and payment are transferred physically and in the Living World ledger.\n\n{details}</LW_PlayerCaravanTradeContactText>
+  <LW_PlayerCaravanPeacefulContactText>You can stop and exchange news with this group, revealing current but inexact information about its route and slightly improving relations.\n\n{details}</LW_PlayerCaravanPeacefulContactText>
+  <LW_PlayerCaravanContactEngage>Engage</LW_PlayerCaravanContactEngage>
+  <LW_PlayerCaravanContactAvoid>Avoid</LW_PlayerCaravanContactAvoid>
+  <LW_PlayerCaravanContactAvoided>Your caravan avoided the hostile force.</LW_PlayerCaravanContactAvoided>
+  <LW_PlayerCaravanContactBuy>Buy</LW_PlayerCaravanContactBuy>
+  <LW_PlayerCaravanContactTalk>Talk</LW_PlayerCaravanContactTalk>
+  <LW_PlayerCaravanContactPass>Continue</LW_PlayerCaravanContactPass>
+  <LW_PlayerCaravanContactNoLedgerForce>The encountered force no longer has deployable Living World citizens.</LW_PlayerCaravanContactNoLedgerForce>
+  <LW_PlayerCaravanContactFailed>The contact could not be resolved safely; no resources or people were consumed.</LW_PlayerCaravanContactFailed>
+  <LW_PlayerCaravanTradeUnavailable>The offer is no longer available or the caravan lacks enough silver.</LW_PlayerCaravanTradeUnavailable>
+  <LW_PlayerCaravanTradeCompleted>Bought {quantity} x {resource} for {price} silver.</LW_PlayerCaravanTradeCompleted>
+  <LW_PlayerCaravanConversationCompleted>The conversation produced useful route intelligence.</LW_PlayerCaravanConversationCompleted>
   <LW_MissionReason_Warband>military action ordered by its faction</LW_MissionReason_Warband>
   <LW_MissionReason_Caravan>moving real goods between settlements</LW_MissionReason_Caravan>
   <LW_MissionReason_Scout>gathering intel for future action (value {amount})</LW_MissionReason_Scout>

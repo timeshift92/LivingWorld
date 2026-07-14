@@ -995,11 +995,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
                 notifiedPlayerCaravanMarkerContacts.Add(contactKey);
                 var details = marker.DetailsText;
-                Find.LetterStack?.ReceiveLetter(
-                    "LW_PlayerCaravanMarkerContactLabel".Translate(),
-                    "LW_PlayerCaravanMarkerContactText".Translate(details.Named("details")),
-                    LetterDefOf.NeutralEvent,
-                    new LookTargets((PlanetTile)marker.Tile));
+                LivingWorldPlayerCaravanContactService.Handle(State, caravan, marker);
                 if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
                 {
                     Log.Message($"[LivingWorld] Player caravan {caravan.ID} contacted world marker {marker.MarkerKey}: {details}");

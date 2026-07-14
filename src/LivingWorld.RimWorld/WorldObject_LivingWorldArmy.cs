@@ -37,6 +37,16 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
 
     public string MarkerKey => markerKey;
 
+    internal int OriginTile => originTile;
+
+    internal int TargetTile => targetTile;
+
+    internal int Combatants => combatants;
+
+    internal int Strength => strength;
+
+    internal string KindNoun => kindNoun;
+
     public void Configure(
         string markerKey,
         string textureName,
