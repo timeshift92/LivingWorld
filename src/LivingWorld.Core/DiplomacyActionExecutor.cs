@@ -28,11 +28,7 @@ internal static class DiplomacyActionExecutor
             return false;
         }
 
-        // One diplomatic mission per faction in transit at a time.
-        if (state.Missions.Any(mission =>
-            mission.Status == WorldMissionStatus.Traveling
-            && mission.Kind == WorldMissionKind.Diplomat
-            && string.Equals(mission.FactionId, plan.FactionId, StringComparison.Ordinal)))
+        if (!WorldTrafficPolicy.CanDispatchMission(state, WorldMissionKind.Diplomat, plan.FactionId))
         {
             return false;
         }

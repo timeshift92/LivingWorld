@@ -127,7 +127,8 @@ public static class FactionActionPlanner
             .Where(settlement => settlement.IsActive)
             .Select(settlement => settlement.FactionId)
             .Distinct(StringComparer.Ordinal)
-            .OrderBy(factionId => factionId, StringComparer.Ordinal))
+            .OrderBy(factionId => WorldTrafficPolicy.StableDailyFactionOrder(factionId, tick))
+            .ThenBy(factionId => factionId, StringComparer.Ordinal))
         {
             var plan = Plan(state, factionId, tick, plannedTargets);
             if (plan.Action == WarAction.None)

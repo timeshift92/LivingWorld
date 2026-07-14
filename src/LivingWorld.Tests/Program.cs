@@ -194,6 +194,8 @@ var tests = new List<(string Name, Action Test)>
     ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
     ("travelling missions reserve and return real citizens", TestWorldMissionReservesAndReturnsRealCitizen),
     ("missions fail without intel when the target is inactive", TestWorldMissionFailsWhenTargetInactive),
+    ("world traffic caps simultaneous scout waves", TestWorldTrafficCapsSimultaneousScoutWaves),
+    ("world traffic repairs legacy scout spam without losing crews", TestWorldTrafficRepairsLegacyScoutSpam),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
     ("warmonger with power and an enemy plans a warband", TestFactionActionPlannerWarband),
     ("warmonger scouts before attacking an unknown enemy", TestFactionActionPlannerScoutsBeforeUnknownWarTarget),
@@ -5805,6 +5807,80 @@ static void TestWorldMissionFailsWhenTargetInactive()
     AssertEqual(scouts.Id, state.GetOwner(citizen.Id));
     AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestWorldTrafficCapsSimultaneousScoutWaves()
+{
+    var state = new WorldState(4242);
+    for (var factionIndex = 0; factionIndex < 9; factionIndex++)
+    {
+        var factionId = "Faction" + factionIndex;
+        var settlement = state.CreateSettlement("settlement-" + factionIndex, "Settlement " + factionIndex, factionId);
+        for (var citizenIndex = 0; citizenIndex < 4; citizenIndex++)
+        {
+            state.CreateCitizen($"Citizen {factionIndex}-{citizenIndex}", 30, Sex.Male, "scout", settlement.Id);
+        }
+
+        state.AssignFactionBehavior(factionId, FactionBehavior.Cautious);
+    }
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 10, RaidCombatants: 3));
+
+    AssertEqual(WorldTrafficPolicy.MaxConcurrentScouts, state.Missions.Count(mission =>
+        mission.Status == WorldMissionStatus.Traveling && mission.Kind == WorldMissionKind.Scout));
+    AssertEqual(WorldTrafficPolicy.MaxConcurrentScouts, state.Missions
+        .Where(mission => mission.Status == WorldMissionStatus.Traveling)
+        .Select(mission => mission.FactionId)
+        .Distinct(StringComparer.Ordinal)
+        .Count());
+
+    var firstOrder = Enumerable.Range(0, 9)
+        .Select(index => "Faction" + index)
+        .OrderBy(factionId => WorldTrafficPolicy.StableDailyFactionOrder(factionId, 60_000))
+        .ToArray();
+    var repeatedOrder = Enumerable.Range(0, 9)
+        .Select(index => "Faction" + index)
+        .OrderBy(factionId => WorldTrafficPolicy.StableDailyFactionOrder(factionId, 60_000))
+        .ToArray();
+    var nextDayOrder = Enumerable.Range(0, 9)
+        .Select(index => "Faction" + index)
+        .OrderBy(factionId => WorldTrafficPolicy.StableDailyFactionOrder(factionId, 120_000))
+        .ToArray();
+    AssertEqual(true, firstOrder.SequenceEqual(repeatedOrder));
+    AssertEqual(false, firstOrder.SequenceEqual(nextDayOrder));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestWorldTrafficRepairsLegacyScoutSpam()
+{
+    var state = new WorldState(4242);
+    var target = state.CreateSettlement("target", "Target", "TargetFaction");
+    var journeys = new List<(WorldSettlement Home, WorldCitizen Crew, WorldMission Mission)>();
+    for (var index = 0; index < 9; index++)
+    {
+        var home = state.CreateSettlement("home-" + index, "Home " + index, "ScoutFaction" + index);
+        var crew = state.CreateCitizen("Scout " + index, 30, Sex.Female, "scout", home.Id);
+        var mission = state.DispatchMission(
+            WorldMissionKind.Scout,
+            home.FactionId,
+            home.Id,
+            target.Id,
+            0,
+            10 * 60_000,
+            amount: 100,
+            crewCitizenId: crew.Id);
+        state.TransferAsset(crew.Id, home.Id, mission.Id, "legacy scout wave");
+        journeys.Add((home, crew, mission));
+    }
+
+    var repaired = WorldTrafficPolicy.ReconcileExcessMissions(state);
+
+    AssertEqual(6, repaired);
+    AssertEqual(WorldTrafficPolicy.MaxConcurrentScouts, state.Missions.Count);
+    AssertEqual(6, journeys.Count(journey => state.GetOwner(journey.Crew.Id) == journey.Home.Id));
+    AssertEqual(3, journeys.Count(journey => state.GetOwner(journey.Crew.Id) == journey.Mission.Id));
+    AssertEqual(6, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
     AssertEqual(0, state.Validate().Count());
 }
 

@@ -22,11 +22,7 @@ internal static class ScoutingActionExecutor
             return false;
         }
 
-        // One scouting party per faction in transit at a time — do not stack new ones each day.
-        if (state.Missions.Any(mission =>
-            mission.Status == WorldMissionStatus.Traveling
-            && mission.Kind == WorldMissionKind.Scout
-            && string.Equals(mission.FactionId, plan.FactionId, StringComparison.Ordinal)))
+        if (!WorldTrafficPolicy.CanDispatchMission(state, WorldMissionKind.Scout, plan.FactionId))
         {
             return false;
         }

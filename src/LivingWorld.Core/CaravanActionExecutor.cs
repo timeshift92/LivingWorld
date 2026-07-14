@@ -12,11 +12,7 @@ internal static class CaravanActionExecutor
             return false;
         }
 
-        // One travelling caravan per faction at a time keeps the world-map readable and prevents
-        // a merchant faction from flooding the same trade route every simulated day.
-        if (state.Caravans.Any(caravan =>
-            caravan.Status == CaravanStatus.Traveling
-            && string.Equals(caravan.FactionId, plan.FactionId, StringComparison.Ordinal)))
+        if (!WorldTrafficPolicy.CanDispatchCaravan(state, plan.FactionId))
         {
             return false;
         }
