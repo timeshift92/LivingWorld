@@ -2,7 +2,7 @@ namespace LivingWorld.Core;
 
 internal static class SettlementDevelopmentActionExecutor
 {
-    public static bool Execute(WorldState state, EntityId settlementId, WorldWarRequest request)
+    public static ActionAttemptResult Execute(WorldState state, EntityId settlementId, WorldWarRequest request)
     {
         var result = SettlementDevelopmentService.DevelopSettlement(
             state,
@@ -19,6 +19,8 @@ internal static class SettlementDevelopmentActionExecutor
                 SpecialistGrowthStep = request.DevelopmentSpecialistGrowthStep,
             });
 
-        return result.SettlementsDeveloped > 0;
+        return result.SettlementsDeveloped > 0
+            ? ActionAttemptResult.Success("settlement developed")
+            : ActionAttemptResult.Failed(ActionAttemptReason.InsufficientSupplies, "settlement development requirements were not met");
     }
 }

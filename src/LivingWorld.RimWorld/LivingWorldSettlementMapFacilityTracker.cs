@@ -71,6 +71,10 @@ public static class LivingWorldSettlementMapFacilityTracker
             {
                 updates++;
             }
+            else if (result.Status is not SettlementMapDamageStatus.NoDamage)
+            {
+                throw new System.InvalidOperationException(result.Reason);
+            }
 
             component.MarkFacilityReconciled(facilityId);
         }

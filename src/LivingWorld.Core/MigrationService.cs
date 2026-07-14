@@ -52,7 +52,7 @@ public static class MigrationService
             return (0, 0);
         }
 
-        var plans = new List<(WorldSettlement Settlement, SettlementMigrationStatus Status, IReadOnlyList<WorldCitizen> Candidates, WorldSettlement? Target)>();
+        var plans = new List<(WorldSettlement Settlement, SettlementMigrationStatus Status, IReadOnlyList<WorldCitizen> Candidates, WorldSettlement Target)>();
         foreach (var settlement in state.Settlements.OrderBy(settlement => settlement.Id.Value))
         {
             var status = state.GetSettlementMigrationStatus(settlement.Id, request.FoodResourceKey, request.FoodPerCitizen);
@@ -70,24 +70,17 @@ public static class MigrationService
                 .Take(maxPerSettlement)
                 .ToList();
 
-            plans.Add((
-                settlement,
-                status,
-                candidates,
-                FindStableTarget(state, settlement, request)));
+            var target = FindStableTarget(state, settlement, request);
+            if (target != null && candidates.Count > 0)
+            {
+                plans.Add((settlement, status, candidates, target));
+            }
         }
 
         foreach (var plan in plans)
         {
             foreach (var citizen in plan.Candidates)
             {
-                var refugee = state.MarkCitizenRefugee(citizen.Id, plan.Status.PrimaryReason);
-                created++;
-                if (plan.Target == null)
-                {
-                    continue;
-                }
-
                 var travelTicks = Math.Max(1, request.TravelDurationTicks);
                 var group = state.CreateMigrationGroup(
                     plan.Settlement.Id,
@@ -96,9 +89,11 @@ public static class MigrationService
                     request.Tick,
                     request.Tick + travelTicks,
                     plan.Status.PrimaryReason);
+                var refugee = state.MarkCitizenRefugee(citizen.Id, plan.Status.PrimaryReason);
                 var migrating = refugee with { Status = CitizenStatus.Migrating };
                 state.ReplaceCitizenForSimulation(migrating);
                 state.SetOwnerForLedger(migrating.Id, group.Id);
+                created++;
                 groupsCreated++;
             }
         }
@@ -112,6 +107,7 @@ public static class MigrationService
         var groups = state.MigrationGroups
             .Where(group =>
                 group.Status == MigrationGroupStatus.Traveling
+                && !string.Equals(group.Reason, ReasonSettlementFounding, StringComparison.Ordinal)
                 && group.TargetSettlementId.HasValue
                 && group.ArrivalTick <= request.Tick)
             .OrderBy(group => group.ArrivalTick)
@@ -136,8 +132,30 @@ public static class MigrationService
             var group = arrival.Group;
             var target = arrival.Target;
             if (target?.IsActive != true
-                || !string.Equals(target.FactionId, group.FactionId, StringComparison.Ordinal))
+                || !string.Equals(target.FactionId, group.FactionId, StringComparison.Ordinal)
+                || state.GetSettlementFoodStatus(target.Id, request.FoodResourceKey, request.FoodPerCitizen).IsShortage)
             {
+                var reroute = FindStableTargetForGroup(state, group, request);
+                if (reroute != null)
+                {
+                    state.RerouteMigrationGroup(
+                        group.Id,
+                        reroute.Id,
+                        request.Tick + Math.Max(1, request.TravelDurationTicks),
+                        "migration target unavailable");
+                    continue;
+                }
+
+                var fallback = FindReturnSettlement(state, group, request);
+                if (fallback != null)
+                {
+                    state.ReturnMigrationGroup(group.Id, fallback.Id, "no viable migration destination");
+                }
+                else
+                {
+                    state.LoseMigrationGroup(group.Id, "no viable migration destination or return settlement");
+                }
+
                 continue;
             }
 
@@ -165,6 +183,51 @@ public static class MigrationService
         }
 
         return completed;
+    }
+
+    private static WorldSettlement? FindStableTargetForGroup(
+        WorldState state,
+        WorldMigrationGroup group,
+        MigrationSimulationRequest request)
+    {
+        return state.Settlements
+            .Where(settlement => settlement.IsActive)
+            .Where(settlement => settlement.Id != group.SourceSettlementId)
+            .Where(settlement => settlement.Id != group.TargetSettlementId)
+            .Where(settlement => string.Equals(settlement.FactionId, group.FactionId, StringComparison.Ordinal))
+            .Where(settlement => !state.GetSettlementFoodStatus(
+                settlement.Id,
+                request.FoodResourceKey,
+                request.FoodPerCitizen).IsShortage)
+            .OrderByDescending(settlement => state.GetSettlementFoodStatus(
+                settlement.Id,
+                request.FoodResourceKey,
+                request.FoodPerCitizen).FoodDays)
+            .ThenBy(settlement => settlement.Id.Value)
+            .FirstOrDefault();
+    }
+
+    private static WorldSettlement? FindReturnSettlement(
+        WorldState state,
+        WorldMigrationGroup group,
+        MigrationSimulationRequest request)
+    {
+        var source = state.GetSettlement(group.SourceSettlementId);
+        if (source?.IsActive == true
+            && string.Equals(source.FactionId, group.FactionId, StringComparison.Ordinal))
+        {
+            return source;
+        }
+
+        return state.Settlements
+            .Where(settlement => settlement.IsActive)
+            .Where(settlement => string.Equals(settlement.FactionId, group.FactionId, StringComparison.Ordinal))
+            .OrderByDescending(settlement => state.GetSettlementFoodStatus(
+                settlement.Id,
+                request.FoodResourceKey,
+                request.FoodPerCitizen).FoodDays)
+            .ThenBy(settlement => settlement.Id.Value)
+            .FirstOrDefault();
     }
 
     private static WorldSettlement? FindStableTarget(

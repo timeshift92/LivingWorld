@@ -36,7 +36,6 @@ public static class LivingWorldSettlementVisitMapEntryService
         string caravanLabel)
     {
         Map? map = null;
-        var generatedForThisEntry = false;
         visitSite.BeginMapSession();
 
         try
@@ -44,7 +43,6 @@ public static class LivingWorldSettlementVisitMapEntryService
             map = visitSite.Map;
             if (map == null)
             {
-                generatedForThisEntry = true;
                 map = MapGenerator.GenerateMap(
                     VisitMapSize,
                     visitSite,
@@ -116,13 +114,27 @@ public static class LivingWorldSettlementVisitMapEntryService
         }
         catch (Exception exception)
         {
-            visitSite.AbortMapSession();
             Log.Error($"[LivingWorld] Could not enter settlement '{visitSite.Label}' with caravan '{caravanLabel}': {exception}");
-            Reject(caravan, exception.Message);
+            var enteredPlayerPawns = map?.mapPawns.PawnsInFaction(Faction.OfPlayer)
+                .Where(pawn => pawn != null && pawn.Spawned && !pawn.Dead)
+                .ToList() ?? new List<Pawn>();
+            if (map != null && enteredPlayerPawns.Count > 0)
+            {
+                // CaravanEnterMapUtility can fail after moving only part of a caravan. That map is
+                // now player-owned runtime state and must remain active until the player leaves it.
+                visitSite.MarkPlayerCaravanEntered();
+                Current.Game.CurrentMap = map;
+                CameraJumper.TryJump(enteredPlayerPawns[0]);
+                Messages.Message(
+                    "LW_SettlementVisitSitePartialEntry".Translate(caravanLabel, enteredPlayerPawns.Count),
+                    MessageTypeDefOf.CautionInput,
+                    historical: false);
+                return;
+            }
 
-            if (generatedForThisEntry
-                && map != null
-                && !map.mapPawns.PawnsInFaction(Faction.OfPlayer).Any(pawn => pawn.Spawned && !pawn.Dead))
+            visitSite.AbortMapSession();
+            Reject(caravan, exception.Message);
+            if (map != null)
             {
                 Current.Game.DeinitAndRemoveMap(map, notifyPlayer: false);
             }
@@ -153,7 +165,6 @@ public static class LivingWorldSettlementVisitMapEntryService
     {
         Messages.Message(
             "LW_SettlementVisitSiteUnavailable".Translate(reason ?? "unknown error"),
-            caravan,
             MessageTypeDefOf.RejectInput,
             historical: false);
     }

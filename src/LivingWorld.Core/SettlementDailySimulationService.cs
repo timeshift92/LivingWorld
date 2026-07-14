@@ -44,6 +44,7 @@ public static class SettlementDailySimulationService
         state.AdvanceToTick(request.Tick);
 
         var settlements = state.Settlements
+            .Where(settlement => settlement.IsActive)
             .OrderBy(settlement => settlement.Id.Value)
             .Select(settlement => new
             {
@@ -82,7 +83,7 @@ public static class SettlementDailySimulationService
                 }
             }
 
-            if (day % birthIntervalDays == 0
+            if (IsBirthDay(state.WorldSeed, settlement.Id, day, birthIntervalDays)
                 && population.Adults >= 2
                 && HasHousingForBirth(state, settlement.Id, population.Total)
                 && state.GetOwnedResourceQuantity(settlement.Id, request.FoodResourceKey) >= population.Total)
@@ -101,6 +102,20 @@ public static class SettlementDailySimulationService
         }
 
         return new SettlementDailySimulationResult(consumed, births, shortages);
+    }
+
+    private static bool IsBirthDay(int worldSeed, EntityId settlementId, int day, int intervalDays)
+    {
+        if (intervalDays <= 1)
+        {
+            return true;
+        }
+
+        var mixed = unchecked(
+            ((long)worldSeed * 1_103_515_245L)
+            ^ (settlementId.Value * 2_654_435_761L));
+        var phase = (int)((mixed & long.MaxValue) % intervalDays);
+        return day % intervalDays == phase;
     }
 
     private static Sex DeterministicSex(int worldSeed, long settlementId, int day, int childIndex)

@@ -37,6 +37,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private int cachedMissionCount = -1;
     private List<string> cachedActiveWarbandRows = new();
     private List<string> cachedWorldActionRows = new();
+    private List<string> cachedActionAttemptRows = new();
     private List<(string FactionId, string Text, float Fill)> cachedFactionStrengthRows = new();
     private List<string> cachedWarHistoryRows = new();
     private List<(string FactionId, string Text, float Fill)> cachedFactionEconomyRows = new();
@@ -48,7 +49,6 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private List<string> cachedDrifterRows = new();
     private List<string> cachedKnownIntelRows = new();
     private List<string> cachedConflictRows = new();
-    private List<(string AllyFactionId, string EnemyFactionId, string Label)> cachedAllianceOffers = new();
     private List<string> cachedEventRows = new();
 
     public override Vector2 InitialSize => new Vector2(760f, 560f);
@@ -128,6 +128,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + 90f
             + 30f
             + (cachedWorldActionRows.Count * 26f)
+            + (cachedActionAttemptRows.Count > 0 ? 30f + (cachedActionAttemptRows.Count * 24f) : 0f)
             + (cachedActiveWarbandRows.Count * 26f)
             + (cachedFactionStrengthRows.Count * 26f)
             + (cachedWarHistoryRows.Count * 24f)
@@ -137,7 +138,6 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             + (cachedWatcherRows.Count * 26f)
             + 30f
             + (cachedConflictRows.Count * 24f)
-            + (cachedAllianceOffers.Count * 26f)
             + (cachedEventRows.Count * 24f);
         var viewRect = new Rect(0f, 0f, scrollRect.width - 16f, viewHeight);
 
@@ -230,6 +230,17 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             y += 26f;
         }
 
+        if (cachedActionAttemptRows.Count > 0)
+        {
+            Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_ActionAttemptsHeader".Translate());
+            y += 30f;
+            foreach (var row in cachedActionAttemptRows)
+            {
+                Widgets.Label(new Rect(0f, y, viewRect.width, 22f), row);
+                y += 24f;
+            }
+        }
+
         foreach (var row in cachedActiveWarbandRows)
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 24f), row);
@@ -273,43 +284,6 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         {
             Widgets.Label(new Rect(0f, y, viewRect.width, 22f), row);
             y += 24f;
-        }
-
-        // Player war participation (Slice 2): propose an alliance against a common enemy. The button is
-        // the player's envoy — clicking it sends a diplomatic overture that, if the faction is at war and
-        // reconcilable, forms the alliance (an Ally-stance relation). Offered only for neutral factions.
-        foreach (var offer in cachedAllianceOffers)
-        {
-            if (Widgets.ButtonText(new Rect(0f, y, viewRect.width, 24f), offer.Label))
-            {
-                var result = AllianceService.FormAlliance(
-                    component.State, offer.AllyFactionId, Find.TickManager?.TicksGame ?? 0);
-                lastActionResult = (result.Status == AllianceFormStatus.Formed
-                    ? "LW_AllianceFormed".Translate(ResolveFactionName(offer.AllyFactionId).Named("faction"))
-                    : "LW_AllianceFailed".Translate(ResolveFactionName(offer.AllyFactionId).Named("faction"))).ToString();
-
-                // Slice 3: the new ally names the enemy as your war objective.
-                if (result.Status == AllianceFormStatus.Formed)
-                {
-                    // Bridge to REAL RimWorld relations: the ally actually becomes a friendly/allied
-                    // faction (helps in fights, trades, stops raiding) — not just a ledger number.
-                    LivingWorldFactionRelations.FormRealAlliance(offer.AllyFactionId);
-
-                    // ...and picking a side has a real cost: the enemy becomes hostile and will raid you.
-                    LivingWorldFactionRelations.FormRealEnmity(offer.EnemyFactionId);
-
-                    Find.LetterStack?.ReceiveLetter(
-                        "LW_AllianceObjectiveLetterLabel".Translate(),
-                        "LW_AllianceObjectiveLetterText".Translate(
-                            ResolveFactionName(offer.AllyFactionId).Named("ally"),
-                            ResolveFactionName(offer.EnemyFactionId).Named("enemy")),
-                        LetterDefOf.PositiveEvent);
-                }
-
-                RefreshCachedRows(state);
-            }
-
-            y += 26f;
         }
 
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_EventsHeader".Translate());
@@ -396,7 +370,10 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
             .Select(movement => movement.ArmyId));
         cachedArmyRows = state.Armies
-            .Where(army => debugExact || travelingArmyIds.Contains(army.Id))
+            .Where(army => debugExact
+                || (travelingArmyIds.Contains(army.Id)
+                    && LivingWorldTransitVisibility.IsKnownFromSource(
+                        state, army.FactionId, army.SourceSettlementId)))
             .OrderBy(army => army.Id.Value)
             .Take(MaxArmyRows)
             .Select(army =>
@@ -491,8 +468,26 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         cachedArmyMovementCount = state.ArmyMovements.Count;
         cachedWorldActionRows = BuildWorldActionRows(state);
+        cachedActionAttemptRows = debugExact
+            ? state.RecentActionAttempts
+                .OrderByDescending(attempt => attempt.Tick)
+                .ThenBy(attempt => attempt.FactionId, System.StringComparer.Ordinal)
+                .Take(12)
+                .Select(attempt => "LW_ActionAttemptRow".Translate(
+                    attempt.FactionId.Named("faction"),
+                    attempt.Action.Named("action"),
+                    attempt.Reason.Named("reason"),
+                    attempt.Detail.Named("detail")).ToString())
+                .ToList()
+            : new List<string>();
         cachedActiveWarbandRows = state.ArmyMovements
             .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
+            .Where(movement =>
+            {
+                var army = state.GetArmy(movement.ArmyId);
+                return army != null && LivingWorldTransitVisibility.IsKnownFromSource(
+                    state, army.FactionId, army.SourceSettlementId);
+            })
             .OrderBy(movement => movement.ArrivalTick)
             .ThenBy(movement => movement.ArmyId.Value)
             .Take(MaxWarRows)
@@ -502,7 +497,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 var target = state.GetSettlement(movement.TargetSettlementId);
                 return "LW_WarbandMovementLine".Translate(
                     (army?.FactionId ?? "?").Named("faction"),
-                    (target?.Name ?? "?").Named("target"),
+                    (target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
+                        ? target.Name
+                        : "LW_UnknownDestination".Translate().ToString()).Named("target"),
                     movement.ArrivalTick.Named("eta")).ToString();
             })
             .ToList();
@@ -636,54 +633,56 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             })
             .ToList();
 
-        // Alliance offers (Slice 2): for each ongoing war the player is not part of, offer to ally with a
-        // neutral participant against the other. Deduped per prospective ally, capped like the war rows.
-        cachedAllianceOffers = new List<(string AllyFactionId, string EnemyFactionId, string Label)>();
-        var playerId = state.PlayerFactionId;
-        if (!string.IsNullOrEmpty(playerId))
-        {
-            var offered = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
-            foreach (var conflict in state.Conflicts
-                .Where(conflict => conflict.Status == WorldConflictStatus.Active
-                    && !conflict.Involves(playerId!))
-                .OrderByDescending(conflict => conflict.WarExhaustionA + conflict.WarExhaustionB)
-                .ThenBy(conflict => conflict.Id.Value))
-            {
-                TryAddAllianceOffer(state, playerId!, conflict.FactionA, conflict.FactionB, offered);
-                TryAddAllianceOffer(state, playerId!, conflict.FactionB, conflict.FactionA, offered);
-                if (cachedAllianceOffers.Count >= MaxWarRows)
-                {
-                    break;
-                }
-            }
-        }
     }
 
     private static List<string> BuildWorldActionRows(WorldState state)
     {
         var warbands = state.ArmyMovements
             .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
+            .Where(movement =>
+            {
+                var army = state.GetArmy(movement.ArmyId);
+                return army != null && LivingWorldTransitVisibility.IsKnownFromSource(
+                    state, army.FactionId, army.SourceSettlementId);
+            })
             .OrderBy(movement => movement.ArrivalTick)
             .ThenBy(movement => movement.ArmyId.Value)
             .ToList();
         var caravans = state.Caravans
             .Where(caravan => caravan.Status == CaravanStatus.Traveling)
+            .Where(caravan => LivingWorldTransitVisibility.IsKnownFromSource(
+                state, caravan.FactionId, caravan.SourceSettlementId))
             .OrderBy(caravan => caravan.ArrivalTick)
             .ThenBy(caravan => caravan.Id.Value)
             .ToList();
         var scouts = state.Missions
             .Where(mission => mission.Status == WorldMissionStatus.Traveling && mission.Kind == WorldMissionKind.Scout)
+            .Where(mission => LivingWorldTransitVisibility.IsKnownFromSource(
+                state, mission.FactionId, mission.OriginSettlementId))
             .OrderBy(mission => mission.ArrivalTick)
             .ThenBy(mission => mission.Id.Value)
             .ToList();
         var diplomats = state.Missions
             .Where(mission => mission.Status == WorldMissionStatus.Traveling && mission.Kind == WorldMissionKind.Diplomat)
+            .Where(mission => LivingWorldTransitVisibility.IsKnownFromSource(
+                state, mission.FactionId, mission.OriginSettlementId))
             .OrderBy(mission => mission.ArrivalTick)
             .ThenBy(mission => mission.Id.Value)
             .ToList();
         var settlers = state.MigrationGroups
             .Where(group => group.Status == MigrationGroupStatus.Traveling
                 && string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, System.StringComparison.Ordinal))
+            .Where(group => LivingWorldTransitVisibility.IsKnownFromSource(
+                state, group.FactionId, group.SourceSettlementId))
+            .OrderBy(group => group.ArrivalTick)
+            .ThenBy(group => group.Id.Value)
+            .ToList();
+        var migrations = state.MigrationGroups
+            .Where(group => group.Status == MigrationGroupStatus.Traveling
+                && !string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, System.StringComparison.Ordinal)
+                && group.TargetSettlementId.HasValue)
+            .Where(group => LivingWorldTransitVisibility.IsKnownFromSource(
+                state, group.FactionId, group.SourceSettlementId))
             .OrderBy(group => group.ArrivalTick)
             .ThenBy(group => group.Id.Value)
             .ToList();
@@ -691,6 +690,8 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .Where(worldEvent => worldEvent.Kind == WorldEventKind.SettlementDeveloped
                 && worldEvent.Tick >= System.Math.Max(0, state.CurrentTick - 60_000)
                 && worldEvent.SettlementId.HasValue)
+            .Where(worldEvent => LivingWorldTransitVisibility.CanRevealSettlement(
+                state, worldEvent.SettlementId!.Value))
             .OrderByDescending(worldEvent => worldEvent.Tick)
             .ThenByDescending(worldEvent => worldEvent.Id.Value)
             .ToList();
@@ -703,6 +704,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 scouts.Count.Named("scouts"),
                 diplomats.Count.Named("diplomats"),
                 settlers.Count.Named("settlers"),
+                migrations.Count.Named("migrations"),
                 developments.Count.Named("developments")).ToString(),
         };
 
@@ -713,7 +715,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             return "LW_WorldActionRow".Translate(
                 "LW_MissionKind_Warband".Translate().Named("kind"),
                 (army?.FactionId ?? "?").Named("faction"),
-                (target?.Name ?? "?").Named("target"),
+                (target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
+                    ? target.Name
+                    : "LW_UnknownDestination".Translate().ToString()).Named("target"),
                 DaysUntil(movement.ArrivalTick, state.CurrentTick).Named("days")).ToString();
         }));
 
@@ -723,7 +727,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             return "LW_WorldActionRow".Translate(
                 "LW_MissionKind_Trader".Translate().Named("kind"),
                 caravan.FactionId.Named("faction"),
-                (target?.Name ?? "?").Named("target"),
+                (target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
+                    ? target.Name
+                    : "LW_UnknownDestination".Translate().ToString()).Named("target"),
                 DaysUntil(caravan.ArrivalTick, state.CurrentTick).Named("days")).ToString();
         }));
 
@@ -733,7 +739,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             return "LW_WorldActionRow".Translate(
                 "LW_MissionKind_Scout".Translate().Named("kind"),
                 mission.FactionId.Named("faction"),
-                (target?.Name ?? "?").Named("target"),
+                (target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
+                    ? target.Name
+                    : "LW_UnknownDestination".Translate().ToString()).Named("target"),
                 DaysUntil(mission.ArrivalTick, state.CurrentTick).Named("days")).ToString();
         }));
 
@@ -743,7 +751,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             return "LW_WorldActionRow".Translate(
                 "LW_MissionKind_Diplomat".Translate().Named("kind"),
                 mission.FactionId.Named("faction"),
-                (target?.Name ?? "?").Named("target"),
+                (target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
+                    ? target.Name
+                    : "LW_UnknownDestination".Translate().ToString()).Named("target"),
                 DaysUntil(mission.ArrivalTick, state.CurrentTick).Named("days")).ToString();
         }));
 
@@ -755,6 +765,18 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     ? group.PlannedSettlementSlug
                     : group.PlannedSettlementName).Named("target"),
                 DaysUntil(group.ArrivalTick, state.CurrentTick).Named("days")).ToString()));
+
+        rows.AddRange(migrations.Take(3).Select(group =>
+        {
+            var target = group.TargetSettlementId.HasValue
+                ? state.GetSettlement(group.TargetSettlementId.Value)
+                : null;
+            return "LW_WorldActionRow".Translate(
+                "LW_MissionKind_Refugees".Translate().Named("kind"),
+                group.FactionId.Named("faction"),
+                (target?.Name ?? "LW_UnknownDestination".Translate().ToString()).Named("target"),
+                DaysUntil(group.ArrivalTick, state.CurrentTick).Named("days")).ToString();
+        }));
 
         rows.AddRange(developments.Take(3).Select(worldEvent =>
         {
@@ -773,32 +795,6 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
     private static int DaysUntil(int arrivalTick, int currentTick)
     {
         return System.Math.Max(0, (int)System.Math.Ceiling((arrivalTick - currentTick) / 60_000d));
-    }
-
-    // Offer an alliance with a neutral, not-yet-allied faction against its current enemy. Irreconcilable
-    // and hostile factions are Hostile stance and excluded; already-allied factions are excluded too.
-    private void TryAddAllianceOffer(
-        WorldState state,
-        string playerId,
-        string allyFactionId,
-        string enemyFactionId,
-        System.Collections.Generic.HashSet<string> offered)
-    {
-        if (string.Equals(allyFactionId, playerId, System.StringComparison.Ordinal)
-            || offered.Contains(allyFactionId)
-            || AllianceService.IsAlliedWithPlayer(state, allyFactionId)
-            || DiplomacyService.GetStance(state, playerId, allyFactionId) != RelationStance.Neutral)
-        {
-            return;
-        }
-
-        offered.Add(allyFactionId);
-        cachedAllianceOffers.Add((
-            allyFactionId,
-            enemyFactionId,
-            "LW_ProposeAllianceButton".Translate(
-                ResolveFactionName(allyFactionId).Named("faction"),
-                ResolveFactionName(enemyFactionId).Named("enemy")).ToString()));
     }
 
     // Resolve a ledger faction id (a RimWorld faction defName) to its display name so the conflict

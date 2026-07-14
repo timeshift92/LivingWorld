@@ -75,6 +75,8 @@ public static class LivingWorldSettlementMapMaterializationService
             var requestedDefenders = bindableDefenders.Count > 0
                 ? bindableDefenders.Count
                 : EstimateDefenderCount(component.State, context.LedgerSettlement.Id);
+            var warehouseRequest = BuildResourceRequest(component.State, context.LedgerSettlement.Id);
+            visitMapComponent?.ConfigureWarehouseManifest(warehouseRequest);
             var prepared = requestedDefenders > 0
                 ? SettlementMaterializationService.PrepareDefense(
                     component.State,
@@ -82,7 +84,7 @@ public static class LivingWorldSettlementMapMaterializationService
                         context.LedgerSettlement.Id,
                         requestedDefenders,
                         DefenseLeaseLifetimeTicks,
-                        BuildResourceRequest(component.State, context.LedgerSettlement.Id),
+                        warehouseRequest,
                         purposeKey))
                 : new SettlementDefenseMaterializationResult(
                     SettlementDefenseMaterializationStatus.NoDefenders,
@@ -179,7 +181,8 @@ public static class LivingWorldSettlementMapMaterializationService
                 return 0;
             }
 
-            AssignSettlementLord(map, context.Faction);
+            AssignSettlementLord(component.State, map, context.Faction, purposeKey, includeResidents: false);
+            visitMapComponent?.RefreshWarehouseMaterializedCounts();
             var visitSite = context.VisitSite;
             var nextVersion = Math.Max(1, (visitSite?.MaterializedVersion ?? 0) + 1);
             if (visitSite != null)
@@ -330,15 +333,7 @@ public static class LivingWorldSettlementMapMaterializationService
 
     private static void DestroyRollbackPawn(Pawn pawn)
     {
-        pawn.GetLord()?.Notify_PawnLost(pawn, PawnLostCondition.ForcedToJoinOtherLord);
-        if (pawn.Corpse is { Destroyed: false } corpse)
-        {
-            corpse.Destroy(DestroyMode.Vanish);
-        }
-        else if (!pawn.Destroyed)
-        {
-            pawn.Destroy(DestroyMode.Vanish);
-        }
+        DetachRelationsAndDestroy(pawn);
     }
 
     private static bool TryRollback(Action action, string layer)
@@ -475,7 +470,7 @@ public static class LivingWorldSettlementMapMaterializationService
             var bind = MaterializationLeaseService.BindPawn(state, lease.Id, pawn.thingIDNumber);
             if (bind.Status != MaterializationLeaseBindStatus.Success)
             {
-                pawn.Destroy();
+                DetachRelationsAndDestroy(pawn);
                 continue;
             }
 
@@ -487,7 +482,7 @@ public static class LivingWorldSettlementMapMaterializationService
         return spawned;
     }
 
-    private static int SpawnGeneratedResidents(
+    internal static int SpawnGeneratedResidents(
         WorldState state,
         Map map,
         Faction faction,
@@ -534,7 +529,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 var bind = MaterializationLeaseService.BindPawn(state, lease.Id, pawn.thingIDNumber);
                 if (bind.Status != MaterializationLeaseBindStatus.Success)
                 {
-                    pawn.Destroy(DestroyMode.Vanish);
+                    DetachRelationsAndDestroy(pawn);
                     continue;
                 }
 
@@ -544,9 +539,9 @@ public static class LivingWorldSettlementMapMaterializationService
             }
             catch (Exception error)
             {
-                if (pawn?.Spawned == true)
+                if (pawn != null)
                 {
-                    pawn.Destroy(DestroyMode.Vanish);
+                    DetachRelationsAndDestroy(pawn);
                 }
 
                 Log.Warning($"[LivingWorld] Could not materialize resident {citizen.Id}: {error.Message}");
@@ -565,13 +560,43 @@ public static class LivingWorldSettlementMapMaterializationService
                 continue;
             }
 
-            pawn.GetLord()?.Notify_PawnLost(pawn, PawnLostCondition.ForcedToJoinOtherLord);
+            DetachRelationsAndDestroy(pawn);
+        }
+    }
+
+    internal static void DetachRelationsAndDestroy(Pawn pawn)
+    {
+        if (pawn == null)
+        {
+            return;
+        }
+
+        pawn.GetLord()?.Notify_PawnLost(pawn, PawnLostCondition.ForcedToJoinOtherLord);
+        pawn.relations?.ClearAllRelations();
+        if (pawn.Corpse is { Destroyed: false } corpse)
+        {
+            corpse.Destroy(DestroyMode.Vanish);
+        }
+        else if (!pawn.Destroyed)
+        {
             pawn.Destroy(DestroyMode.Vanish);
         }
     }
 
-    private static void AssignSettlementLord(Map map, Faction faction)
+    internal static void AssignSettlementLord(
+        WorldState state,
+        Map map,
+        Faction faction,
+        string purposeKey,
+        bool includeResidents)
     {
+        var defenseCitizenIds = state.MaterializationLeases
+            .Where(lease =>
+                lease.IsActive
+                && string.Equals(lease.PurposeKey, purposeKey, StringComparison.Ordinal)
+                && (includeResidents || lease.Purpose == MaterializationPurpose.SettlementDefense))
+            .Select(lease => lease.CitizenId)
+            .ToHashSet();
         var pawns = map.mapPawns.AllPawnsSpawned
             .Where(pawn =>
                 pawn != null
@@ -579,6 +604,7 @@ public static class LivingWorldSettlementMapMaterializationService
                 && pawn.Faction == faction
                 && pawn.RaceProps?.Humanlike == true
                 && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId == true
+                && defenseCitizenIds.Contains(pawn.GetComp<CompLivingWorldIdentity>()!.LedgerId)
                 && pawn.GetLord() == null)
             .OrderBy(pawn => pawn.thingIDNumber)
             .ToList();
@@ -651,7 +677,8 @@ public static class LivingWorldSettlementMapMaterializationService
                 pawnKind,
                 faction,
                 PawnGenerationContext.NonPlayer,
-                forceGenerateNewPawn: true));
+                forceGenerateNewPawn: true,
+                canGeneratePawnRelations: false));
 
             var citizen = state.GetCitizen(lease.CitizenId);
             if (citizen != null && !string.IsNullOrWhiteSpace(citizen.Name))
@@ -664,6 +691,12 @@ public static class LivingWorldSettlementMapMaterializationService
         }
         catch
         {
+            if (pawn != null)
+            {
+                DetachRelationsAndDestroy(pawn);
+            }
+
+            pawn = null!;
             return false;
         }
     }
@@ -738,24 +771,57 @@ public static class LivingWorldSettlementMapMaterializationService
         }
     }
 
-    private static IReadOnlyDictionary<string, int> BuildResourceRequest(WorldState state, EntityId settlementId)
+    internal static IReadOnlyDictionary<string, int> BuildResourceRequest(
+        WorldState state,
+        EntityId settlementId,
+        IReadOnlyDictionary<string, int>? physicalQuantities = null)
     {
         var requested = new Dictionary<string, int>(StringComparer.Ordinal);
-        RequestIfAvailable("Steel", 80);
-        RequestIfAvailable("PackagedSurvivalMeal", 25);
-        RequestIfAvailable("MedicineIndustrial", 8);
-        RequestIfAvailable("ComponentIndustrial", 8);
-        RequestIfAvailable("Silver", 250);
-        return requested;
-
-        void RequestIfAvailable(string resourceKey, int cap)
+        var population = state.GetSettlementPopulation(settlementId).Total;
+        var capability = state.GetSettlementCapability(settlementId);
+        var storageCapacity = state.GetSettlementFacilities(settlementId)
+            .Where(facility => facility.Kind == SettlementFacilityKind.Storage && facility.ConditionPercent > 0)
+            .Sum(facility => Math.Max(1, facility.Level) * 750 * facility.ConditionPercent / 100);
+        var remainingCapacity = Math.Max(250, population * 10 + storageCapacity);
+        var available = state.ResourcesForOwner(settlementId)
+            .GroupBy(resource => resource.ResourceKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(resource => resource.Quantity), StringComparer.Ordinal);
+        foreach (var physical in physicalQuantities ?? new Dictionary<string, int>())
         {
-            var available = ResourceLedgerService.GetQuantity(state, settlementId, resourceKey);
-            if (available > 0)
+            if (!string.IsNullOrWhiteSpace(physical.Key) && physical.Value > 0)
             {
-                requested[resourceKey] = Math.Min(available, cap);
+                available[physical.Key] = available.TryGetValue(physical.Key, out var quantity)
+                    ? quantity + physical.Value
+                    : physical.Value;
             }
         }
+        var priority = new[]
+        {
+            "PackagedSurvivalMeal",
+            "MedicineIndustrial",
+            "ComponentIndustrial",
+            "Steel",
+            "Silver"
+        };
+        foreach (var resourceKey in priority.Concat(available.Keys.OrderBy(key => key, StringComparer.Ordinal)).Distinct(StringComparer.Ordinal))
+        {
+            if (remainingCapacity <= 0 || !available.TryGetValue(resourceKey, out var quantity) || quantity <= 0)
+            {
+                continue;
+            }
+
+            var resourceCapacity = resourceKey switch
+            {
+                "PackagedSurvivalMeal" => Math.Max(population * 7, capability?.FoodStorageCapacity ?? 0),
+                "MedicineIndustrial" => Math.Max(population / 2, capability?.MedicineStorageCapacity ?? 0),
+                _ => remainingCapacity
+            };
+            var allocated = Math.Min(quantity, Math.Min(remainingCapacity, Math.Max(1, resourceCapacity)));
+            requested[resourceKey] = allocated;
+            remainingCapacity -= allocated;
+        }
+
+        return requested;
     }
 
     private static void SpawnReservedResources(
@@ -807,7 +873,7 @@ public static class LivingWorldSettlementMapMaterializationService
         }
     }
 
-    private static int TrySpawnResourceStack(
+    internal static int TrySpawnResourceStack(
         Map map,
         EntityId returnOwnerId,
         string resourceKey,
@@ -846,7 +912,11 @@ public static class LivingWorldSettlementMapMaterializationService
                 thing = ThingMaker.MakeThing(def);
                 thing.stackCount = stack;
                 GenSpawn.Spawn(thing, cell, map);
-                LivingWorldSettlementMapResourceTracker.Track(thing, returnOwnerId, resourceKey);
+                LivingWorldSettlementMapResourceTracker.Track(
+                    thing,
+                    returnOwnerId,
+                    resourceKey,
+                    reservedQuantity: stack);
             }
             catch (Exception ex)
             {
@@ -904,7 +974,7 @@ public static class LivingWorldSettlementMapMaterializationService
                     {
                         if (!pawn.Destroyed)
                         {
-                            pawn.Destroy(DestroyMode.Vanish);
+                            DetachRelationsAndDestroy(pawn);
                         }
 
                         failedCount++;
@@ -957,7 +1027,8 @@ public static class LivingWorldSettlementMapMaterializationService
             pawnKind,
             faction,
             PawnGenerationContext.NonPlayer,
-            forceGenerateNewPawn: true);
+            forceGenerateNewPawn: true,
+            canGeneratePawnRelations: false);
         try
         {
             pawn = PawnGenerator.GeneratePawn(request);
@@ -968,7 +1039,7 @@ public static class LivingWorldSettlementMapMaterializationService
         {
             if (pawn is { Destroyed: false })
             {
-                pawn.Destroy(DestroyMode.Vanish);
+                DetachRelationsAndDestroy(pawn);
             }
 
             Log.Warning($"[LivingWorld] Could not spawn settlement animal '{animalKind}': {ex.Message}");

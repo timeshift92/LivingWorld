@@ -140,6 +140,7 @@ internal static class LivingWorldDrifterFoundingWorldBridge
                     continue;
                 }
 
+
                 var key = MarkerKeyPrefix + journey.Id.Value;
                 live.Add(key);
                 var markerIsNew = !existing.TryGetValue(key, out var marker);
@@ -160,11 +161,22 @@ internal static class LivingWorldDrifterFoundingWorldBridge
                     journey.CreatedTick,
                     journey.ArrivalTick,
                     faction?.Name ?? journey.FactionId,
-                    journey.PlannedName,
+                    LivingWorldTransitVisibility.CanRevealSettlement(state, journey.SponsorSettlementId)
+                        ? journey.PlannedName
+                        : "LW_UnknownDestination".Translate(),
                     journey.FounderDrifterIds.Count,
                     journey.FounderDrifterIds.Count,
                     $"PackagedSurvivalMeal {journey.FoodQuantity}, Steel {journey.SteelQuantity}, ComponentIndustrial {journey.ComponentQuantity}",
-                    "drifter founding expedition");
+                    "LW_MissionReason_DrifterFounding".Translate());
+                marker.SetStrategicVisibility(LivingWorldTransitVisibility.IsKnown(
+                    state,
+                    journey.FactionId,
+                    journey.SponsorSettlementId,
+                    journey.SponsorSettlementId,
+                    originTile,
+                    targetTile,
+                    journey.CreatedTick,
+                    journey.ArrivalTick));
                 if (markerIsNew)
                 {
                     worldObjects.Add(marker);

@@ -7,6 +7,21 @@ public enum DrifterFoundingJourneyStatus
     Cancelled
 }
 
+public enum DrifterFoundingMemberFate
+{
+    Pending,
+    Returned,
+    Missing,
+    Captured,
+    Settled,
+}
+
+public sealed record DrifterFoundingMemberOutcome(
+    EntityId DrifterId,
+    DrifterFoundingMemberFate Fate,
+    EntityId? CitizenId,
+    EntityId? SettlementId);
+
 /// <summary>
 /// A persisted group of unaffiliated drifters carrying real sponsor supplies to a reserved world
 /// destination. No settlement exists until this journey physically arrives.
@@ -26,4 +41,8 @@ public sealed record DrifterFoundingJourney(
     bool IsRaiderBand,
     int FoodQuantity,
     int SteelQuantity,
-    int ComponentQuantity);
+    int ComponentQuantity)
+{
+    public IReadOnlyList<DrifterFoundingMemberOutcome> MemberOutcomes { get; init; } =
+        Array.Empty<DrifterFoundingMemberOutcome>();
+}

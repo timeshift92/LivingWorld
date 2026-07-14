@@ -51,6 +51,8 @@ public sealed class WorldState
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
     private readonly Dictionary<EntityId, SortedSet<string>> _resourceKeysByOwner = new();
     private readonly List<WorldEvent> _events = new();
+    private readonly List<WorldActionAttempt> _recentActionAttempts = new();
+    private readonly Dictionary<(WarAction Action, ActionAttemptReason Reason), long> _actionAttemptCounters = new();
     private readonly Dictionary<EntityKind, long> _nextIds = new();
     private int eventSuppressionDepth;
     private int initialWorldSeedingDepth;
@@ -58,6 +60,7 @@ public sealed class WorldState
     private int aliveCitizenCount;
     private bool derivedAggregatesDirty = true;
     private string? playerFactionId;
+    private PlayerContactEndpoint? playerContactEndpoint;
     private WorldEventArchiveCheckpoint eventArchive = WorldEventArchiveCheckpoint.Empty;
 
     public WorldState(int worldSeed)
@@ -70,6 +73,8 @@ public sealed class WorldState
     public int CurrentTick { get; private set; }
 
     public string? PlayerFactionId => playerFactionId;
+
+    public PlayerContactEndpoint? PlayerContactEndpoint => playerContactEndpoint;
 
     public IReadOnlyCollection<WorldCitizen> Citizens => _citizens.Values;
 
@@ -154,6 +159,14 @@ public sealed class WorldState
 
     public IReadOnlyList<WorldEvent> Events => _events;
 
+    public IReadOnlyList<WorldActionAttempt> RecentActionAttempts => _recentActionAttempts;
+
+    public IReadOnlyCollection<ActionAttemptCounter> ActionAttemptCounters => _actionAttemptCounters
+        .OrderBy(pair => pair.Key.Action)
+        .ThenBy(pair => pair.Key.Reason)
+        .Select(pair => new ActionAttemptCounter(pair.Key.Action, pair.Key.Reason, pair.Value))
+        .ToList();
+
     public WorldEventArchiveCheckpoint EventArchive => eventArchive;
 
     public long TotalRecordedEventCount => eventArchive.ArchivedEventCount + _events.Count;
@@ -182,6 +195,53 @@ public sealed class WorldState
         }
 
         CurrentTick = tick;
+    }
+
+    public PlayerContactEndpoint SetPlayerContactEndpoint(
+        string factionId,
+        string stableKey,
+        bool isAvailable,
+        int updatedTick)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        ThrowIfNullOrWhiteSpace(stableKey, nameof(stableKey));
+        playerContactEndpoint = new PlayerContactEndpoint(
+            factionId.Trim(),
+            stableKey.Trim(),
+            isAvailable,
+            Math.Max(0, updatedTick));
+        return playerContactEndpoint;
+    }
+
+    public void RecordActionAttempt(FactionActionPlan plan, ActionAttemptResult result, int tick)
+    {
+        if (plan == null)
+        {
+            throw new ArgumentNullException(nameof(plan));
+        }
+
+        if (result == null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        const int recentLimit = 256;
+        _recentActionAttempts.Add(new WorldActionAttempt(
+            Math.Max(0, tick),
+            plan.FactionId,
+            plan.Action,
+            result.Reason,
+            result.Detail ?? string.Empty,
+            plan.TargetSettlementId));
+        if (_recentActionAttempts.Count > recentLimit)
+        {
+            _recentActionAttempts.RemoveRange(0, _recentActionAttempts.Count - recentLimit);
+        }
+
+        var key = (plan.Action, result.Reason);
+        _actionAttemptCounters[key] = _actionAttemptCounters.TryGetValue(key, out var count)
+            ? checked(count + 1)
+            : 1;
     }
 
     public void RunWithoutEvents(Action action)
@@ -252,6 +312,7 @@ public sealed class WorldState
             _drifters.Values.OrderBy(drifter => drifter.Id.Value).ToList())
         {
             PlayerFactionId = playerFactionId,
+            PlayerContactEndpoint = playerContactEndpoint,
             DrifterArrivalReservoir = drifterArrivalReservoir,
             FactionSettlementIntel = _factionSettlementIntel.Values
                 .OrderBy(intel => intel.FactionId, StringComparer.Ordinal)
@@ -330,6 +391,8 @@ public sealed class WorldState
             DrifterFoundingJourneys = _drifterFoundingJourneys.Values
                 .OrderBy(journey => journey.Id.Value)
                 .ToList(),
+            RecentActionAttempts = _recentActionAttempts.ToList(),
+            ActionAttemptCounters = ActionAttemptCounters.ToList(),
             EventArchive = eventArchive
         };
     }
@@ -346,6 +409,7 @@ public sealed class WorldState
             CurrentTick = snapshot.CurrentTick,
             drifterArrivalReservoir = Math.Max(0, snapshot.DrifterArrivalReservoir),
             playerFactionId = snapshot.PlayerFactionId,
+            playerContactEndpoint = snapshot.PlayerContactEndpoint,
             eventArchive = WorldEventArchiveService.Normalize(snapshot.EventArchive)
         };
 
@@ -382,6 +446,19 @@ public sealed class WorldState
         {
             state._missions.Add(mission.Id, mission);
             state.ReserveExistingId(mission.Id);
+        }
+
+        foreach (var attempt in snapshot.RecentActionAttempts.Skip(Math.Max(0, snapshot.RecentActionAttempts.Count - 256)))
+        {
+            state._recentActionAttempts.Add(attempt);
+        }
+
+        foreach (var counter in snapshot.ActionAttemptCounters)
+        {
+            if (counter.Count > 0)
+            {
+                state._actionAttemptCounters[(counter.Action, counter.Reason)] = counter.Count;
+            }
         }
 
         foreach (var ruin in snapshot.Ruins)
@@ -687,7 +764,11 @@ public sealed class WorldState
         EntityId targetSettlementId,
         int departTick,
         int arrivalTick,
-        EntityId? crewCitizenId = null)
+        EntityId? crewCitizenId = null,
+        string tradeResourceKey = "",
+        string silverResourceKey = "Silver",
+        int tradeBaseUnitPrice = 1,
+        int requestedTradeQuantity = 0)
     {
         ThrowIfNullOrWhiteSpace(name, nameof(name));
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
@@ -711,7 +792,16 @@ public sealed class WorldState
             Math.Max(0, departTick),
             Math.Max(departTick, arrivalTick),
             CaravanStatus.Traveling,
-            crewCitizenId);
+            crewCitizenId)
+        {
+            Phase = WorldTransitPhase.Outbound,
+            StatusTick = Math.Max(0, departTick),
+            ReturnArrivalTick = Math.Max(departTick, arrivalTick),
+            TradeResourceKey = tradeResourceKey?.Trim() ?? string.Empty,
+            SilverResourceKey = string.IsNullOrWhiteSpace(silverResourceKey) ? "Silver" : silverResourceKey.Trim(),
+            TradeBaseUnitPrice = Math.Max(1, tradeBaseUnitPrice),
+            RequestedTradeQuantity = Math.Max(0, requestedTradeQuantity),
+        };
 
         _caravans.Add(caravan.Id, caravan);
         _owners[caravan.Id] = sourceSettlementId;
@@ -735,7 +825,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Caravan {caravanId} does not exist.");
         }
 
-        if (caravan.Status == CaravanStatus.Arrived)
+        if (caravan.Status == CaravanStatus.Arrived || caravan.Phase == WorldTransitPhase.AtTarget)
         {
             return caravan;
         }
@@ -750,25 +840,107 @@ public sealed class WorldState
             return MarkCaravanRecalled(caravanId, "target settlement unavailable");
         }
 
-        foreach (var resource in ResourcesForOwner(caravanId))
+        var atTarget = caravan with
         {
-            var transfer = TransferResource(
-                caravanId,
-                caravan.TargetSettlementId,
-                resource.ResourceKey,
-                resource.Quantity,
-                "caravan arrived");
-            if (transfer.Status != OwnershipTransferStatus.Success)
-            {
-                throw new InvalidOperationException(transfer.Reason);
-            }
+            Phase = WorldTransitPhase.AtTarget,
+            StatusTick = CurrentTick
+        };
+        _caravans[caravanId] = atTarget;
+        AppendEvent(WorldEventKind.CaravanArrived, caravanId, $"Caravan {caravanId} reached {caravan.TargetSettlementId}.");
+        return atTarget;
+    }
+
+    public WorldCaravan ExecuteCaravanTradeAndBeginReturn(EntityId caravanId)
+    {
+        if (!_caravans.TryGetValue(caravanId, out var caravan)
+            || caravan.Status != CaravanStatus.Traveling
+            || caravan.Phase != WorldTransitPhase.AtTarget)
+        {
+            throw new InvalidOperationException($"Caravan {caravanId} is not ready to trade.");
         }
 
-        var arrived = caravan with { Status = CaravanStatus.Arrived };
-        _caravans[caravanId] = arrived;
-        TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, "caravan arrived");
-        AppendEvent(WorldEventKind.CaravanArrived, caravanId, $"Caravan {caravanId} arrived at {caravan.TargetSettlementId}.");
-        return arrived;
+        if (!IsActiveSettlement(caravan.TargetSettlementId))
+        {
+            return BeginCaravanReturn(caravanId, completeAsRecalled: true, "trade target unavailable");
+        }
+
+        var resourceKey = caravan.TradeResourceKey;
+        if (string.IsNullOrWhiteSpace(resourceKey))
+        {
+            resourceKey = ResourcesForOwner(caravanId)
+                .Where(resource => !string.Equals(resource.ResourceKey, caravan.SilverResourceKey, StringComparison.Ordinal))
+                .OrderBy(resource => resource.ResourceKey, StringComparer.Ordinal)
+                .Select(resource => resource.ResourceKey)
+                .FirstOrDefault() ?? string.Empty;
+        }
+
+        var quantity = string.IsNullOrWhiteSpace(resourceKey)
+            ? 0
+            : stateQuantity(this, caravanId, resourceKey, caravan.RequestedTradeQuantity);
+        if (quantity > 0)
+        {
+            VirtualTradeService.Execute(
+                this,
+                new VirtualTradeRequest(
+                    caravanId,
+                    caravan.TargetSettlementId,
+                    resourceKey,
+                    quantity,
+                    caravan.SilverResourceKey,
+                    caravan.TradeBaseUnitPrice));
+        }
+
+        return BeginCaravanReturn(caravanId, completeAsRecalled: false, "trade concluded");
+
+        static int stateQuantity(WorldState state, EntityId ownerId, string key, int requested)
+        {
+            var available = state.GetOwnedResourceQuantity(ownerId, key);
+            return requested > 0 ? Math.Min(requested, available) : available;
+        }
+    }
+
+    public WorldCaravan BeginCaravanReturn(EntityId caravanId, bool completeAsRecalled, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_caravans.TryGetValue(caravanId, out var caravan)
+            || caravan.Status != CaravanStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Caravan {caravanId} is not active.");
+        }
+
+        var travelTicks = Math.Max(1, caravan.ArrivalTick - caravan.DepartTick);
+        var returning = caravan with
+        {
+            Phase = WorldTransitPhase.Returning,
+            StatusTick = CurrentTick,
+            ReturnArrivalTick = CurrentTick + travelTicks,
+            CompleteAsRecalled = completeAsRecalled,
+            TradeExecuted = caravan.TradeExecuted || !completeAsRecalled,
+        };
+        _caravans[caravanId] = returning;
+        return returning;
+    }
+
+    public WorldCaravan CompleteCaravanReturn(EntityId caravanId)
+    {
+        if (!_caravans.TryGetValue(caravanId, out var caravan)
+            || caravan.Status != CaravanStatus.Traveling
+            || caravan.Phase != WorldTransitPhase.Returning)
+        {
+            throw new InvalidOperationException($"Caravan {caravanId} is not returning.");
+        }
+
+        TransferAllResources(caravanId, caravan.SourceSettlementId, "caravan returned");
+        TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, "caravan returned");
+        var completed = caravan with
+        {
+            Status = caravan.CompleteAsRecalled ? CaravanStatus.Recalled : CaravanStatus.Arrived,
+            Phase = WorldTransitPhase.Completed,
+            StatusTick = CurrentTick
+        };
+        _caravans[caravanId] = completed;
+        AppendEvent(WorldEventKind.CaravanArrived, caravanId, $"Caravan {caravanId} returned to {caravan.SourceSettlementId}.");
+        return completed;
     }
 
     public WorldCaravan MarkCaravanRecalled(EntityId caravanId, string reason)
@@ -790,21 +962,13 @@ public sealed class WorldState
             throw new InvalidOperationException($"Terminal caravan {caravanId} cannot be recalled.");
         }
 
-        foreach (var resource in ResourcesForOwner(caravanId))
+        TransferAllResources(caravanId, caravan.SourceSettlementId, reason);
+        var recalled = caravan with
         {
-            var transfer = TransferResource(
-                caravanId,
-                caravan.SourceSettlementId,
-                resource.ResourceKey,
-                resource.Quantity,
-                reason);
-            if (transfer.Status != OwnershipTransferStatus.Success)
-            {
-                throw new InvalidOperationException(transfer.Reason);
-            }
-        }
-
-        var recalled = caravan with { Status = CaravanStatus.Recalled };
+            Status = CaravanStatus.Recalled,
+            Phase = WorldTransitPhase.Completed,
+            StatusTick = CurrentTick
+        };
         _caravans[caravanId] = recalled;
         TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, reason);
         AppendEvent(WorldEventKind.CaravanDestroyed, caravanId, $"Caravan {caravanId} recalled: {reason}.");
@@ -841,7 +1005,9 @@ public sealed class WorldState
         EntityId armyId,
         EntityId targetSettlementId,
         int arrivalTick,
-        bool requiresHostileRelation = false)
+        bool requiresHostileRelation = false,
+        string supplyResourceKey = "",
+        int supplyPerCitizenPerDay = 0)
     {
         if (!_armies.ContainsKey(armyId))
         {
@@ -864,6 +1030,9 @@ public sealed class WorldState
             StatusTick = CurrentTick,
             ExpectedTargetFactionId = target.FactionId,
             RequiresHostileRelation = requiresHostileRelation,
+            SupplyResourceKey = supplyResourceKey?.Trim() ?? string.Empty,
+            SupplyPerCitizenPerDay = Math.Max(0, supplyPerCitizenPerDay),
+            LastSupplyTick = CurrentTick,
         };
 
         _armyMovements[armyId] = movement;
@@ -944,8 +1113,53 @@ public sealed class WorldState
         {
             TargetFactionId = targetFactionId ?? string.Empty,
             Amount = amount,
+            Phase = WorldTransitPhase.Outbound,
+            StatusTick = Math.Max(0, departTick),
+            ReturnArrivalTick = Math.Max(departTick, arrivalTick),
         };
 
+        _missions.Add(mission.Id, mission);
+        return mission;
+    }
+
+    public WorldMission DispatchPlayerContactMission(
+        string factionId,
+        EntityId originSettlementId,
+        int departTick,
+        int arrivalTick,
+        int amount,
+        EntityId? crewCitizenId = null)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        var endpoint = playerContactEndpoint;
+        if (endpoint?.IsAvailable != true || string.IsNullOrWhiteSpace(endpoint.FactionId))
+        {
+            throw new InvalidOperationException("Player contact endpoint is unavailable.");
+        }
+
+        if (!IsActiveSettlement(originSettlementId))
+        {
+            throw new InvalidOperationException($"Origin settlement {originSettlementId} is not active.");
+        }
+
+        var mission = new WorldMission(
+            NextId(EntityKind.Mission),
+            WorldMissionKind.Diplomat,
+            factionId.Trim(),
+            originSettlementId,
+            null,
+            Math.Max(0, departTick),
+            Math.Max(departTick, arrivalTick),
+            WorldMissionStatus.Traveling,
+            crewCitizenId)
+        {
+            TargetFactionId = endpoint.FactionId,
+            TargetContactKey = endpoint.StableKey,
+            Amount = Math.Max(0, amount),
+            Phase = WorldTransitPhase.Outbound,
+            StatusTick = Math.Max(0, departTick),
+            ReturnArrivalTick = Math.Max(departTick, arrivalTick),
+        };
         _missions.Add(mission.Id, mission);
         return mission;
     }
@@ -962,12 +1176,19 @@ public sealed class WorldState
             throw new InvalidOperationException($"Mission {missionId} does not exist.");
         }
 
-        var updated = mission with { Status = status };
+        var updated = mission with
+        {
+            Status = status,
+            Phase = status is WorldMissionStatus.Arrived or WorldMissionStatus.Failed
+                ? WorldTransitPhase.Completed
+                : mission.Phase,
+            StatusTick = CurrentTick
+        };
         _missions[missionId] = updated;
         return updated;
     }
 
-    public WorldMission FailMission(EntityId missionId, string reason)
+    public WorldMission FailMission(EntityId missionId, string reason, bool returnCrew = false)
     {
         ThrowIfNullOrWhiteSpace(reason, nameof(reason));
 
@@ -981,11 +1202,84 @@ public sealed class WorldState
             return mission;
         }
 
-        var failed = mission with { Status = WorldMissionStatus.Failed };
+        var failed = mission with
+        {
+            Status = WorldMissionStatus.Failed,
+            Phase = WorldTransitPhase.Completed,
+            StatusTick = CurrentTick,
+            CompleteAsFailure = true,
+        };
         _missions[missionId] = failed;
-        TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, reason);
+        if (returnCrew)
+        {
+            TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, reason);
+        }
+        else
+        {
+            TravelCrewService.MarkCrewMissing(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, reason);
+        }
         AppendEvent(WorldEventKind.WorldMissionDisrupted, missionId, $"Mission {missionId} failed: {reason}.");
         return failed;
+    }
+
+    public WorldMission SetMissionPhase(EntityId missionId, WorldTransitPhase phase, bool effectApplied = false)
+    {
+        if (!_missions.TryGetValue(missionId, out var mission)
+            || mission.Status != WorldMissionStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Mission {missionId} is not active.");
+        }
+
+        var travelTicks = Math.Max(1, mission.ArrivalTick - mission.DepartTick);
+        var updated = mission with
+        {
+            Phase = phase,
+            StatusTick = CurrentTick,
+            ReturnArrivalTick = phase == WorldTransitPhase.Returning
+                ? CurrentTick + travelTicks
+                : mission.ReturnArrivalTick,
+            EffectApplied = mission.EffectApplied || effectApplied,
+        };
+        _missions[missionId] = updated;
+        return updated;
+    }
+
+    public WorldMission RecallMission(EntityId missionId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_missions.TryGetValue(missionId, out var mission)
+            || mission.Status != WorldMissionStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Mission {missionId} is not active.");
+        }
+
+        var returning = SetMissionPhase(missionId, WorldTransitPhase.Returning) with
+        {
+            CompleteAsFailure = true
+        };
+        _missions[missionId] = returning;
+        AppendEvent(WorldEventKind.WorldMissionDisrupted, missionId, $"Mission {missionId} recalled: {reason}.");
+        return returning;
+    }
+
+    public WorldMission CompleteMissionReturn(EntityId missionId)
+    {
+        if (!_missions.TryGetValue(missionId, out var mission)
+            || mission.Status != WorldMissionStatus.Traveling
+            || mission.Phase != WorldTransitPhase.Returning)
+        {
+            throw new InvalidOperationException($"Mission {missionId} is not returning.");
+        }
+
+        TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, "mission returned");
+        var completed = mission with
+        {
+            Status = mission.CompleteAsFailure ? WorldMissionStatus.Failed : WorldMissionStatus.Arrived,
+            Phase = WorldTransitPhase.Completed,
+            StatusTick = CurrentTick
+        };
+        _missions[missionId] = completed;
+        return completed;
     }
 
     internal bool RemoveMissionForLedger(EntityId missionId)
@@ -1226,7 +1520,7 @@ public sealed class WorldState
 
     // A faction expands by relocating some of a settlement's living adults into a brand-new
     // settlement of the same faction — the people move, none are created (population is conserved).
-    public WorldSettlement ExpandSettlement(EntityId sourceSettlementId, string slug, string name, int settlerCount)
+    internal WorldSettlement ExpandSettlement(EntityId sourceSettlementId, string slug, string name, int settlerCount)
     {
         ThrowIfNullOrWhiteSpace(slug, nameof(slug));
         ThrowIfNullOrWhiteSpace(name, nameof(name));
@@ -1977,7 +2271,16 @@ public sealed class WorldState
             isRaiderBand,
             foodQuantity,
             steelQuantity,
-            componentQuantity);
+            componentQuantity)
+        {
+            MemberOutcomes = founders
+                .Select(id => new DrifterFoundingMemberOutcome(
+                    id,
+                    DrifterFoundingMemberFate.Pending,
+                    CitizenId: null,
+                    SettlementId: null))
+                .ToList()
+        };
         _drifterFoundingJourneys.Add(journey.Id, journey);
         try
         {
@@ -2040,12 +2343,29 @@ public sealed class WorldState
         _drifterFoundingJourneys[journeyId] = journey with { Status = DrifterFoundingJourneyStatus.Arrived };
         try
         {
+            var founderOrder = journey.FounderDrifterIds
+                .Where(id => id != journey.LeaderDrifterId)
+                .Prepend(journey.LeaderDrifterId)
+                .ToList();
             var settlement = FoundSettlement(
                 journey.PlannedSlug,
                 journey.PlannedName,
                 journey.FactionId,
                 journey.LeaderDrifterId,
                 journey.FounderDrifterIds.Where(id => id != journey.LeaderDrifterId));
+            var citizens = GetCitizensBySettlement(settlement.Id)
+                .OrderBy(citizen => citizen.Id.Value)
+                .ToList();
+            _drifterFoundingJourneys[journeyId] = _drifterFoundingJourneys[journeyId] with
+            {
+                MemberOutcomes = founderOrder
+                    .Select((drifterId, index) => new DrifterFoundingMemberOutcome(
+                        drifterId,
+                        DrifterFoundingMemberFate.Settled,
+                        citizens[index].Id,
+                        settlement.Id))
+                    .ToList()
+            };
             TransferFoundingResource(journey.Id, settlement.Id, "PackagedSurvivalMeal", journey.FoodQuantity);
             TransferFoundingResource(journey.Id, settlement.Id, "Steel", journey.SteelQuantity);
             TransferFoundingResource(journey.Id, settlement.Id, "ComponentIndustrial", journey.ComponentQuantity);
@@ -2069,7 +2389,18 @@ public sealed class WorldState
         }
 
         ReturnFoundingResources(journey);
-        var cancelled = journey with { Status = DrifterFoundingJourneyStatus.Cancelled };
+        var cancelled = journey with
+        {
+            Status = DrifterFoundingJourneyStatus.Cancelled,
+            MemberOutcomes = EnsureFoundingMemberOutcomes(journey)
+                .Select(outcome => outcome with
+                {
+                    Fate = DrifterFoundingMemberFate.Returned,
+                    CitizenId = null,
+                    SettlementId = null
+                })
+                .ToList()
+        };
         _drifterFoundingJourneys[journeyId] = cancelled;
         AppendEvent(
             WorldEventKind.DrifterFoundingJourneyCancelled,
@@ -2110,13 +2441,88 @@ public sealed class WorldState
             }
         }
 
+        var captorSettlement = ResolveCaptorSettlement(captorOwnerId);
         var cancelled = journey with { Status = DrifterFoundingJourneyStatus.Cancelled };
+        _drifterFoundingJourneys[journey.Id] = cancelled;
+        var outcomes = new List<DrifterFoundingMemberOutcome>();
+        foreach (var founder in EnsureFoundingMemberOutcomes(journey))
+        {
+            var drifter = GetDrifter(founder.DrifterId);
+            if (drifter == null)
+            {
+                outcomes.Add(founder with { Fate = DrifterFoundingMemberFate.Missing });
+                continue;
+            }
+
+            if (captorSettlement != null)
+            {
+                var citizen = ConvertDrifterToCitizen(drifter.Id, captorSettlement.Id, "captive");
+                outcomes.Add(founder with
+                {
+                    Fate = DrifterFoundingMemberFate.Captured,
+                    CitizenId = citizen.Id,
+                    SettlementId = captorSettlement.Id
+                });
+            }
+            else
+            {
+                _drifters.Remove(drifter.Id);
+                outcomes.Add(founder with
+                {
+                    Fate = DrifterFoundingMemberFate.Missing,
+                    CitizenId = null,
+                    SettlementId = null
+                });
+            }
+        }
+
+        cancelled = cancelled with { MemberOutcomes = outcomes };
         _drifterFoundingJourneys[journey.Id] = cancelled;
         AppendEvent(
             WorldEventKind.DrifterFoundingJourneyCancelled,
             journey.Id,
             $"Drifter founding journey {journey.Id} was disrupted: {reason}.");
         return cancelled;
+    }
+
+    private IReadOnlyList<DrifterFoundingMemberOutcome> EnsureFoundingMemberOutcomes(DrifterFoundingJourney journey)
+    {
+        if (journey.MemberOutcomes.Count == journey.FounderDrifterIds.Count)
+        {
+            return journey.MemberOutcomes;
+        }
+
+        return journey.FounderDrifterIds
+            .Select(id => new DrifterFoundingMemberOutcome(
+                id,
+                DrifterFoundingMemberFate.Pending,
+                CitizenId: null,
+                SettlementId: null))
+            .ToList();
+    }
+
+    private WorldSettlement? ResolveCaptorSettlement(EntityId captorOwnerId)
+    {
+        if (captorOwnerId.Kind == EntityKind.Settlement)
+        {
+            var settlement = GetSettlement(captorOwnerId);
+            return settlement?.IsActive == true ? settlement : null;
+        }
+
+        var army = GetArmy(captorOwnerId);
+        var source = army == null ? null : GetSettlement(army.SourceSettlementId);
+        if (source?.IsActive == true)
+        {
+            return source;
+        }
+
+        return army == null
+            ? null
+            : Settlements
+                .Where(settlement => settlement.IsActive)
+                .Where(settlement => string.Equals(settlement.FactionId, army.FactionId, StringComparison.Ordinal))
+                .OrderBy(settlement => settlement.Id.Value)
+                .FirstOrDefault();
     }
 
     private void ReturnFoundingResources(DrifterFoundingJourney journey)
@@ -2305,6 +2711,112 @@ public sealed class WorldState
         var arrived = group with { Status = MigrationGroupStatus.Arrived };
         _migrationGroups[groupId] = arrived;
         return arrived;
+    }
+
+    public WorldMigrationGroup RerouteMigrationGroup(
+        EntityId groupId,
+        EntityId targetSettlementId,
+        int arrivalTick,
+        string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_migrationGroups.TryGetValue(groupId, out var group)
+            || group.Status != MigrationGroupStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Migration group {groupId} is not traveling.");
+        }
+
+        if (!IsActiveSettlement(targetSettlementId))
+        {
+            throw new InvalidOperationException($"Migration target {targetSettlementId} is not active.");
+        }
+
+        var target = GetSettlement(targetSettlementId)!;
+        if (!string.Equals(target.FactionId, group.FactionId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Migration target {targetSettlementId} belongs to another faction.");
+        }
+
+        var rerouted = group with
+        {
+            TargetSettlementId = targetSettlementId,
+            ArrivalTick = Math.Max(CurrentTick, arrivalTick)
+        };
+        _migrationGroups[groupId] = rerouted;
+        AppendEvent(WorldEventKind.MigrationStarted, groupId, $"Migration group {groupId} rerouted to {targetSettlementId}: {reason}.");
+        return rerouted;
+    }
+
+    public WorldMigrationGroup ReturnMigrationGroup(EntityId groupId, EntityId settlementId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_migrationGroups.TryGetValue(groupId, out var group)
+            || group.Status != MigrationGroupStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Migration group {groupId} is not traveling.");
+        }
+
+        var destination = GetSettlement(settlementId);
+        if (destination?.IsActive != true
+            || !string.Equals(destination.FactionId, group.FactionId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Migration return settlement {settlementId} is unavailable.");
+        }
+
+        foreach (var citizen in GetCitizensOwnedBy(groupId).OrderBy(candidate => candidate.Id.Value).ToList())
+        {
+            CompleteCitizenMigration(citizen.Id, settlementId, reason);
+        }
+
+        TransferAllResources(groupId, settlementId, reason);
+        var returned = group with { Status = MigrationGroupStatus.Arrived, TargetSettlementId = settlementId };
+        _migrationGroups[groupId] = returned;
+        AppendEvent(WorldEventKind.MigrationCompleted, groupId, $"Migration group {groupId} returned to {settlementId}: {reason}.");
+        return returned;
+    }
+
+    public WorldMigrationGroup LoseMigrationGroup(EntityId groupId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_migrationGroups.TryGetValue(groupId, out var group)
+            || group.Status != MigrationGroupStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Migration group {groupId} is not traveling.");
+        }
+
+        foreach (var citizen in GetCitizensOwnedBy(groupId).OrderBy(candidate => candidate.Id.Value).ToList())
+        {
+            _citizens[citizen.Id] = citizen with { Status = CitizenStatus.Missing };
+            _owners[citizen.Id] = citizen.Id;
+        }
+
+        foreach (var resource in ResourcesForOwner(groupId).ToList())
+        {
+            SetResourceQuantityForLedger(groupId, resource.ResourceKey, 0);
+        }
+
+        var lost = group with { Status = MigrationGroupStatus.Lost };
+        _migrationGroups[groupId] = lost;
+        MarkDerivedAggregatesDirty();
+        AppendEvent(WorldEventKind.MigrationCompleted, groupId, $"Migration group {groupId} was lost: {reason}.");
+        return lost;
+    }
+
+    private void TransferAllResources(EntityId fromOwnerId, EntityId toOwnerId, string reason)
+    {
+        foreach (var resource in ResourcesForOwner(fromOwnerId).ToList())
+        {
+            var transfer = TransferResource(
+                fromOwnerId,
+                toOwnerId,
+                resource.ResourceKey,
+                resource.Quantity,
+                reason);
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+        }
     }
 
     public WorldCitizen? GetCitizen(EntityId id)

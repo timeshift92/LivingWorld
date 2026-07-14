@@ -79,6 +79,10 @@ public static class WorldWarService
             state,
             new CaravanPruneRequest(request.Tick, request.ResolvedMovementRetentionDays));
 
+        WorldMissionPruneService.Prune(
+            state,
+            new WorldMissionPruneRequest(request.Tick, request.ResolvedMovementRetentionDays));
+
         return new WorldWarResult(
             plans.Count,
             actionResult.WarbandsLaunched,

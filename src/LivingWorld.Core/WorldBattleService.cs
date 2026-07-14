@@ -81,9 +81,11 @@ public static class WorldBattleService
 
         if (state.IsPlayerFaction(targetSettlement.FactionId))
         {
-            var blockedAttackers = Combatants(state, armyId);
-            TransferSurvivingAttackers(state, blockedAttackers, army.Id, army.SourceSettlementId);
-            state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
+            ArmyTerminalResolutionService.ReturnToFaction(
+                state,
+                armyId,
+                ArmyMovementStatus.Disbanded,
+                "player settlement requires active-map battle");
             return new BattleResolutionResult(BattleResolutionStatus.BlockedPlayerSettlement, null);
         }
 
@@ -128,10 +130,12 @@ public static class WorldBattleService
         var attackerDestinationId = attackerWins
             ? targetId
             : army.SourceSettlementId;
-        TransferSurvivingAttackers(state, attackers, army.Id, attackerDestinationId);
-
-        // The battle is over; the army stands down either way.
-        state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
+        ArmyTerminalResolutionService.ResolveAtSettlement(
+            state,
+            armyId,
+            attackerDestinationId,
+            ArmyMovementStatus.Disbanded,
+            "world battle resolved");
 
         var outcome = new BattleOutcome(
                 armyId,
@@ -185,34 +189,4 @@ public static class WorldBattleService
         }
     }
 
-    private static void TransferSurvivingAttackers(
-        WorldState state,
-        List<WorldCitizen> attackers,
-        EntityId armyId,
-        EntityId destinationId)
-    {
-        foreach (var attacker in attackers)
-        {
-            var current = state.GetCitizen(attacker.Id);
-            if (current?.Status != CitizenStatus.Alive || state.GetOwner(attacker.Id) != armyId)
-            {
-                continue;
-            }
-
-            var transfer = state.TransferAsset(
-                attacker.Id,
-                armyId,
-                destinationId,
-                "world battle resolved");
-            if (transfer.Status != OwnershipTransferStatus.Success)
-            {
-                throw new InvalidOperationException(transfer.Reason);
-            }
-
-            if (destinationId.Kind == EntityKind.Settlement && current.SettlementId != destinationId)
-            {
-                state.ReplaceCitizenForSimulation(current with { SettlementId = destinationId });
-            }
-        }
-    }
 }

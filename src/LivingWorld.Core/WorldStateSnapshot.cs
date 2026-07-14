@@ -21,6 +21,8 @@ public sealed record WorldStateSnapshot(
 {
     public string? PlayerFactionId { get; init; }
 
+    public PlayerContactEndpoint? PlayerContactEndpoint { get; init; }
+
     public int DrifterArrivalReservoir { get; init; }
 
     public IReadOnlyList<SettlementCapability> SettlementCapabilities { get; init; } =
@@ -91,6 +93,12 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<DrifterFoundingJourney> DrifterFoundingJourneys { get; init; } =
         Array.Empty<DrifterFoundingJourney>();
+
+    public IReadOnlyList<WorldActionAttempt> RecentActionAttempts { get; init; } =
+        Array.Empty<WorldActionAttempt>();
+
+    public IReadOnlyList<ActionAttemptCounter> ActionAttemptCounters { get; init; } =
+        Array.Empty<ActionAttemptCounter>();
 
     public WorldEventArchiveCheckpoint EventArchive { get; init; } =
         WorldEventArchiveCheckpoint.Empty;

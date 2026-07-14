@@ -34,7 +34,7 @@ public static class AnimalEcologyDriver
         var seeded = 0;
         foreach (var profile in state.ProductionProfiles.OrderBy(profile => profile.SettlementId.Value))
         {
-            seeded += SeedSettlementCohorts(state, profile.SettlementId, request.Tick);
+            seeded += SeedWildSettlementCohorts(state, profile.SettlementId, request.Tick);
         }
 
         var ecology = AnimalEcologyService.SimulateDay(
@@ -48,6 +48,11 @@ public static class AnimalEcologyDriver
     }
 
     public static int SeedSettlementCohorts(WorldState state, EntityId settlementId, int tick)
+    {
+        return SeedWildSettlementCohorts(state, settlementId, tick);
+    }
+
+    public static int SeedWildSettlementCohorts(WorldState state, EntityId settlementId, int tick)
     {
         if (state == null)
         {
@@ -67,27 +72,6 @@ public static class AnimalEcologyDriver
         }
 
         var seeded = 0;
-        var capability = state.GetSettlementCapability(settlementId);
-        var animalCapacity = Math.Max(0, capability?.AnimalCapacity ?? 0);
-        if (animalCapacity > 0)
-        {
-            var domesticKind = SelectDomesticatedKind(profile);
-            if (!HasCohort(state, settlementId, domesticKind, AnimalCohortType.Domesticated))
-            {
-                var count = Math.Min(animalCapacity, Math.Max(2, animalCapacity / 3));
-                state.CreateAnimalCohort(
-                    settlementId,
-                    domesticKind,
-                    AnimalCohortType.Domesticated,
-                    count,
-                    HealthFor(profile),
-                    FertilityFor(profile),
-                    animalCapacity,
-                    tick);
-                seeded++;
-            }
-        }
-
         var wildKind = SelectWildKind(profile);
         if (!HasCohort(state, settlementId, wildKind, AnimalCohortType.Wild))
         {
@@ -119,30 +103,6 @@ public static class AnimalEcologyDriver
         return state.GetAnimalCohorts(settlementId).Any(cohort =>
             cohort.Type == type
             && string.Equals(cohort.AnimalKind, animalKind, StringComparison.Ordinal));
-    }
-
-    private static string SelectDomesticatedKind(SettlementProductionProfile profile)
-    {
-        if (Contains(profile.Biome, "Desert") || profile.AverageTemperature >= 32)
-        {
-            return "Dromedary";
-        }
-
-        if (Contains(profile.Biome, "Tundra")
-            || Contains(profile.Biome, "Boreal")
-            || profile.AverageTemperature <= 0)
-        {
-            return "Muffalo";
-        }
-
-        if (Contains(profile.Biome, "Arid") || profile.Rainfall < 350)
-        {
-            return "Alpaca";
-        }
-
-        return profile.GrowingDays >= 45 && profile.Rainfall >= 600
-            ? "Cow"
-            : "Muffalo";
     }
 
     private static string SelectWildKind(SettlementProductionProfile profile)

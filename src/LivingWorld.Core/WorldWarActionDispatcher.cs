@@ -24,46 +24,59 @@ internal static class WorldWarActionDispatcher
 
         foreach (var plan in plans)
         {
+            ActionAttemptResult result;
             switch (plan.Action)
             {
                 case WarAction.Warband:
-                    if (WarbandActionExecutor.Execute(state, plan, request))
+                    result = WarbandActionExecutor.Execute(state, plan, request);
+                    if (result.Succeeded)
                     {
                         launched++;
                     }
                     break;
                 case WarAction.Settler:
-                    if (SettlementExpansionExecutor.Execute(state, plan.FactionId, request))
+                    result = SettlementExpansionExecutor.Execute(state, plan.FactionId, request);
+                    if (result.Succeeded)
                     {
                         settlerExpeditions++;
                     }
                     break;
                 case WarAction.Caravan:
-                    if (CaravanActionExecutor.Execute(state, plan, request))
+                    result = CaravanActionExecutor.Execute(state, plan, request);
+                    if (result.Succeeded)
                     {
                         caravans++;
                     }
                     break;
                 case WarAction.ScoutingParty:
-                    if (ScoutingActionExecutor.Execute(state, plan, request))
+                    result = ScoutingActionExecutor.Execute(state, plan, request);
+                    if (result.Succeeded)
                     {
                         scoutingReports++;
                     }
                     break;
                 case WarAction.Diplomat:
-                    if (DiplomacyActionExecutor.Execute(state, plan, request))
+                    result = DiplomacyActionExecutor.Execute(state, plan, request);
+                    if (result.Succeeded)
                     {
                         diplomaticMissions++;
                     }
                     break;
                 case WarAction.Develop:
-                    if (plan.TargetSettlementId.HasValue
-                        && SettlementDevelopmentActionExecutor.Execute(state, plan.TargetSettlementId.Value, request))
+                    result = plan.TargetSettlementId.HasValue
+                        ? SettlementDevelopmentActionExecutor.Execute(state, plan.TargetSettlementId.Value, request)
+                        : ActionAttemptResult.Failed(ActionAttemptReason.NoTarget, "development plan has no settlement");
+                    if (result.Succeeded)
                     {
                         developments++;
                     }
                     break;
+                default:
+                    result = ActionAttemptResult.Failed(ActionAttemptReason.InvalidRequest, "action plan cannot be executed");
+                    break;
             }
+
+            state.RecordActionAttempt(plan, result, request.Tick);
         }
 
         return new WorldWarActionExecutionResult(

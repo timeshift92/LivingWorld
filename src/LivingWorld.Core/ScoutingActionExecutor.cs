@@ -7,24 +7,24 @@ internal static class ScoutingActionExecutor
 {
     private const int ScoutIntelValue = 100;
 
-    public static bool Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
+    public static ActionAttemptResult Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
     {
         var source = WorldWarTargetSelector.FindReadySourceSettlement(state, plan.FactionId);
         var target = ResolveTarget(state, plan);
         if (source == null || target == null)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoTarget, "no unknown non-player scouting target");
         }
 
         var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
         if (crew == null)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCrew, "no available scout crew");
         }
 
         if (!WorldTrafficPolicy.CanDispatchMission(state, WorldMissionKind.Scout, plan.FactionId))
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.TrafficCap, "scout mission traffic cap reached");
         }
 
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
@@ -39,11 +39,11 @@ internal static class ScoutingActionExecutor
             crewCitizenId: crew.Id);
         if (TravelCrewService.ReserveCrew(state, source.Id, mission.Id, crew.Id, "scouting mission launched"))
         {
-            return true;
+            return ActionAttemptResult.Success("scouting party launched");
         }
 
         state.RemoveMissionForLedger(mission.Id);
-        return false;
+        return ActionAttemptResult.Failed(ActionAttemptReason.NoCrew, "scout crew reservation failed");
     }
 
     private static WorldSettlement? ResolveTarget(WorldState state, FactionActionPlan plan)

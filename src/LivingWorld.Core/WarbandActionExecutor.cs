@@ -2,26 +2,51 @@ namespace LivingWorld.Core;
 
 internal static class WarbandActionExecutor
 {
-    public static bool Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
+    public static ActionAttemptResult Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
     {
-        if (!plan.TargetSettlementId.HasValue
-            || FactionHasArmyInFlight(state, plan.FactionId)
-            || FactionOnWarbandCooldown(state, plan.FactionId, request.Tick, request.WarbandCooldownDays))
+        if (!plan.TargetSettlementId.HasValue)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoTarget, "warband has no target settlement");
         }
 
+        if (FactionHasArmyInFlight(state, plan.FactionId))
+        {
+            return ActionAttemptResult.Failed(ActionAttemptReason.AlreadyInFlight, "faction already has a warband in flight");
+        }
+
+        if (FactionOnWarbandCooldown(state, plan.FactionId, request.Tick, request.WarbandCooldownDays))
+        {
+            return ActionAttemptResult.Failed(ActionAttemptReason.Cooldown, "warband cooldown is active");
+        }
+
+        var target = state.GetSettlement(plan.TargetSettlementId.Value);
+        if (target?.IsActive != true
+            || string.Equals(target.FactionId, plan.FactionId, StringComparison.Ordinal))
+        {
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoTarget, "warband target is unavailable");
+        }
+
+        if (ConflictService.IsTruceActive(state, plan.FactionId, target.FactionId, request.Tick))
+        {
+            return ActionAttemptResult.Failed(ActionAttemptReason.Truce, "an active truce blocks the warband");
+        }
+
+        var travelDays = Math.Max(1, request.TravelDays);
         var reservation = RaidPopulationAllocator.ReserveForRaid(
             state,
             new RaidPopulationAllocationRequest(
                 plan.FactionId,
                 $"{plan.FactionId} warband",
                 Math.Max(1, request.RaidCombatants),
-                FoodPerCitizen: 0));
+                FoodPerCitizen: travelDays,
+                TransferFoodToArmy: true));
 
         if (reservation.Army == null)
         {
-            return false;
+            var reason = reservation.Status == RaidPopulationAllocationStatus.NoAvailableCombatants
+                ? ActionAttemptReason.InsufficientPopulation
+                : ActionAttemptReason.InsufficientSupplies;
+            return ActionAttemptResult.Failed(reason, reservation.Reason);
         }
 
         try
@@ -29,7 +54,11 @@ internal static class WarbandActionExecutor
             state.DispatchArmy(
                 reservation.Army.Id,
                 plan.TargetSettlementId.Value,
-                request.Tick + (Math.Max(0, request.TravelDays) * 60_000));
+                request.Tick + (travelDays * 60_000),
+                requiresHostileRelation: true,
+                supplyResourceKey: "PackagedSurvivalMeal",
+                supplyPerCitizenPerDay: 1);
+            FactionConflictPolicy.DeclareWar(state, plan.FactionId, target.FactionId, request.Tick);
             ArmyReservationPurposeService.Mark(
                 state,
                 reservation.Army.Id,
@@ -41,7 +70,7 @@ internal static class WarbandActionExecutor
             throw;
         }
 
-        return true;
+        return ActionAttemptResult.Success("warband launched with conserved citizens and food");
     }
 
     private static bool FactionHasArmyInFlight(WorldState state, string factionId)

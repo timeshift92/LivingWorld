@@ -278,7 +278,6 @@ internal static class LivingWorldPlayerCaravanContactService
                     offer.Quantity.Named("quantity"),
                     offer.ResourceLabel.Named("resource"),
                     offer.Price.Named("price")),
-                new LookTargets(playerCaravan),
                 MessageTypeDefOf.PositiveEvent);
             return true;
         }
@@ -328,7 +327,6 @@ internal static class LivingWorldPlayerCaravanContactService
 
             Messages.Message(
                 "LW_PlayerCaravanConversationCompleted".Translate(),
-                new LookTargets((PlanetTile)marker.Tile),
                 MessageTypeDefOf.PositiveEvent);
             return true;
         }
@@ -360,7 +358,6 @@ internal static class LivingWorldPlayerCaravanContactService
         playerCaravan.RecacheInventory();
         Messages.Message(
             "LW_PlayerCaravanContactAvoided".Translate(),
-            new LookTargets(playerCaravan),
             MessageTypeDefOf.NeutralEvent);
         return true;
     }

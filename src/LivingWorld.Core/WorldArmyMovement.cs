@@ -31,4 +31,10 @@ public sealed record WorldArmyMovement(
     public string ExpectedTargetFactionId { get; init; } = string.Empty;
 
     public bool RequiresHostileRelation { get; init; }
+
+    public string SupplyResourceKey { get; init; } = string.Empty;
+
+    public int SupplyPerCitizenPerDay { get; init; }
+
+    public int LastSupplyTick { get; init; } = DepartTick;
 }

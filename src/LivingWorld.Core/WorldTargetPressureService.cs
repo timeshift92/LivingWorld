@@ -25,9 +25,11 @@ internal static class WorldTargetPressureService
             && movement.TargetSettlementId == targetSettlementId) * 3;
         pressure += state.Caravans.Count(caravan =>
             caravan.Status == CaravanStatus.Traveling
+            && caravan.Phase != WorldTransitPhase.Returning
             && caravan.TargetSettlementId == targetSettlementId);
         pressure += state.Missions.Count(mission =>
             mission.Status == WorldMissionStatus.Traveling
+            && mission.Phase != WorldTransitPhase.Returning
             && mission.TargetSettlementId == targetSettlementId);
 
         if (plannedTargets != null)
@@ -63,6 +65,23 @@ internal static class WorldTargetPressureService
                     hash *= prime;
                 }
             }
+        }
+    }
+
+    public static ulong StableTextScore(string purpose, string factionId, string stableKey)
+    {
+        unchecked
+        {
+            const ulong offsetBasis = 14695981039346656037UL;
+            const ulong prime = 1099511628211UL;
+            var hash = offsetBasis;
+            foreach (var character in $"{purpose}|{factionId}|{stableKey}")
+            {
+                hash ^= character;
+                hash *= prime;
+            }
+
+            return hash;
         }
     }
 }

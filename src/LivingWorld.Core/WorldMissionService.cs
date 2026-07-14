@@ -32,33 +32,74 @@ public static class WorldMissionService
         var diplomatic = 0;
 
         foreach (var mission in state.Missions
-            .Where(candidate => candidate.Status == WorldMissionStatus.Traveling && candidate.ArrivalTick <= request.Tick)
+            .Where(candidate => candidate.Status == WorldMissionStatus.Traveling)
             .OrderBy(candidate => candidate.Id.Value)
             .ToList())
         {
-            if (!state.IsActiveSettlement(mission.OriginSettlementId)
-                || !state.IsActiveSettlement(mission.TargetSettlementId))
+            if (mission.Phase == WorldTransitPhase.Returning)
             {
-                state.FailMission(mission.Id, "mission endpoint unavailable");
+                if (request.Tick >= mission.ReturnArrivalTick)
+                {
+                    state.CompleteMissionReturn(mission.Id);
+                }
+
                 continue;
             }
 
-            var target = state.GetSettlement(mission.TargetSettlementId)!;
-            if (mission.Kind == WorldMissionKind.Diplomat
-                && !string.Equals(target.FactionId, mission.TargetFactionId, StringComparison.Ordinal))
+            var endpointAvailable = mission.TargetsPlayerContact
+                && state.PlayerContactEndpoint is { IsAvailable: true } endpoint
+                && string.Equals(endpoint.StableKey, mission.TargetContactKey, StringComparison.Ordinal)
+                && string.Equals(endpoint.FactionId, mission.TargetFactionId, StringComparison.Ordinal);
+            if (!state.IsActiveSettlement(mission.OriginSettlementId)
+                || (mission.TargetsPlayerContact
+                    ? !endpointAvailable
+                    : !mission.TargetSettlementId.HasValue
+                        || !state.IsActiveSettlement(mission.TargetSettlementId.Value)))
             {
-                state.FailMission(mission.Id, "diplomatic target changed ownership");
+                state.RecallMission(mission.Id, "mission endpoint unavailable");
+                continue;
+            }
+
+            var target = mission.TargetSettlementId.HasValue
+                ? state.GetSettlement(mission.TargetSettlementId.Value)
+                : null;
+            if (!mission.TargetsPlayerContact
+                && mission.Kind == WorldMissionKind.Diplomat
+                && !string.Equals(target!.FactionId, mission.TargetFactionId, StringComparison.Ordinal))
+            {
+                state.RecallMission(mission.Id, "diplomatic target changed ownership");
+                continue;
+            }
+
+            if (mission.Phase == WorldTransitPhase.Outbound)
+            {
+                if (mission.ArrivalTick <= request.Tick)
+                {
+                    state.SetMissionPhase(mission.Id, WorldTransitPhase.AtTarget);
+                }
+
+                continue;
+            }
+
+            if (mission.Phase != WorldTransitPhase.AtTarget || request.Tick <= mission.StatusTick)
+            {
                 continue;
             }
 
             switch (mission.Kind)
             {
                 case WorldMissionKind.Scout:
+                    if (!mission.TargetSettlementId.HasValue)
+                    {
+                        state.RecallMission(mission.Id, "scout mission has no settlement target");
+                        continue;
+                    }
+
                     var summary = $"Scouts from {mission.OriginSettlementId} surveyed {mission.TargetSettlementId}.";
                     state.RecordIntelReport(IntelSourceKind.Scout, mission.FactionId, Math.Max(1, mission.Amount), summary);
                     state.RecordFactionSettlementIntel(
                         mission.FactionId,
-                        mission.TargetSettlementId,
+                        mission.TargetSettlementId.Value,
                         IntelSourceKind.Scout,
                         request.Tick,
                         Math.Max(1, Math.Min(100, mission.Amount)));
@@ -66,28 +107,36 @@ public static class WorldMissionService
                     // omniscient knowledge merely because the mission exists in the simulation.
                     if (state.IsPlayerFaction(mission.FactionId))
                     {
-                        PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId, summary);
+                        PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId.Value, summary);
                     }
                     scouting++;
                     break;
 
                 case WorldMissionKind.Diplomat:
-                    var before = DiplomacyService.GetGoodwill(state, mission.FactionId, mission.TargetFactionId);
-                    var after = DiplomacyService.AdjustGoodwill(state, mission.FactionId, mission.TargetFactionId, mission.Amount);
-                    if (after != before)
+                    state.RecordEvent(
+                        WorldEventKind.DiplomaticMissionArrived,
+                        mission.Id,
+                        mission.TargetsPlayerContact
+                            ? $"Diplomats from {mission.OriginSettlementId} reached player contact {mission.TargetContactKey} on behalf of {mission.FactionId}."
+                            : $"Diplomats from {mission.OriginSettlementId} reached {mission.TargetSettlementId} on behalf of {mission.FactionId}.");
+                    if (!state.IsPlayerFaction(mission.TargetFactionId))
                     {
-                        state.RecordEvent(
-                            WorldEventKind.DiplomaticMissionSent,
-                            mission.OriginSettlementId,
-                            $"Diplomats from {mission.OriginSettlementId} improved relations between {mission.FactionId} and {mission.TargetFactionId} to {after}.");
+                        var before = DiplomacyService.GetGoodwill(state, mission.FactionId, mission.TargetFactionId);
+                        var after = DiplomacyService.AdjustGoodwill(state, mission.FactionId, mission.TargetFactionId, mission.Amount);
+                        if (after != before)
+                        {
+                            state.RecordEvent(
+                                WorldEventKind.DiplomaticMissionSent,
+                                mission.OriginSettlementId,
+                                $"Diplomats from {mission.OriginSettlementId} improved relations between {mission.FactionId} and {mission.TargetFactionId} to {after}.");
+                        }
                     }
 
                     diplomatic++;
                     break;
             }
 
-            TravelCrewService.ReturnCrew(state, mission.Id, mission.OriginSettlementId, mission.CrewCitizenId, "mission arrived");
-            state.RemoveMissionForLedger(mission.Id);
+            state.SetMissionPhase(mission.Id, WorldTransitPhase.Returning, effectApplied: true);
         }
 
         return new WorldMissionResult(scouting, diplomatic);

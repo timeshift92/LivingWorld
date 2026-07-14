@@ -322,6 +322,7 @@ public static class WorldActivitySummaryService
     private static bool IsDiplomacy(WorldEventKind kind)
     {
         return kind is WorldEventKind.DiplomaticMissionSent
+            or WorldEventKind.DiplomaticMissionArrived
             or WorldEventKind.ConflictTruceStarted
             or WorldEventKind.ConflictClaimRecorded;
     }

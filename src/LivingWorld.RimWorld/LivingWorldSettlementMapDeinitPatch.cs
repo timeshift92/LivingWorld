@@ -12,8 +12,9 @@ namespace LivingWorld.RimWorld;
 [HarmonyPriority(Priority.Last)]
 public static class LivingWorldSettlementMapDeinitPatch
 {
-    public static bool Prefix(Map map)
+    public static bool Prefix(Map map, out WorldObject_LivingWorldSettlementVisitSite? __state)
     {
+        __state = map?.Parent as WorldObject_LivingWorldSettlementVisitSite;
         var component = LivingWorldWorldComponent.Instance;
         if (component == null || map == null || !OwnsMapLifecycle(map.Parent))
         {
@@ -98,6 +99,14 @@ public static class LivingWorldSettlementMapDeinitPatch
             .FirstOrDefault(worldObject => worldObject.ID == mapComponent.VisitSiteWorldObjectId);
         visitSite?.MarkReconciled();
         return true;
+    }
+
+    public static void Postfix(WorldObject_LivingWorldSettlementVisitSite? __state)
+    {
+        if (__state != null && !__state.Destroyed && !__state.HasMap && __state.Reconciled)
+        {
+            __state.Destroy();
+        }
     }
 
     private static void ReconcileResidents(WorldState state, Map map, string purposeKey)

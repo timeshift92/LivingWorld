@@ -78,6 +78,8 @@ public static class ArmyInterceptionService
             return false;
         }
 
+        state.AdvanceToTick(tick);
+
         var left = state.GetArmyMovement(leftArmyId);
         var right = state.GetArmyMovement(rightArmyId);
         if (left?.Status != ArmyMovementStatus.Traveling
@@ -87,7 +89,6 @@ public static class ArmyInterceptionService
             return false;
         }
 
-        state.AdvanceToTick(tick);
         ResolveInterception(state, left, right, tick);
         return true;
     }
@@ -112,8 +113,11 @@ public static class ArmyInterceptionService
         var rightArmy = state.GetArmy(right.ArmyId);
         return leftArmy != null
             && rightArmy != null
-            && !string.Equals(leftArmy.FactionId, rightArmy.FactionId, StringComparison.Ordinal)
-            && DiplomacyService.GetStance(state, leftArmy.FactionId, rightArmy.FactionId) != RelationStance.Ally;
+            && FactionConflictPolicy.AreHostile(
+                state,
+                leftArmy.FactionId,
+                rightArmy.FactionId,
+                state.CurrentTick);
     }
 
     private static void ResolveInterception(
@@ -137,8 +141,16 @@ public static class ArmyInterceptionService
 
         var winner = leftWins ? leftArmy : rightArmy;
         var loser = leftWins ? rightArmy : leftArmy;
-        TransferSurvivors(state, loser.Id, loser.SourceSettlementId, "army intercepted and recalled");
-        state.SetArmyMovementStatus(loser.Id, ArmyMovementStatus.Recalled);
+        ArmyTerminalResolutionService.CaptureCargo(
+            state,
+            loser.Id,
+            winner.Id,
+            "army interception spoils");
+        ArmyTerminalResolutionService.ReturnToFaction(
+            state,
+            loser.Id,
+            ArmyMovementStatus.Recalled,
+            "army intercepted and recalled");
 
         ConflictService.RecordBattleOutcome(
             state,
@@ -178,24 +190,4 @@ public static class ArmyInterceptionService
         }
     }
 
-    private static void TransferSurvivors(WorldState state, EntityId armyId, EntityId destinationId, string reason)
-    {
-        foreach (var citizen in state.GetCitizensOwnedBy(armyId)
-            .Where(citizen =>
-                citizen.Status == CitizenStatus.Alive)
-            .OrderBy(citizen => citizen.Id.Value)
-            .ToList())
-        {
-            var transfer = state.TransferAsset(citizen.Id, armyId, destinationId, reason);
-            if (transfer.Status != OwnershipTransferStatus.Success)
-            {
-                throw new InvalidOperationException(transfer.Reason);
-            }
-
-            if (destinationId.Kind == EntityKind.Settlement && citizen.SettlementId != destinationId)
-            {
-                state.ReplaceCitizenForSimulation(citizen with { SettlementId = destinationId });
-            }
-        }
-    }
 }

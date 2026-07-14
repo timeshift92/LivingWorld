@@ -105,4 +105,57 @@ public static class LivingWorldSettlementVisitSiteService
 
         return site != null;
     }
+
+    internal static bool TryResolveSource(
+        WorldObject_LivingWorldSettlementVisitSite site,
+        out WorldObject source)
+    {
+        source = null!;
+        var worldObjects = Find.WorldObjects?.AllWorldObjects;
+        if (site == null || worldObjects == null || site.SourceRemoved)
+        {
+            return false;
+        }
+
+        source = worldObjects.FirstOrDefault(candidate =>
+            candidate != null
+            && !candidate.Destroyed
+            && candidate.ID == site.SourceSettlementWorldObjectId)!;
+        return source != null;
+    }
+
+    internal static void CloseProxiesForRemovedSource(WorldObject source)
+    {
+        var sites = Find.WorldObjects?.AllWorldObjects
+            .OfType<WorldObject_LivingWorldSettlementVisitSite>()
+            .Where(site => site != null && !site.Destroyed && site.SourceSettlementWorldObjectId == source.ID)
+            .ToList() ?? new System.Collections.Generic.List<WorldObject_LivingWorldSettlementVisitSite>();
+        foreach (var site in sites)
+        {
+            CloseOrphanedSite(site);
+        }
+    }
+
+    internal static void CloseOrphanedSite(WorldObject_LivingWorldSettlementVisitSite site)
+    {
+        if (site == null || site.Destroyed)
+        {
+            return;
+        }
+
+        site.MarkSourceRemoved();
+        if (site.HasMap)
+        {
+            var hasPlayerPawn = site.Map.mapPawns.PawnsInFaction(Faction.OfPlayer)
+                .Any(pawn => pawn != null && pawn.Spawned && !pawn.Dead);
+            if (!hasPlayerPawn)
+            {
+                Current.Game?.DeinitAndRemoveMap(site.Map, notifyPlayer: false);
+            }
+
+            return;
+        }
+
+        site.Destroy();
+    }
 }

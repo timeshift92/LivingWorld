@@ -37,7 +37,7 @@ public static class TransitEncounterService
         {
             var caravan = state.GetCaravan(trafficId);
             if (caravan?.Status != CaravanStatus.Traveling
-                || !IsHostile(state, army.FactionId, caravan.FactionId))
+                || !FactionConflictPolicy.AreHostile(state, army.FactionId, caravan.FactionId, tick))
             {
                 return false;
             }
@@ -50,7 +50,7 @@ public static class TransitEncounterService
         {
             var mission = state.GetMission(trafficId);
             if (mission?.Status != WorldMissionStatus.Traveling
-                || !IsHostile(state, army.FactionId, mission.FactionId))
+                || !FactionConflictPolicy.AreHostile(state, army.FactionId, mission.FactionId, tick))
             {
                 return false;
             }
@@ -63,7 +63,7 @@ public static class TransitEncounterService
         {
             var group = state.GetMigrationGroup(trafficId);
             if (group?.Status != MigrationGroupStatus.Traveling
-                || !IsHostile(state, army.FactionId, group.FactionId))
+                || !FactionConflictPolicy.AreHostile(state, army.FactionId, group.FactionId, tick))
             {
                 return false;
             }
@@ -76,7 +76,7 @@ public static class TransitEncounterService
         {
             var journey = state.GetDrifterAssimilationJourney(trafficId);
             if (journey?.Status != DrifterAssimilationJourneyStatus.Traveling
-                || !IsHostile(state, army.FactionId, journey.ExpectedTargetFactionId))
+                || !FactionConflictPolicy.AreHostile(state, army.FactionId, journey.ExpectedTargetFactionId, tick))
             {
                 return false;
             }
@@ -89,7 +89,7 @@ public static class TransitEncounterService
         {
             var journey = state.GetDrifterFoundingJourney(trafficId);
             if (journey?.Status != DrifterFoundingJourneyStatus.Traveling
-                || !IsHostile(state, army.FactionId, journey.FactionId))
+                || !FactionConflictPolicy.AreHostile(state, army.FactionId, journey.FactionId, tick))
             {
                 return false;
             }
@@ -157,7 +157,7 @@ public static class TransitEncounterService
     private static bool CanThreatenCaravan(WorldState state, WorldArmyMovement armyMovement, WorldCaravan caravan)
     {
         var army = state.GetArmy(armyMovement.ArmyId);
-        if (army == null || !IsHostile(state, army.FactionId, caravan.FactionId))
+        if (army == null || !FactionConflictPolicy.AreHostile(state, army.FactionId, caravan.FactionId, state.CurrentTick))
         {
             return false;
         }
@@ -170,19 +170,16 @@ public static class TransitEncounterService
     private static bool CanThreatenMission(WorldState state, WorldArmyMovement armyMovement, WorldMission mission)
     {
         var army = state.GetArmy(armyMovement.ArmyId);
-        if (army == null || !IsHostile(state, army.FactionId, mission.FactionId))
+        if (army == null
+            || !mission.TargetSettlementId.HasValue
+            || !FactionConflictPolicy.AreHostile(state, army.FactionId, mission.FactionId, state.CurrentTick))
         {
             return false;
         }
 
-        return (army.SourceSettlementId == mission.TargetSettlementId
+        return (army.SourceSettlementId == mission.TargetSettlementId.Value
                 && armyMovement.TargetSettlementId == mission.OriginSettlementId)
-            || armyMovement.TargetSettlementId == mission.TargetSettlementId;
+            || armyMovement.TargetSettlementId == mission.TargetSettlementId.Value;
     }
 
-    private static bool IsHostile(WorldState state, string factionA, string factionB)
-    {
-        return !string.Equals(factionA, factionB, StringComparison.Ordinal)
-            && DiplomacyService.GetStance(state, factionA, factionB) != RelationStance.Ally;
-    }
 }

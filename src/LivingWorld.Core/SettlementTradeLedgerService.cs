@@ -50,7 +50,11 @@ public static class SettlementTradeLedgerService
                 SettlementTradeLedgerStatus.InvalidRequest,
                 null,
                 0,
-                RecordIntel(state, request));
+                new IntelReportResult(
+                    IntelReportStatus.InvalidRequest,
+                    "Invalid trade request did not reveal intel.",
+                    null,
+                    null));
         }
 
         var settlement = ResolveSettlement(state, request);

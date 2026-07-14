@@ -36,6 +36,7 @@ var tests = new List<(string Name, Action Test)>
     ("technology diffusion upgrades lower tier settlements", TestTechnologyDiffusionUpgradesLowerTierSettlements),
     ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
     ("simulates daily settlement food and births", TestSettlementDailySimulationConsumesFoodAndBirths),
+    ("simulates only active settlements and desynchronizes birth cadence", TestSettlementDailySimulationSkipsInactiveAndDesynchronizesBirths),
     ("seeds settlement population with deterministic variation", TestSettlementPopulationSeedingVariesBaseline),
     ("seeds settlement population with children and stable-key variation", TestSettlementPopulationSeedingAddsChildrenAndStableKeyVariation),
     ("bootstrap primer creates visible settlement dynamics before first daily tick", TestSettlementBootstrapPrimerCreatesVisibleDynamics),
@@ -66,6 +67,9 @@ var tests = new List<(string Name, Action Test)>
     ("moves refugees into stable settlements", TestMigrationCompletesToStableSettlement),
     ("creates migration groups before completing migration", TestMigrationCreatesTravelingGroup),
     ("serializes migration groups", TestMigrationGroupSerialization),
+    ("reroutes migration when its destination becomes invalid", TestMigrationReroutesInvalidTarget),
+    ("returns migration people and cargo when no reroute exists", TestMigrationReturnsPeopleAndCargo),
+    ("records explicit lost people and cargo when migration has no refuge", TestMigrationLosesPeopleAndCargoExplicitly),
     ("queries ownership through public api", TestPublicApiOwnershipQuery),
     ("plans raid army from real citizens and resources", TestRaidPlannerAllocatesRealAssets),
     ("rejects raid when combatants are insufficient", TestRaidPlannerRejectsInsufficientCombatants),
@@ -335,6 +339,7 @@ var tests = new List<(string Name, Action Test)>
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
     ("shows world action marker legend and filters", TestRimWorldWorldActionMarkerLegendAndFilters),
+    ("applies knowledge fog and physical discovery to world traffic", TestRimWorldWorldTrafficFogOfWar),
     ("world action markers start at their origin tile", TestRimWorldWorldActionMarkersStartAtOrigin),
     ("turns destroyed settlements into real lootable ruin sites", TestRimWorldRuinSites),
     ("shows a columnar population and economy table", TestRimWorldEconomyWindow),
@@ -343,6 +348,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines a dedicated settlement visit site foundation", TestRimWorldSettlementVisitSiteFoundation),
     ("routes caravan settlement visits through a dedicated visit site", TestRimWorldSettlementVisitCaravanRoute),
     ("materializes dedicated settlement visit sites from the ledger", TestRimWorldSettlementVisitSiteMaterializationRoute),
+    ("keeps loaded NPC settlement maps live and save-stable", TestRimWorldSettlementVisitLiveLifecycle),
     ("defines drifter-flow settings persisted in ExposeData", TestRimWorldDrifterFlowSettings),
     ("draws drifter-flow settings with localized labels", TestRimWorldDrifterFlowDrawer),
     ("uses world generation settings during bootstrap", TestWorldComponentUsesWorldGenSettings),
@@ -931,12 +937,11 @@ static void TestAnimalEcologyDriverSeedsFromSettlementEnvironment()
     var desertCohorts = state.GetAnimalCohorts(desert.Id);
     var borealCohorts = state.GetAnimalCohorts(boreal.Id);
 
-    AssertEqual(4, result.CohortsSeeded);
-    AssertEqual(true, desertCohorts.Any(cohort => cohort.Type == AnimalCohortType.Domesticated && cohort.AnimalKind == "Dromedary"));
+    AssertEqual(2, result.CohortsSeeded);
+    AssertEqual(false, desertCohorts.Any(cohort => cohort.Type == AnimalCohortType.Domesticated));
     AssertEqual(true, desertCohorts.Any(cohort => cohort.Type == AnimalCohortType.Wild && cohort.AnimalKind == "Ibex"));
-    AssertEqual(true, borealCohorts.Any(cohort => cohort.Type == AnimalCohortType.Domesticated && cohort.AnimalKind == "Muffalo"));
+    AssertEqual(false, borealCohorts.Any(cohort => cohort.Type == AnimalCohortType.Domesticated));
     AssertEqual(true, borealCohorts.Any(cohort => cohort.Type == AnimalCohortType.Wild && cohort.AnimalKind == "Caribou"));
-    AssertEqual(12, desertCohorts.Single(cohort => cohort.Type == AnimalCohortType.Domesticated).CarryingCapacity);
     AssertEqual(0, state.Validate().Count());
 }
 
@@ -960,6 +965,15 @@ static void TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts()
         MechanicalCapacity: 0,
         PollutionHandling: 0));
     state.AddResource(ranch.Id, "Food", 20);
+    state.CreateAnimalCohort(
+        ranch.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        count: 4,
+        healthPercent: 90,
+        fertilityPercent: 70,
+        carryingCapacity: 8,
+        tick: 0);
 
     var dayOne = AnimalEcologyDriver.SimulateDay(
         state,
@@ -971,7 +985,7 @@ static void TestAnimalEcologyDriverIsIdempotentAndFeedsDomesticatedCohorts()
         state,
         new AnimalEcologyDriverRequest(120_000, "Food", FeedPerDomesticatedAnimal: 1));
 
-    AssertEqual(2, dayOne.CohortsSeeded);
+    AssertEqual(1, dayOne.CohortsSeeded);
     AssertEqual(0, dayTwo.CohortsSeeded);
     AssertEqual(countAfterDayOne, state.GetAnimalCohorts(ranch.Id).Count);
     AssertEqual(true, foodAfterDayOne < 20);
@@ -1409,22 +1423,64 @@ static void TestSettlementDailySimulationConsumesFoodAndBirths()
 
     var dayOne = SettlementDailySimulationService.SimulateDay(
         state,
-        new SettlementDailySimulationRequest(60_000, "PackagedSurvivalMeal", 1, 3));
+        new SettlementDailySimulationRequest(60_000, "PackagedSurvivalMeal", 1, 1));
 
     AssertEqual(2, dayOne.FoodConsumed);
-    AssertEqual(0, dayOne.Births);
+    AssertEqual(1, dayOne.Births);
     AssertEqual(10, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
-
-    var dayThree = SettlementDailySimulationService.SimulateDay(
-        state,
-        new SettlementDailySimulationRequest(180_000, "PackagedSurvivalMeal", 1, 3));
-
-    AssertEqual(2, dayThree.FoodConsumed);
-    AssertEqual(1, dayThree.Births);
-    AssertEqual(8, state.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
     AssertEqual(3, state.GetSettlementPopulation(settlement.Id).Total);
     AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Children);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenBorn));
+}
+
+static void TestSettlementDailySimulationSkipsInactiveAndDesynchronizesBirths()
+{
+    var state = new WorldState(24680);
+    var active = new List<WorldSettlement>();
+    for (var index = 0; index < 6; index++)
+    {
+        var settlement = state.CreateSettlement($"active-{index}", $"Active {index}", "Settlers");
+        state.CreateCitizen($"Parent A {index}", 28, Sex.Female, "settler", settlement.Id);
+        state.CreateCitizen($"Parent B {index}", 30, Sex.Male, "settler", settlement.Id);
+        state.AddResource(settlement.Id, "Food", 100);
+        active.Add(settlement);
+    }
+
+    var inactive = state.CreateSettlement("inactive", "Inactive", "Settlers");
+    state.CreateCitizen("Inactive parent A", 28, Sex.Female, "settler", inactive.Id);
+    state.CreateCitizen("Inactive parent B", 30, Sex.Male, "settler", inactive.Id);
+    state.AddResource(inactive.Id, "Food", 100);
+    SettlementLifecycleService.DestroySettlement(state, inactive.Id, 1, "test inactive settlement");
+    var inactiveFood = state.GetOwnedResourceQuantity(inactive.Id, "Food");
+
+    var birthDays = new Dictionary<EntityId, int>();
+    var previousPopulation = active.ToDictionary(
+        settlement => settlement.Id,
+        settlement => state.GetSettlementPopulation(settlement.Id).Total);
+    for (var day = 1; day <= 7; day++)
+    {
+        SettlementDailySimulationService.SimulateDay(
+            state,
+            new SettlementDailySimulationRequest(day * 60_000, "Food", 0, 7));
+        foreach (var settlement in active)
+        {
+            var population = state.GetSettlementPopulation(settlement.Id).Total;
+            if (population > previousPopulation[settlement.Id])
+            {
+                birthDays[settlement.Id] = day;
+            }
+
+            previousPopulation[settlement.Id] = population;
+        }
+    }
+
+    AssertEqual(active.Count, birthDays.Count);
+    AssertEqual(true, birthDays.Values.Distinct().Count() > 1);
+    AssertEqual(inactiveFood, state.GetOwnedResourceQuantity(inactive.Id, "Food"));
+    AssertEqual(0, state.Events.Count(worldEvent =>
+        worldEvent.Kind == WorldEventKind.CitizenBorn
+        && worldEvent.SubjectId.HasValue
+        && state.GetCitizen(worldEvent.SubjectId.Value)?.SettlementId == inactive.Id));
 }
 
 static void TestSettlementPopulationSeedingVariesBaseline()
@@ -1507,11 +1563,12 @@ static void TestSettlementBootstrapPrimerCreatesVisibleDynamics()
             SteelResourceKey: "Steel",
             ComponentResourceKey: "ComponentIndustrial"));
 
-    AssertEqual(1, result.FacilitiesSeeded);
+    AssertEqual(0, result.FacilitiesSeeded);
     AssertEqual(true, result.AnimalCohortsSeeded > 0);
     AssertEqual(true, result.WealthSnapshot.TotalWealth > 0);
-    AssertEqual(true, state.GetSettlementFacilities(settlement.Id).Count > 0);
+    AssertEqual(0, state.GetSettlementFacilities(settlement.Id).Count);
     AssertEqual(true, state.GetAnimalCohorts(settlement.Id).Count > 0);
+    AssertEqual(true, state.GetAnimalCohorts(settlement.Id).All(cohort => cohort.Type == AnimalCohortType.Wild));
     AssertEqual(true, state.GetSettlementWealth(settlement.Id)!.TotalWealth > 0);
 }
 
@@ -2297,18 +2354,17 @@ static void TestMigrationPressureCreatesRefugee()
     var result = MigrationService.SimulateDay(
         state,
         new MigrationSimulationRequest(240_000, "PackagedSurvivalMeal", 1, 50, 1));
-    var refugee = state.Citizens.Single(citizen => citizen.Status == CitizenStatus.Refugee);
     var statusAfter = state.GetSettlementMigrationStatus(source.Id, "PackagedSurvivalMeal", 1);
 
     AssertEqual(true, statusBefore.ShouldCreateRefugees);
-    AssertEqual(1, result.RefugeesCreated);
+    AssertEqual(0, result.RefugeesCreated);
     AssertEqual(0, result.MigrationGroupsCreated);
     AssertEqual(0, result.MigrationsCompleted);
-    AssertEqual(source.Id, refugee.SettlementId);
-    AssertEqual(refugee.Id, state.GetOwner(refugee.Id));
-    AssertEqual(3, state.GetSettlementPopulation(source.Id).Total);
-    AssertEqual(1, statusAfter.Refugees);
-    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RefugeeCreated));
+    AssertEqual(4, state.GetSettlementPopulation(source.Id).Total);
+    AssertEqual(0, statusAfter.Refugees);
+    AssertEqual(true, state.Citizens.All(citizen => citizen.Status == CitizenStatus.Alive));
+    AssertEqual(true, state.Citizens.All(citizen => state.GetOwner(citizen.Id) == source.Id));
+    AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.RefugeeCreated));
     AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.MigrationStarted));
 }
 
@@ -2381,6 +2437,85 @@ static void TestMigrationGroupSerialization()
     AssertEqual(target.Id, group.TargetSettlementId);
     AssertEqual(MigrationGroupStatus.Traveling, group.Status);
     AssertEqual(360_000, group.ArrivalTick);
+}
+
+static void TestMigrationReroutesInvalidTarget()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("source", "Source", "Settlers");
+    var firstTarget = state.CreateSettlement("first", "First", "Settlers");
+    var secondTarget = state.CreateSettlement("second", "Second", "Settlers");
+    var migrant = state.CreateCitizen("Migrant", 24, Sex.Female, "settler", source.Id);
+    state.CreateCitizen("First resident", 30, Sex.Male, "settler", firstTarget.Id);
+    state.CreateCitizen("Second resident", 30, Sex.Male, "settler", secondTarget.Id);
+    state.AddResource(firstTarget.Id, "Food", 40);
+    state.AddResource(secondTarget.Id, "Food", 20);
+
+    MigrationService.SimulateDay(state, new MigrationSimulationRequest(60_000, "Food", 1, 50, 1, 60_000));
+    var group = state.MigrationGroups.Single();
+    AssertEqual(firstTarget.Id, group.TargetSettlementId);
+    SettlementLifecycleService.DestroySettlement(state, firstTarget.Id, 90_000, "target destroyed");
+
+    MigrationService.SimulateDay(state, new MigrationSimulationRequest(120_000, "Food", 1, 50, 0, 60_000));
+    var rerouted = state.GetMigrationGroup(group.Id)!;
+    AssertEqual(MigrationGroupStatus.Traveling, rerouted.Status);
+    AssertEqual(secondTarget.Id, rerouted.TargetSettlementId);
+    AssertEqual(180_000, rerouted.ArrivalTick);
+    AssertEqual(group.Id, state.GetOwner(migrant.Id));
+
+    var completed = MigrationService.SimulateDay(state, new MigrationSimulationRequest(180_000, "Food", 1, 50, 0, 60_000));
+    AssertEqual(1, completed.MigrationsCompleted);
+    AssertEqual(secondTarget.Id, state.GetOwner(migrant.Id));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestMigrationReturnsPeopleAndCargo()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("source", "Source", "Settlers");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var migrant = state.CreateCitizen("Migrant", 24, Sex.Female, "settler", source.Id);
+    state.CreateCitizen("Target resident", 30, Sex.Male, "settler", target.Id);
+    state.AddResource(target.Id, "Food", 20);
+
+    MigrationService.SimulateDay(state, new MigrationSimulationRequest(60_000, "Food", 1, 50, 1, 60_000));
+    var group = state.MigrationGroups.Single();
+    state.AddResource(group.Id, "Steel", 12);
+    SettlementLifecycleService.DestroySettlement(state, target.Id, 90_000, "target destroyed");
+
+    MigrationService.SimulateDay(state, new MigrationSimulationRequest(120_000, "Food", 1, 50, 0, 60_000));
+
+    AssertEqual(MigrationGroupStatus.Arrived, state.GetMigrationGroup(group.Id)!.Status);
+    AssertEqual(source.Id, state.GetMigrationGroup(group.Id)!.TargetSettlementId);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(migrant.Id)!.Status);
+    AssertEqual(source.Id, state.GetOwner(migrant.Id));
+    AssertEqual(12, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(group.Id, "Steel"));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestMigrationLosesPeopleAndCargoExplicitly()
+{
+    var state = new WorldState(12345);
+    var source = state.CreateSettlement("source", "Source", "Settlers");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var migrant = state.CreateCitizen("Migrant", 24, Sex.Female, "settler", source.Id);
+    state.CreateCitizen("Target resident", 30, Sex.Male, "settler", target.Id);
+    state.AddResource(target.Id, "Food", 20);
+
+    MigrationService.SimulateDay(state, new MigrationSimulationRequest(60_000, "Food", 1, 50, 1, 60_000));
+    var group = state.MigrationGroups.Single();
+    state.AddResource(group.Id, "Steel", 12);
+    SettlementLifecycleService.DestroySettlement(state, source.Id, 90_000, "source destroyed");
+    SettlementLifecycleService.DestroySettlement(state, target.Id, 90_000, "target destroyed");
+
+    MigrationService.SimulateDay(state, new MigrationSimulationRequest(120_000, "Food", 1, 50, 0, 60_000));
+
+    AssertEqual(MigrationGroupStatus.Lost, state.GetMigrationGroup(group.Id)!.Status);
+    AssertEqual(CitizenStatus.Missing, state.GetCitizen(migrant.Id)!.Status);
+    AssertEqual(migrant.Id, state.GetOwner(migrant.Id));
+    AssertEqual(0, state.GetOwnedResourceQuantity(group.Id, "Steel"));
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestPublicApiOwnershipQuery()
@@ -3643,7 +3778,7 @@ static void TestSettlementMapLayoutBuildsCityInfrastructure()
         settlement.Id,
         SettlementFacilityKind.Workshop,
         Level: 2,
-        ConditionPercent: 100,
+        ConditionPercent: 80,
         BuiltTick: 10_000));
     state.RecordSettlementFacility(new SettlementFacility(
         EntityId.Create(EntityKind.SettlementFacility, 22),
@@ -3798,8 +3933,8 @@ static void TestSettlementMapDamageLowersFacilityCondition()
             Reason: "attacked settlement map deinit"));
 
     AssertEqual(SettlementMapDamageStatus.Success, result.Status);
-    AssertEqual(60, result.DamagePercent);
-    AssertEqual(40, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
+    AssertEqual(48, result.DamagePercent);
+    AssertEqual(32, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityDamaged));
 }
 
@@ -7019,9 +7154,9 @@ static void TestExpandSettlementRejectsEmptyOrInsufficientSettlers()
     state.CreateCitizen("Only Adult", 30, Sex.Female, "settler", home.Id);
 
     AssertThrows<ArgumentOutOfRangeException>(
-        () => state.ExpandSettlement(home.Id, "empty", "Empty", 0));
+        () => state.StartSettlementExpedition(home.Id, "empty", "Empty", 0, 0, 60_000, false));
     AssertThrows<InvalidOperationException>(
-        () => state.ExpandSettlement(home.Id, "underfilled", "Underfilled", 2));
+        () => state.StartSettlementExpedition(home.Id, "underfilled", "Underfilled", 2, 0, 60_000, false));
     AssertEqual(1, state.Settlements.Count);
     AssertEqual(1, state.GetSettlementPopulation(home.Id).Adults);
 }
@@ -8406,10 +8541,15 @@ static void TestRimWorldWorldConflictsSection()
     // Faction names are resolved to display labels (not raw defNames), matching the war letter.
     AssertContains("ResolveFactionName(conflict.FactionA)", mainTab);
     AssertContains("ResolveFactionName(conflict.FactionB)", mainTab);
-    // Slice 2: alliance-offer buttons let the player join a war, forming an alliance via AllianceService.
-    AssertContains("cachedAllianceOffers", mainTab);
-    AssertContains("AllianceService.FormAlliance", mainTab);
-    AssertContains("TryAddAllianceOffer", mainTab);
+    // Alliance decisions must not appear from an omniscient conflict scan. A conserved diplomat
+    // has to arrive before the world component sends the accept/decline letter.
+    AssertFalse(mainTab.Contains("cachedAllianceOffers", StringComparison.Ordinal));
+    AssertFalse(mainTab.Contains("TryAddAllianceOffer", StringComparison.Ordinal));
+    var worldComponent = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("WorldEventKind.DiplomaticMissionArrived", worldComponent);
+    AssertContains("processedDiplomaticArrivalMissionIds", worldComponent);
+    AssertContains("mission.TargetFactionId", worldComponent);
 
     var en = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(FindRepoRoot(), "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -9310,6 +9450,8 @@ static void TestRimWorldRaidIncidentPatch()
     AssertContains("ref bool __result", source);
     // Ledger-owned human raids are deferred to physical travel rather than spawning immediately.
     AssertContains("component.TryLaunchApproachingRaid", source);
+    AssertContains("Blocked a vanilla", source);
+    AssertContains("if (ownsFactionPopulation)", source);
     AssertContains("__result = false", source);
     AssertContains("parms.faction", source);
     AssertContains("parms.points", source);
@@ -9575,7 +9717,8 @@ static void TestRimWorldSettlementMapFacilityDamageReconciliation()
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
     var patch = File.ReadAllText(patchPath);
     AssertContains("LivingWorldSettlementMapFacilityTracker.ReconcileMap", patch);
-    AssertContains("public static bool Prefix(Map map)", patch);
+    AssertContains("public static bool Prefix(Map map, out WorldObject_LivingWorldSettlementVisitSite? __state)", patch);
+    AssertContains("public static void Postfix(WorldObject_LivingWorldSettlementVisitSite? __state)", patch);
     AssertContains("HarmonyPatch(typeof(Game), nameof(Game.DeinitAndRemoveMap))", patch);
     AssertRimWorldMethodExists("Verse.Game", "DeinitAndRemoveMap");
     AssertContains("LivingWorldMapReconciliationLayer.Facilities", patch);
@@ -10390,7 +10533,10 @@ static void TestRimWorldSettlementVisitCaravanRoute()
     AssertContains("LivingWorldSettlementVisitSiteService.TryCreateOrReuse", action);
     AssertContains("LivingWorldSettlementVisitMapEntryService.OpenOrEnter", action);
     AssertContains("LW_SettlementVisitSiteUnavailable", action);
-    AssertContains("Scribe_References.Look(ref sourceSettlement", action);
+    AssertContains("sourceSettlementWorldObjectId", action);
+    AssertContains("ledgerSettlementIdValue", action);
+    AssertContains("TryResolveLiveSource", action);
+    AssertDoesNotContain("Scribe_References.Look(ref sourceSettlement", action);
     AssertContains("StillValid(Caravan caravan, PlanetTile destinationTile)", action);
     AssertDoesNotContain("OpenRealSettlementMap", action);
     AssertDoesNotContain("MapGenerator.GenerateMap", action);
@@ -10414,6 +10560,9 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     AssertContains("LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, visitSite)", entry);
     AssertContains("CaravanEnterMapUtility.Enter", entry);
     AssertContains("CameraJumper.TryJump", entry);
+    AssertContains("enteredPlayerPawns.Count > 0", entry);
+    AssertContains("visitSite.MarkPlayerCaravanEntered", entry);
+    AssertContains("Current.Game.DeinitAndRemoveMap", entry);
     AssertDoesNotContain("Settlement worldObject", entry);
     AssertDoesNotContain("worldObject.Map", entry);
 
@@ -10427,6 +10576,8 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
     AssertContains("SettlementResidentMaterializationService.PrepareResidents", materializer);
     AssertContains("AssignSettlementLord", materializer);
     AssertContains("ClearGeneratedSettlementContent", materializer);
+    AssertContains("canGeneratePawnRelations: false", materializer);
+    AssertContains("pawn.relations?.ClearAllRelations()", materializer);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -10440,6 +10591,50 @@ static void TestRimWorldSettlementVisitSiteMaterializationRoute()
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);
     }
+}
+
+static void TestRimWorldSettlementVisitLiveLifecycle()
+{
+    var root = FindRepoRoot();
+    var component = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldSettlementVisitMapComponent.cs"));
+    var liveSync = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldSettlementMapLiveSyncService.cs"));
+    var facilityTracker = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldSettlementMapFacilityTracker.cs"));
+    var siteLifecycle = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldSettlementVisitSiteLifecyclePatch.cs"));
+    var contact = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPlayerCaravanContactService.cs"));
+
+    AssertContains("livingWorld_warehouseManifest", component);
+    AssertContains("livingWorld_lastLiveSyncTick", component);
+    AssertContains("override void MapComponentTick", component);
+    AssertContains("LivingWorldSettlementMapLiveSyncService.Sync", component);
+    AssertContains("SettlementResidentMaterializationService.PrepareResidents", liveSync);
+    AssertContains("BuildResourceRequest", liveSync);
+    AssertContains("loaded settlement warehouse sync", liveSync);
+    AssertContains("JobDefOf.LayDown", liveSync);
+    AssertContains("JobDefOf.Goto", liveSync);
+    AssertContains("result.Status is not SettlementMapDamageStatus.NoDamage", facilityTracker);
+    AssertContains("CloseProxiesForRemovedSource", siteLifecycle);
+    AssertDoesNotContain("new LookTargets(playerCaravan)", contact);
+    AssertDoesNotContain("new LookTargets((PlanetTile)marker.Tile)", contact);
 }
 
 static void TestRimWorldWorldArmyMarker()
@@ -10810,6 +11005,53 @@ static void TestRimWorldWorldActionMarkerLegendAndFilters()
         "LW_Settings_ShowScouts",
         "LW_Settings_ShowDiplomats",
         "LW_Settings_ShowSettlers"
+    })
+    {
+        AssertContains($"<{key}>", en);
+        AssertContains($"<{key}>", ru);
+    }
+}
+
+static void TestRimWorldWorldTrafficFogOfWar()
+{
+    var root = FindRepoRoot();
+    var visibilityPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldTransitVisibility.cs");
+    AssertFileExists(visibilityPath);
+    var visibility = File.ReadAllText(visibilityPath);
+    var marker = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "WorldObject_LivingWorldArmy.cs"));
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
+    var reconnaissance = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "PlayerReconnaissance.cs"));
+
+    AssertContains("info.SourceKind != IntelSourceKind.Public", visibility);
+    AssertContains("TrafficIntelLifetimeTicks", visibility);
+    AssertContains("IsPhysicallyObservedOnly", visibility);
+    AssertContains("worldObject?.Faction != Faction.OfPlayer", visibility);
+    AssertContains("SetStrategicVisibility", marker);
+    AssertContains("if (!strategicallyVisible)", marker);
+    AssertContains("LivingWorldTransitVisibility.IsKnown(", component);
+    AssertContains("$\"migration:{group.Id.Value}\"", component);
+    AssertContains("LW_MissionKind_Refugees", component);
+    AssertContains("LivingWorldTransitVisibility.IsKnownFromSource", mainTab);
+    AssertContains("LivingWorldTransitVisibility.CanRevealSettlement", mainTab);
+
+    AssertContains("public bool Returning", reconnaissance);
+    AssertContains("public bool HasReport", reconnaissance);
+    AssertContains("TryInterceptPlayerScout", component);
+    AssertContains("player scout physically returned with intel", component);
+    AssertContains("NoisyObservedWealth", component);
+    AssertContains("IsPlayerScoutDetected", component);
+    AssertContains("PawnFateKind.Missing", component);
+
+    var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
+    var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
+    foreach (var key in new[]
+    {
+        "LW_UnknownDestination",
+        "LW_MissionKind_Refugees",
+        "LW_MissionReason_Refugees",
+        "LW_PlayerScoutDetectedLabel",
+        "LW_PlayerScoutDetectedText",
     })
     {
         AssertContains($"<{key}>", en);
@@ -11798,7 +12040,10 @@ static void TestRimWorldCaravanMeetingGate()
     AssertContains("GateByNearbySettlement", patch);
     AssertContains("parms?.target is not Caravan caravan", patch);
     AssertContains("ApproxDistanceInTiles", patch);
-    AssertContains("worldObjects.Settlements", patch);
+    AssertContains("Find.WorldObjects?.Settlements", patch);
+    AssertContains("ResolveMeetingFaction", patch);
+    AssertContains("LivingWorldVisitorBindingService.BindVisitorPawns", patch);
+    AssertContains("SettlementSlug.ParseTile(ledger.Slug)", patch);
     // Gated by the arrivals setting; fail-open.
     AssertContains("settings.arrivalsTravelEnabled", patch);
     AssertRimWorldMethodExists("RimWorld.IncidentWorker_Ambush_EnemyFaction", "CanFireNowSub");
@@ -11875,6 +12120,8 @@ static void TestRimWorldApproachingVisitors()
     AssertContains("if (!executed || group.BoundPawnThingIds.Count == 0)", component);
     AssertContains("livingWorld_approachingGroups", component);
     AssertContains("settings.arrivalsTravelEnabled", component);
+    AssertContains("Disabling the visible travel animation must not disable conservation", component);
+    AssertContains(": 1;", component);
     AssertContains("ApproachingGroupLaunchResult.Blocked", patch);
 
     // Settings toggle wired and drawn.
@@ -11923,6 +12170,10 @@ static void TestRimWorldMechClusters()
     var runtime = File.ReadAllText(runtimePath);
     AssertContains("class MechClusterNode : IExposable", runtime);
     AssertContains("public bool Resolved", runtime);
+    AssertContains("public int AvailableUnits", runtime);
+    AssertContains("public int Steel", runtime);
+    AssertContains("public int Energy", runtime);
+    AssertContains("class MechRaidReservationRuntime", runtime);
     AssertContains("Scribe_Values.Look(ref Resolved", runtime);
     AssertContains("public static float DailyPressure(", runtime);
     AssertContains("public static bool ShouldAwaken(", runtime);
@@ -11952,11 +12203,15 @@ static void TestRimWorldMechClusters()
     var patch = File.ReadAllText(patchPath);
     AssertContains("HarmonyPatch(typeof(IncidentWorker_RaidEnemy), \"TryExecuteWorker\")", patch);
     AssertContains("FactionDefOf.Mechanoid", patch);
-    AssertContains("NotifyMechanoidRaid", patch);
+    AssertContains("TryReserveMechanoidRaid", patch);
+    AssertContains("MechRaidReservationRuntime.TryTake", patch);
+    AssertContains("Blocked a mechanoid raid", patch);
 
     var component = File.ReadAllText(
         Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
     AssertContains("public void NotifyMechanoidRaid(IncidentParms parms)", component);
+    AssertContains("public bool TryReserveMechanoidRaid", component);
+    AssertContains("CompleteMechanoidRaidReservation", component);
     AssertContains("SimulateMechClusters(", component);
     AssertContains("EnsureMechClusters(", component);
     AssertContains("AwakenMechCluster(", component);

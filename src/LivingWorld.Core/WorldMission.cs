@@ -1,8 +1,8 @@
 namespace LivingWorld.Core;
 
 /// <summary>
-/// A non-combat, non-cargo world-war mission that travels to a target settlement and applies its
-/// effect on arrival (a scout hands over intel; a diplomat improves relations). The mission reserves
+/// A non-combat, non-cargo world-war mission that travels to a target settlement or player contact
+/// endpoint and applies its effect only after arrival. The mission reserves
 /// a real citizen crew member while travelling so visible world-map markers are backed by ledger
 /// population instead of virtual traffic.
 /// </summary>
@@ -24,7 +24,7 @@ public sealed record WorldMission(
     WorldMissionKind Kind,
     string FactionId,
     EntityId OriginSettlementId,
-    EntityId TargetSettlementId,
+    EntityId? TargetSettlementId,
     int DepartTick,
     int ArrivalTick,
     WorldMissionStatus Status,
@@ -35,4 +35,21 @@ public sealed record WorldMission(
 
     /// <summary>Effect magnitude applied on arrival (diplomacy goodwill delta, scout intel value).</summary>
     public int Amount { get; init; }
+
+    public WorldTransitPhase Phase { get; init; } = WorldTransitPhase.Outbound;
+
+    public int StatusTick { get; init; } = DepartTick;
+
+    public int ReturnArrivalTick { get; init; } = ArrivalTick;
+
+    public bool CompleteAsFailure { get; init; }
+
+    public bool EffectApplied { get; init; }
+
+    public string TargetContactKey { get; init; } = string.Empty;
+
+    public bool TargetsPlayerContact =>
+        Kind == WorldMissionKind.Diplomat
+        && !TargetSettlementId.HasValue
+        && !string.IsNullOrWhiteSpace(TargetContactKey);
 }

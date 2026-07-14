@@ -51,6 +51,7 @@ public enum WorldEventKind
     WarbandLaunched,
     SettlementCaptured,
     DiplomaticMissionSent,
+    DiplomaticMissionArrived,
     SettlementDeveloped,
     CaravanLaunched,
     CaravanArrived,

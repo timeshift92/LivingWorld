@@ -25,13 +25,13 @@ internal static class SettlementExpansionExecutor
         return founded;
     }
 
-    public static bool Execute(WorldState state, string factionId, WorldWarRequest request)
+    public static ActionAttemptResult Execute(WorldState state, string factionId, WorldWarRequest request)
     {
         var settlers = Math.Max(1, request.SettlerCount);
         var source = WorldWarTargetSelector.FindExpansionSource(state, factionId);
         if (source == null || state.GetSettlementPopulation(source.Id).Adults < settlers + MinSettlersRemaining)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.InsufficientPopulation, "not enough adults remain to found a colony");
         }
 
         if (state.MigrationGroups.Any(group =>
@@ -39,7 +39,7 @@ internal static class SettlementExpansionExecutor
             && string.Equals(group.FactionId, factionId, StringComparison.Ordinal)
             && string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal)))
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.AlreadyInFlight, "a settlement expedition is already in flight");
         }
 
         var ordinal = state.Settlements.Count + 1;
@@ -64,6 +64,8 @@ internal static class SettlementExpansionExecutor
 
         // Force the concrete location identity to be resolved while the departure is still being
         // committed. The value is derived from persisted fields and remains stable after save/load.
-        return !string.IsNullOrWhiteSpace(expedition.PlannedLocationToken);
+        return !string.IsNullOrWhiteSpace(expedition.PlannedLocationToken)
+            ? ActionAttemptResult.Success("settlement expedition launched")
+            : ActionAttemptResult.Failed(ActionAttemptReason.ExecutionFailed, "expedition has no physical destination token");
     }
 }

@@ -267,6 +267,7 @@
   <LW_SettlementVisitSiteFloatMenu>Посетить базу Living World в {0}</LW_SettlementVisitSiteFloatMenu>
   <LW_SettlementVisitSiteUnavailable>Визит в поселение Living World недоступен: {0}</LW_SettlementVisitSiteUnavailable>
   <LW_SettlementVisitSiteOpened>Открыта карта {0}</LW_SettlementVisitSiteOpened>
+  <LW_SettlementVisitSitePartialEntry>Караван «{0}» вошёл в поселение частично ({1} пешек). Загруженная карта сохранена, чтобы не потерять пешек и инвентарь.</LW_SettlementVisitSitePartialEntry>
   <LW_SettlementVisitUnavailableMissing>Поселение больше не существует.</LW_SettlementVisitUnavailableMissing>
   <LW_SettlementVisitUnavailableNotVisitable>Это поселение сейчас не принимает посетителей.</LW_SettlementVisitUnavailableNotVisitable>
   <LW_SettlementVisitUnavailableHostile>Враждебное поселение можно атаковать, но нельзя посетить мирно.</LW_SettlementVisitUnavailableHostile>
@@ -280,7 +281,10 @@
   <LW_DebugOpenRealSettlementMap>DEV: открыть реальную карту базы LW</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Создать или открыть настоящую RimWorld-карту этого NPC-поселения. Living World материализует там комнаты, склады, защитников и животных. Это создаёт реальную карту в сохранении и предназначено для проверки.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>Действия мира</LW_WorldActionsHeader>
-  <LW_WorldActionLegendLine>Действия мира: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}, поселенцы {settlers}, развитие за сутки {developments}. Видимость маркеров настраивается в настройках мода.</LW_WorldActionLegendLine>
+  <LW_WorldActionLegendLine>Известные действия мира: варбанды {warbands}, караваны {caravans}, разведка {scouts}, дипломаты {diplomats}, поселенцы {settlers}, беженцы {migrations}, развитие за сутки {developments}.</LW_WorldActionLegendLine>
+  <LW_MissionKind_Refugees>беженцы</LW_MissionKind_Refugees>
+  <LW_MissionReason_Refugees>Перемещённые люди идут в безопасное место.</LW_MissionReason_Refugees>
+  <LW_MissionReason_DrifterFounding>Независимые основатели идут с реальными людьми и припасами.</LW_MissionReason_DrifterFounding>
   <LW_WorldActionRow>{kind}: {faction} к {target}, около {days} дн.</LW_WorldActionRow>
   <LW_WorldActionCompletedRow>{kind}: {faction} завершила работу в {target}</LW_WorldActionCompletedRow>
   <LW_MissionKind_Develop>развитие</LW_MissionKind_Develop>
@@ -370,4 +374,9 @@
   <LW_Settings_MusterTip>Если включено, при угрозе бойцы не дерутся где стоят, а стягиваются к точке сбора, держат оборону и открывают свободный бой, когда собралось большинство или враг прорвал линию. Точку можно задать вручную: покрась разрешённую зону и назови её ровно «LW Muster» (как «LW Shelter» для укрытия). Без заданной зоны точка выбирается автоматически — на краю базы со стороны врага.</LW_Settings_MusterTip>
   <LW_Settings_DangerousAnimalBodySize>Порог размера тела «опасного» зверя</LW_Settings_DangerousAnimalBodySize>
   <LW_Settings_DangerousAnimalBodySizeTip>Одиночный дикий зверь с размером тела не меньше этого порога считается серьёзной угрозой (рейд), а не мелкой докукой. По умолчанию 2.0 — ловит слонов, трумбо, носорогов, медведей; мелочь (крысы, белки) остаётся докукой.</LW_Settings_DangerousAnimalBodySizeTip>
+  <LW_UnknownDestination>неизвестная цель</LW_UnknownDestination>
+  <LW_PlayerScoutDetectedLabel>Обнаружен вражеский разведчик</LW_PlayerScoutDetectedLabel>
+  <LW_PlayerScoutDetectedText>Поселенцы обнаружили и прогнали вражеского разведчика до того, как он смог вернуться с донесением.</LW_PlayerScoutDetectedText>
+  <LW_ActionAttemptsHeader>Решения симуляции (отладка)</LW_ActionAttemptsHeader>
+  <LW_ActionAttemptRow>{faction}: {action} - {reason} ({detail})</LW_ActionAttemptRow>
 </LanguageData>

@@ -23,6 +23,14 @@ public static class WorldStateCodec
                 snapshot.PlayerFactionId == null
                     ? null
                     : new XAttribute("playerFactionId", snapshot.PlayerFactionId),
+                snapshot.PlayerContactEndpoint == null
+                    ? null
+                    : new XElement(
+                        "PlayerContactEndpoint",
+                        new XAttribute("factionId", snapshot.PlayerContactEndpoint.FactionId),
+                        new XAttribute("stableKey", snapshot.PlayerContactEndpoint.StableKey),
+                        new XAttribute("isAvailable", snapshot.PlayerContactEndpoint.IsAvailable),
+                        new XAttribute("updatedTick", snapshot.PlayerContactEndpoint.UpdatedTick)),
                 new XElement(
                     "Settlements",
                     snapshot.Settlements.Select(settlement =>
@@ -62,6 +70,21 @@ public static class WorldStateCodec
                             new XAttribute("departTick", caravan.DepartTick),
                             new XAttribute("arrivalTick", caravan.ArrivalTick),
                             new XAttribute("status", caravan.Status),
+                            new XAttribute("phase", caravan.Phase),
+                            new XAttribute("statusTick", caravan.StatusTick),
+                            new XAttribute("returnArrivalTick", caravan.ReturnArrivalTick),
+                            caravan.CompleteAsRecalled
+                                ? new XAttribute("completeAsRecalled", true)
+                                : null,
+                            string.IsNullOrWhiteSpace(caravan.TradeResourceKey)
+                                ? null
+                                : new XAttribute("tradeResourceKey", caravan.TradeResourceKey),
+                            new XAttribute("silverResourceKey", caravan.SilverResourceKey),
+                            new XAttribute("tradeBaseUnitPrice", caravan.TradeBaseUnitPrice),
+                            new XAttribute("requestedTradeQuantity", caravan.RequestedTradeQuantity),
+                            caravan.TradeExecuted
+                                ? new XAttribute("tradeExecuted", true)
+                                : null,
                             caravan.CrewCitizenId.HasValue
                                 ? new XAttribute("crewKind", caravan.CrewCitizenId.Value.Kind)
                                 : null,
@@ -78,11 +101,24 @@ public static class WorldStateCodec
                             new XAttribute("factionId", mission.FactionId),
                             new XAttribute("originSettlementKind", mission.OriginSettlementId.Kind),
                             new XAttribute("originSettlementId", mission.OriginSettlementId.Value),
-                            new XAttribute("targetSettlementKind", mission.TargetSettlementId.Kind),
-                            new XAttribute("targetSettlementId", mission.TargetSettlementId.Value),
+                            mission.TargetSettlementId.HasValue
+                                ? new XAttribute("targetSettlementKind", mission.TargetSettlementId.Value.Kind)
+                                : null,
+                            mission.TargetSettlementId.HasValue
+                                ? new XAttribute("targetSettlementId", mission.TargetSettlementId.Value.Value)
+                                : null,
                             new XAttribute("departTick", mission.DepartTick),
                             new XAttribute("arrivalTick", mission.ArrivalTick),
                             new XAttribute("status", mission.Status),
+                            new XAttribute("phase", mission.Phase),
+                            new XAttribute("statusTick", mission.StatusTick),
+                            new XAttribute("returnArrivalTick", mission.ReturnArrivalTick),
+                            mission.CompleteAsFailure
+                                ? new XAttribute("completeAsFailure", true)
+                                : null,
+                            mission.EffectApplied
+                                ? new XAttribute("effectApplied", true)
+                                : null,
                             mission.CrewCitizenId.HasValue
                                 ? new XAttribute("crewKind", mission.CrewCitizenId.Value.Kind)
                                 : null,
@@ -90,7 +126,34 @@ public static class WorldStateCodec
                                 ? new XAttribute("crewId", mission.CrewCitizenId.Value.Value)
                                 : null,
                             new XAttribute("targetFactionId", mission.TargetFactionId),
+                            string.IsNullOrWhiteSpace(mission.TargetContactKey)
+                                ? null
+                                : new XAttribute("targetContactKey", mission.TargetContactKey),
                             new XAttribute("amount", mission.Amount)))),
+                new XElement(
+                    "RecentActionAttempts",
+                    snapshot.RecentActionAttempts.Select(attempt =>
+                        new XElement(
+                            "Attempt",
+                            new XAttribute("tick", attempt.Tick),
+                            new XAttribute("factionId", attempt.FactionId),
+                            new XAttribute("action", attempt.Action),
+                            new XAttribute("reason", attempt.Reason),
+                            new XAttribute("detail", attempt.Detail),
+                            attempt.TargetSettlementId.HasValue
+                                ? new XAttribute("targetKind", attempt.TargetSettlementId.Value.Kind)
+                                : null,
+                            attempt.TargetSettlementId.HasValue
+                                ? new XAttribute("targetId", attempt.TargetSettlementId.Value.Value)
+                                : null))),
+                new XElement(
+                    "ActionAttemptCounters",
+                    snapshot.ActionAttemptCounters.Select(counter =>
+                        new XElement(
+                            "Counter",
+                            new XAttribute("action", counter.Action),
+                            new XAttribute("reason", counter.Reason),
+                            new XAttribute("count", counter.Count)))),
                 new XElement(
                     "Ruins",
                     snapshot.Ruins.Select(ruin =>
@@ -619,7 +682,27 @@ public static class WorldStateCodec
                                     new XElement(
                                         "Founder",
                                         new XAttribute("kind", founderId.Kind),
-                                        new XAttribute("id", founderId.Value))))))),
+                                        new XAttribute("id", founderId.Value)))),
+                            new XElement(
+                                "MemberOutcomes",
+                                journey.MemberOutcomes.Select(outcome =>
+                                    new XElement(
+                                        "Outcome",
+                                        new XAttribute("drifterKind", outcome.DrifterId.Kind),
+                                        new XAttribute("drifterId", outcome.DrifterId.Value),
+                                        new XAttribute("fate", outcome.Fate),
+                                        outcome.CitizenId.HasValue
+                                            ? new XAttribute("citizenKind", outcome.CitizenId.Value.Kind)
+                                            : null,
+                                        outcome.CitizenId.HasValue
+                                            ? new XAttribute("citizenId", outcome.CitizenId.Value.Value)
+                                            : null,
+                                        outcome.SettlementId.HasValue
+                                            ? new XAttribute("settlementKind", outcome.SettlementId.Value.Kind)
+                                            : null,
+                                        outcome.SettlementId.HasValue
+                                            ? new XAttribute("settlementId", outcome.SettlementId.Value.Value)
+                                            : null)))))),
                 new XElement(
                     "ArmyMovements",
                     state.ArmyMovements
@@ -640,7 +723,14 @@ public static class WorldStateCodec
                                     : new XAttribute("expectedTargetFactionId", movement.ExpectedTargetFactionId),
                                 movement.RequiresHostileRelation
                                     ? new XAttribute("requiresHostileRelation", true)
-                                    : null))),
+                                    : null,
+                                string.IsNullOrWhiteSpace(movement.SupplyResourceKey)
+                                    ? null
+                                    : new XAttribute("supplyResourceKey", movement.SupplyResourceKey),
+                                movement.SupplyPerCitizenPerDay > 0
+                                    ? new XAttribute("supplyPerCitizenPerDay", movement.SupplyPerCitizenPerDay)
+                                    : null,
+                                new XAttribute("lastSupplyTick", movement.LastSupplyTick)))),
                 new XElement(
                     "FactionBehaviors",
                     state.FactionBehaviors
@@ -833,6 +923,14 @@ public static class WorldStateCodec
                 .ToList())
         {
             PlayerFactionId = OptionalString(root, "playerFactionId"),
+            PlayerContactEndpoint = OptionalContainer(root, "PlayerContactEndpoint") is var contact
+                && contact.HasAttributes
+                    ? new PlayerContactEndpoint(
+                        RequiredString(contact, "factionId"),
+                        RequiredString(contact, "stableKey"),
+                        RequiredBool(contact, "isAvailable"),
+                        RequiredInt(contact, "updatedTick"))
+                    : null,
             DrifterArrivalReservoir = OptionalInt(root, "drifterArrivalReservoir", 0),
             EventArchive = DecodeEventArchive(root),
             DrifterAssimilationJourneys = OptionalContainer(root, "DrifterAssimilationJourneys")
@@ -871,7 +969,17 @@ public static class WorldStateCodec
                     RequiredBool(element, "isRaiderBand"),
                     RequiredInt(element, "foodQuantity"),
                     RequiredInt(element, "steelQuantity"),
-                    RequiredInt(element, "componentQuantity")))
+                    RequiredInt(element, "componentQuantity"))
+                {
+                    MemberOutcomes = OptionalContainer(element, "MemberOutcomes")
+                        .Elements("Outcome")
+                        .Select(outcome => new DrifterFoundingMemberOutcome(
+                            ReadEntityId(outcome, "drifterKind", "drifterId"),
+                            RequiredEnum<DrifterFoundingMemberFate>(outcome, "fate"),
+                            TryReadEntityId(outcome, "citizenKind", "citizenId"),
+                            TryReadEntityId(outcome, "settlementKind", "settlementId")))
+                        .ToList()
+                })
                 .ToList(),
             FactionSettlementIntel = OptionalContainer(root, "FactionSettlementIntel")
                 .Elements("Intel")
@@ -893,7 +1001,23 @@ public static class WorldStateCodec
                     RequiredInt(element, "departTick"),
                     RequiredInt(element, "arrivalTick"),
                     RequiredEnum<CaravanStatus>(element, "status"),
-                    TryReadEntityId(element, "crewKind", "crewId")))
+                    TryReadEntityId(element, "crewKind", "crewId"))
+                {
+                    Phase = OptionalEnum(
+                        element,
+                        "phase",
+                        RequiredEnum<CaravanStatus>(element, "status") == CaravanStatus.Traveling
+                            ? WorldTransitPhase.Outbound
+                            : WorldTransitPhase.Completed),
+                    StatusTick = OptionalInt(element, "statusTick", RequiredInt(element, "departTick")),
+                    ReturnArrivalTick = OptionalInt(element, "returnArrivalTick", RequiredInt(element, "arrivalTick")),
+                    CompleteAsRecalled = OptionalBool(element, "completeAsRecalled", false),
+                    TradeResourceKey = OptionalString(element, "tradeResourceKey") ?? string.Empty,
+                    SilverResourceKey = OptionalString(element, "silverResourceKey") ?? "Silver",
+                    TradeBaseUnitPrice = OptionalInt(element, "tradeBaseUnitPrice", 1),
+                    RequestedTradeQuantity = OptionalInt(element, "requestedTradeQuantity", 0),
+                    TradeExecuted = OptionalBool(element, "tradeExecuted", false),
+                })
                 .ToList(),
             Missions = OptionalContainer(root, "Missions")
                 .Elements("Mission")
@@ -902,7 +1026,7 @@ public static class WorldStateCodec
                     RequiredEnum<WorldMissionKind>(element, "missionKind"),
                     RequiredString(element, "factionId"),
                     ReadEntityId(element, "originSettlementKind", "originSettlementId"),
-                    ReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
+                    TryReadEntityId(element, "targetSettlementKind", "targetSettlementId"),
                     RequiredInt(element, "departTick"),
                     RequiredInt(element, "arrivalTick"),
                     RequiredEnum<WorldMissionStatus>(element, "status"),
@@ -910,7 +1034,35 @@ public static class WorldStateCodec
                 {
                     TargetFactionId = OptionalString(element, "targetFactionId") ?? string.Empty,
                     Amount = OptionalInt(element, "amount", 0),
+                    Phase = OptionalEnum(
+                        element,
+                        "phase",
+                        RequiredEnum<WorldMissionStatus>(element, "status") == WorldMissionStatus.Traveling
+                            ? WorldTransitPhase.Outbound
+                            : WorldTransitPhase.Completed),
+                    StatusTick = OptionalInt(element, "statusTick", RequiredInt(element, "departTick")),
+                    ReturnArrivalTick = OptionalInt(element, "returnArrivalTick", RequiredInt(element, "arrivalTick")),
+                    CompleteAsFailure = OptionalBool(element, "completeAsFailure", false),
+                    EffectApplied = OptionalBool(element, "effectApplied", false),
+                    TargetContactKey = OptionalString(element, "targetContactKey") ?? string.Empty,
                 })
+                .ToList(),
+            RecentActionAttempts = OptionalContainer(root, "RecentActionAttempts")
+                .Elements("Attempt")
+                .Select(element => new WorldActionAttempt(
+                    RequiredInt(element, "tick"),
+                    RequiredString(element, "factionId"),
+                    RequiredEnum<WarAction>(element, "action"),
+                    RequiredEnum<ActionAttemptReason>(element, "reason"),
+                    RequiredString(element, "detail"),
+                    TryReadEntityId(element, "targetKind", "targetId")))
+                .ToList(),
+            ActionAttemptCounters = OptionalContainer(root, "ActionAttemptCounters")
+                .Elements("Counter")
+                .Select(element => new ActionAttemptCounter(
+                    RequiredEnum<WarAction>(element, "action"),
+                    RequiredEnum<ActionAttemptReason>(element, "reason"),
+                    RequiredLong(element, "count")))
                 .ToList(),
             Ruins = OptionalContainer(root, "Ruins")
                 .Elements("Ruin")
@@ -1164,6 +1316,9 @@ public static class WorldStateCodec
                 StatusTick = OptionalInt(element, "statusTick", RequiredInt(element, "departTick")),
                 ExpectedTargetFactionId = OptionalString(element, "expectedTargetFactionId") ?? string.Empty,
                 RequiresHostileRelation = OptionalBool(element, "requiresHostileRelation", false),
+                SupplyResourceKey = OptionalString(element, "supplyResourceKey") ?? string.Empty,
+                SupplyPerCitizenPerDay = OptionalInt(element, "supplyPerCitizenPerDay", 0),
+                LastSupplyTick = OptionalInt(element, "lastSupplyTick", RequiredInt(element, "departTick")),
             });
         }
 

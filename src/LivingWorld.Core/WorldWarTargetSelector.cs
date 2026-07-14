@@ -73,17 +73,43 @@ public static class WorldWarTargetSelector
         string factionId,
         IReadOnlyCollection<EntityId>? plannedTargets = null)
     {
-        return state.Settlements
+        var candidates = state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
-            .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(factionId))
             .Where(settlement => state.HasFactionSettlementIntel(factionId, settlement.Id))
-            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
-            .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("diplomacy-faction", factionId, settlement.Id))
-            .ThenBy(settlement => settlement.Id.Value)
-            .Select(settlement => settlement.FactionId)
+            .Select(settlement => new
+            {
+                settlement.FactionId,
+                Pressure = WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets),
+                Score = WorldTargetPressureService.StableTargetScore("diplomacy-faction", factionId, settlement.Id),
+                TieBreak = settlement.Id.Value
+            })
+            .ToList();
+
+        var endpoint = state.PlayerContactEndpoint;
+        if (endpoint?.IsAvailable == true
+            && !string.Equals(endpoint.FactionId, factionId, StringComparison.Ordinal)
+            && !state.IsFactionIrreconcilable(endpoint.FactionId)
+            && !state.IsFactionIrreconcilable(factionId))
+        {
+            candidates.Add(new
+            {
+                endpoint.FactionId,
+                Pressure = state.Missions.Count(mission =>
+                    mission.Status == WorldMissionStatus.Traveling
+                    && mission.TargetsPlayerContact),
+                Score = WorldTargetPressureService.StableTextScore("diplomacy-contact", factionId, endpoint.StableKey),
+                TieBreak = long.MaxValue
+            });
+        }
+
+        return candidates
+            .OrderBy(candidate => candidate.Pressure)
+            .ThenBy(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.TieBreak)
+            .Select(candidate => candidate.FactionId)
             .Distinct(StringComparer.Ordinal)
             .FirstOrDefault();
     }
@@ -94,6 +120,12 @@ public static class WorldWarTargetSelector
         string targetFactionId,
         IReadOnlyCollection<EntityId>? plannedTargets = null)
     {
+        if (state.PlayerContactEndpoint is { IsAvailable: true } endpoint
+            && string.Equals(endpoint.FactionId, targetFactionId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         return state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, targetFactionId, StringComparison.Ordinal))

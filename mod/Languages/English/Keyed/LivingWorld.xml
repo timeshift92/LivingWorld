@@ -267,6 +267,7 @@
   <LW_SettlementVisitSiteFloatMenu>Visit Living World base at {0}</LW_SettlementVisitSiteFloatMenu>
   <LW_SettlementVisitSiteUnavailable>Living World settlement visit unavailable: {0}</LW_SettlementVisitSiteUnavailable>
   <LW_SettlementVisitSiteOpened>Opened {0}</LW_SettlementVisitSiteOpened>
+  <LW_SettlementVisitSitePartialEntry>{0} entered the settlement only partially ({1} pawn(s)). The loaded map was preserved so no pawn or inventory is lost.</LW_SettlementVisitSitePartialEntry>
   <LW_SettlementVisitUnavailableMissing>The settlement no longer exists.</LW_SettlementVisitUnavailableMissing>
   <LW_SettlementVisitUnavailableNotVisitable>This settlement cannot currently receive visitors.</LW_SettlementVisitUnavailableNotVisitable>
   <LW_SettlementVisitUnavailableHostile>Hostile settlements must be attacked, not visited peacefully.</LW_SettlementVisitUnavailableHostile>
@@ -280,7 +281,10 @@
   <LW_DebugOpenRealSettlementMap>DEV: open real LW base map</LW_DebugOpenRealSettlementMap>
   <LW_DebugOpenRealSettlementMapTooltip>Generate or jump to the real RimWorld map for this NPC settlement. Living World will materialize rooms, stores, defenders and animals there. This creates a real save-map and is meant for testing.</LW_DebugOpenRealSettlementMapTooltip>
   <LW_WorldActionsHeader>World actions</LW_WorldActionsHeader>
-  <LW_WorldActionLegendLine>World actions: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}, settlers {settlers}, developments today {developments}. Marker visibility is configurable in Mod Settings.</LW_WorldActionLegendLine>
+  <LW_WorldActionLegendLine>Known world actions: warbands {warbands}, caravans {caravans}, scouts {scouts}, diplomats {diplomats}, settlers {settlers}, refugees {migrations}, developments today {developments}.</LW_WorldActionLegendLine>
+  <LW_MissionKind_Refugees>refugees</LW_MissionKind_Refugees>
+  <LW_MissionReason_Refugees>Displaced people travelling to safety.</LW_MissionReason_Refugees>
+  <LW_MissionReason_DrifterFounding>Independent founders are travelling with real people and supplies.</LW_MissionReason_DrifterFounding>
   <LW_WorldActionRow>{kind}: {faction} to {target}, about {days} day(s)</LW_WorldActionRow>
   <LW_WorldActionCompletedRow>{kind}: {faction} completed work at {target}</LW_WorldActionCompletedRow>
   <LW_MissionKind_Develop>development</LW_MissionKind_Develop>
@@ -370,4 +374,9 @@
   <LW_Settings_MusterTip>When enabled, on a threat fighters fall back to a muster point and hold a defensive line instead of fighting where they stand, breaking into free engagement once most have gathered or the enemy breaches the line. You can set the point by hand: paint an allowed area and name it exactly "LW Muster" (like "LW Shelter" for non-combatants). Without a painted area the point is chosen automatically — at the base edge facing the enemy.</LW_Settings_MusterTip>
   <LW_Settings_DangerousAnimalBodySize>Dangerous-animal body-size threshold</LW_Settings_DangerousAnimalBodySize>
   <LW_Settings_DangerousAnimalBodySizeTip>A lone wild beast whose body size is at least this threshold counts as a serious threat (a raid) rather than a nuisance. Default 2.0 — catches elephants, thrumbos, rhinos, bears; small critters (rats, squirrels) stay a nuisance.</LW_Settings_DangerousAnimalBodySizeTip>
+  <LW_UnknownDestination>unknown destination</LW_UnknownDestination>
+  <LW_PlayerScoutDetectedLabel>Hostile scout detected</LW_PlayerScoutDetectedLabel>
+  <LW_PlayerScoutDetectedText>Your colonists detected and drove off an enemy scout before the report could return home.</LW_PlayerScoutDetectedText>
+  <LW_ActionAttemptsHeader>Simulation decisions (debug)</LW_ActionAttemptsHeader>
+  <LW_ActionAttemptRow>{faction}: {action} - {reason} ({detail})</LW_ActionAttemptRow>
 </LanguageData>

@@ -13,7 +13,8 @@ public sealed record RaidPopulationAllocationRequest(
     string Name,
     int RequestedCombatants,
     string FoodResourceKey = "PackagedSurvivalMeal",
-    int FoodPerCitizen = 1);
+    int FoodPerCitizen = 1,
+    bool TransferFoodToArmy = false);
 
 public sealed record RaidPopulationAllocationResult(
     RaidPopulationAllocationStatus Status,
@@ -132,6 +133,32 @@ public static class RaidPopulationAllocator
             state.TransferAsset(combatant.Id, sourceSettlement.Id, army.Id, "vanilla raid launched");
         }
 
+        var supplies = request.TransferFoodToArmy
+            ? combatants.Count * Math.Max(0, request.FoodPerCitizen)
+            : 0;
+        if (supplies > 0)
+        {
+            var transfer = state.TransferResource(
+                sourceSettlement.Id,
+                army.Id,
+                request.FoodResourceKey,
+                supplies,
+                "raid travel supplies");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                foreach (var combatant in combatants)
+                {
+                    state.TransferAsset(combatant.Id, army.Id, sourceSettlement.Id, "raid supply reservation rollback");
+                }
+
+                return RaidPopulationAllocationResult.Failed(
+                    RaidPopulationAllocationStatus.NoAvailableCombatants,
+                    transfer.Reason,
+                    request.RequestedCombatants,
+                    0);
+            }
+        }
+
         state.RecordEvent(
             WorldEventKind.RaidLaunched,
             army.Id,
@@ -161,16 +188,17 @@ public static class RaidPopulationAllocator
         EntityId settlementId,
         RaidPopulationAllocationRequest request)
     {
-        var adults = state.GetSettlementPopulation(settlementId).Adults;
+        var adults = GetAvailableCombatants(state, settlementId).Count();
         if (adults == 0)
         {
             return 0;
         }
 
-        var food = state.GetSettlementFoodStatus(settlementId, request.FoodResourceKey, request.FoodPerCitizen);
-        if (food.DailyNeed > 0 && food.FoodDays <= 0)
+        if (request.FoodPerCitizen > 0)
         {
-            return 0;
+            var supported = state.GetOwnedResourceQuantity(settlementId, request.FoodResourceKey)
+                / request.FoodPerCitizen;
+            adults = Math.Min(adults, supported);
         }
 
         return adults;

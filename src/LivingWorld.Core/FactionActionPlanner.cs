@@ -78,7 +78,9 @@ public static class FactionActionPlanner
                 plannedTargets);
         var hasTradeRoute = CanSendCaravan(state, factionId, tradeTarget);
         var hasScoutingTarget = scoutingTarget != null;
-        var hasDiplomacyTarget = diplomacyTarget != null;
+        var hasDiplomacyTarget = diplomacyTarget != null
+            || (state.PlayerContactEndpoint is { IsAvailable: true } endpoint
+                && string.Equals(endpoint.FactionId, diplomacyTargetFaction, StringComparison.Ordinal));
 
         var action = profile.Behavior switch
         {

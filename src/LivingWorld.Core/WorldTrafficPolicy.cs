@@ -80,7 +80,7 @@ public static class WorldTrafficPolicy
 
         foreach (var missionId in excess.OrderBy(id => id.Value))
         {
-            state.FailMission(missionId, "world traffic capacity reconciliation");
+            state.FailMission(missionId, "world traffic capacity reconciliation", returnCrew: true);
             state.RemoveMissionForLedger(missionId);
         }
 

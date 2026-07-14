@@ -21,6 +21,7 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     private bool reconciled;
     private bool activeMapSession;
     private bool playerCaravanEntered;
+    private bool sourceRemoved;
 
     public EntityId? SettlementId => settlementIdValue > 0
         ? EntityId.Create(EntityKind.Settlement, settlementIdValue)
@@ -37,6 +38,8 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     public bool Reconciled => reconciled;
 
     public bool ActiveMapSession => activeMapSession;
+
+    public bool SourceRemoved => sourceRemoved;
 
     protected override bool UseGenericEnterMapFloatMenuOption => false;
 
@@ -62,6 +65,7 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         this.reconciled = reconciled;
         activeMapSession = false;
         playerCaravanEntered = false;
+        sourceRemoved = false;
         Tile = sourceTile;
     }
 
@@ -84,6 +88,7 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         this.sourceTile = sourceTile;
         this.visitKind = string.IsNullOrWhiteSpace(visitKind) ? "observe" : visitKind;
         this.settlementLabel = settlementLabel ?? string.Empty;
+        sourceRemoved = false;
         if (!HasMap)
         {
             Tile = sourceTile;
@@ -112,6 +117,11 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         reconciled = true;
     }
 
+    public void MarkSourceRemoved()
+    {
+        sourceRemoved = true;
+    }
+
     public override void Notify_CaravanFormed(Caravan caravan)
     {
         base.Notify_CaravanFormed(caravan);
@@ -128,6 +138,17 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         reconciled = true;
     }
 
+    protected override void Tick()
+    {
+        base.Tick();
+        var tick = Find.TickManager?.TicksGame ?? 0;
+        if ((tick + ID) % 2_500 == 0
+            && !LivingWorldSettlementVisitSiteService.TryResolveSource(this, out _))
+        {
+            LivingWorldSettlementVisitSiteService.CloseOrphanedSite(this);
+        }
+    }
+
     public override bool ShouldRemoveMapNow(out bool alsoRemoveWorldObject)
     {
         alsoRemoveWorldObject = false;
@@ -142,7 +163,9 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
             return false;
         }
 
-        return !TransporterUtility.IncomingTransporterPreventingMapRemoval(Map);
+        var canRemove = !TransporterUtility.IncomingTransporterPreventingMapRemoval(Map);
+        alsoRemoveWorldObject = canRemove;
+        return canRemove;
     }
 
     public override string GetInspectString()
@@ -165,5 +188,6 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         Scribe_Values.Look(ref reconciled, "livingWorld_reconciled", false);
         Scribe_Values.Look(ref activeMapSession, "livingWorld_activeMapSession", false);
         Scribe_Values.Look(ref playerCaravanEntered, "livingWorld_playerCaravanEntered", false);
+        Scribe_Values.Look(ref sourceRemoved, "livingWorld_sourceRemoved", false);
     }
 }

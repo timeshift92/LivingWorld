@@ -210,6 +210,7 @@ internal static class LivingWorldSettlementExpansionWorldBridge
             return;
         }
 
+
         var marker = worldObjects.AllWorldObjects
             .OfType<WorldObject_LivingWorldArmy>()
             .FirstOrDefault(candidate => string.Equals(candidate.MarkerKey, binding.MarkerKey, StringComparison.Ordinal));
@@ -236,11 +237,22 @@ internal static class LivingWorldSettlementExpansionWorldBridge
             group.CreatedTick,
             group.ArrivalTick,
             faction.Name,
-            CleanName(group.PlannedSettlementName, group.PlannedSettlementSlug),
+            LivingWorldTransitVisibility.CanRevealSettlement(state, group.SourceSettlementId)
+                ? CleanName(group.PlannedSettlementName, group.PlannedSettlementSlug)
+                : "LW_UnknownDestination".Translate(),
             settlerCount,
             settlerCount,
             resources,
             group.Reason);
+        marker.SetStrategicVisibility(LivingWorldTransitVisibility.IsKnown(
+            state,
+            group.FactionId,
+            group.SourceSettlementId,
+            group.SourceSettlementId,
+            binding.OriginTile,
+            binding.TargetTile,
+            group.CreatedTick,
+            group.ArrivalTick));
 
         if (isNew)
         {

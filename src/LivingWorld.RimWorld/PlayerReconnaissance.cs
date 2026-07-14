@@ -1,3 +1,4 @@
+using LivingWorld.Core;
 using Verse;
 
 namespace LivingWorld.RimWorld;
@@ -14,6 +15,10 @@ public sealed class PendingPlayerReconnaissance : IExposable
     public int ArrivalTick;
     public string MarkerKey = string.Empty;
     public string TargetLabel = string.Empty;
+    public bool Returning;
+    public bool HasReport;
+    public RaidIntelValueBand ReportedValueBand;
+    public int ReportedCombatantDemand;
 
     public void ExposeData()
     {
@@ -26,5 +31,9 @@ public sealed class PendingPlayerReconnaissance : IExposable
         Scribe_Values.Look(ref ArrivalTick, "arrivalTick", 0);
         Scribe_Values.Look(ref MarkerKey, "markerKey", string.Empty);
         Scribe_Values.Look(ref TargetLabel, "targetLabel", string.Empty);
+        Scribe_Values.Look(ref Returning, "returning", false);
+        Scribe_Values.Look(ref HasReport, "hasReport", false);
+        Scribe_Values.Look(ref ReportedValueBand, "reportedValueBand", RaidIntelValueBand.Low);
+        Scribe_Values.Look(ref ReportedCombatantDemand, "reportedCombatantDemand", 0);
     }
 }

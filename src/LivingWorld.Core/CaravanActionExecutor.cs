@@ -5,23 +5,28 @@ namespace LivingWorld.Core;
 
 internal static class CaravanActionExecutor
 {
-    public static bool Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
+    public static ActionAttemptResult Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.CaravanResourceKey) || request.CaravanQuantity <= 0)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.InvalidRequest, "caravan cargo request is empty");
         }
 
         if (!WorldTrafficPolicy.CanDispatchCaravan(state, plan.FactionId))
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.TrafficCap, "caravan traffic cap reached");
         }
 
         var source = WorldWarTargetSelector.FindTradeSource(state, plan.FactionId, request.CaravanResourceKey);
         var target = ResolveTarget(state, plan);
-        if (source == null || target == null)
+        if (source == null)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCargo, "no settlement owns the requested caravan cargo");
+        }
+
+        if (target == null)
+        {
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoIntel, "no known non-hostile trade target");
         }
 
         var quantity = Math.Min(
@@ -30,13 +35,13 @@ internal static class CaravanActionExecutor
         if (quantity <= 0)
         {
             // Nothing to haul — do not launch an empty caravan that just churns create/destroy events.
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCargo, "requested caravan cargo is unavailable");
         }
 
         var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
         if (crew == null)
         {
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCrew, "no available caravan crew");
         }
 
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
@@ -47,12 +52,16 @@ internal static class CaravanActionExecutor
             target.Id,
             request.Tick,
             arrivalTick,
-            crew.Id);
+            crew.Id,
+            request.CaravanResourceKey,
+            request.DevelopmentSilverResourceKey,
+            tradeBaseUnitPrice: 2,
+            requestedTradeQuantity: quantity);
 
         if (!TravelCrewService.ReserveCrew(state, source.Id, caravan.Id, crew.Id, "world-war caravan crew"))
         {
             state.MarkCaravanRecalled(caravan.Id, "caravan crew unavailable");
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCrew, "caravan crew reservation failed");
         }
 
         var transfer = state.TransferResource(
@@ -64,10 +73,10 @@ internal static class CaravanActionExecutor
         if (transfer.Status != OwnershipTransferStatus.Success)
         {
             state.MarkCaravanRecalled(caravan.Id, transfer.Reason);
-            return false;
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCargo, transfer.Reason);
         }
 
-        return true;
+        return ActionAttemptResult.Success("caravan launched with paid trade cargo");
     }
 
     private static WorldSettlement? ResolveTarget(WorldState state, FactionActionPlan plan)

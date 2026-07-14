@@ -56,6 +56,19 @@ public static class ConflictService
             && tick < conflict.TruceExpiresTick;
     }
 
+    public static bool IsActiveConflict(WorldState state, string factionA, string factionB)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        return state.Conflicts
+            .Where(candidate => candidate.IsPair(factionA, factionB))
+            .OrderByDescending(candidate => candidate.StartedTick)
+            .FirstOrDefault()?.Status == WorldConflictStatus.Active;
+    }
+
     public static WorldConflict StartTruce(
         WorldState state,
         string factionA,

@@ -6,24 +6,47 @@ using Verse;
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// Gives mechanoid ground raids a believable source instead of "from nowhere". A Postfix on the enemy
-/// raid worker: when a raid that actually fired is a mechanoid raid, it is attributed to the nearest
-/// mechanoid complex on the world map (rousing one if needed), so the threat has a cause the player can
-/// see. Never alters or cancels the raid — purely additive and fail-open.
+/// Makes mechanoid ground raids depart from a finite complex inventory. Units, steel and energy are
+/// reserved before vanilla generation; an unsuccessful incident restores them, while a successful raid
+/// permanently removes the launched force from its source complex.
 /// </summary>
 [HarmonyPatch(typeof(IncidentWorker_RaidEnemy), "TryExecuteWorker")]
 [HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
 [HarmonyPriority(Priority.Last)]
 public static class LivingWorldMechRaidPatch
 {
+    public static bool Prefix(IncidentParms parms, ref bool __result)
+    {
+        if (parms?.faction?.def != FactionDefOf.Mechanoid)
+        {
+            return true;
+        }
+
+        var component = LivingWorldWorldComponent.Instance;
+        if (component == null || component.IsRimWarActive)
+        {
+            return true;
+        }
+
+        if (component.TryReserveMechanoidRaid(parms, out _))
+        {
+            return true;
+        }
+
+        __result = false;
+        Log.Message("[LivingWorld] Blocked a mechanoid raid because no complex could supply its units, steel and energy.");
+        return false;
+    }
+
     public static void Postfix(IncidentParms parms, bool __result)
     {
-        if (!__result || parms?.faction?.def == null)
+        if (MechRaidReservationRuntime.TryTake(parms, out var committed))
         {
+            LivingWorldWorldComponent.Instance?.CompleteMechanoidRaidReservation(committed, __result);
             return;
         }
 
-        if (parms.faction.def != FactionDefOf.Mechanoid)
+        if (parms?.faction?.def != FactionDefOf.Mechanoid)
         {
             return;
         }
@@ -41,6 +64,45 @@ public static class LivingWorldMechRaidPatch
         catch (Exception ex)
         {
             Log.Warning($"[LivingWorld] Mechanoid raid attribution skipped safely: {ex.Message}");
+        }
+    }
+
+    public static Exception? Finalizer(IncidentParms parms, Exception? __exception)
+    {
+        if (__exception != null
+            && MechRaidReservationRuntime.TryTake(parms, out var reservation))
+        {
+            LivingWorldWorldComponent.Instance?.CompleteMechanoidRaidReservation(reservation, launched: false);
+        }
+
+        return __exception;
+    }
+}
+
+[HarmonyPatch(typeof(IncidentWorker_RaidEnemy), "TryResolveRaidFaction")]
+[HarmonyAfter("helldan.finitepopulation", "rimworld.torann.rimwar", "com.Matathias.Empire")]
+[HarmonyPriority(Priority.Last - 1)]
+public static class LivingWorldMechRaidFactionResolutionPatch
+{
+    public static void Postfix(IncidentParms parms, ref bool __result)
+    {
+        if (!__result
+            || parms?.faction?.def != FactionDefOf.Mechanoid
+            || MechRaidReservationRuntime.Has(parms))
+        {
+            return;
+        }
+
+        var component = LivingWorldWorldComponent.Instance;
+        if (component == null || component.IsRimWarActive)
+        {
+            return;
+        }
+
+        if (!component.TryReserveMechanoidRaid(parms, out _))
+        {
+            __result = false;
+            Log.Message("[LivingWorld] Blocked a mechanoid raid because no complex could supply its force.");
         }
     }
 }

@@ -52,8 +52,12 @@ public static class LivingWorldRaidIncidentPatch
             // The vanilla incident has now resolved its real human faction. Convert it to the same
             // prepared, visible travel path as LivingWorld_FactionRaid. Returning false only aborts
             // vanilla's immediate pawn spawn; the committed pending raid remains in the world.
-            component.TryLaunchApproachingRaid(parms, parms.faction);
+            var launched = component.TryLaunchApproachingRaid(parms, parms.faction);
             __result = false;
+            if (!launched)
+            {
+                Log.Message($"[LivingWorld] Blocked a vanilla {factionId} raid because no conserved expedition could depart.");
+            }
             return;
         }
 
@@ -72,6 +76,10 @@ public static class LivingWorldRaidIncidentPatch
         catch (Exception ex)
         {
             Log.Warning($"[LivingWorld] Vanilla raid population reservation skipped safely: {ex.GetType().Name}: {ex.Message}");
+            if (ownsFactionPopulation)
+            {
+                __result = false;
+            }
             return;
         }
 
@@ -80,12 +88,20 @@ public static class LivingWorldRaidIncidentPatch
             || reservation.Army == null
             || reservation.ReservedCombatants <= 0)
         {
+            if (ownsFactionPopulation)
+            {
+                __result = false;
+            }
             return;
         }
 
         if (!LivingWorldRaidBindingRuntime.TryAddReservation(parms, reservation.Army.Id))
         {
             RaidReconciliationService.ReleaseUndeployedReserves(component.State, reservation.Army.Id);
+            if (ownsFactionPopulation)
+            {
+                __result = false;
+            }
             return;
         }
 

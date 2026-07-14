@@ -25,6 +25,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private const int NaturalDeathAge = 85;
     private const int MaxNaturalDeathsPerDay = 5;
     private const int PlayerCaravanMarkerContactCheckIntervalTicks = 250;
+    private const int TransitVisibilityRefreshIntervalTicks = 2_500;
     private const int ApproachingGroupStayTicks = 60_000 * 5;
     private const int MaxApproachingGroupCitizens = 16;
     private const string FoodResourceKey = "PackagedSurvivalMeal";
@@ -53,6 +54,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> rewardedVictoryConflictIds = new();
     private List<long> ruinSiteIds = new();
     private List<long> offeredAllianceConflictIds = new();
+    private List<long> processedDiplomaticArrivalMissionIds = new();
     private List<PendingApproachingRaid> approachingRaids = new();
     private int nextApproachRaidId;
     private List<PendingPlayerReconnaissance> playerReconnaissance = new();
@@ -68,6 +70,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private readonly Dictionary<string, int> pendingPlayerCaravanMarkerContacts = new(StringComparer.Ordinal);
     private int lastPlayerCaravanMarkerContactCheckTick;
     private int lastLivingWorldMarkerContactCheckTick;
+    private int lastTransitVisibilityRefreshTick;
 
     // Collapses the "Ledger initialized" log across the many throwaway component instances RimWorld
     // builds during world-generation previews, so a new game does not spam a dozen identical lines.
@@ -219,6 +222,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
+        if (currentTick - lastTransitVisibilityRefreshTick >= TransitVisibilityRefreshIntervalTicks)
+        {
+            lastTransitVisibilityRefreshTick = currentTick;
+            SyncArmyWorldObjects();
+        }
         CheckPlayerCaravanMarkerContacts(currentTick);
         CheckLivingWorldMarkerContacts(currentTick);
         var currentDay = currentTick / TicksPerDay;
@@ -240,6 +248,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             try
             {
                 SimulateWorldDay(nextDay);
+                // A diplomat may arrive and return during a multi-day catch-up. Process the
+                // arrival while the conserved mission still exists instead of inventing an
+                // offer later from the conflict list.
+                MaybeSendAllianceOffers();
                 lastSimulatedDay = nextDay;
                 simulatedDays++;
             }
@@ -273,7 +285,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         MaybeSendRaidConsequenceLetters();
         MaybeSendRaidWarnings();
         MaybeSendConflictLetters();
-        MaybeSendAllianceOffers();
         MaybeGrantVictoryRewards();
         if (simulatedDays > 0)
         {
@@ -283,9 +294,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         LogSimulationDebugSnapshot(simulatedDays, currentTick);
     }
 
-    // Surfaces the war arc as a felt event: when a war breaks out that the player is not in, a neutral
-    // participant's envoy proposes an alliance against its enemy via an accept/decline letter. One offer
-    // per catch-up, persisted per conflict so it is never re-offered. Accepting bridges to real relations.
+    // A war alliance is offered only after a conserved diplomat physically reaches the player.
+    // Merely having an active conflict is not knowledge and must never create a UI offer by itself.
     private void MaybeSendAllianceOffers()
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
@@ -306,43 +316,51 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
-        var offered = new HashSet<long>(offeredAllianceConflictIds);
-        foreach (var conflict in State.Conflicts
-            .Where(conflict => conflict.Status == WorldConflictStatus.Active
-                && !conflict.Involves(playerId!)
-                && !offered.Contains(conflict.Id.Value))
-            .OrderByDescending(conflict => conflict.WarExhaustionA + conflict.WarExhaustionB)
-            .ThenBy(conflict => conflict.Id.Value))
+        var processedMissions = new HashSet<long>(processedDiplomaticArrivalMissionIds);
+        var offeredConflicts = new HashSet<long>(offeredAllianceConflictIds);
+        foreach (var arrival in State.Events
+            .Where(worldEvent => worldEvent.Kind == WorldEventKind.DiplomaticMissionArrived
+                && worldEvent.SubjectId.HasValue
+                && !processedMissions.Contains(worldEvent.SubjectId.Value.Value))
+            .OrderBy(worldEvent => worldEvent.Tick)
+            .ThenBy(worldEvent => worldEvent.Id.Value))
         {
-            var ally = AlliableParticipant(conflict, playerId!);
-            if (ally == null)
+            var missionId = arrival.SubjectId!.Value;
+            var mission = State.GetMission(missionId);
+            processedDiplomaticArrivalMissionIds.Add(missionId.Value);
+            processedMissions.Add(missionId.Value);
+
+            if (mission == null
+                || mission.Kind != WorldMissionKind.Diplomat
+                || !string.Equals(mission.TargetFactionId, playerId, StringComparison.Ordinal)
+                || AllianceService.IsAlliedWithPlayer(State, mission.FactionId)
+                || DiplomacyService.GetStance(State, playerId!, mission.FactionId) != RelationStance.Neutral)
             {
                 continue;
             }
 
-            var enemy = string.Equals(ally, conflict.FactionA, StringComparison.Ordinal)
+            var conflict = State.Conflicts
+                .Where(candidate => candidate.Status == WorldConflictStatus.Active
+                    && candidate.Involves(mission.FactionId)
+                    && !candidate.Involves(playerId!)
+                    && !offeredConflicts.Contains(candidate.Id.Value))
+                .OrderByDescending(candidate => candidate.WarExhaustionA + candidate.WarExhaustionB)
+                .ThenBy(candidate => candidate.Id.Value)
+                .FirstOrDefault();
+            if (conflict == null)
+            {
+                continue;
+            }
+
+            var enemy = string.Equals(mission.FactionId, conflict.FactionA, StringComparison.Ordinal)
                 ? conflict.FactionB
                 : conflict.FactionA;
 
             offeredAllianceConflictIds.Add(conflict.Id.Value);
-            SendAllianceOffer(offerDef, ally, enemy);
+            offeredConflicts.Add(conflict.Id.Value);
+            SendAllianceOffer(offerDef, mission.FactionId, enemy);
             return; // One offer per catch-up, never a flood.
         }
-    }
-
-    private string? AlliableParticipant(WorldConflict conflict, string playerId)
-    {
-        foreach (var faction in new[] { conflict.FactionA, conflict.FactionB })
-        {
-            if (!string.Equals(faction, playerId, StringComparison.Ordinal)
-                && !AllianceService.IsAlliedWithPlayer(State, faction)
-                && DiplomacyService.GetStance(State, playerId, faction) == RelationStance.Neutral)
-            {
-                return faction;
-            }
-        }
-
-        return null;
     }
 
     private void SendAllianceOffer(LetterDef offerDef, string allyFactionId, string enemyFactionId)
@@ -936,6 +954,30 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     mission.ArrivalTick,
                     BuildMissionMarkerDetails(mission));
             }
+
+            // Starvation/refugee migrations are physical traffic too. Settlement-founding groups
+            // use their dedicated bridge because they also reserve and create a destination tile.
+            foreach (var group in State.MigrationGroups)
+            {
+                if (group.Status != MigrationGroupStatus.Traveling
+                    || string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal)
+                    || !group.TargetSettlementId.HasValue)
+                {
+                    continue;
+                }
+
+                EnsureMissionMarker(
+                    worldObjects, markerDef, existing, live,
+                    $"migration:{group.Id.Value}",
+                    "World/LivingWorld_Settler",
+                    "LW_MissionKind_Refugees".Translate(),
+                    group.FactionId,
+                    group.SourceSettlementId,
+                    group.TargetSettlementId.Value,
+                    group.CreatedTick,
+                    group.ArrivalTick,
+                    BuildMigrationMarkerDetails(group));
+            }
         }
 
         foreach (var pair in existing)
@@ -1033,11 +1075,22 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     journey.CreatedTick,
                     journey.ArrivalTick,
                     faction?.Name ?? target.FactionId,
-                    target.Name,
+                    LivingWorldTransitVisibility.CanRevealSettlement(State, target.Id)
+                        ? target.Name
+                        : "LW_UnknownDestination".Translate(),
                     1,
                     0,
                     string.Empty,
                     journey.Reason);
+                marker.SetStrategicVisibility(LivingWorldTransitVisibility.IsKnown(
+                    State,
+                    target.FactionId,
+                    target.Id,
+                    target.Id,
+                    originTile,
+                    targetTile,
+                    journey.CreatedTick,
+                    journey.ArrivalTick));
                 if (isNew)
                 {
                     worldObjects.Add(marker);
@@ -1091,14 +1144,14 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
-        live.Add(key);
-
         var origin = State.GetSettlement(originSettlementId);
         var originTile = origin != null ? ParseSettlementTile(origin.Slug) : targetTile;
         if (originTile < 0)
         {
             originTile = targetTile;
         }
+
+        live.Add(key);
 
         var faction = Find.FactionManager?.AllFactionsListForReading
             .FirstOrDefault(candidate => candidate.def?.defName == factionId);
@@ -1120,11 +1173,22 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             departTick,
             arrivalTick,
             faction?.Name ?? factionId,
-            target.Name,
+            LivingWorldTransitVisibility.CanRevealSettlement(State, targetSettlementId)
+                ? target.Name
+                : "LW_UnknownDestination".Translate(),
             details.Combatants,
             details.Strength,
             details.ResourceSummary,
             details.Reason);
+        marker.SetStrategicVisibility(LivingWorldTransitVisibility.IsKnown(
+            State,
+            factionId,
+            originSettlementId,
+            targetSettlementId,
+            originTile,
+            targetTile,
+            departTick,
+            arrivalTick));
         if (isNew)
         {
             worldObjects.Add(marker);
@@ -1317,6 +1381,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     {
         return TryParseMarkerId(key, "caravan:", EntityKind.Caravan, out id)
             || TryParseMarkerId(key, "mission:", EntityKind.Mission, out id)
+            || TryParseMarkerId(key, "migration:", EntityKind.MigrationGroup, out id)
             || TryParseMarkerId(key, LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, EntityKind.MigrationGroup, out id)
             || TryParseMarkerId(key, "drifter:", EntityKind.DrifterAssimilationJourney, out id)
             || TryParseMarkerId(key, LivingWorldDrifterFoundingWorldBridge.MarkerKeyPrefix, EntityKind.DrifterFoundingJourney, out id);
@@ -1645,7 +1710,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 MaterializationPurpose.ScoutingParty,
                 markerKey,
                 Count: 1,
-                LifetimeTicks: travelTicks + TicksPerDay));
+                LifetimeTicks: (travelTicks * 2) + TicksPerDay));
         if (leases.Status != MaterializationLeaseStatus.Success || leases.Leases.Count != 1)
         {
             return;
@@ -1677,45 +1742,149 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         {
             var leaseId = EntityId.Create(EntityKind.MaterializationLease, scout.LeaseId);
             var lease = State.GetMaterializationLease(leaseId);
-            var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == scout.TargetTile);
-            if (lease?.IsActive == true && map != null)
+            if (lease?.IsActive != true)
             {
-                State.AdvanceToTick(tick);
-                var wealth = Math.Max(0f, map.wealthWatcher?.WealthTotal ?? 0f);
-                var valueBand = wealth >= 250_000f
-                    ? RaidIntelValueBand.Extreme
-                    : wealth >= 100_000f
-                        ? RaidIntelValueBand.High
-                        : wealth >= 30_000f
-                            ? RaidIntelValueBand.Moderate
-                            : RaidIntelValueBand.Low;
-                var demand = Math.Max(1, Math.Min(12, (int)Math.Ceiling(wealth / 25_000f)));
+                playerReconnaissance.Remove(scout);
+                continue;
+            }
+
+            if (!scout.Returning)
+            {
+                var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == scout.TargetTile);
+                if (map != null && IsPlayerScoutDetected(scout, map))
+                {
+                    MaterializationLeaseService.Resolve(
+                        State,
+                        new MaterializationLeaseResolveRequest(
+                            lease.Id,
+                            PawnFateKind.Missing,
+                            "hostile scout was detected near the player colony"));
+                    Find.LetterStack?.ReceiveLetter(
+                        "LW_PlayerScoutDetectedLabel".Translate(),
+                        "LW_PlayerScoutDetectedText".Translate(),
+                        LetterDefOf.NeutralEvent,
+                        new LookTargets(map.Parent));
+                    playerReconnaissance.Remove(scout);
+                    continue;
+                }
+
+                if (map != null)
+                {
+                    var reportedWealth = NoisyObservedWealth(scout.MarkerKey, map.wealthWatcher?.WealthTotal ?? 0f);
+                    scout.ReportedValueBand = reportedWealth >= 250_000f
+                        ? RaidIntelValueBand.Extreme
+                        : reportedWealth >= 100_000f
+                            ? RaidIntelValueBand.High
+                            : reportedWealth >= 30_000f
+                                ? RaidIntelValueBand.Moderate
+                                : RaidIntelValueBand.Low;
+                    scout.ReportedCombatantDemand = scout.ReportedValueBand switch
+                    {
+                        RaidIntelValueBand.Extreme => 12,
+                        RaidIntelValueBand.High => 8,
+                        RaidIntelValueBand.Moderate => 4,
+                        _ => 2,
+                    };
+                    scout.HasReport = true;
+                }
+
+                var oldOrigin = scout.OriginTile;
+                scout.OriginTile = scout.TargetTile;
+                scout.TargetTile = oldOrigin;
+                scout.DepartTick = tick;
+                var distance = Find.WorldGrid?.ApproxDistanceInTiles(scout.OriginTile, scout.TargetTile) ?? 0f;
+                scout.ArrivalTick = tick + ApproachingRaidRuntime.TravelTicksFor(distance);
+                scout.Returning = true;
+                continue;
+            }
+
+            State.AdvanceToTick(tick);
+            if (scout.HasReport)
+            {
                 State.RecordRaidIntelFact(
                     IntelSourceKind.Scout,
                     scout.FactionDefName,
                     RaidIntelTargetKind.PlayerColony,
-                    $"player-colony:{scout.TargetTile}",
-                    valueBand,
+                    $"player-colony:{scout.OriginTile}",
+                    scout.ReportedValueBand,
                     confidence: 55,
                     lifetimeTicks: RaidIntelService.DefaultTradeIntelLifetimeTicks,
-                    combatantDemand: demand,
-                    summary: $"Scout reached the player colony and reported {valueBand.ToString().ToLowerInvariant()} value.");
+                    combatantDemand: scout.ReportedCombatantDemand,
+                    summary: $"A scout returned and reported {scout.ReportedValueBand.ToString().ToLowerInvariant()} value.");
             }
-
-            if (lease?.IsActive == true)
-            {
-                MaterializationLeaseService.Release(
-                    State,
-                    lease.Id,
-                    map == null ? "player scout target disappeared" : "player scout returned with intel");
-            }
-
+            MaterializationLeaseService.Release(
+                State,
+                lease.Id,
+                scout.HasReport ? "player scout physically returned with intel" : "player scout returned without a report");
             playerReconnaissance.Remove(scout);
         }
 
         if (arrived.Count > 0)
         {
             SyncPlayerReconnaissanceMarkers();
+        }
+    }
+
+    public bool TryInterceptPlayerScout(string markerKey)
+    {
+        var scout = playerReconnaissance.FirstOrDefault(candidate =>
+            string.Equals(candidate.MarkerKey, markerKey, StringComparison.Ordinal));
+        if (scout == null)
+        {
+            return false;
+        }
+
+        var lease = State.GetMaterializationLease(
+            EntityId.Create(EntityKind.MaterializationLease, scout.LeaseId));
+        if (lease?.IsActive != true)
+        {
+            playerReconnaissance.Remove(scout);
+            SyncPlayerReconnaissanceMarkers();
+            return false;
+        }
+
+        var result = MaterializationLeaseService.Resolve(
+            State,
+            new MaterializationLeaseResolveRequest(
+                lease.Id,
+                PawnFateKind.Missing,
+                "hostile scout intercepted by a player caravan"));
+        if (result.Status != MaterializationLeaseResolveStatus.Success)
+        {
+            return false;
+        }
+
+        playerReconnaissance.Remove(scout);
+        SyncPlayerReconnaissanceMarkers();
+        return true;
+    }
+
+    private static bool IsPlayerScoutDetected(PendingPlayerReconnaissance scout, Map map)
+    {
+        var defenders = map.mapPawns?.FreeColonistsSpawnedCount ?? 0;
+        var wealthPressure = (int)Math.Min(30f, Math.Max(0f, map.wealthWatcher?.WealthTotal ?? 0f) / 50_000f * 5f);
+        var detectionChance = Math.Min(85, 10 + (defenders * 6) + wealthPressure);
+        return StableReconRoll(scout.MarkerKey + "|detected") < detectionChance;
+    }
+
+    private static float NoisyObservedWealth(string markerKey, float actualWealth)
+    {
+        var percent = 70 + (StableReconRoll(markerKey + "|estimate") % 61);
+        return Math.Max(0f, actualWealth) * (percent / 100f);
+    }
+
+    private static int StableReconRoll(string value)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var character in value ?? string.Empty)
+            {
+                hash ^= character;
+                hash *= 16777619;
+            }
+
+            return (int)(hash % 100);
         }
     }
 
@@ -1762,11 +1931,19 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     scout.DepartTick,
                     scout.ArrivalTick,
                     faction?.Name ?? scout.FactionDefName,
-                    scout.TargetLabel,
+                    scout.Returning
+                        ? State.GetSettlement(EntityId.Create(EntityKind.Settlement, scout.SourceSettlementId))?.Name
+                            ?? "LW_UnknownDestination".Translate().ToString()
+                        : scout.TargetLabel,
                     0,
                     0,
                     string.Empty,
                     "LW_MissionReason_Scout".Translate(1.Named("amount")));
+                marker.SetStrategicVisibility(LivingWorldTransitVisibility.IsPhysicallyObservedOnly(
+                    scout.OriginTile,
+                    scout.TargetTile,
+                    scout.DepartTick,
+                    scout.ArrivalTick));
                 if (isNew)
                 {
                     worldObjects.Add(marker);
@@ -1936,8 +2113,25 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 int playerTile = playerMap.Tile;
                 foreach (var cluster in mechClusters)
                 {
-                    if (cluster.Resolved || cluster.Awake || cluster.Tile < 0)
+                    if (cluster.Resolved || cluster.Tile < 0)
                     {
+                        continue;
+                    }
+
+                    if (cluster.Awake)
+                    {
+                        // Awake factories rebuild slowly and only from their finite material/energy
+                        // stores. No input means no new raid body.
+                        cluster.Energy = Math.Min(1_500, cluster.Energy + (20 * Math.Max(1, days)));
+                        var producible = Math.Min(
+                            Math.Max(0, days),
+                            Math.Min(cluster.Steel / 40, cluster.Energy / 25));
+                        if (producible > 0 && cluster.AvailableUnits < 40)
+                        {
+                            cluster.AvailableUnits += producible;
+                            cluster.Steel -= producible * 40;
+                            cluster.Energy -= producible * 25;
+                        }
                         continue;
                     }
 
@@ -2010,6 +2204,89 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
     }
 
+    public bool TryReserveMechanoidRaid(IncidentParms parms, out MechRaidReservation reservation)
+    {
+        reservation = null!;
+        if (!(LivingWorldSettings.Instance ?? new LivingWorldSettings()).mechClustersEnabled
+            || parms == null)
+        {
+            return false;
+        }
+
+        EnsureMechClusters();
+        EnsureMechClusterSites();
+        var map = parms.target as Map ?? Find.AnyPlayerHomeMap;
+        var grid = Find.WorldGrid;
+        if (map == null || grid == null)
+        {
+            return false;
+        }
+
+        var units = Math.Max(1, (int)Math.Ceiling(Math.Max(35f, parms.points) / 150f));
+        var steel = units * 30;
+        var energy = units * 20;
+        var cluster = mechClusters
+            .Where(candidate => !candidate.Resolved
+                && candidate.Tile >= 0
+                && candidate.AvailableUnits >= units
+                && candidate.Steel >= steel
+                && candidate.Energy >= energy)
+            .OrderByDescending(candidate => candidate.Awake)
+            .ThenBy(candidate => grid.ApproxDistanceInTiles(candidate.Tile, map.Tile))
+            .ThenBy(candidate => candidate.Id)
+            .FirstOrDefault();
+        if (cluster == null)
+        {
+            return false;
+        }
+
+        if (!cluster.Awake)
+        {
+            AwakenMechCluster(cluster, Find.TickManager?.TicksGame ?? 0);
+        }
+
+        cluster.AvailableUnits -= units;
+        cluster.Steel -= steel;
+        cluster.Energy -= energy;
+        reservation = new MechRaidReservation(cluster.Id, units, steel, energy);
+        if (!MechRaidReservationRuntime.TryAdd(parms, reservation))
+        {
+            RestoreMechanoidRaidReservation(reservation);
+            reservation = null!;
+            return false;
+        }
+
+        return true;
+    }
+
+    public void CompleteMechanoidRaidReservation(MechRaidReservation reservation, bool launched)
+    {
+        if (!launched)
+        {
+            RestoreMechanoidRaidReservation(reservation);
+            return;
+        }
+
+        var cluster = mechClusters.FirstOrDefault(candidate => candidate.Id == reservation.ClusterId);
+        if (cluster != null)
+        {
+            cluster.RaidsLaunched++;
+        }
+    }
+
+    private void RestoreMechanoidRaidReservation(MechRaidReservation reservation)
+    {
+        var cluster = mechClusters.FirstOrDefault(candidate => candidate.Id == reservation.ClusterId);
+        if (cluster == null || cluster.Resolved)
+        {
+            return;
+        }
+
+        cluster.AvailableUnits += reservation.Units;
+        cluster.Steel += reservation.Steel;
+        cluster.Energy += reservation.Energy;
+    }
+
     private void AwakenMechCluster(MechClusterNode cluster, int tick)
     {
         cluster.Awake = true;
@@ -2053,6 +2330,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 Id = nextMechClusterId++,
                 Tile = tile,
                 Awake = false,
+                AvailableUnits = 24,
+                Steel = 1_200,
+                Energy = 1_000,
             });
         }
     }
@@ -2271,10 +2551,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         try
         {
             var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
-            if (!settings.arrivalsTravelEnabled)
-            {
-                return ApproachingGroupLaunchResult.NotHandled;
-            }
 
             var defName = incidentDef?.defName;
             if (string.IsNullOrWhiteSpace(defName) || parms?.target is not Map map)
@@ -2302,7 +2578,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             }
 
             var distance = Find.WorldGrid?.ApproxDistanceInTiles(source.Tile, targetTile) ?? 0f;
-            var travelTicks = ApproachingGroupRuntime.TravelTicksFor(distance);
+            // Disabling the visible travel animation must not disable conservation. The same exact
+            // citizens, animals and cargo are still reserved; they simply arrive on the next tick.
+            var travelTicks = settings.arrivalsTravelEnabled
+                ? ApproachingGroupRuntime.TravelTicksFor(distance)
+                : 1;
             var now = Find.TickManager?.TicksGame ?? 0;
             var requestedCitizens = EstimateApproachingGroupCitizens(parms, kindKey);
             var availableCitizens = CountAvailableCitizens(source.Settlement.Id);
@@ -2878,6 +3158,19 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         return new MissionMarkerDetails(0, 0, string.Empty, reason);
     }
 
+    private MissionMarkerDetails BuildMigrationMarkerDetails(WorldMigrationGroup group)
+    {
+        var people = State.Citizens.Count(citizen =>
+            (citizen.Status is CitizenStatus.Migrating or CitizenStatus.Refugee)
+            && State.GetOwner(citizen.Id) == group.Id);
+        var resources = FormatResourceSummary(ResourceLedgerService.GetResources(State, group.Id));
+        return new MissionMarkerDetails(
+            people,
+            people,
+            resources,
+            "LW_MissionReason_Refugees".Translate().ToString());
+    }
+
     private static string FormatResourceSummary(IReadOnlyList<ResourceStack> resources)
     {
         var visible = resources
@@ -3085,6 +3378,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         ruinSiteIds ??= new List<long>();
         Scribe_Collections.Look(ref offeredAllianceConflictIds, "livingWorld_offeredAllianceConflictIds", LookMode.Value);
         offeredAllianceConflictIds ??= new List<long>();
+        Scribe_Collections.Look(
+            ref processedDiplomaticArrivalMissionIds,
+            "livingWorld_processedDiplomaticArrivalMissionIds",
+            LookMode.Value);
+        processedDiplomaticArrivalMissionIds ??= new List<long>();
         Scribe_Collections.Look(ref approachingRaids, "livingWorld_approachingRaids", LookMode.Deep);
         approachingRaids ??= new List<PendingApproachingRaid>();
         Scribe_Values.Look(ref nextApproachRaidId, "livingWorld_nextApproachRaidId", 0);

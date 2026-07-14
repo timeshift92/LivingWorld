@@ -34,6 +34,7 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     private int strength;
     private string resourceSummary = string.Empty;
     private string reason = string.Empty;
+    private bool strategicallyVisible = true;
 
     private Material? cachedMaterial;
 
@@ -69,6 +70,11 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
     {
         get
         {
+            if (!strategicallyVisible)
+            {
+                return false;
+            }
+
             var settings = LivingWorldSettings.Instance;
             if (settings == null)
             {
@@ -99,6 +105,11 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
 
             return settings.showWarbandMarkers;
         }
+    }
+
+    internal void SetStrategicVisibility(bool visible)
+    {
+        strategicallyVisible = visible;
     }
 
     public void Configure(

@@ -49,6 +49,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
     private List<LivingWorldTrackedMapFloor> floors = new();
     private List<LivingWorldTrackedMapAnimal> animals = new();
     private List<long> reconciledFacilityIds = new();
+    private List<LivingWorldWarehouseManifestEntry> warehouseManifest = new();
+    private int lastLiveSyncTick = -1;
 
     public LivingWorldSettlementVisitMapComponent(Map map)
         : base(map)
@@ -93,6 +95,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
 
     public IReadOnlyList<LivingWorldTrackedMapAnimal> Animals => animals;
 
+    public IReadOnlyList<LivingWorldWarehouseManifestEntry> WarehouseManifest => warehouseManifest;
+
     public void ConfigureFrom(WorldObject_LivingWorldSettlementVisitSite visitSite)
     {
         var settlementId = visitSite?.SettlementId;
@@ -127,6 +131,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         floors.Clear();
         animals.Clear();
         reconciledFacilityIds.Clear();
+        warehouseManifest.Clear();
+        lastLiveSyncTick = -1;
         lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Preparing;
         return true;
     }
@@ -272,12 +278,120 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         facilityThings.Clear();
         floors.Clear();
         animals.Clear();
+        warehouseManifest.Clear();
+    }
+
+    public void ConfigureWarehouseManifest(IReadOnlyDictionary<string, int> requested)
+    {
+        warehouseManifest = (requested ?? new Dictionary<string, int>())
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && pair.Value > 0)
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new LivingWorldWarehouseManifestEntry(pair.Key, pair.Value, 0))
+            .ToList();
+    }
+
+    public void RefreshWarehouseMaterializedCounts()
+    {
+        foreach (var entry in warehouseManifest)
+        {
+            var quantity = resources
+                .Where(resource => string.Equals(resource.ResourceKey, entry.ResourceKey, StringComparison.Ordinal))
+                .Sum(resource =>
+                {
+                    var thing = FindTrackedThing(resource.ThingId);
+                    return thing != null && !thing.Destroyed
+                        ? thing.stackCount
+                        : Math.Max(0, resource.ReservedQuantity);
+                });
+            entry.SetMaterializedQuantity(quantity);
+        }
+    }
+
+    public void UpdateWarehouseTarget(string resourceKey, int targetQuantity)
+    {
+        if (string.IsNullOrWhiteSpace(resourceKey))
+        {
+            return;
+        }
+
+        var entry = warehouseManifest.FirstOrDefault(candidate =>
+            string.Equals(candidate.ResourceKey, resourceKey, StringComparison.Ordinal));
+        if (entry == null)
+        {
+            warehouseManifest.Add(new LivingWorldWarehouseManifestEntry(resourceKey.Trim(), targetQuantity, 0));
+        }
+        else
+        {
+            entry.SetTargetQuantity(targetQuantity);
+        }
+    }
+
+    private Thing? FindTrackedThing(int thingId)
+    {
+        var thing = map.listerThings?.AllThings.FirstOrDefault(candidate => candidate?.thingIDNumber == thingId);
+        if (thing != null)
+        {
+            return thing;
+        }
+
+        return map.mapPawns.AllPawns
+            .SelectMany(pawn =>
+                (pawn.equipment?.AllEquipmentListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+                .Concat(pawn.apparel?.WornApparel.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+                .Concat(pawn.inventory?.innerContainer.InnerListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>()))
+            .FirstOrDefault(candidate => candidate?.thingIDNumber == thingId);
+    }
+
+    public void RefreshMaterializedPopulation()
+    {
+        materializedPopulation = map.mapPawns.AllPawns.Count(pawn =>
+            pawn != null
+            && !pawn.Dead
+            && pawn.RaceProps?.Humanlike == true
+            && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId == true);
+        materializedScore = Math.Max(materializedPopulation, materializedScore);
+    }
+
+    public override void MapComponentTick()
+    {
+        base.MapComponentTick();
+        if (Lifecycle != LivingWorldMapMaterializationLifecycle.Materialized)
+        {
+            return;
+        }
+
+        var tick = Find.TickManager?.TicksGame ?? 0;
+        if (lastLiveSyncTick >= 0 && tick - lastLiveSyncTick < 2_500)
+        {
+            return;
+        }
+
+        lastLiveSyncTick = tick;
+        LivingWorldSettlementMapLiveSyncService.Sync(map, this, tick);
     }
 
     public override void FinalizeInit()
     {
         base.FinalizeInit();
         LivingWorldAnimalMapPawnTracker.ReindexMap(map);
+        if (warehouseManifest.Count == 0 && resources.Count > 0)
+        {
+            foreach (var group in resources.GroupBy(resource => resource.ResourceKey, StringComparer.Ordinal))
+            {
+                var quantity = group
+                    .Sum(resource =>
+                    {
+                        var thing = FindTrackedThing(resource.ThingId);
+                        return thing != null && !thing.Destroyed
+                            ? thing.stackCount
+                            : Math.Max(0, resource.ReservedQuantity);
+                    });
+                if (quantity > 0)
+                {
+                    warehouseManifest.Add(new LivingWorldWarehouseManifestEntry(group.Key, quantity, quantity));
+                }
+            }
+        }
     }
 
     public override void ExposeData()
@@ -299,6 +413,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         Scribe_Collections.Look(ref floors, "livingWorld_trackedFloors", LookMode.Deep);
         Scribe_Collections.Look(ref animals, "livingWorld_trackedAnimals", LookMode.Deep);
         Scribe_Collections.Look(ref reconciledFacilityIds, "livingWorld_reconciledFacilityIds", LookMode.Value);
+        Scribe_Collections.Look(ref warehouseManifest, "livingWorld_warehouseManifest", LookMode.Deep);
+        Scribe_Values.Look(ref lastLiveSyncTick, "livingWorld_lastLiveSyncTick", -1);
 
         if (Scribe.mode == LoadSaveMode.PostLoadInit)
         {
@@ -307,11 +423,13 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             floors ??= new List<LivingWorldTrackedMapFloor>();
             animals ??= new List<LivingWorldTrackedMapAnimal>();
             reconciledFacilityIds ??= new List<long>();
+            warehouseManifest ??= new List<LivingWorldWarehouseManifestEntry>();
             resources.RemoveAll(entry => entry == null || entry.ThingId <= 0 || entry.ReturnOwnerValue <= 0);
             facilityThings.RemoveAll(entry => entry == null || entry.ThingId <= 0 || entry.FacilityIdValue <= 0);
             floors.RemoveAll(entry => entry == null || entry.FacilityIdValue <= 0);
             animals.RemoveAll(entry => entry == null || entry.PawnThingId <= 0 || entry.CohortIdValue <= 0);
             reconciledFacilityIds.RemoveAll(value => value <= 0);
+            warehouseManifest.RemoveAll(entry => entry == null || string.IsNullOrWhiteSpace(entry.ResourceKey));
 
             if (reconciled)
             {
@@ -360,6 +478,39 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
     public static LivingWorldSettlementVisitMapComponent? For(Map map)
     {
         return map?.GetComponent<LivingWorldSettlementVisitMapComponent>();
+    }
+}
+
+public sealed class LivingWorldWarehouseManifestEntry : IExposable
+{
+    private string resourceKey = string.Empty;
+    private int targetQuantity;
+    private int materializedQuantity;
+
+    public LivingWorldWarehouseManifestEntry()
+    {
+    }
+
+    public LivingWorldWarehouseManifestEntry(string resourceKey, int targetQuantity, int materializedQuantity)
+    {
+        this.resourceKey = resourceKey ?? string.Empty;
+        this.targetQuantity = Math.Max(0, targetQuantity);
+        this.materializedQuantity = Math.Max(0, materializedQuantity);
+    }
+
+    public string ResourceKey => resourceKey;
+    public int TargetQuantity => targetQuantity;
+    public int MaterializedQuantity => materializedQuantity;
+
+    public void SetTargetQuantity(int value) => targetQuantity = Math.Max(0, value);
+
+    public void SetMaterializedQuantity(int value) => materializedQuantity = Math.Max(0, value);
+
+    public void ExposeData()
+    {
+        Scribe_Values.Look(ref resourceKey, "resourceKey", string.Empty);
+        Scribe_Values.Look(ref targetQuantity, "targetQuantity", 0);
+        Scribe_Values.Look(ref materializedQuantity, "materializedQuantity", 0);
     }
 }
 

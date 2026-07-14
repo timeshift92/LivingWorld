@@ -11,8 +11,8 @@ namespace LivingWorld.RimWorld;
 /// appearing at the map edge, the group sets out from one of its faction's settlements and crosses the
 /// world map to the colony, materializing on arrival. A Prefix on each arrival incident defers it into a
 /// travelling group; on arrival the world component re-fires the same incident with FiringArrival set,
-/// which lets the vanilla worker run and spawn the group. Explicitly disabling travel keeps vanilla
-/// behavior for compatibility; once a faction is ledger-backed, reservation failures block the incident.
+/// which lets the vanilla worker run and spawn the group. Disabling the visible travel animation keeps
+/// this reservation contract and only reduces the journey to one tick; reservation failures still block.
 ///
 /// Each of visitor/trader/traveller overrides its own TryExecuteWorker, so each needs its own patch; all
 /// route through the same shared deferral. A ledger-backed faction is never allowed to fall through to

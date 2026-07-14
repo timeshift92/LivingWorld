@@ -2,7 +2,12 @@ namespace LivingWorld.Core;
 
 public sealed record CaravanMovementRequest(int Tick);
 
-public sealed record CaravanMovementResult(int Arrived);
+public sealed record CaravanMovementResult(int Arrived)
+{
+    public int ReachedTarget { get; init; }
+
+    public int BeganReturn { get; init; }
+}
 
 public static class CaravanMovementService
 {
@@ -16,18 +21,45 @@ public static class CaravanMovementService
         state.AdvanceToTick(request.Tick);
 
         var arrived = 0;
+        var reachedTarget = 0;
+        var beganReturn = 0;
         foreach (var caravan in state.Caravans
-            .Where(caravan => caravan.Status == CaravanStatus.Traveling && request.Tick >= caravan.ArrivalTick)
+            .Where(caravan => caravan.Status == CaravanStatus.Traveling)
             .OrderBy(caravan => caravan.Id.Value)
             .ToList())
         {
-            var updated = state.MarkCaravanArrived(caravan.Id);
-            if (updated.Status == CaravanStatus.Arrived)
+            if (caravan.Phase == WorldTransitPhase.Outbound && request.Tick >= caravan.ArrivalTick)
             {
-                arrived++;
+                if (!state.IsActiveSettlement(caravan.TargetSettlementId))
+                {
+                    state.BeginCaravanReturn(caravan.Id, completeAsRecalled: true, "target settlement unavailable");
+                    beganReturn++;
+                }
+                else
+                {
+                    state.MarkCaravanArrived(caravan.Id);
+                    reachedTarget++;
+                }
+            }
+            else if (caravan.Phase == WorldTransitPhase.AtTarget && request.Tick > caravan.StatusTick)
+            {
+                state.ExecuteCaravanTradeAndBeginReturn(caravan.Id);
+                beganReturn++;
+            }
+            else if (caravan.Phase == WorldTransitPhase.Returning && request.Tick >= caravan.ReturnArrivalTick)
+            {
+                var completed = state.CompleteCaravanReturn(caravan.Id);
+                if (completed.Status == CaravanStatus.Arrived)
+                {
+                    arrived++;
+                }
             }
         }
 
-        return new CaravanMovementResult(arrived);
+        return new CaravanMovementResult(arrived)
+        {
+            ReachedTarget = reachedTarget,
+            BeganReturn = beganReturn,
+        };
     }
 }

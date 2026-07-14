@@ -42,7 +42,8 @@ public static class SettlementMapDamageService
                 0);
         }
 
-        if (state.GetSettlementFacility(request.FacilityId) == null)
+        var facility = state.GetSettlementFacility(request.FacilityId);
+        if (facility == null)
         {
             return new SettlementMapDamageResult(
                 SettlementMapDamageStatus.UnknownFacility,
@@ -59,7 +60,14 @@ public static class SettlementMapDamageService
                 0);
         }
 
-        var damagePercent = Math.Max(1, Math.Min(100, destroyed * 100 / request.TrackedThings));
+        var destroyedFractionPercent = Math.Max(
+            1,
+            Math.Min(100, (int)Math.Ceiling(destroyed * 100d / request.TrackedThings)));
+        var damagePercent = Math.Max(
+            1,
+            Math.Min(
+                facility.ConditionPercent,
+                (int)Math.Ceiling(facility.ConditionPercent * destroyedFractionPercent / 100d)));
         SettlementFacilityService.DamageFacility(
             state,
             request.FacilityId,
@@ -68,7 +76,7 @@ public static class SettlementMapDamageService
 
         return new SettlementMapDamageResult(
             SettlementMapDamageStatus.Success,
-            $"Facility {request.FacilityId} took {damagePercent}% map damage.",
+            $"Facility {request.FacilityId} lost {damagePercent} condition from {destroyedFractionPercent}% destroyed map structures.",
             damagePercent);
     }
 }
