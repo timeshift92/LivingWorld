@@ -311,4 +311,6 @@
   <LW_RaidWarningSource_Public>your colony's reputation precedes it</LW_RaidWarningSource_Public>
   <LW_MobilizeToggle>Mobilize colony</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Send combat-capable colonists to their outfit stand to gear up and fight. The colony also mobilizes automatically while the map is in danger, and stands down to civilian clothes afterwards.</LW_MobilizeTooltip>
+  <LW_FighterToggle>Fighter</LW_FighterToggle>
+  <LW_FighterTooltip>Mark this colonist as a fighter. Fighters arm up from their outfit stand and fight when the colony mobilizes; everyone else takes shelter. Combat-skilled colonists are fighters by default — toggle to override.</LW_FighterTooltip>
 </LanguageData>

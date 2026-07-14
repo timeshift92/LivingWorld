@@ -311,4 +311,6 @@
   <LW_RaidWarningSource_Public>репутация вашей колонии опережает вас</LW_RaidWarningSource_Public>
   <LW_MobilizeToggle>Мобилизовать колонию</LW_MobilizeToggle>
   <LW_MobilizeTooltip>Отправить боеспособных колонистов к их манекену — экипироваться и в бой. Колония также мобилизуется сама, пока на карте опасность, и после отбоя возвращается к гражданской одежде.</LW_MobilizeTooltip>
+  <LW_FighterToggle>Боец</LW_FighterToggle>
+  <LW_FighterTooltip>Пометить колониста как бойца. Бойцы экипируются с манекена и воюют при мобилизации; остальные уходят в укрытие. Колонисты с боевым навыком — бойцы по умолчанию, переключи чтобы изменить.</LW_FighterTooltip>
 </LanguageData>
