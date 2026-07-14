@@ -15,8 +15,15 @@ public static class LivingWorldTrackedResourceSplitPatch
 [HarmonyPatch(typeof(ThingWithComps), nameof(ThingWithComps.TryAbsorbStack))]
 public static class LivingWorldTrackedResourceAbsorbPatch
 {
-    public static bool Prefix(ThingWithComps __instance, Thing other, ref bool __result)
+    public static bool Prefix(
+        ThingWithComps __instance,
+        Thing other,
+        ref bool __result,
+        out LivingWorldTrackedResourceAbsorbState __state)
     {
+        __state = new LivingWorldTrackedResourceAbsorbState(
+            __instance?.stackCount ?? 0,
+            other?.stackCount ?? 0);
         if (LivingWorldSettlementMapResourceTracker.AllowStack(__instance, other))
         {
             return true;
@@ -26,11 +33,19 @@ public static class LivingWorldTrackedResourceAbsorbPatch
         return false;
     }
 
-    public static void Postfix(Thing other, bool __result)
+    public static void Postfix(
+        ThingWithComps __instance,
+        Thing other,
+        LivingWorldTrackedResourceAbsorbState __state)
     {
-        if (__result)
-        {
-            LivingWorldSettlementMapResourceTracker.NotifyAbsorbed(other);
-        }
+        LivingWorldSettlementMapResourceTracker.NotifyAbsorbed(
+            __instance,
+            other,
+            __state.DestinationCountBefore,
+            __state.SourceCountBefore);
     }
 }
+
+public sealed record LivingWorldTrackedResourceAbsorbState(
+    int DestinationCountBefore,
+    int SourceCountBefore);

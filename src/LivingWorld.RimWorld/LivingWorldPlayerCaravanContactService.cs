@@ -63,7 +63,7 @@ internal static class LivingWorldPlayerCaravanContactService
             "LW_PlayerCaravanContactEngage".Translate(),
             () =>
             {
-                if (TryStartLedgerAmbush(state, playerCaravan, marker))
+                if (TryResolveHostileContact(state, playerCaravan, marker))
                 {
                     onResolved();
                 }
@@ -77,6 +77,40 @@ internal static class LivingWorldPlayerCaravanContactService
                 }
             },
             title: "LW_PlayerCaravanMarkerContactLabel".Translate()));
+    }
+
+    private static bool TryResolveHostileContact(
+        WorldState state,
+        Caravan playerCaravan,
+        WorldObject_LivingWorldArmy marker)
+    {
+        if (!marker.MarkerKey.StartsWith("playerscout:", StringComparison.Ordinal))
+        {
+            return TryStartLedgerAmbush(state, playerCaravan, marker);
+        }
+
+        var component = LivingWorldWorldComponent.Instance;
+        var intercept = component == null
+            ? null
+            : AccessTools.Method(component.GetType(), "TryInterceptPlayerScout", new[] { typeof(string) });
+        if (component == null || intercept == null)
+        {
+            SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
+            return false;
+        }
+
+        try
+        {
+            return intercept.Invoke(component, new object[] { marker.MarkerKey }) is true;
+        }
+        catch (Exception error)
+        {
+            Log.Warning(
+                $"[LivingWorld] Player scout interception failed safely: "
+                + $"{error.GetType().Name}: {error.Message}");
+            SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
+            return false;
+        }
     }
 
     private static void ShowTradeContact(
@@ -236,43 +270,48 @@ internal static class LivingWorldPlayerCaravanContactService
         EntityId ledgerCaravanId,
         TradeOffer offer)
     {
-        if (CountThing(playerCaravan, ThingDefOf.Silver) < offer.Price
-            || state.GetOwnedResourceQuantity(ledgerCaravanId, offer.ResourceDef.defName) < offer.Quantity)
+        var playerSilverBefore = CountThing(playerCaravan, ThingDefOf.Silver);
+        var playerGoodsBefore = CountThing(playerCaravan, offer.ResourceDef);
+        var ledgerGoodsBefore = state.GetOwnedResourceQuantity(ledgerCaravanId, offer.ResourceDef.defName);
+        var ledgerSilverBefore = state.GetOwnedResourceQuantity(ledgerCaravanId, ThingDefOf.Silver.defName);
+        if (playerSilverBefore < offer.Price || ledgerGoodsBefore < offer.Quantity)
         {
-            SendContactFailure("LW_PlayerCaravanTradeUnavailable".Translate());
-            return false;
-        }
-
-        var consumed = state.ConsumeResource(
-            ledgerCaravanId,
-            offer.ResourceDef.defName,
-            offer.Quantity,
-            "sold to player caravan during physical world contact");
-        if (consumed != offer.Quantity)
-        {
-            if (consumed > 0)
-            {
-                state.AddResource(ledgerCaravanId, offer.ResourceDef.defName, consumed);
-            }
-
-            SendContactFailure("LW_PlayerCaravanTradeUnavailable".Translate());
-            return false;
-        }
-
-        if (!TryRemoveThing(playerCaravan, ThingDefOf.Silver, offer.Price))
-        {
-            state.AddResource(ledgerCaravanId, offer.ResourceDef.defName, offer.Quantity);
             SendContactFailure("LW_PlayerCaravanTradeUnavailable".Translate());
             return false;
         }
 
         try
         {
+            var consumed = state.ConsumeResource(
+                ledgerCaravanId,
+                offer.ResourceDef.defName,
+                offer.Quantity,
+                "sold to player caravan during physical world contact");
+            if (consumed != offer.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Ledger caravan supplied {consumed}/{offer.Quantity} {offer.ResourceDef.defName}.");
+            }
+
+            if (!TryRemoveThing(playerCaravan, ThingDefOf.Silver, offer.Price))
+            {
+                throw new InvalidOperationException("Player caravan silver could not be debited atomically.");
+            }
+
             var goods = ThingMaker.MakeThing(offer.ResourceDef);
             goods.stackCount = offer.Quantity;
             playerCaravan.AddPawnOrItem(goods, addCarriedPawnToWorldPawnsIfAny: true);
             playerCaravan.RecacheInventory();
             state.AddResource(ledgerCaravanId, ThingDefOf.Silver.defName, offer.Price);
+            VerifyTradePostconditions(
+                state,
+                playerCaravan,
+                ledgerCaravanId,
+                offer,
+                playerSilverBefore,
+                playerGoodsBefore,
+                ledgerGoodsBefore,
+                ledgerSilverBefore);
             Messages.Message(
                 "LW_PlayerCaravanTradeCompleted".Translate(
                     offer.Quantity.Named("quantity"),
@@ -283,11 +322,107 @@ internal static class LivingWorldPlayerCaravanContactService
         }
         catch (Exception error)
         {
-            state.AddResource(ledgerCaravanId, offer.ResourceDef.defName, offer.Quantity);
-            GiveThing(playerCaravan, ThingDefOf.Silver, offer.Price);
+            RestoreCaravanThingQuantity(playerCaravan, offer.ResourceDef, playerGoodsBefore);
+            RestoreCaravanThingQuantity(playerCaravan, ThingDefOf.Silver, playerSilverBefore);
+            RestoreLedgerQuantity(
+                state,
+                ledgerCaravanId,
+                offer.ResourceDef.defName,
+                ledgerGoodsBefore,
+                "rollback failed physical caravan trade goods");
+            RestoreLedgerQuantity(
+                state,
+                ledgerCaravanId,
+                ThingDefOf.Silver.defName,
+                ledgerSilverBefore,
+                "rollback failed physical caravan trade silver");
             Log.Warning($"[LivingWorld] Contact trade rolled back safely: {error.GetType().Name}: {error.Message}");
             SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
             return false;
+        }
+    }
+
+    private static void VerifyTradePostconditions(
+        WorldState state,
+        Caravan playerCaravan,
+        EntityId ledgerCaravanId,
+        TradeOffer offer,
+        int playerSilverBefore,
+        int playerGoodsBefore,
+        int ledgerGoodsBefore,
+        int ledgerSilverBefore)
+    {
+        if (CountThing(playerCaravan, ThingDefOf.Silver) != playerSilverBefore - offer.Price
+            || CountThing(playerCaravan, offer.ResourceDef) != playerGoodsBefore + offer.Quantity
+            || state.GetOwnedResourceQuantity(ledgerCaravanId, offer.ResourceDef.defName)
+                != ledgerGoodsBefore - offer.Quantity
+            || state.GetOwnedResourceQuantity(ledgerCaravanId, ThingDefOf.Silver.defName)
+                != ledgerSilverBefore + offer.Price)
+        {
+            throw new InvalidOperationException("Physical caravan trade postconditions did not conserve goods and silver.");
+        }
+    }
+
+    private static void RestoreLedgerQuantity(
+        WorldState state,
+        EntityId ownerId,
+        string resourceKey,
+        int expectedQuantity,
+        string reason)
+    {
+        try
+        {
+            var current = state.GetOwnedResourceQuantity(ownerId, resourceKey);
+            if (current < expectedQuantity)
+            {
+                state.AddResource(ownerId, resourceKey, expectedQuantity - current);
+            }
+            else if (current > expectedQuantity)
+            {
+                var consumed = state.ConsumeResource(ownerId, resourceKey, current - expectedQuantity, reason);
+                if (consumed != current - expectedQuantity)
+                {
+                    throw new InvalidOperationException(
+                        $"Rollback consumed {consumed}/{current - expectedQuantity} {resourceKey}.");
+                }
+            }
+
+            if (state.GetOwnedResourceQuantity(ownerId, resourceKey) != expectedQuantity)
+            {
+                throw new InvalidOperationException(
+                    $"Rollback did not restore {resourceKey} to {expectedQuantity}.");
+            }
+        }
+        catch (Exception rollbackError)
+        {
+            Log.Error(
+                $"[LivingWorld] Ledger rollback failed for {resourceKey}: "
+                + $"{rollbackError.GetType().Name}: {rollbackError.Message}");
+        }
+    }
+
+    private static void RestoreCaravanThingQuantity(Caravan caravan, ThingDef def, int expectedQuantity)
+    {
+        try
+        {
+            var current = CountThing(caravan, def);
+            if (current < expectedQuantity)
+            {
+                GiveThing(caravan, def, expectedQuantity - current);
+            }
+            else if (current > expectedQuantity && !TryRemoveThing(caravan, def, current - expectedQuantity))
+            {
+                throw new InvalidOperationException(
+                    $"Could not remove rollback excess of {current - expectedQuantity} {def.defName}.");
+            }
+
+            caravan.RecacheInventory();
+        }
+        catch (Exception rollbackError)
+        {
+            Log.Error(
+                $"[LivingWorld] Physical caravan rollback failed for {def.defName}: "
+                + $"{rollbackError.GetType().Name}: {rollbackError.Message}");
         }
     }
 

@@ -40,10 +40,11 @@ public static class LivingWorldPawnExitMapPatch
 [HarmonyPriority(Priority.Last)]
 public static class LivingWorldPawnDeSpawnPatch
 {
-    public static void Postfix(Pawn __instance)
+    public static void Prefix(Pawn __instance)
     {
         // DeSpawn is used by many mods for map transfers and temporary holders. Only treat it as
-        // a departure while the owning Pawn.ExitMap call is in progress.
+        // a departure while the owning Pawn.ExitMap call is in progress. This must be a prefix so
+        // tracked gear returns to the ledger before RimWorld detaches the pawn and its holders.
         LivingWorldPawnExitTracker.TryMarkReturnedIfExiting(__instance, "pawn despawned while exiting map");
     }
 }
@@ -103,6 +104,26 @@ public static class LivingWorldPawnExitTracker
             var exitAction = RaidPawnExitPolicy.Resolve(pawn.Dead, pawn.IsPrisoner, pawn.Downed);
             if (exitAction == RaidPawnExitAction.Return)
             {
+                try
+                {
+                    LivingWorldSettlementMapResourceTracker.ReconcilePawnGear(
+                        component.State,
+                        pawn,
+                        reason);
+                }
+                catch (Exception gearError)
+                {
+                    // The persisted resource state remains retryable by map reconciliation. Pawn fate
+                    // must still resolve so a failed gear destroy cannot strand the citizen forever.
+                    Log.Warning(
+                        $"[LivingWorld] Tracked pawn gear return remains pending for {pawn.ThingID}: "
+                        + $"{gearError.GetType().Name}: {gearError.Message}");
+                }
+
+                LivingWorldCompatibilityVisitorComponent.Instance?.NotifyReturned(
+                    component.State,
+                    pawn,
+                    reason);
                 component.NotifyApproachingGroupCarrierReturned(pawn, reason);
             }
 

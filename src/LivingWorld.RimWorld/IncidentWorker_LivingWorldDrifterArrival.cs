@@ -9,8 +9,8 @@ namespace LivingWorld.RimWorld;
 /// <summary>
 /// Storyteller-scheduled arrival that materializes a ledger drifter as a colony joiner.
 /// Cadence is native (vanilla storyteller picks it from the safe Misc category) and gated
-/// by the ledger via <see cref="CanFireNowSub"/>. Fail-open throughout: any failure leaves
-/// the game unchanged.
+/// by the ledger via <see cref="CanFireNowSub"/>. A generated pawn remains provisional until
+/// its ledger identity commits; failures preserve the person in the outside-world pool.
 /// </summary>
 public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
 {
@@ -39,11 +39,14 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
             return false;
         }
 
+        Pawn? pawn = null;
+        var ledgerCommitted = false;
         try
         {
             var state = component.State;
 
             var pooled = state.Drifters
+                .Where(drifter => !state.IsDrifterReserved(drifter.Id))
                 .OrderBy(drifter => drifter.ArrivalTick)
                 .ThenBy(drifter => drifter.Id.Value)
                 .FirstOrDefault();
@@ -55,27 +58,11 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
                 return false;
             }
 
-            var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(
+            pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(
                 PawnKindDefOf.SpaceRefugee,
                 faction: Faction.OfPlayer,
                 context: PawnGenerationContext.NonPlayer,
                 fixedGender: sex == Sex.Female ? Gender.Female : Gender.Male));
-
-            // Spawn first: only mutate the ledger once the pawn is actually placed on the
-            // map, so a spawn failure never consumes a drifter with no pawn to show for it.
-            GenSpawn.Spawn(pawn, spawnCell, map);
-
-            EntityId ledgerId;
-            if (pooled != null)
-            {
-                ledgerId = state.MaterializeDrifter(pooled.Id, pawn.thingIDNumber, tick).Id;
-            }
-            else
-            {
-                ledgerId = state
-                    .MaterializeNewArrival(pawn.thingIDNumber, tick, pawn.LabelShortCap, pawn.ageTracker.AgeBiologicalYears, sex)
-                    .Id;
-            }
 
             var identityComp = pawn.GetComp<CompLivingWorldIdentity>();
             if (identityComp == null)
@@ -84,20 +71,57 @@ public sealed class IncidentWorker_LivingWorldDrifterArrival : IncidentWorker
                 pawn.AllComps.Add(identityComp);
             }
 
-            identityComp.SetLedgerId(ledgerId);
+            // The spawned pawn is provisional until the ledger mutation commits. Any failure below
+            // destroys it, so a reserved/missing drifter can never leave a free colonist behind.
+            GenSpawn.Spawn(pawn, spawnCell, map);
 
-            SendStandardLetter(
-                "LW_DrifterArrivalLetterLabel".Translate(),
-                "LW_DrifterArrivalLetterText".Translate(pawn.LabelShortCap.Named("PAWN")),
-                LetterDefOf.PositiveEvent,
-                parms,
-                pawn);
+            // Create an unpooled candidate before the irreversible step. If identity or spawn fails,
+            // that person remains in the outside-world pool instead of disappearing. MaterializeDrifter
+            // is intentionally the final operation that can throw before commit.
+            var candidate = pooled ?? state.CreateDrifter(
+                pawn.LabelShortCap,
+                pawn.ageTracker.AgeBiologicalYears,
+                sex);
+            identityComp.SetLedgerId(candidate.Id);
+            state.MaterializeDrifter(candidate.Id, pawn.thingIDNumber, tick);
+            ledgerCommitted = true;
+
+            try
+            {
+                SendStandardLetter(
+                    "LW_DrifterArrivalLetterLabel".Translate(),
+                    "LW_DrifterArrivalLetterText".Translate(pawn.LabelShortCap.Named("PAWN")),
+                    LetterDefOf.PositiveEvent,
+                    parms,
+                    pawn);
+            }
+            catch (Exception letterError)
+            {
+                Log.Warning(
+                    $"[LivingWorld] Drifter arrived but its letter failed: "
+                    + $"{letterError.GetType().Name}: {letterError.Message}");
+            }
+
             return true;
         }
         catch (Exception error)
         {
+            if (!ledgerCommitted && pawn is { Destroyed: false })
+            {
+                try
+                {
+                    pawn.Destroy(DestroyMode.Vanish);
+                }
+                catch (Exception cleanupError)
+                {
+                    Log.Error(
+                        $"[LivingWorld] Failed provisional drifter cleanup: "
+                        + $"{cleanupError.GetType().Name}: {cleanupError.Message}");
+                }
+            }
+
             Log.Warning($"[LivingWorld] Drifter arrival failed, deferring to vanilla: {error}");
-            return false;
+            return ledgerCommitted;
         }
     }
 

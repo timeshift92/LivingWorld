@@ -7,6 +7,28 @@ using Verse;
 
 namespace LivingWorld.RimWorld;
 
+public enum VisitorCompatibilityBindStatus
+{
+    NotHandled,
+    Success,
+    InvalidRequest,
+    NoSourceSettlement,
+    ReservationFailed,
+    BindingFailed
+}
+
+public sealed record VisitorCompatibilityBindResult(
+    VisitorCompatibilityBindStatus Status,
+    string Reason,
+    int BoundHumans,
+    int MaterializedAnimals,
+    int MaterializedCargo,
+    PendingApproachingGroup? Manifest)
+{
+    public bool IsSuccess => Status == VisitorCompatibilityBindStatus.Success;
+    public bool IsHandled => Status != VisitorCompatibilityBindStatus.NotHandled;
+}
+
 /// <summary>
 /// Materializes an already-reserved neutral group. Vanilla may choose pawn kinds and apparel, but it
 /// cannot increase the number of people, animals or recoverable inventory beyond the persisted ledger
@@ -85,23 +107,43 @@ public static class LivingWorldVisitorBindingService
         return true;
     }
 
-    // Compatibility path for explicitly disabled world travel. It still binds every human when the
-    // source can support the full group; it never performs a partial identity assignment.
+    // Compatibility wrapper retained for API consumers. Callers that can veto generation should use
+    // BindVisitorPayload and honor its fail-close result.
     public static int BindVisitorPawns(WorldState state, string? factionDefName, IReadOnlyList<Pawn>? pawns)
+    {
+        return pawns is List<Pawn> mutable
+            ? BindVisitorPayload(state, factionDefName, mutable).BoundHumans
+            : 0;
+    }
+
+    public static VisitorCompatibilityBindResult BindVisitorPayload(
+        WorldState state,
+        string? factionDefName,
+        List<Pawn>? generatedPawns)
     {
         if (state == null
             || string.IsNullOrEmpty(factionDefName)
-            || pawns == null
-            || pawns.Count == 0
-            || state.IsInitialWorldSeedingActive)
+            || generatedPawns == null
+            || generatedPawns.Count == 0)
         {
-            return 0;
+            return CompatibilityResult(
+                VisitorCompatibilityBindStatus.InvalidRequest,
+                "Compatibility visitor binding requires state, faction and generated pawns.");
         }
 
-        var bindable = pawns.Where(IsBindableHuman).ToList();
+        if (state.IsInitialWorldSeedingActive)
+        {
+            return CompatibilityResult(
+                VisitorCompatibilityBindStatus.NotHandled,
+                "Initial world seeding remains owned by RimWorld.");
+        }
+
+        var bindable = generatedPawns.Where(IsBindableHuman).ToList();
         if (bindable.Count == 0)
         {
-            return 0;
+            return CompatibilityResult(
+                VisitorCompatibilityBindStatus.InvalidRequest,
+                "Generated neutral group has no bindable humans.");
         }
 
         var source = state.Settlements
@@ -112,45 +154,86 @@ public static class LivingWorldVisitorBindingService
             .FirstOrDefault();
         if (source == null)
         {
-            return 0;
+            return CompatibilityResult(
+                VisitorCompatibilityBindStatus.NoSourceSettlement,
+                $"No active Living World settlement owns faction {factionDefName}.");
         }
 
-        var result = MaterializationLeaseService.CreateLeases(
+        var purposeKey = $"compat-visit:{factionDefName}:{state.CurrentTick}:{bindable[0].thingIDNumber}";
+        var requestedResources = generatedPawns
+            .Where(pawn => pawn?.inventory?.innerContainer != null)
+            .SelectMany(pawn => pawn.inventory.innerContainer.InnerListForReading)
+            .Where(thing => thing != null && !thing.Destroyed)
+            .Select(thing => new
+            {
+                ResourceKey = thing.GetInnerIfMinified()?.def?.defName,
+                Quantity = Math.Max(0, thing.stackCount)
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.ResourceKey) && item.Quantity > 0)
+            .GroupBy(item => item.ResourceKey!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantity), StringComparer.Ordinal);
+        var requestedAnimals = generatedPawns.Count(pawn => pawn?.RaceProps?.Animal == true && !pawn.Dead);
+        var reservation = TravelingGroupReservationService.Reserve(
             state,
-            new MaterializationLeaseRequest(
-                source.Id,
+            new TravelingGroupReservationRequest(
                 source.Id,
                 MaterializationPurpose.SettlementVisit,
-                $"visit:{factionDefName}:{state.CurrentTick}",
+                purposeKey,
                 bindable.Count,
-                VisitLeaseLifetimeTicks));
-        if (result.Status != MaterializationLeaseStatus.Success)
+                VisitLeaseLifetimeTicks,
+                requestedResources,
+                requestedAnimals,
+                state.CurrentTick));
+        if (reservation.Status != TravelingGroupReservationStatus.Success
+            || !reservation.ResourceOwnerId.HasValue)
         {
-            return 0;
+            return CompatibilityResult(
+                VisitorCompatibilityBindStatus.ReservationFailed,
+                reservation.Reason);
         }
 
-        for (var index = 0; index < bindable.Count; index++)
+        var manifest = CreateCompatibilityManifest(
+            source,
+            factionDefName!,
+            purposeKey,
+            reservation,
+            generatedPawns.Count);
+        try
         {
-            var lease = result.Leases[index];
-            var pawn = bindable[index];
-            var bind = MaterializationLeaseService.BindPawn(state, lease.Id, pawn.thingIDNumber);
-            if (bind.Status != MaterializationLeaseBindStatus.Success)
+            if (!BindReservedVisitorPawns(state, manifest, generatedPawns)
+                || manifest.BoundPawnThingIds.Count != bindable.Count)
             {
-                foreach (var created in result.Leases)
-                {
-                    if (state.GetMaterializationLease(created.Id)?.IsActive == true)
-                    {
-                        MaterializationLeaseService.Release(state, created.Id, "immediate neutral group binding failed");
-                    }
-                }
-
-                return 0;
+                RollbackFailedArrival(
+                    state,
+                    manifest,
+                    generatedPawns,
+                    state.CurrentTick,
+                    "compatibility neutral group binding failed");
+                return CompatibilityResult(
+                    VisitorCompatibilityBindStatus.BindingFailed,
+                    "Generated neutral group could not be bound completely to its reserved manifest.");
             }
 
-            StampIdentity(pawn, lease.CitizenId);
+            return new VisitorCompatibilityBindResult(
+                VisitorCompatibilityBindStatus.Success,
+                "Compatibility neutral group is fully ledger-backed.",
+                manifest.BoundPawnThingIds.Count,
+                manifest.Animals.Count(animal => animal.PawnThingId > 0 && !animal.Resolved),
+                manifest.Cargo.Sum(cargo => cargo.MaterializedQuantity),
+                manifest);
         }
-
-        return bindable.Count;
+        catch (Exception error)
+        {
+            RollbackFailedArrival(
+                state,
+                manifest,
+                generatedPawns,
+                state.CurrentTick,
+                "compatibility neutral group binding threw");
+            return CompatibilityResult(
+                VisitorCompatibilityBindStatus.BindingFailed,
+                $"Compatibility neutral group binding failed: {error.GetType().Name}: {error.Message}");
+        }
     }
 
     public static void RollbackFailedArrival(
@@ -211,12 +294,85 @@ public static class LivingWorldVisitorBindingService
                 continue;
             }
 
-            state.AddResource(sourceId, resourceKey!, thing.stackCount);
-            state.RecordEvent(
-                WorldEventKind.SettlementTradeRecorded,
-                sourceId,
-                $"Neutral group returned {thing.stackCount} {resourceKey}: {reason}.");
-            returned += thing.stackCount;
+            var quantity = thing.stackCount;
+            var ledgerBefore = state.GetOwnedResourceQuantity(sourceId, resourceKey!);
+            pawn.inventory.innerContainer.Remove(thing);
+            var credited = false;
+            try
+            {
+                state.AddResource(sourceId, resourceKey!, quantity);
+                credited = state.GetOwnedResourceQuantity(sourceId, resourceKey!) == ledgerBefore + quantity;
+                if (!credited)
+                {
+                    throw new InvalidOperationException(
+                        $"Neutral group inventory credit mismatch for {resourceKey}: {ledgerBefore} + {quantity}.");
+                }
+
+                if (!thing.Destroyed)
+                {
+                    thing.Destroy(DestroyMode.Vanish);
+                }
+            }
+            catch (Exception error)
+            {
+                var current = state.GetOwnedResourceQuantity(sourceId, resourceKey!);
+                credited = current == ledgerBefore + quantity;
+                if (credited)
+                {
+                    if (!thing.Destroyed)
+                    {
+                        try
+                        {
+                            thing.Destroy(DestroyMode.Vanish);
+                        }
+                        catch (Exception destroyError)
+                        {
+                            Log.Warning(
+                                $"[LivingWorld] Credited visitor cargo could not be destroyed: "
+                                + $"{destroyError.GetType().Name}: {destroyError.Message}");
+                        }
+                    }
+                }
+                else if (!thing.Destroyed)
+                {
+                    pawn.inventory.innerContainer.TryAdd(thing, false);
+                }
+
+                Log.Warning(
+                    $"[LivingWorld] Visitor cargo return recovered safely: "
+                    + $"{error.GetType().Name}: {error.Message}");
+            }
+
+            if (!credited)
+            {
+                continue;
+            }
+
+            foreach (var cargo in group.Cargo.Where(candidate =>
+                         string.Equals(candidate.ResourceKey, resourceKey, StringComparison.Ordinal)))
+            {
+                var applied = Math.Min(quantity, Math.Max(0, cargo.MaterializedQuantity));
+                cargo.MaterializedQuantity -= applied;
+                break;
+            }
+
+            try
+            {
+                state.RecordEvent(
+                    WorldEventKind.SettlementTradeRecorded,
+                    sourceId,
+                    $"Neutral group returned {quantity} {resourceKey}: {reason}.");
+            }
+            catch (Exception eventError)
+            {
+                // Resource transfer already committed and the physical stack is gone. Event logging
+                // is diagnostic and must not make the caller retry the economic mutation.
+                Log.Warning(
+                    $"[LivingWorld] Visitor cargo return event was skipped: "
+                    + $"{eventError.GetType().Name}: {eventError.Message}");
+            }
+
+            returned += quantity;
         }
 
         return returned;
@@ -372,6 +528,51 @@ public static class LivingWorldVisitorBindingService
             && !pawn.Dead
             && pawn.RaceProps?.Humanlike == true
             && pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId != true;
+    }
+
+    private static PendingApproachingGroup CreateCompatibilityManifest(
+        WorldSettlement source,
+        string factionDefName,
+        string purposeKey,
+        TravelingGroupReservationResult reservation,
+        int generatedPawnCount)
+    {
+        var manifest = new PendingApproachingGroup
+        {
+            FactionDefName = factionDefName,
+            SourceSettlementIdValue = source.Id.Value,
+            PurposeKey = purposeKey,
+            LeaseIdValues = reservation.CitizenLeases.Select(lease => lease.Id.Value).ToList(),
+            ResourceOwnerLeaseIdValue = reservation.ResourceOwnerId?.Value ?? 0L,
+            PawnCount = generatedPawnCount,
+            Status = PendingApproachingGroupStatus.Materializing
+        };
+        manifest.Cargo.AddRange(reservation.Resources.Select(resource => new PendingApproachingGroupCargo
+        {
+            ResourceKey = resource.ResourceKey,
+            ReservedQuantity = resource.Quantity
+        }));
+        foreach (var animal in reservation.Animals)
+        {
+            for (var index = 0; index < animal.Count; index++)
+            {
+                manifest.Animals.Add(new PendingApproachingGroupAnimal
+                {
+                    CohortIdValue = animal.CohortId.Value,
+                    AnimalKind = animal.AnimalKind,
+                    Type = animal.Type
+                });
+            }
+        }
+
+        return manifest;
+    }
+
+    private static VisitorCompatibilityBindResult CompatibilityResult(
+        VisitorCompatibilityBindStatus status,
+        string reason)
+    {
+        return new VisitorCompatibilityBindResult(status, reason, 0, 0, 0, null);
     }
 
     private static void StampIdentity(Pawn pawn, EntityId citizenId)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LivingWorld.Core;
@@ -8,7 +9,7 @@ namespace LivingWorld.RimWorld;
 
 public static class LivingWorldSettlementMapResourceTracker
 {
-    public static void Track(Thing? thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = 0)
+    public static void Track(Thing? thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = -1)
     {
         var map = thing?.MapHeld;
         if (thing == null || map == null)
@@ -30,7 +31,8 @@ public static class LivingWorldSettlementMapResourceTracker
             return;
         }
 
-        component.TrackResource(split, tracked.ReturnOwnerId, tracked.ResourceKey);
+        var splitQuantity = tracked.SplitOff(source.stackCount, split.stackCount);
+        component.TrackResource(split, tracked.ReturnOwnerId, tracked.ResourceKey, splitQuantity);
     }
 
     public static bool AllowStack(Thing? destination, Thing? source)
@@ -52,14 +54,34 @@ public static class LivingWorldSettlementMapResourceTracker
             && destinationInfo.ResourceKey == sourceInfo.ResourceKey;
     }
 
-    public static void NotifyAbsorbed(Thing? source)
+    public static void NotifyAbsorbed(
+        Thing? destination,
+        Thing? source,
+        int destinationCountBefore,
+        int sourceCountBefore)
     {
-        if (source == null || !source.Destroyed || !TryGetTrackedResource(source, out _, out var component))
+        if (destination == null
+            || source == null
+            || !TryGetTrackedResource(destination, out var destinationTracked, out var destinationComponent)
+            || !TryGetTrackedResource(source, out var sourceTracked, out var sourceComponent)
+            || destinationComponent != sourceComponent)
         {
             return;
         }
 
-        component.RemoveResource(source.thingIDNumber);
+        destinationTracked.SynchronizePhysicalQuantity(Math.Max(0, destinationCountBefore));
+        var moved = Math.Max(0, destination.stackCount - Math.Max(0, destinationCountBefore));
+        var transferred = sourceTracked.TransferPhysicalUnits(
+            moved,
+            Math.Max(0, sourceCountBefore),
+            source.Destroyed ? 0 : Math.Max(0, source.stackCount));
+        destinationTracked.Absorb(destination.stackCount, transferred);
+
+        if (source.Destroyed || sourceTracked.PhysicalQuantity <= 0)
+        {
+            sourceTracked.MarkRemoved();
+            sourceComponent.RemoveResource(source.thingIDNumber);
+        }
     }
 
     public static int ReconcileMap(WorldState state, Map? map, string reason)
@@ -78,33 +100,131 @@ public static class LivingWorldSettlementMapResourceTracker
         var returned = 0;
         foreach (var tracked in component.Resources.ToList())
         {
+            if (tracked.ReconciliationState == LivingWorldTrackedResourceState.Removed)
+            {
+                component.RemoveResource(tracked.ThingId);
+                continue;
+            }
+
             var thing = FindTrackedThing(map, tracked.ThingId, out var heldByPlayer);
-            if (thing == null || thing.Destroyed || heldByPlayer)
+            if (heldByPlayer)
             {
+                tracked.MarkRemoved();
                 component.RemoveResource(tracked.ThingId);
                 continue;
             }
 
-            var quantity = tracked.ReservedQuantity > 0
-                ? tracked.ReservedQuantity
-                : thing.stackCount;
-            if (quantity <= 0)
+            if (tracked.ReconciliationState == LivingWorldTrackedResourceState.Pending)
             {
-                component.RemoveResource(tracked.ThingId);
-                continue;
+                if (thing == null || thing.Destroyed)
+                {
+                    tracked.MarkRemoved();
+                    component.RemoveResource(tracked.ThingId);
+                    continue;
+                }
+
+                tracked.SynchronizePhysicalQuantity(thing.stackCount);
+                if (tracked.RemainingQuantity <= 0)
+                {
+                    tracked.MarkRemoved();
+                    component.RemoveResource(tracked.ThingId);
+                    continue;
+                }
+
+                var ownerId = ResolveReturnOwner(state, tracked.ReturnOwnerId);
+                tracked.BeginCredit(ownerId, state.GetOwnedResourceQuantity(ownerId, tracked.ResourceKey));
             }
 
-            var ownerId = ResolveReturnOwner(state, tracked.ReturnOwnerId);
-            ResourceLedgerService.AddResource(state, ownerId, tracked.ResourceKey, quantity);
+            returned += EnsureCredited(state, tracked);
+            if (thing != null && !thing.Destroyed)
+            {
+                thing.Destroy(DestroyMode.Vanish);
+            }
+
+            tracked.MarkRemoved();
             component.RemoveResource(tracked.ThingId);
-            returned += quantity;
+        }
+
+        return returned;
+    }
+
+    public static int ReconcilePawnGear(WorldState state, Pawn? pawn, string reason)
+    {
+        if (state == null || pawn == null || pawn.Faction == Faction.OfPlayer)
+        {
+            return 0;
+        }
+
+        var returned = 0;
+        var things = (pawn.equipment?.AllEquipmentListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+            .Concat(pawn.apparel?.WornApparel.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+            .Concat(pawn.inventory?.innerContainer.InnerListForReading.Cast<Thing>() ?? Enumerable.Empty<Thing>())
+            .Distinct()
+            .ToList();
+        foreach (var thing in things)
+        {
+            if (!TryGetTrackedResource(thing, out var tracked, out var component))
+            {
+                continue;
+            }
+
+            if (tracked.ReconciliationState == LivingWorldTrackedResourceState.Pending)
+            {
+                tracked.SynchronizePhysicalQuantity(thing.stackCount);
+                if (tracked.RemainingQuantity <= 0)
+                {
+                    tracked.MarkRemoved();
+                    component.RemoveResource(tracked.ThingId);
+                    continue;
+                }
+
+                var ownerId = ResolveReturnOwner(state, tracked.ReturnOwnerId);
+                tracked.BeginCredit(ownerId, state.GetOwnedResourceQuantity(ownerId, tracked.ResourceKey));
+            }
+
+            returned += EnsureCredited(state, tracked);
             if (!thing.Destroyed)
             {
                 thing.Destroy(DestroyMode.Vanish);
             }
+
+            tracked.MarkRemoved();
+            component.RemoveResource(tracked.ThingId);
         }
 
         return returned;
+    }
+
+    private static int EnsureCredited(WorldState state, LivingWorldTrackedMapResource tracked)
+    {
+        if (tracked.ReconciliationState == LivingWorldTrackedResourceState.Credited)
+        {
+            return 0;
+        }
+
+        if (tracked.ReconciliationState != LivingWorldTrackedResourceState.Crediting)
+        {
+            throw new InvalidOperationException(
+                $"Tracked resource {tracked.ThingId} cannot be credited from {tracked.ReconciliationState}.");
+        }
+
+        var ownerId = tracked.CreditOwnerId;
+        var expected = tracked.CreditLedgerQuantityBefore + tracked.CreditQuantity;
+        var current = state.GetOwnedResourceQuantity(ownerId, tracked.ResourceKey);
+        if (current == tracked.CreditLedgerQuantityBefore)
+        {
+            ResourceLedgerService.AddResource(state, ownerId, tracked.ResourceKey, tracked.CreditQuantity);
+            current = state.GetOwnedResourceQuantity(ownerId, tracked.ResourceKey);
+        }
+
+        if (current != expected)
+        {
+            throw new InvalidOperationException(
+                $"Tracked resource credit mismatch for {tracked.ResourceKey}: expected {expected}, found {current}.");
+        }
+
+        tracked.MarkCredited();
+        return tracked.CreditQuantity;
     }
 
     private static Thing? FindTrackedThing(Map map, int thingId, out bool heldByPlayer)

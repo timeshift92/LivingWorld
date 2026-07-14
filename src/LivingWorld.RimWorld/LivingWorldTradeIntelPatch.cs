@@ -120,65 +120,114 @@ public static class LivingWorldTradeIntelPatch
             return;
         }
 
-        __state.Applied = true;
-        foreach (var transfer in __state.Transfers)
+        try
         {
-            if (transfer.PhysicalBacked)
+            ApplyCompletedTrade(__state);
+        }
+        catch (Exception error)
+        {
+            // Applied remains false. Per-transfer ledger baselines let a safe retry recognize already
+            // committed mutations instead of applying them twice.
+            Log.Error(
+                $"[LivingWorld] Trade post-reconciliation remains pending: "
+                + $"{error.GetType().Name}: {error.Message}");
+        }
+    }
+
+    public static void ApplyCompletedTrade(TradeExecutionState execution)
+    {
+        if (execution == null || execution.Applied)
+        {
+            return;
+        }
+
+        foreach (var progress in execution.Progress)
+        {
+            var transfer = progress.Transfer;
+            if (transfer.LedgerBacked && execution.SettlementId.HasValue && !progress.LedgerApplied)
+            {
+                var settlementId = execution.SettlementId.Value;
+                var expected = transfer.Direction == SettlementTradeDirection.SettlementReceives
+                    ? progress.LedgerQuantityBefore + transfer.Quantity
+                    : progress.LedgerQuantityBefore - transfer.Quantity;
+                var current = execution.State.GetOwnedResourceQuantity(settlementId, transfer.ResourceKey);
+                if (current == progress.LedgerQuantityBefore)
+                {
+                    if (transfer.Direction == SettlementTradeDirection.SettlementReceives)
+                    {
+                        execution.State.AddResource(settlementId, transfer.ResourceKey, transfer.Quantity);
+                    }
+                    else
+                    {
+                        var consumed = execution.State.ConsumeResource(
+                            settlementId,
+                            transfer.ResourceKey,
+                            transfer.Quantity,
+                            "confirmed vanilla trade reconciliation");
+                        if (consumed != transfer.Quantity)
+                        {
+                            throw new InvalidOperationException(
+                                $"Trade ledger supplied {consumed}/{transfer.Quantity} {transfer.ResourceKey}.");
+                        }
+                    }
+
+                    current = execution.State.GetOwnedResourceQuantity(settlementId, transfer.ResourceKey);
+                }
+
+                if (current != expected)
+                {
+                    throw new InvalidOperationException(
+                        $"Trade ledger mismatch for {transfer.ResourceKey}: expected {expected}, found {current}.");
+                }
+
+                progress.LedgerApplied = true;
+                execution.State.RecordEvent(
+                    WorldEventKind.SettlementTradeRecorded,
+                    settlementId,
+                    $"Confirmed vanilla trade moved {transfer.Quantity} {transfer.ResourceKey} ({transfer.Direction}).");
+            }
+
+            if (transfer.PhysicalBacked && !progress.PhysicalManifestApplied)
             {
                 if (transfer.Direction == SettlementTradeDirection.SettlementReceives
-                    && __state.TraderPawn != null)
+                    && execution.TraderPawn != null)
                 {
                     LivingWorldWorldComponent.Instance?.RegisterApproachingGroupReceivedResource(
-                        __state.TraderPawn,
+                        execution.TraderPawn,
                         transfer.ResourceKey);
                 }
 
-                RaidIntelService.RecordTradeIntel(
-                    __state.State,
-                    new TradeIntelRequest(
-                        __state.FactionId,
-                        transfer.ObservedMarketValue,
-                        transfer.SensitiveGoodsCount,
-                        $"Reserved physical caravan trade moved {transfer.Quantity} {transfer.ResourceKey}."));
-                continue;
+                progress.PhysicalManifestApplied = true;
             }
 
-            if (transfer.LedgerBacked && __state.SettlementId.HasValue)
+            if (!progress.IntelApplied)
             {
-                var result = SettlementTradeLedgerService.RecordTrade(
-                    __state.State,
-                    new SettlementTradeLedgerRequest(
-                        __state.FactionId,
-                        transfer.ResourceKey,
-                        transfer.Quantity,
-                        transfer.Direction,
-                        transfer.ObservedMarketValue,
-                        transfer.SensitiveGoodsCount,
-                        $"Confirmed vanilla trade moved {transfer.Quantity} {transfer.ResourceKey}.",
-                        __state.SettlementId));
-
-                if (result.QuantityApplied != transfer.Quantity)
-                {
-                    Log.Error(
-                        $"[LivingWorld] Trade ledger mismatch for {transfer.ResourceKey}: "
-                        + $"expected {transfer.Quantity}, applied {result.QuantityApplied}.");
-                }
-
-                continue;
-            }
-
-            RaidIntelService.RecordTradeIntel(
-                __state.State,
-                new TradeIntelRequest(
-                    __state.FactionId,
+                var provenance = transfer.PhysicalBacked
+                    ? "Reserved physical caravan trade"
+                    : transfer.LedgerBacked
+                        ? "Confirmed vanilla trade"
+                        : "External vanilla trade";
+                RaidIntelService.RecordTradeIntel(
+                    execution.State,
+                    new TradeIntelRequest(
+                    execution.FactionId,
                     transfer.ObservedMarketValue,
                     transfer.SensitiveGoodsCount,
-                    $"External vanilla trade moved {transfer.Quantity} {transfer.ResourceKey}."));
+                    $"{provenance} moved {transfer.Quantity} {transfer.ResourceKey}."));
+                progress.IntelApplied = true;
+            }
         }
 
-        if (!__state.IsExactSource)
+        if (execution.Progress.All(progress =>
+                (!progress.Transfer.LedgerBacked || progress.LedgerApplied)
+                && (!progress.Transfer.PhysicalBacked || progress.PhysicalManifestApplied)
+                && progress.IntelApplied))
         {
-            DebugLog("trade used faction-level or external source fallback");
+            execution.Applied = true;
+            if (!execution.IsExactSource)
+            {
+                DebugLog("trade used faction-level or external source fallback");
+            }
         }
     }
 
@@ -492,6 +541,7 @@ public static class LivingWorldTradeIntelPatch
             IsExactSource = isExactSource;
             TraderPawn = traderPawn;
             Transfers = transfers;
+            Progress = BuildProgress(state, settlementId, transfers);
         }
 
         public WorldState State { get; }
@@ -506,7 +556,57 @@ public static class LivingWorldTradeIntelPatch
 
         public IReadOnlyList<TradeTransfer> Transfers { get; }
 
+        public IReadOnlyList<TradeTransferProgress> Progress { get; }
+
         public bool Applied { get; set; }
+
+        private static IReadOnlyList<TradeTransferProgress> BuildProgress(
+            WorldState state,
+            EntityId? settlementId,
+            IReadOnlyList<TradeTransfer> transfers)
+        {
+            var runningLedgerQuantities = new Dictionary<string, int>(StringComparer.Ordinal);
+            var progress = new List<TradeTransferProgress>(transfers.Count);
+            foreach (var transfer in transfers)
+            {
+                var before = 0;
+                if (transfer.LedgerBacked && settlementId.HasValue)
+                {
+                    if (!runningLedgerQuantities.TryGetValue(transfer.ResourceKey, out before))
+                    {
+                        before = state.GetOwnedResourceQuantity(settlementId.Value, transfer.ResourceKey);
+                    }
+
+                    runningLedgerQuantities[transfer.ResourceKey] = transfer.Direction
+                        == SettlementTradeDirection.SettlementReceives
+                            ? before + transfer.Quantity
+                            : before - transfer.Quantity;
+                }
+
+                progress.Add(new TradeTransferProgress(transfer, before));
+            }
+
+            return progress;
+        }
+    }
+
+    public sealed class TradeTransferProgress
+    {
+        public TradeTransferProgress(TradeTransfer transfer, int ledgerQuantityBefore)
+        {
+            Transfer = transfer;
+            LedgerQuantityBefore = Math.Max(0, ledgerQuantityBefore);
+        }
+
+        public TradeTransfer Transfer { get; }
+
+        public int LedgerQuantityBefore { get; }
+
+        public bool LedgerApplied { get; set; }
+
+        public bool PhysicalManifestApplied { get; set; }
+
+        public bool IntelApplied { get; set; }
     }
 
     public sealed record TradeTransfer(

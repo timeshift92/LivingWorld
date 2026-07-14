@@ -193,7 +193,7 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         }
     }
 
-    public void TrackResource(Thing thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = 0)
+    public void TrackResource(Thing thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = -1)
     {
         if (thing == null || returnOwnerId.Value <= 0 || string.IsNullOrWhiteSpace(resourceKey))
         {
@@ -206,7 +206,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             (int)returnOwnerId.Kind,
             returnOwnerId.Value,
             resourceKey.Trim(),
-            Math.Max(0, reservedQuantity)));
+            Math.Max(1, thing.stackCount),
+            reservedQuantity >= 0 ? reservedQuantity : Math.Max(1, thing.stackCount)));
     }
 
     public bool TryGetResource(int thingId, out LivingWorldTrackedMapResource resource)
@@ -514,13 +515,32 @@ public sealed class LivingWorldWarehouseManifestEntry : IExposable
     }
 }
 
+public enum LivingWorldTrackedResourceState
+{
+    Pending,
+    Crediting,
+    Credited,
+    Removed
+}
+
 public sealed class LivingWorldTrackedMapResource : IExposable
 {
+    private const int CurrentTrackingVersion = 1;
+
     private int thingId;
     private int returnOwnerKind;
     private long returnOwnerValue;
     private string resourceKey = string.Empty;
+    // Retained for backward-compatible migration of pre-state-machine saves.
     private int reservedQuantity;
+    private int physicalQuantity;
+    private int remainingQuantity;
+    private int reconciliationStateValue;
+    private int creditOwnerKind;
+    private long creditOwnerValue;
+    private int creditLedgerQuantityBefore;
+    private int creditQuantity;
+    private int trackingVersion;
 
     public LivingWorldTrackedMapResource()
     {
@@ -531,22 +551,145 @@ public sealed class LivingWorldTrackedMapResource : IExposable
         int returnOwnerKind,
         long returnOwnerValue,
         string resourceKey,
-        int reservedQuantity = 0)
+        int physicalQuantity,
+        int remainingQuantity)
     {
         this.thingId = thingId;
         this.returnOwnerKind = returnOwnerKind;
         this.returnOwnerValue = returnOwnerValue;
         this.resourceKey = resourceKey;
-        this.reservedQuantity = Math.Max(0, reservedQuantity);
+        this.physicalQuantity = Math.Max(1, physicalQuantity);
+        this.remainingQuantity = Math.Max(0, remainingQuantity);
+        reservedQuantity = this.remainingQuantity;
+        trackingVersion = CurrentTrackingVersion;
     }
 
     public int ThingId => thingId;
     public int ReturnOwnerKind => returnOwnerKind;
     public long ReturnOwnerValue => returnOwnerValue;
     public string ResourceKey => resourceKey;
-    public int ReservedQuantity => reservedQuantity;
+    public int ReservedQuantity => remainingQuantity;
+    public int PhysicalQuantity => physicalQuantity;
+    public int RemainingQuantity => remainingQuantity;
+    public LivingWorldTrackedResourceState ReconciliationState =>
+        Enum.IsDefined(typeof(LivingWorldTrackedResourceState), reconciliationStateValue)
+            ? (LivingWorldTrackedResourceState)reconciliationStateValue
+            : LivingWorldTrackedResourceState.Pending;
 
     public EntityId ReturnOwnerId => EntityId.Create((EntityKind)returnOwnerKind, returnOwnerValue);
+    public EntityId CreditOwnerId => EntityId.Create((EntityKind)creditOwnerKind, creditOwnerValue);
+    public int CreditLedgerQuantityBefore => creditLedgerQuantityBefore;
+    public int CreditQuantity => creditQuantity;
+
+    public void SynchronizePhysicalQuantity(int currentPhysicalQuantity)
+    {
+        if (ReconciliationState != LivingWorldTrackedResourceState.Pending)
+        {
+            return;
+        }
+
+        var current = Math.Max(0, currentPhysicalQuantity);
+        if (physicalQuantity <= 0)
+        {
+            physicalQuantity = current;
+            if (remainingQuantity < 0)
+            {
+                // Legacy tracked entries used zero to mean "return the physical stack".
+                remainingQuantity = current;
+                reservedQuantity = remainingQuantity;
+            }
+
+            return;
+        }
+
+        if (current < physicalQuantity)
+        {
+            remainingQuantity = ScaleQuantity(remainingQuantity, current, physicalQuantity);
+        }
+
+        physicalQuantity = current;
+        reservedQuantity = remainingQuantity;
+    }
+
+    public int SplitOff(int sourcePhysicalAfter, int splitPhysicalQuantity)
+    {
+        if (ReconciliationState != LivingWorldTrackedResourceState.Pending)
+        {
+            return 0;
+        }
+
+        var sourceAfter = Math.Max(0, sourcePhysicalAfter);
+        var split = Math.Max(0, splitPhysicalQuantity);
+        SynchronizePhysicalQuantity(sourceAfter + split);
+        if (split <= 0 || physicalQuantity <= 0)
+        {
+            physicalQuantity = sourceAfter;
+            return 0;
+        }
+
+        var transferred = ScaleQuantity(remainingQuantity, split, physicalQuantity);
+        remainingQuantity -= transferred;
+        physicalQuantity = sourceAfter;
+        reservedQuantity = remainingQuantity;
+        return transferred;
+    }
+
+    public int TransferPhysicalUnits(int movedPhysicalQuantity, int sourcePhysicalBefore, int sourcePhysicalAfter)
+    {
+        if (ReconciliationState != LivingWorldTrackedResourceState.Pending)
+        {
+            return 0;
+        }
+
+        SynchronizePhysicalQuantity(Math.Max(0, sourcePhysicalBefore));
+        var moved = Math.Min(Math.Max(0, movedPhysicalQuantity), physicalQuantity);
+        var transferred = physicalQuantity <= 0
+            ? 0
+            : ScaleQuantity(remainingQuantity, moved, physicalQuantity);
+        remainingQuantity -= transferred;
+        physicalQuantity = Math.Max(0, sourcePhysicalAfter);
+        reservedQuantity = remainingQuantity;
+        return transferred;
+    }
+
+    public void Absorb(int destinationPhysicalAfter, int transferredQuantity)
+    {
+        if (ReconciliationState != LivingWorldTrackedResourceState.Pending)
+        {
+            return;
+        }
+
+        remainingQuantity += Math.Max(0, transferredQuantity);
+        physicalQuantity = Math.Max(0, destinationPhysicalAfter);
+        reservedQuantity = remainingQuantity;
+    }
+
+    public void BeginCredit(EntityId ownerId, int ledgerQuantityBefore)
+    {
+        if (ReconciliationState != LivingWorldTrackedResourceState.Pending)
+        {
+            return;
+        }
+
+        creditOwnerKind = (int)ownerId.Kind;
+        creditOwnerValue = ownerId.Value;
+        creditLedgerQuantityBefore = Math.Max(0, ledgerQuantityBefore);
+        creditQuantity = Math.Max(0, remainingQuantity);
+        reconciliationStateValue = (int)LivingWorldTrackedResourceState.Crediting;
+    }
+
+    public void MarkCredited()
+    {
+        reconciliationStateValue = (int)LivingWorldTrackedResourceState.Credited;
+    }
+
+    public void MarkRemoved()
+    {
+        reconciliationStateValue = (int)LivingWorldTrackedResourceState.Removed;
+        physicalQuantity = 0;
+        remainingQuantity = 0;
+        reservedQuantity = 0;
+    }
 
     public void ExposeData()
     {
@@ -555,6 +698,36 @@ public sealed class LivingWorldTrackedMapResource : IExposable
         Scribe_Values.Look(ref returnOwnerValue, "returnOwnerValue", 0L);
         Scribe_Values.Look(ref resourceKey, "resourceKey", string.Empty);
         Scribe_Values.Look(ref reservedQuantity, "reservedQuantity", 0);
+        Scribe_Values.Look(ref physicalQuantity, "physicalQuantity", 0);
+        Scribe_Values.Look(ref remainingQuantity, "remainingQuantity", 0);
+        Scribe_Values.Look(ref reconciliationStateValue, "reconciliationState", 0);
+        Scribe_Values.Look(ref creditOwnerKind, "creditOwnerKind", 0);
+        Scribe_Values.Look(ref creditOwnerValue, "creditOwnerValue", 0L);
+        Scribe_Values.Look(ref creditLedgerQuantityBefore, "creditLedgerQuantityBefore", 0);
+        Scribe_Values.Look(ref creditQuantity, "creditQuantity", 0);
+        Scribe_Values.Look(ref trackingVersion, "trackingVersion", 0);
+
+        if (Scribe.mode == LoadSaveMode.PostLoadInit && trackingVersion <= 0)
+        {
+            remainingQuantity = reservedQuantity > 0 ? reservedQuantity : -1;
+            physicalQuantity = 0;
+            reconciliationStateValue = (int)LivingWorldTrackedResourceState.Pending;
+            creditOwnerKind = 0;
+            creditOwnerValue = 0;
+            creditLedgerQuantityBefore = 0;
+            creditQuantity = 0;
+            trackingVersion = CurrentTrackingVersion;
+        }
+    }
+
+    private static int ScaleQuantity(int quantity, int numerator, int denominator)
+    {
+        if (quantity <= 0 || numerator <= 0 || denominator <= 0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Min(quantity, ((long)quantity * numerator) / denominator);
     }
 }
 

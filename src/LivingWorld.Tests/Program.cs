@@ -412,6 +412,14 @@ var tests = new List<(string Name, Action Test)>
     ("find by tile returns null without match", TestFindActiveSettlementByTileReturnsNullWhenNoTile),
     ("find by tile ignores destroyed settlements", TestFindActiveSettlementByTileIgnoresDestroyed),
     ("resolves player caravan marker contacts with conserved actions", TestRimWorldPlayerCaravanMarkerContacts),
+    ("tracks settlement map resources transactionally across stack mutations", TestRimWorldTrackedMapResourceTransactions),
+    ("returns neutral carrier inventory without duplicating physical stacks", TestRimWorldVisitorInventoryReturnIsConservative),
+    ("rolls back physical caravan trades to exact baselines", TestRimWorldPlayerCaravanTradeRollbackIsComplete),
+    ("applies vanilla trade reconciliation only after every transfer commits", TestRimWorldTradeReconciliationIsRetrySafe),
+    ("cleans provisional drifter pawns when ledger materialization fails", TestRimWorldDrifterArrivalRollsBackPawn),
+    ("reserves and rolls back vanilla wanderer population", TestRimWorldWandererSourceIsTransactional),
+    ("returns tracked defender gear before pawn fate sync", TestRimWorldPawnExitReturnsTrackedGear),
+    ("compatibility visitor binding reserves humans animals and cargo", TestRimWorldCompatibilityVisitorManifestIsConservative),
     ("checks combat eligibility by skill", TestArmoryLoadoutSelection),
     ("arms caravan expeditions from outfit stands before departure", TestRimWorldCaravanArmoryPreparation),
     ("documents live visit animal and caravan task status", TestLiveVisitAnimalCaravanDocs),
@@ -9234,6 +9242,7 @@ static void TestRimWorldModEntrypoint()
     var source = File.ReadAllText(entrypointPath);
 
     AssertContains("sealed class LivingWorldMod : Mod", source);
+    AssertContains("public static LivingWorldSettings? Settings => LivingWorldSettings.Instance", source);
     AssertContains("Living World", source);
     AssertContains("[LivingWorld] Loaded", source);
 }
@@ -9887,14 +9896,14 @@ static void TestRimWorldSettlementMapResourceReconciliation()
     AssertContains("public static int ReconcileMap", tracker);
     AssertContains("FindTrackedThing", tracker);
     AssertContains("heldByPlayer", tracker);
-    AssertContains("tracked.ReservedQuantity", tracker);
+    AssertContains("tracked.RemainingQuantity", tracker);
+    AssertContains("LivingWorldTrackedResourceState.Crediting", tracker);
+    AssertContains("EnsureCredited", tracker);
     AssertContains("thing.Destroy(DestroyMode.Vanish)", tracker);
     AssertContains("ResolveReturnOwner", tracker);
     AssertContains("ResourceLedgerService.AddResource", tracker);
-    AssertEqual(
-        true,
-        tracker.LastIndexOf("ResourceLedgerService.AddResource", StringComparison.Ordinal)
-            < tracker.LastIndexOf("component.RemoveResource", StringComparison.Ordinal));
+    AssertContains("tracked.MarkCredited()", tracker);
+    AssertContains("tracked.MarkRemoved();", tracker);
 
     var patchPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapDeinitPatch.cs");
     var patch = File.ReadAllText(patchPath);
@@ -10187,8 +10196,10 @@ static void TestRimWorldTradeIntelPatch()
     AssertContains("[HarmonyPatch(typeof(TradeDeal), \"TryExecute\")]", source);
     AssertRimWorldMethodExists("RimWorld.TradeDeal", "TryExecute");
     AssertContains("TradeSession.trader", source);
-    AssertContains("SettlementTradeLedgerService.RecordTrade", source);
-    AssertContains("SettlementTradeLedgerRequest", source);
+    AssertContains("ApplyCompletedTrade", source);
+    AssertContains("LedgerQuantityBefore", source);
+    AssertContains("execution.State.AddResource", source);
+    AssertContains("execution.State.ConsumeResource", source);
     AssertContains("SettlementTradeDirection", source);
     AssertContains("SettlementTradeReconciliationService.Plan", source);
     AssertContains("public static bool Prefix(TradeDeal __instance, ref bool __result", source);
@@ -10199,7 +10210,7 @@ static void TestRimWorldTradeIntelPatch()
     AssertContains("ForceToSource", source);
     AssertContains("transfer.PhysicalBacked", source);
     AssertContains("RegisterApproachingGroupReceivedResource", source);
-    AssertContains("Reserved physical caravan trade moved", source);
+    AssertContains("Reserved physical caravan trade", source);
     AssertDoesNotContain("__instance == null || TradeSession.giftMode", source);
     AssertContains("if (!__result || !actuallyTraded", source);
     AssertContains("__state.Applied", source);
@@ -11872,7 +11883,7 @@ static void TestRimWorldDrifterArrivalWorker()
     AssertContains("protected override bool TryExecuteWorker(IncidentParms parms)", source);
     AssertContains("WantsDrifterArrival", source);
     AssertContains("MaterializeDrifter", source);
-    AssertContains("MaterializeNewArrival", source);
+    AssertContains("state.CreateDrifter", source);
     AssertContains("CompLivingWorldIdentity", source);
     // fail-open: never throws out, no world mutation on a failed execute
     AssertContains("Instance", source);
@@ -12587,6 +12598,137 @@ static SettlementPopulation SumPopulations(IEnumerable<SettlementPopulation> pop
     }
 
     return new SettlementPopulation(total, children, adults, elderly);
+}
+
+static void TestRimWorldTrackedMapResourceTransactions()
+{
+    var root = FindRepoRoot();
+    var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementVisitMapComponent.cs"));
+    var tracker = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapResourceTracker.cs"));
+    var stackPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldTrackedResourceStackPatch.cs"));
+
+    AssertContains("LivingWorldTrackedResourceState", component);
+    AssertContains("physicalQuantity", component);
+    AssertContains("remainingQuantity", component);
+    AssertContains("creditLedgerQuantityBefore", component);
+    AssertContains("Scribe_Values.Look(ref reconciliationStateValue", component);
+    AssertContains("remainingQuantity = reservedQuantity > 0 ? reservedQuantity : -1", component);
+    AssertContains("remainingQuantity = current", component);
+    AssertContains("public int SplitOff", component);
+    AssertContains("public int TransferPhysicalUnits", component);
+    AssertContains("tracked.SplitOff(source.stackCount, split.stackCount)", tracker);
+    AssertContains("private static int EnsureCredited", tracker);
+    AssertContains("current == tracked.CreditLedgerQuantityBefore", tracker);
+    AssertContains("LivingWorldTrackedResourceAbsorbState", stackPatch);
+    AssertContains("__state.DestinationCountBefore", stackPatch);
+}
+
+static void TestRimWorldVisitorInventoryReturnIsConservative()
+{
+    var source = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldVisitorBindingService.cs"));
+
+    AssertContains("pawn.inventory.innerContainer.Remove(thing)", source);
+    AssertContains("var ledgerBefore = state.GetOwnedResourceQuantity", source);
+    AssertContains("current == ledgerBefore + quantity", source);
+    AssertContains("pawn.inventory.innerContainer.TryAdd(thing, false)", source);
+    AssertContains("cargo.MaterializedQuantity -= applied", source);
+}
+
+static void TestRimWorldPlayerCaravanTradeRollbackIsComplete()
+{
+    var source = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldPlayerCaravanContactService.cs"));
+
+    AssertContains("var playerSilverBefore", source);
+    AssertContains("var playerGoodsBefore", source);
+    AssertContains("var ledgerGoodsBefore", source);
+    AssertContains("var ledgerSilverBefore", source);
+    AssertContains("VerifyTradePostconditions", source);
+    AssertContains("RestoreCaravanThingQuantity", source);
+    AssertContains("RestoreLedgerQuantity", source);
+    AssertContains("playerscout:", source);
+    AssertContains("TryInterceptPlayerScout", source);
+}
+
+static void TestRimWorldTradeReconciliationIsRetrySafe()
+{
+    var source = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldTradeIntelPatch.cs"));
+
+    AssertContains("public static void ApplyCompletedTrade", source);
+    AssertContains("LedgerQuantityBefore", source);
+    AssertContains("runningLedgerQuantities", source);
+    AssertContains("current == progress.LedgerQuantityBefore", source);
+    AssertContains("progress.LedgerApplied = true", source);
+    AssertContains("execution.Progress.All", source);
+    AssertContains("execution.Applied = true", source);
+    AssertDoesNotContain("__state.Applied = true", source);
+}
+
+static void TestRimWorldDrifterArrivalRollsBackPawn()
+{
+    var source = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "IncidentWorker_LivingWorldDrifterArrival.cs"));
+
+    AssertContains("!state.IsDrifterReserved(drifter.Id)", source);
+    AssertContains("var ledgerCommitted = false", source);
+    AssertContains("if (!ledgerCommitted && pawn is { Destroyed: false })", source);
+    AssertContains("pawn.Destroy(DestroyMode.Vanish)", source);
+    AssertContains("state.CreateDrifter", source);
+    AssertContains("state.MaterializeDrifter(candidate.Id", source);
+    AssertContains("return ledgerCommitted", source);
+}
+
+static void TestRimWorldWandererSourceIsTransactional()
+{
+    var source = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWandererSourcePatch.cs"));
+
+    AssertContains("public static bool Prefix(ref bool __result", source);
+    AssertContains("DrifterArrivalService.TakeForArrival(component.State, 1) != 1", source);
+    AssertContains("__state.Rollback(\"vanilla wanderer incident did not execute\")", source);
+    AssertContains("public static Exception? Finalizer", source);
+    AssertContains("var reservoirBefore", source);
+    AssertContains("state.DrifterArrivalReservoir == reservoirBefore", source);
+}
+
+static void TestRimWorldPawnExitReturnsTrackedGear()
+{
+    var source = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
+    var gearIndex = source.IndexOf("LivingWorldSettlementMapResourceTracker.ReconcilePawnGear", StringComparison.Ordinal);
+    var fateIndex = source.IndexOf("LivingWorldPawnSyncService.Apply", StringComparison.Ordinal);
+
+    AssertEqual(true, gearIndex >= 0);
+    AssertEqual(true, fateIndex > gearIndex);
+    AssertContains("public static void Prefix(Pawn __instance)", source);
+    AssertContains("LivingWorldCompatibilityVisitorComponent.Instance?.NotifyReturned", source);
+}
+
+static void TestRimWorldCompatibilityVisitorManifestIsConservative()
+{
+    var root = FindRepoRoot();
+    var service = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldVisitorBindingService.cs"));
+    var patch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldNeutralGroupBindingPatch.cs"));
+    var componentPath = Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldCompatibilityVisitorComponent.cs");
+    AssertFileExists(componentPath);
+    var component = File.ReadAllText(componentPath);
+
+    AssertContains("VisitorCompatibilityBindResult", service);
+    AssertContains("TravelingGroupReservationService.Reserve", service);
+    AssertContains("requestedAnimals", service);
+    AssertContains("requestedResources", service);
+    AssertContains("CreateCompatibilityManifest", service);
+    AssertContains("manifest.BoundPawnThingIds.Count != bindable.Count", service);
+    AssertContains("if (!compatibility.IsSuccess", patch);
+    AssertContains("__result.Clear()", patch);
+    AssertContains("GameComponent", component);
+    AssertContains("Scribe_Collections.Look(ref manifests", component);
+    AssertContains("LivingWorldAnimalMapPawnTracker.Track", component);
+    AssertContains("public bool NotifyLost(Pawn pawn)", component);
+    var killPatch = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldPawnKillPatch.cs"));
+    AssertContains("LivingWorldCompatibilityVisitorComponent.Instance?.NotifyLost", killPatch);
 }
 
 static string FindRepoRoot()

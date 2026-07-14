@@ -46,6 +46,34 @@ public static class LivingWorldNeutralGroupBindingPatch
         }
 
         var factionDefName = parms?.faction?.def?.defName;
-        LivingWorldVisitorBindingService.BindVisitorPawns(component.State, factionDefName, __result);
+        var compatibility = LivingWorldVisitorBindingService.BindVisitorPayload(
+            component.State,
+            factionDefName,
+            __result);
+        if (!compatibility.IsHandled)
+        {
+            return;
+        }
+
+        if (!compatibility.IsSuccess || compatibility.Manifest == null)
+        {
+            __result.Clear();
+            return;
+        }
+
+        var manifestOwner = LivingWorldCompatibilityVisitorComponent.Instance;
+        if (manifestOwner == null)
+        {
+            LivingWorldVisitorBindingService.RollbackFailedArrival(
+                component.State,
+                compatibility.Manifest,
+                __result,
+                component.State.CurrentTick,
+                "compatibility visitor manifest owner unavailable");
+            __result.Clear();
+            return;
+        }
+
+        manifestOwner.Register(compatibility.Manifest);
     }
 }
