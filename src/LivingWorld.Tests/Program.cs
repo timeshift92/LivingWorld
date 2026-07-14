@@ -6188,7 +6188,8 @@ static void TestPlayerSettlementDefeatDestroysLedgerSettlement()
         victim.Id,
         defeatedFactionId: "Raiders",
         tick: 180_000,
-        reason: "player destroyed settlement");
+        reason: "player destroyed settlement",
+        observedDefenderLosses: 1);
 
     AssertEqual(true, result.Destroyed);
     AssertEqual(1, result.ConflictsPressured);
@@ -6206,7 +6207,8 @@ static void TestPlayerSettlementDefeatDestroysLedgerSettlement()
         victim.Id,
         defeatedFactionId: "Raiders",
         tick: 181_000,
-        reason: "duplicate defeat callback");
+        reason: "duplicate defeat callback",
+        observedDefenderLosses: 1);
 
     AssertEqual(false, duplicate.Destroyed);
     AssertEqual(0, duplicate.ConflictsPressured);

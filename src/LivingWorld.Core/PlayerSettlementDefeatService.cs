@@ -14,7 +14,8 @@ public static class PlayerSettlementDefeatService
         EntityId settlementId,
         string defeatedFactionId,
         int tick,
-        string reason)
+        string reason,
+        int observedDefenderLosses = 0)
     {
         if (state == null)
         {
@@ -38,7 +39,6 @@ public static class PlayerSettlementDefeatService
             return new PlayerSettlementDefeatResult(false, 0, 0, false, null);
         }
 
-        var defenderLosses = Math.Min(50, Math.Max(1, state.GetSettlementPopulation(settlementId).Total));
         var destroyed = SettlementLifecycleService.DestroySettlement(
             state,
             settlementId,
@@ -48,7 +48,7 @@ public static class PlayerSettlementDefeatService
         var intervention = PlayerConflictInterventionService.RecordSettlementAttack(
             state,
             defeatedFactionId,
-            defenderLosses,
+            Math.Max(0, observedDefenderLosses),
             settlementId,
             Math.Max(0, tick));
 

@@ -65,6 +65,7 @@ public static class LivingWorldSettlementDefeatPatch
 
         var ledgerSettlement = ResolveLedgerSettlement(component.State, factionBase);
         var currentTick = Find.TickManager?.TicksGame ?? 0;
+        var observedDefenderLosses = CountObservedDefenderLosses(component.State, factionBase, ledgerSettlement);
 
         var defeat = ledgerSettlement != null
             ? PlayerSettlementDefeatService.RecordDefeat(
@@ -72,13 +73,14 @@ public static class LivingWorldSettlementDefeatPatch
                 ledgerSettlement.Id,
                 factionDefName!,
                 currentTick,
-                "player defeated settlement")
+                "player defeated settlement",
+                observedDefenderLosses)
             : null;
         var fallbackIntervention = ledgerSettlement == null
             ? PlayerConflictInterventionService.RecordSettlementAttack(
                 component.State,
                 factionDefName!,
-                defenderLosses: 8,
+                defenderLosses: observedDefenderLosses,
                 capturedSettlementId: null,
                 currentTick)
             : null;
@@ -114,5 +116,29 @@ public static class LivingWorldSettlementDefeatPatch
 
         var factionId = worldObject.Faction?.def?.defName ?? "UnknownFaction";
         return string.Equals(ledger.FactionId, factionId, StringComparison.Ordinal) ? ledger : null;
+    }
+
+    private static int CountObservedDefenderLosses(
+        WorldState state,
+        Settlement factionBase,
+        WorldSettlement? ledgerSettlement)
+    {
+        if (ledgerSettlement != null)
+        {
+            var purposeKey = LivingWorldSettlementVisitMapComponent.For(factionBase.Map)?.PurposeKey;
+            if (!string.IsNullOrWhiteSpace(purposeKey))
+            {
+                return state.MaterializationLeases.Count(lease =>
+                    lease.SourceOwnerId == ledgerSettlement.Id
+                    && string.Equals(lease.PurposeKey, purposeKey, StringComparison.Ordinal)
+                    && lease.Lifecycle is MaterializationLeaseLifecycle.Dead
+                        or MaterializationLeaseLifecycle.Missing
+                        or MaterializationLeaseLifecycle.Prisoner);
+            }
+        }
+
+        return factionBase.Map.mapPawns.AllPawns.Count(pawn =>
+            pawn?.Faction == factionBase.Faction
+            && (pawn.Dead || pawn.IsPrisonerOfColony));
     }
 }
