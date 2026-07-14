@@ -9,19 +9,18 @@ using Verse.AI;
 namespace LivingWorld.RimWorld;
 
 /// <summary>
-/// Executes the mobilization phase machine against the live colony. Each recheck it snapshots the colonists,
-/// builds a <see cref="PawnMobState"/> for each, asks <see cref="MobilizationPlan.NextAction"/> for the one
-/// action to take, and performs exactly that action. One action per pawn per tick keeps everything idempotent:
-/// the driver stores no step counters, only two transient sets tracking who it engaged / drafted so it can
-/// release them on stand-down and not re-issue every recheck. Every executed transition is logged when
-/// diagnostics are on, so live behavior is debugged from facts. Fail-safe throughout.
+/// Executes the mobilization phase machine against the live colony each recheck: snapshot the colonists, build
+/// a <see cref="PawnMobState"/> for each (tier-aware), ask <see cref="MobilizationPlan.NextAction"/> for the
+/// one action, and perform exactly that. One action per pawn per tick keeps everything idempotent. Two
+/// transient maps track who we engaged (with the tier we engaged them at, so a tier change re-issues the right
+/// CAI duty) and who we drafted (persisted across save/load so stand-down still releases them). Fail-safe.
 /// </summary>
 public sealed class MobilizationDriver
 {
-    private readonly HashSet<Pawn> engagedByUs = new();
+    private readonly Dictionary<Pawn, ThreatTier> engagedByUs = new();
     private readonly HashSet<Pawn> draftedByUs = new();
 
-    public void Drive(Map map, bool mobilized)
+    public void Drive(Map map, bool mobilized, ThreatTier tier)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
         if (!settings.armoryMobilizationEnabled || !ModsConfig.OdysseyActive)
@@ -31,14 +30,16 @@ public sealed class MobilizationDriver
 
         try
         {
+            // Read anchor before the defensive null-conditional chain below — Roslyn's nullable flow analysis
+            // otherwise treats `map` as maybe-null afterward even though the parameter itself is non-nullable.
+            var anchor = map.Center;
             var colonists = map?.mapPawns?.FreeColonistsSpawned;
             if (colonists == null)
             {
                 return;
             }
 
-            engagedByUs.RemoveWhere(p => p == null || !p.Spawned);
-            draftedByUs.RemoveWhere(p => p == null || !p.Spawned);
+            PrunePawns();
 
             // Snapshot: equipping/dropping gear can mutate the live colonist list mid-loop.
             foreach (var pawn in colonists.ToList())
@@ -48,9 +49,9 @@ public sealed class MobilizationDriver
                     continue;
                 }
 
-                var state = Snapshot(pawn);
+                var state = Snapshot(pawn, tier);
                 var action = MobilizationPlan.NextAction(mobilized, state);
-                Execute(pawn, action, settings.mobilizationDiagnostics);
+                Execute(pawn, action, tier, anchor, settings.mobilizationDiagnostics);
             }
         }
         catch (Exception ex)
@@ -59,15 +60,53 @@ public sealed class MobilizationDriver
         }
     }
 
-    // Diagnostics: the phase the machine would pick for this pawn right now, and our per-alert tracking.
-    public MobPhase PeekPhase(Pawn pawn, bool mobilized) => MobilizationPlan.NextAction(mobilized, Snapshot(pawn));
+    // Diagnostics: the phase the machine would pick for this pawn right now at the given tier.
+    public MobPhase PeekPhase(Pawn pawn, bool mobilized, ThreatTier tier)
+        => MobilizationPlan.NextAction(mobilized, Snapshot(pawn, tier));
 
-    public bool IsEngagedByUs(Pawn pawn) => engagedByUs.Contains(pawn);
+    public bool IsEngagedByUs(Pawn pawn) => engagedByUs.ContainsKey(pawn);
 
     public bool IsDraftedByUs(Pawn pawn) => draftedByUs.Contains(pawn);
 
-    private PawnMobState Snapshot(Pawn pawn)
+    // Persist only the drafted set (thingIDNumbers) — CAI duties expire on their own, but a drafted pawn stays
+    // drafted forever across a reload unless we remember we drafted it.
+    public List<int> ExportDraftedIds()
+        => draftedByUs.Where(p => p != null).Select(p => p.thingIDNumber).ToList();
+
+    public void ImportDraftedIds(IEnumerable<int> ids, Map map)
     {
+        draftedByUs.Clear();
+        if (ids == null || map?.mapPawns == null)
+        {
+            return;
+        }
+
+        var wanted = new HashSet<int>(ids);
+        foreach (var pawn in map.mapPawns.AllPawns)
+        {
+            if (pawn != null && wanted.Contains(pawn.thingIDNumber))
+            {
+                draftedByUs.Add(pawn);
+            }
+        }
+    }
+
+    private void PrunePawns()
+    {
+        foreach (var dead in engagedByUs.Keys.Where(p => p == null || !p.Spawned).ToList())
+        {
+            engagedByUs.Remove(dead);
+        }
+
+        draftedByUs.RemoveWhere(p => p == null || !p.Spawned);
+    }
+
+    private PawnMobState Snapshot(Pawn pawn, ThreatTier tier)
+    {
+        // A pawn keeps its "engaged" status only while the tier it was engaged at still matches — a tier change
+        // makes HasLwDuty read false so the machine re-issues the duty that fits the new tier.
+        var hasDuty = engagedByUs.TryGetValue(pawn, out var engagedTier) && engagedTier == tier;
+
         return new PawnMobState
         {
             IsCandidate = MobilizationCandidates.IsCandidate(pawn),
@@ -75,17 +114,17 @@ public sealed class MobilizationDriver
             Asleep = !RestUtility.Awake(pawn),
             PolicyIsCombat = MobilizationPolicyService.IsCombatPolicy(pawn),
             PolicyIsCivilian = MobilizationPolicyService.IsCivilianPolicy(pawn),
-            InCombatKit = MobilizationCandidates.IsArmed(pawn),
+            InCombatKit = MobilizationCandidates.IsInCombatKit(pawn),
             HasStand = OutfitStandKit.HasStand(pawn),
             KitAvailable = OutfitStandKit.StandHasWeapon(pawn),
             Drafted = pawn.Drafted,
             DraftedByUs = draftedByUs.Contains(pawn),
-            HasLwDuty = engagedByUs.Contains(pawn),
+            HasLwDuty = hasDuty,
             CaiAvailable = CaiBridge.Available,
         };
     }
 
-    private void Execute(Pawn pawn, MobPhase action, bool diagnostics)
+    private void Execute(Pawn pawn, MobPhase action, ThreatTier tier, IntVec3 anchor, bool diagnostics)
     {
         switch (action)
         {
@@ -107,18 +146,18 @@ public sealed class MobilizationDriver
                 break;
 
             case MobPhase.Engage:
-                if (CaiBridge.TryEngage(pawn))
+                if (CaiBridge.TryEngage(pawn, tier, anchor))
                 {
-                    engagedByUs.Add(pawn);
+                    engagedByUs[pawn] = tier;
                 }
                 else if (pawn.drafter != null)
                 {
-                    // CAI is present globally but could not take this specific pawn — fall back to drafting so
-                    // it still fights instead of looping on Engage. Track in both sets: engagedByUs stops the
-                    // re-Engage loop (HasLwDuty), draftedByUs lets stand-down undraft it.
+                    // CAI present but could not take this pawn — draft as fallback so it still fights. Track in
+                    // both maps: engagedByUs (at this tier) stops the re-Engage loop, draftedByUs lets stand-down
+                    // undraft it.
                     pawn.drafter.Drafted = true;
                     draftedByUs.Add(pawn);
-                    engagedByUs.Add(pawn);
+                    engagedByUs[pawn] = tier;
                 }
                 break;
 
@@ -131,7 +170,11 @@ public sealed class MobilizationDriver
                 break;
 
             case MobPhase.ClearCombat:
-                engagedByUs.Remove(pawn);
+                if (engagedByUs.Remove(pawn))
+                {
+                    CaiBridge.Disengage(pawn);
+                }
+
                 if (draftedByUs.Remove(pawn) && pawn.drafter != null && pawn.Drafted)
                 {
                     pawn.drafter.Drafted = false;
@@ -149,7 +192,7 @@ public sealed class MobilizationDriver
 
         if (diagnostics)
         {
-            Log.Message($"[LivingWorld] Mobilization: {pawn.LabelShort} -> {action}");
+            Log.Message($"[LivingWorld] Mobilization: {pawn.LabelShort} -> {action} (tier {tier})");
         }
     }
 }
