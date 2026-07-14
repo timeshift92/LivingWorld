@@ -24,26 +24,35 @@ public static class WorldWarTargetSelector
             .FirstOrDefault();
     }
 
-    public static WorldSettlement? FindTradeTarget(WorldState state, string factionId)
+    public static WorldSettlement? FindTradeTarget(
+        WorldState state,
+        string factionId,
+        IReadOnlyCollection<EntityId>? plannedTargets = null)
     {
         return state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Hostile)
-            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
+            .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("trade", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }
 
-    public static WorldSettlement? FindScoutingTarget(WorldState state, string factionId)
+    public static WorldSettlement? FindScoutingTarget(
+        WorldState state,
+        string factionId,
+        IReadOnlyCollection<EntityId>? plannedTargets = null)
     {
         return state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => !string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
+            .Where(settlement => DiplomacyService.GetStance(state, factionId, settlement.FactionId) != RelationStance.Ally)
             .Where(settlement => !state.HasFactionSettlementIntel(factionId, settlement.Id))
-            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
+            .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("scout", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }
@@ -58,7 +67,10 @@ public static class WorldWarTargetSelector
             .FirstOrDefault();
     }
 
-    public static string? FindDiplomacyTargetFaction(WorldState state, string factionId)
+    public static string? FindDiplomacyTargetFaction(
+        WorldState state,
+        string factionId,
+        IReadOnlyCollection<EntityId>? plannedTargets = null)
     {
         return state.Settlements
             .Where(settlement => settlement.IsActive)
@@ -66,7 +78,8 @@ public static class WorldWarTargetSelector
             .Where(settlement => !state.IsPlayerFaction(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(settlement.FactionId))
             .Where(settlement => !state.IsFactionIrreconcilable(factionId))
-            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
+            .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("diplomacy-faction", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
             .Select(settlement => settlement.FactionId)
             .Distinct(StringComparer.Ordinal)
@@ -76,12 +89,14 @@ public static class WorldWarTargetSelector
     public static WorldSettlement? FindDiplomacyTargetSettlement(
         WorldState state,
         string factionId,
-        string targetFactionId)
+        string targetFactionId,
+        IReadOnlyCollection<EntityId>? plannedTargets = null)
     {
         return state.Settlements
             .Where(settlement => settlement.IsActive)
             .Where(settlement => string.Equals(settlement.FactionId, targetFactionId, StringComparison.Ordinal))
-            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id))
+            .OrderBy(settlement => WorldTargetPressureService.GetTargetPressure(state, settlement.Id, plannedTargets))
+            .ThenBy(settlement => WorldTargetPressureService.StableTargetScore("diplomacy-settlement", factionId, settlement.Id))
             .ThenBy(settlement => settlement.Id.Value)
             .FirstOrDefault();
     }

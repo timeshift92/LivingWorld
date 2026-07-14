@@ -1,16 +1,28 @@
+using System;
+using System.Linq;
+
 namespace LivingWorld.Core;
 
 internal static class CaravanActionExecutor
 {
-    public static bool Execute(WorldState state, string factionId, WorldWarRequest request)
+    public static bool Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.CaravanResourceKey) || request.CaravanQuantity <= 0)
         {
             return false;
         }
 
-        var source = WorldWarTargetSelector.FindTradeSource(state, factionId, request.CaravanResourceKey);
-        var target = WorldWarTargetSelector.FindTradeTarget(state, factionId);
+        // One travelling caravan per faction at a time keeps the world-map readable and prevents
+        // a merchant faction from flooding the same trade route every simulated day.
+        if (state.Caravans.Any(caravan =>
+            caravan.Status == CaravanStatus.Traveling
+            && string.Equals(caravan.FactionId, plan.FactionId, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var source = WorldWarTargetSelector.FindTradeSource(state, plan.FactionId, request.CaravanResourceKey);
+        var target = ResolveTarget(state, plan);
         if (source == null || target == null)
         {
             return false;
@@ -33,7 +45,7 @@ internal static class CaravanActionExecutor
 
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
         var caravan = state.CreateCaravan(
-            $"{factionId} caravan",
+            $"{plan.FactionId} caravan",
             source.FactionId,
             source.Id,
             target.Id,
@@ -60,5 +72,22 @@ internal static class CaravanActionExecutor
         }
 
         return true;
+    }
+
+    private static WorldSettlement? ResolveTarget(WorldState state, FactionActionPlan plan)
+    {
+        if (plan.TargetSettlementId.HasValue)
+        {
+            var target = state.GetSettlement(plan.TargetSettlementId.Value);
+            if (target is { IsActive: true }
+                && !string.Equals(target.FactionId, plan.FactionId, StringComparison.Ordinal)
+                && !state.IsPlayerFaction(target.FactionId)
+                && DiplomacyService.GetStance(state, plan.FactionId, target.FactionId) != RelationStance.Hostile)
+            {
+                return target;
+            }
+        }
+
+        return WorldWarTargetSelector.FindTradeTarget(state, plan.FactionId);
     }
 }

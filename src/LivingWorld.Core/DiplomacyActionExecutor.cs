@@ -5,10 +5,10 @@ namespace LivingWorld.Core;
 
 internal static class DiplomacyActionExecutor
 {
-    public static bool Execute(WorldState state, string factionId, WorldWarRequest request)
+    public static bool Execute(WorldState state, FactionActionPlan plan, WorldWarRequest request)
     {
-        var source = WorldWarTargetSelector.FindReadySourceSettlement(state, factionId);
-        var targetFaction = WorldWarTargetSelector.FindDiplomacyTargetFaction(state, factionId);
+        var source = WorldWarTargetSelector.FindReadySourceSettlement(state, plan.FactionId);
+        var targetFaction = ResolveTargetFaction(state, plan);
         var delta = Math.Abs(request.DiplomatGoodwill);
         if (source == null || targetFaction == null || delta <= 0)
         {
@@ -22,7 +22,7 @@ internal static class DiplomacyActionExecutor
         }
 
         // The mission travels to a settlement of the target faction (for the world-map marker + tile).
-        var targetSettlement = WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, factionId, targetFaction);
+        var targetSettlement = ResolveTargetSettlement(state, plan, targetFaction);
         if (targetSettlement == null)
         {
             return false;
@@ -32,7 +32,7 @@ internal static class DiplomacyActionExecutor
         if (state.Missions.Any(mission =>
             mission.Status == WorldMissionStatus.Traveling
             && mission.Kind == WorldMissionKind.Diplomat
-            && string.Equals(mission.FactionId, factionId, StringComparison.Ordinal)))
+            && string.Equals(mission.FactionId, plan.FactionId, StringComparison.Ordinal)))
         {
             return false;
         }
@@ -40,7 +40,7 @@ internal static class DiplomacyActionExecutor
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
         var mission = state.DispatchMission(
             WorldMissionKind.Diplomat,
-            factionId,
+            plan.FactionId,
             source.Id,
             targetSettlement.Id,
             request.Tick,
@@ -55,5 +55,38 @@ internal static class DiplomacyActionExecutor
 
         state.RemoveMissionForLedger(mission.Id);
         return false;
+    }
+
+    private static string? ResolveTargetFaction(WorldState state, FactionActionPlan plan)
+    {
+        if (!string.IsNullOrWhiteSpace(plan.TargetFactionId)
+            && !state.IsFactionIrreconcilable(plan.FactionId)
+            && !state.IsFactionIrreconcilable(plan.TargetFactionId!)
+            && !state.IsPlayerFaction(plan.TargetFactionId!))
+        {
+            return plan.TargetFactionId;
+        }
+
+        return WorldWarTargetSelector.FindDiplomacyTargetFaction(state, plan.FactionId);
+    }
+
+    private static WorldSettlement? ResolveTargetSettlement(
+        WorldState state,
+        FactionActionPlan plan,
+        string targetFaction)
+    {
+        if (plan.TargetSettlementId.HasValue)
+        {
+            var target = state.GetSettlement(plan.TargetSettlementId.Value);
+            if (target is { IsActive: true }
+                && string.Equals(target.FactionId, targetFaction, StringComparison.Ordinal)
+                && !state.IsPlayerFaction(target.FactionId)
+                && !state.IsFactionIrreconcilable(target.FactionId))
+            {
+                return target;
+            }
+        }
+
+        return WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, plan.FactionId, targetFaction);
     }
 }

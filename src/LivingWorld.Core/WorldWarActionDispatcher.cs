@@ -39,19 +39,19 @@ internal static class WorldWarActionDispatcher
                     }
                     break;
                 case WarAction.Caravan:
-                    if (CaravanActionExecutor.Execute(state, plan.FactionId, request))
+                    if (CaravanActionExecutor.Execute(state, plan, request))
                     {
                         caravans++;
                     }
                     break;
                 case WarAction.ScoutingParty:
-                    if (ScoutingActionExecutor.Execute(state, plan.FactionId, request))
+                    if (ScoutingActionExecutor.Execute(state, plan, request))
                     {
                         scoutingReports++;
                     }
                     break;
                 case WarAction.Diplomat:
-                    if (DiplomacyActionExecutor.Execute(state, plan.FactionId, request))
+                    if (DiplomacyActionExecutor.Execute(state, plan, request))
                     {
                         diplomaticMissions++;
                     }

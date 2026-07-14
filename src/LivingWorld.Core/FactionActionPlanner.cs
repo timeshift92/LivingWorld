@@ -20,8 +20,16 @@ public enum WarAction
     Develop,
 }
 
-/// <summary>A faction's intended action for a day, with a target where the action needs one.</summary>
-public sealed record FactionActionPlan(string FactionId, WarAction Action, EntityId? TargetSettlementId);
+/// <summary>
+/// A faction's intended action for a day. Target settlement is filled for every action that
+/// produces visible world traffic, not just warbands, so same-day planning can spread scouts,
+/// caravans and diplomats before executors create markers.
+/// </summary>
+public sealed record FactionActionPlan(
+    string FactionId,
+    WarAction Action,
+    EntityId? TargetSettlementId,
+    string? TargetFactionId = null);
 
 /// <summary>
 /// Decides, per faction, which world-war action its <see cref="FactionBehavior"/> and accumulated
@@ -58,9 +66,19 @@ public static class FactionActionPlanner
 
         var developmentTarget = FindDevelopmentTarget(state, factionId, plannedTargets);
         var target = FindEnemyTarget(state, factionId, tick, plannedTargets);
-        var hasTradeRoute = CanSendCaravan(state, factionId);
-        var hasScoutingTarget = WorldWarTargetSelector.FindScoutingTarget(state, factionId) != null;
-        var hasDiplomacyTarget = CanSendDiplomat(state, factionId);
+        var tradeTarget = WorldWarTargetSelector.FindTradeTarget(state, factionId, plannedTargets);
+        var scoutingTarget = WorldWarTargetSelector.FindScoutingTarget(state, factionId, plannedTargets);
+        var diplomacyTargetFaction = WorldWarTargetSelector.FindDiplomacyTargetFaction(state, factionId, plannedTargets);
+        var diplomacyTarget = diplomacyTargetFaction == null
+            ? null
+            : WorldWarTargetSelector.FindDiplomacyTargetSettlement(
+                state,
+                factionId,
+                diplomacyTargetFaction,
+                plannedTargets);
+        var hasTradeRoute = CanSendCaravan(state, factionId, tradeTarget);
+        var hasScoutingTarget = scoutingTarget != null;
+        var hasDiplomacyTarget = diplomacyTarget != null;
 
         var action = profile.Behavior switch
         {
@@ -73,13 +91,17 @@ public static class FactionActionPlanner
             _ => WarAction.None,
         };
 
-        // Only a warband spends itself against a specific enemy settlement; the rest act at home.
-        var planTarget = action == WarAction.Warband
-            ? target
-            : action == WarAction.Develop
-                ? developmentTarget
-                : null;
-        return new FactionActionPlan(factionId, action, planTarget);
+        var planTarget = action switch
+        {
+            WarAction.Warband => target,
+            WarAction.Develop => developmentTarget,
+            WarAction.Caravan => tradeTarget?.Id,
+            WarAction.ScoutingParty => scoutingTarget?.Id,
+            WarAction.Diplomat => diplomacyTarget?.Id,
+            _ => null,
+        };
+        var planTargetFaction = action == WarAction.Diplomat ? diplomacyTargetFaction : null;
+        return new FactionActionPlan(factionId, action, planTarget, planTargetFaction);
     }
 
     public static WarAction ChooseAction(WorldState state, string factionId, int tick)
@@ -189,17 +211,10 @@ public static class FactionActionPlanner
         return hasDiplomacyTarget ? WarAction.Diplomat : WarAction.None;
     }
 
-    private static bool CanSendCaravan(WorldState state, string factionId)
+    private static bool CanSendCaravan(WorldState state, string factionId, WorldSettlement? target)
     {
         return WorldWarTargetSelector.FindTradeSource(state, factionId, "Steel") != null
-            && WorldWarTargetSelector.FindTradeTarget(state, factionId) != null;
-    }
-
-    private static bool CanSendDiplomat(WorldState state, string factionId)
-    {
-        var targetFaction = WorldWarTargetSelector.FindDiplomacyTargetFaction(state, factionId);
-        return targetFaction != null
-            && WorldWarTargetSelector.FindDiplomacyTargetSettlement(state, factionId, targetFaction) != null;
+            && target != null;
     }
 
     private static int FactionPower(WorldState state, string factionId)
