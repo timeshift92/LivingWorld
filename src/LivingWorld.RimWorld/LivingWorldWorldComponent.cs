@@ -64,11 +64,14 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         rimWorld = world;
         Instance = this;
         State = new WorldState(ResolveWorldSeed(rimWorld));
+        SettlementSync = new SettlementSyncCoordinator(this);
     }
 
     public static LivingWorldWorldComponent? Instance { get; private set; }
 
     public WorldState State { get; private set; }
+
+    public SettlementSyncCoordinator SettlementSync { get; }
 
     public bool IsBootstrapped => bootstrapped;
 
