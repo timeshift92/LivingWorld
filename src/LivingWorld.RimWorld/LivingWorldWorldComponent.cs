@@ -168,6 +168,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
         LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps();
+        // One-shot: clear ghost ledger entries for settlements removed by other mods before this
+        // fix existed, and import/re-faction any that drifted while saved. Safe at load time — every
+        // real settlement is present and scannable.
+        SettlementSync.ReconcileWithDestructions();
     }
 
     public override void WorldComponentTick()
@@ -204,6 +208,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             SimulateWorldDay(lastSimulatedDay);
             simulatedDays++;
         }
+
+        // Safety net for any add/capture the hooks missed (mods bypassing the standard API). Never
+        // destroys — removal is driven solely by the authoritative Remove hook — so a transiently
+        // unscannable settlement is never wrongly ruined.
+        SettlementSync.ReconcileNonDestructive();
 
         if (lastSimulatedDay < currentDay && (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
         {
