@@ -23,6 +23,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, RaidIntelFact> _raidIntelFacts = new();
     private readonly Dictionary<EntityId, RaidPreparation> _raidPreparations = new();
     private readonly Dictionary<EntityId, MaterializationLease> _materializationLeases = new();
+    private readonly Dictionary<EntityId, PrisonerRecord> _prisonerRecords = new();
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
@@ -109,6 +110,8 @@ public sealed class WorldState
     public IReadOnlyCollection<RaidPreparation> RaidPreparations => _raidPreparations.Values;
 
     public IReadOnlyCollection<MaterializationLease> MaterializationLeases => _materializationLeases.Values;
+
+    public IReadOnlyCollection<PrisonerRecord> PrisonerRecords => _prisonerRecords.Values;
 
     public IReadOnlyCollection<RaidPawnLink> RaidPawnLinks => _raidPawnLinks.Values;
 
@@ -261,6 +264,9 @@ public sealed class WorldState
             MaterializationLeases = _materializationLeases.Values
                 .OrderBy(lease => lease.Id.Value)
                 .ToList(),
+            PrisonerRecords = _prisonerRecords.Values
+                .OrderBy(record => record.CitizenId.Value)
+                .ToList(),
             SettlementFacilities = _settlementFacilities.Values
                 .OrderBy(facility => facility.Id.Value)
                 .ToList(),
@@ -395,6 +401,11 @@ public sealed class WorldState
             state.ReserveExistingId(lease.Id);
         }
 
+        foreach (var record in snapshot.PrisonerRecords)
+        {
+            state._prisonerRecords[record.CitizenId] = record;
+        }
+
         foreach (var link in snapshot.RaidPawnLinks)
         {
             state._raidPawnLinks.Add(link.PawnThingId, link);
@@ -482,6 +493,11 @@ public sealed class WorldState
         foreach (var ownership in snapshot.Ownership)
         {
             state._owners[ownership.AssetId] = ownership.OwnerId;
+        }
+
+        foreach (var record in state._prisonerRecords.Values)
+        {
+            state.ReconcilePrisonerStateForLedger(record);
         }
 
         foreach (var resource in snapshot.Resources)
@@ -1814,6 +1830,13 @@ public sealed class WorldState
             : null;
     }
 
+    public PrisonerRecord? GetPrisonerRecord(EntityId citizenId)
+    {
+        return _prisonerRecords.TryGetValue(citizenId, out var record)
+            ? record
+            : null;
+    }
+
     public RaidPawnLink? GetRaidPawnLink(int pawnThingId)
     {
         return _raidPawnLinks.TryGetValue(pawnThingId, out var link)
@@ -2895,6 +2918,139 @@ public sealed class WorldState
         return released;
     }
 
+    internal PrisonerRecord CapturePrisonerForLedger(
+        EntityId citizenId,
+        int pawnThingId,
+        EntityId sourceOwnerId,
+        EntityId returnOwnerId,
+        string captorFactionId,
+        string reason)
+    {
+        ThrowIfNullOrWhiteSpace(captorFactionId, nameof(captorFactionId));
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (pawnThingId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pawnThingId));
+        }
+
+        if (!_citizens.ContainsKey(citizenId))
+        {
+            throw new InvalidOperationException($"Citizen {citizenId} does not exist.");
+        }
+
+        EnsureOwnerExists(sourceOwnerId);
+        EnsureOwnerExists(returnOwnerId);
+
+        var record = new PrisonerRecord(
+            citizenId,
+            pawnThingId,
+            sourceOwnerId,
+            returnOwnerId,
+            captorFactionId,
+            CurrentTick,
+            PrisonerDisposition.Captive,
+            CurrentTick);
+        _prisonerRecords[citizenId] = record;
+        ReconcilePrisonerStateForLedger(record);
+        AppendEvent(
+            WorldEventKind.PrisonerCaptured,
+            citizenId,
+            $"Citizen {citizenId} captured by {captorFactionId}: {reason}.");
+        return record;
+    }
+
+    internal PrisonerRecord TransitionPrisonerForLedger(
+        PrisonerRecord existing,
+        PrisonerDisposition disposition,
+        string actorFactionId,
+        string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_prisonerRecords.TryGetValue(existing.CitizenId, out var current))
+        {
+            throw new InvalidOperationException($"Prisoner lifecycle for {existing.CitizenId} does not exist.");
+        }
+
+        if (current != existing)
+        {
+            existing = current;
+        }
+
+        var citizenWasDead = _citizens.TryGetValue(existing.CitizenId, out var before)
+            && before.Status == CitizenStatus.Dead;
+        var transitioned = existing with
+        {
+            Disposition = disposition,
+            LastTransitionTick = CurrentTick
+        };
+        _prisonerRecords[existing.CitizenId] = transitioned;
+        ReconcilePrisonerStateForLedger(transitioned);
+
+        var actor = string.IsNullOrWhiteSpace(actorFactionId) ? "unknown" : actorFactionId;
+        switch (disposition)
+        {
+            case PrisonerDisposition.Recruited:
+                AppendEvent(WorldEventKind.PrisonerRecruited, existing.CitizenId, $"Citizen {existing.CitizenId} recruited by {actor}: {reason}.");
+                break;
+            case PrisonerDisposition.Enslaved:
+                AppendEvent(WorldEventKind.PrisonerEnslaved, existing.CitizenId, $"Citizen {existing.CitizenId} enslaved by {actor}: {reason}.");
+                break;
+            case PrisonerDisposition.Released:
+                AppendEvent(WorldEventKind.PrisonerReleased, existing.CitizenId, $"Citizen {existing.CitizenId} released by {actor}: {reason}.");
+                break;
+            case PrisonerDisposition.Escaped:
+                AppendEvent(WorldEventKind.PrisonerEscaped, existing.CitizenId, $"Citizen {existing.CitizenId} escaped from {existing.CaptorFactionId}: {reason}.");
+                break;
+            case PrisonerDisposition.Dead when !citizenWasDead:
+                AppendEvent(WorldEventKind.CitizenDied, existing.CitizenId, $"Citizen {existing.CitizenId} died in custody: {reason}.");
+                break;
+            case PrisonerDisposition.Captive:
+                throw new InvalidOperationException("Capture must use CapturePrisonerForLedger.");
+        }
+
+        return transitioned;
+    }
+
+    internal void ReconcilePrisonerStateForLedger(PrisonerRecord record)
+    {
+        if (!_citizens.TryGetValue(record.CitizenId, out var citizen))
+        {
+            return;
+        }
+
+        var status = record.Disposition switch
+        {
+            PrisonerDisposition.Captive => CitizenStatus.Prisoner,
+            PrisonerDisposition.Recruited => CitizenStatus.Alive,
+            PrisonerDisposition.Enslaved => CitizenStatus.Alive,
+            PrisonerDisposition.Released when CanReturnPrisonerTo(record.ReturnOwnerId) => CitizenStatus.Alive,
+            PrisonerDisposition.Released => CitizenStatus.Missing,
+            PrisonerDisposition.Escaped => CitizenStatus.Missing,
+            PrisonerDisposition.Dead => CitizenStatus.Dead,
+            _ => throw new ArgumentOutOfRangeException(nameof(record), record.Disposition, "Unknown prisoner disposition.")
+        };
+        var ownerId = record.Disposition == PrisonerDisposition.Released
+            && status == CitizenStatus.Alive
+                ? record.ReturnOwnerId
+                : record.CitizenId;
+
+        _citizens[record.CitizenId] = citizen with { Status = status };
+        _owners[record.CitizenId] = ownerId;
+        MarkDerivedAggregatesDirty();
+    }
+
+    private bool CanReturnPrisonerTo(EntityId ownerId)
+    {
+        if (!OwnerExists(ownerId))
+        {
+            return false;
+        }
+
+        return ownerId.Kind != EntityKind.Settlement
+            || (_settlements.TryGetValue(ownerId, out var settlement)
+                && settlement.Status == SettlementLifecycleStatus.Active);
+    }
+
     public RaidPawnLink LinkRaidPawn(int pawnThingId, EntityId citizenId, EntityId armyId)
     {
         if (pawnThingId <= 0)
@@ -3153,6 +3309,69 @@ public sealed class WorldState
             {
                 yield return $"Alive citizen {citizen.Id} does not have an owner.";
             }
+        }
+
+        foreach (var record in _prisonerRecords.Values.OrderBy(record => record.CitizenId.Value))
+        {
+            if (!_citizens.TryGetValue(record.CitizenId, out var citizen))
+            {
+                yield return $"Prisoner record references missing citizen {record.CitizenId}.";
+                continue;
+            }
+
+            if (record.PawnThingId <= 0)
+            {
+                yield return $"Prisoner record for {record.CitizenId} has invalid pawn ID {record.PawnThingId}.";
+            }
+
+            if (!_owners.TryGetValue(record.CitizenId, out var ownerId))
+            {
+                yield return $"Prisoner citizen {record.CitizenId} does not have an owner.";
+                continue;
+            }
+
+            var expectedSelfOwnership = record.Disposition != PrisonerDisposition.Released
+                || citizen.Status != CitizenStatus.Alive;
+            if (expectedSelfOwnership && ownerId != record.CitizenId)
+            {
+                yield return $"Prisoner citizen {record.CitizenId} in {record.Disposition} is not self-owned.";
+            }
+
+            if (record.Disposition == PrisonerDisposition.Captive && citizen.Status != CitizenStatus.Prisoner)
+            {
+                yield return $"Captive citizen {record.CitizenId} has status {citizen.Status}.";
+            }
+
+            if (record.Disposition is PrisonerDisposition.Recruited or PrisonerDisposition.Enslaved
+                && citizen.Status != CitizenStatus.Alive)
+            {
+                yield return $"{record.Disposition} citizen {record.CitizenId} has status {citizen.Status}.";
+            }
+
+            if (record.Disposition == PrisonerDisposition.Released
+                && citizen.Status == CitizenStatus.Alive
+                && ownerId != record.ReturnOwnerId)
+            {
+                yield return $"Released citizen {record.CitizenId} was not returned to {record.ReturnOwnerId}.";
+            }
+
+            if (record.Disposition == PrisonerDisposition.Escaped && citizen.Status != CitizenStatus.Missing)
+            {
+                yield return $"Escaped citizen {record.CitizenId} has status {citizen.Status}.";
+            }
+
+            if (record.Disposition == PrisonerDisposition.Dead && citizen.Status != CitizenStatus.Dead)
+            {
+                yield return $"Dead prisoner citizen {record.CitizenId} has status {citizen.Status}.";
+            }
+        }
+
+        foreach (var duplicatePawn in _prisonerRecords.Values
+            .Where(record => record.Disposition is PrisonerDisposition.Captive or PrisonerDisposition.Recruited or PrisonerDisposition.Enslaved)
+            .GroupBy(record => record.PawnThingId)
+            .Where(group => group.Count() > 1))
+        {
+            yield return $"Pawn {duplicatePawn.Key} is bound to multiple active prisoner lifecycles.";
         }
 
         foreach (var army in _armies.Values.OrderBy(army => army.Id.Value))

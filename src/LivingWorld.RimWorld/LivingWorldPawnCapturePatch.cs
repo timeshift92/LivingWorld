@@ -8,7 +8,7 @@ namespace LivingWorld.RimWorld;
 [HarmonyPatch(typeof(Pawn_GuestTracker), "CapturedBy")]
 public static class LivingWorldPawnCapturePatch
 {
-    public static void Postfix(Pawn_GuestTracker __instance)
+    public static void Postfix(Pawn_GuestTracker __instance, Faction by)
     {
         var pawn = Traverse.Create(__instance).Field("pawn").GetValue<Pawn>();
         if (pawn == null || !pawn.IsPrisoner)
@@ -16,23 +16,10 @@ public static class LivingWorldPawnCapturePatch
             return;
         }
 
-        var component = LivingWorldWorldComponent.Instance;
-        if (component == null)
-        {
-            return;
-        }
-
-        // CompLivingWorldIdentity is preferred; thingIDNumber remains an identity fallback.
-        if (!LivingWorldPawnIdentityService.TryGetLedgerId(pawn, out var ledgerId))
-        {
-            return;
-        }
-
-        LivingWorldPawnSyncService.Apply(
-            component.State,
-            new PawnFateSyncRequest(
-                ledgerId,
-                PawnFateKind.Prisoner,
-                "pawn captured by player"));
+        LivingWorldPrisonerRuntime.TryApply(
+            pawn,
+            PrisonerLifecycleAction.Capture,
+            by?.def?.defName ?? pawn.HostFaction?.def?.defName ?? "Unknown",
+            "pawn captured");
     }
 }

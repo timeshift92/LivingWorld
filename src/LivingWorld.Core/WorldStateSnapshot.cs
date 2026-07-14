@@ -62,6 +62,9 @@ public sealed record WorldStateSnapshot(
     public IReadOnlyList<MaterializationLease> MaterializationLeases { get; init; } =
         Array.Empty<MaterializationLease>();
 
+    public IReadOnlyList<PrisonerRecord> PrisonerRecords { get; init; } =
+        Array.Empty<PrisonerRecord>();
+
     public IReadOnlyList<SettlementFacility> SettlementFacilities { get; init; } =
         Array.Empty<SettlementFacility>();
 

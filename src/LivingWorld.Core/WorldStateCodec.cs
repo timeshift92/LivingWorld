@@ -277,6 +277,22 @@ public static class WorldStateCodec
                                 ? new XAttribute("pawnThingId", lease.PawnThingId.Value)
                                 : null))),
                 new XElement(
+                    "PrisonerRecords",
+                    snapshot.PrisonerRecords.Select(record =>
+                        new XElement(
+                            "PrisonerRecord",
+                            new XAttribute("citizenKind", record.CitizenId.Kind),
+                            new XAttribute("citizenId", record.CitizenId.Value),
+                            new XAttribute("pawnThingId", record.PawnThingId),
+                            new XAttribute("sourceOwnerKind", record.SourceOwnerId.Kind),
+                            new XAttribute("sourceOwnerId", record.SourceOwnerId.Value),
+                            new XAttribute("returnOwnerKind", record.ReturnOwnerId.Kind),
+                            new XAttribute("returnOwnerId", record.ReturnOwnerId.Value),
+                            new XAttribute("captorFactionId", record.CaptorFactionId),
+                            new XAttribute("capturedTick", record.CapturedTick),
+                            new XAttribute("disposition", record.Disposition),
+                            new XAttribute("lastTransitionTick", record.LastTransitionTick)))),
+                new XElement(
                     "RaidPawnLinks",
                     snapshot.RaidPawnLinks.Select(link =>
                         new XElement(
@@ -850,6 +866,18 @@ public static class WorldStateCodec
                     RequiredInt(element, "expiresTick"),
                     RequiredEnum<MaterializationLeaseLifecycle>(element, "lifecycle"),
                     TryOptionalInt(element, "pawnThingId")))
+                .ToList(),
+            PrisonerRecords = OptionalContainer(root, "PrisonerRecords")
+                .Elements("PrisonerRecord")
+                .Select(element => new PrisonerRecord(
+                    ReadEntityId(element, "citizenKind", "citizenId"),
+                    RequiredInt(element, "pawnThingId"),
+                    ReadEntityId(element, "sourceOwnerKind", "sourceOwnerId"),
+                    ReadEntityId(element, "returnOwnerKind", "returnOwnerId"),
+                    RequiredString(element, "captorFactionId"),
+                    RequiredInt(element, "capturedTick"),
+                    RequiredEnum<PrisonerDisposition>(element, "disposition"),
+                    RequiredInt(element, "lastTransitionTick")))
                 .ToList(),
             SettlementFacilities = OptionalContainer(root, "SettlementFacilities")
                 .Elements("SettlementFacility")

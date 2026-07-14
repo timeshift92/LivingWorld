@@ -89,6 +89,12 @@ var tests = new List<(string Name, Action Test)>
     ("materialization lease reconciles pawn fate into ledger", TestMaterializationLeaseReconcilesPawnFate),
     ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
+    ("prisoner capture establishes durable self-owned custody once", TestPrisonerCaptureEstablishesCustodyOnce),
+    ("raid prisoner release returns the linked citizen to its source settlement", TestRaidPrisonerReleaseReturnsHome),
+    ("recruit and death resolve a captured citizen idempotently", TestPrisonerRecruitAndDeathLifecycle),
+    ("enslave release and escape apply consistent citizen ownership", TestPrisonerAlternativeOutcomes),
+    ("prisoner lifecycle survives save load and remains actionable", TestPrisonerLifecycleSaveRoundTrip),
+    ("legacy prisoner state is recovered on its next transition", TestLegacyPrisonerLifecycleRecovery),
     ("settlement defense materialization reserves defenders and resources", TestSettlementDefenseMaterializationReservesDefendersAndResources),
     ("settlement resident materialization leases every remaining citizen exactly once", TestSettlementResidentMaterializationLeasesRemainingCitizens),
     ("settlement map layout materializes real facilities", TestSettlementMapLayoutMaterializesRealFacilities),
@@ -282,6 +288,7 @@ var tests = new List<(string Name, Action Test)>
     ("patches generated raid pawns into Living World citizens", TestRimWorldRaidPawnGenerationPatch),
     ("patches pawn death into Living World casualties", TestRimWorldPawnKillPatch),
     ("patches pawn capture into Living World prisoners", TestRimWorldPawnCapturePatch),
+    ("patches every terminal RimWorld prisoner outcome", TestRimWorldPrisonerLifecyclePatches),
     ("patches pawn exit into Living World raid returns", TestRimWorldPawnExitPatch),
     ("defines identity based pawn sync service", TestRimWorldPawnIdentityService),
     ("pawn death sync checks identity comp before thing id", TestRimWorldPawnKillPatchUsesIdentity),
@@ -2925,6 +2932,300 @@ static void TestMaterializationLeaseSurvivesSaveLoad()
     AssertEqual(777, restoredLease.PawnThingId);
     AssertEqual(MaterializationLeaseLifecycle.Materialized, restoredLease.Lifecycle);
     AssertEqual(MaterializationPurpose.SettlementVisit, restoredLease.Purpose);
+}
+
+static void TestPrisonerCaptureEstablishesCustodyOnce()
+{
+    var (state, settlement, citizen, lease) = CreateLeasedCitizenForPrisonerTest(7101);
+
+    var first = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7101,
+            PrisonerLifecycleAction.Capture,
+            "PlayerColony",
+            "captured on the colony map"));
+    var second = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7101,
+            PrisonerLifecycleAction.Capture,
+            "PlayerColony",
+            "duplicate capture notification"));
+
+    AssertEqual(PrisonerTransitionStatus.Success, first.Status);
+    AssertEqual(PrisonerTransitionStatus.AlreadyApplied, second.Status);
+    AssertEqual(CitizenStatus.Prisoner, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(citizen.Id, state.GetOwner(citizen.Id));
+    AssertEqual(MaterializationLeaseLifecycle.Prisoner, state.GetMaterializationLease(lease.Id)!.Lifecycle);
+    AssertEqual(settlement.Id, first.Record!.ReturnOwnerId);
+    AssertEqual(PrisonerDisposition.Captive, state.GetPrisonerRecord(citizen.Id)!.Disposition);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.PrisonerCaptured));
+    AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestRaidPrisonerReleaseReturnsHome()
+{
+    var state = new WorldState(7110);
+    var settlement = state.CreateSettlement("raid-prisoner-town", "Raid Prisoner Town", "Raiders");
+    var citizen = state.CreateCitizen("Captured Raider", 29, Sex.Male, "soldier", settlement.Id);
+    var army = state.CreateArmy("Raiders", "Raiders", settlement.Id);
+    var transfer = state.TransferAsset(citizen.Id, settlement.Id, army.Id, "deployed into raid");
+    AssertEqual(OwnershipTransferStatus.Success, transfer.Status);
+    state.LinkRaidPawn(7110, citizen.Id, army.Id);
+
+    var captured = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7110,
+            PrisonerLifecycleAction.Capture,
+            "PlayerColony",
+            "raid pawn captured"));
+
+    AssertEqual(PrisonerTransitionStatus.Success, captured.Status);
+    AssertEqual(RaidPawnLinkStatus.Prisoner, state.GetRaidPawnLink(7110)!.Status);
+    AssertEqual(army.Id, captured.Record!.SourceOwnerId);
+    AssertEqual(settlement.Id, captured.Record.ReturnOwnerId);
+    AssertEqual(citizen.Id, state.GetOwner(citizen.Id));
+
+    var released = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7110,
+            PrisonerLifecycleAction.Release,
+            "PlayerColony",
+            "raid prisoner released"));
+    AssertEqual(PrisonerTransitionStatus.Success, released.Status);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(settlement.Id, state.GetOwner(citizen.Id));
+    AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Total);
+}
+
+static void TestPrisonerRecruitAndDeathLifecycle()
+{
+    var (state, _, citizen, _) = CreateLeasedCitizenForPrisonerTest(7102);
+    CapturePrisonerForTest(state, citizen.Id, 7102);
+
+    var wrongPawn = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            9999,
+            PrisonerLifecycleAction.Recruit,
+            "PlayerColony",
+            "different pawn reused the ledger identity"));
+    AssertEqual(PrisonerTransitionStatus.PawnMismatch, wrongPawn.Status);
+    AssertEqual(PrisonerDisposition.Captive, state.GetPrisonerRecord(citizen.Id)!.Disposition);
+
+    var recruited = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7102,
+            PrisonerLifecycleAction.Recruit,
+            "PlayerColony",
+            "recruitment succeeded"));
+    var duplicateRecruit = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7102,
+            PrisonerLifecycleAction.Recruit,
+            "PlayerColony",
+            "duplicate recruitment notification"));
+
+    AssertEqual(PrisonerTransitionStatus.Success, recruited.Status);
+    AssertEqual(PrisonerTransitionStatus.AlreadyApplied, duplicateRecruit.Status);
+    AssertEqual(PrisonerDisposition.Recruited, state.GetPrisonerRecord(citizen.Id)!.Disposition);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(citizen.Id, state.GetOwner(citizen.Id));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.PrisonerRecruited));
+
+    var dead = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7102,
+            PrisonerLifecycleAction.Death,
+            "PlayerColony",
+            "former prisoner died"));
+    var duplicateDeath = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7102,
+            PrisonerLifecycleAction.Death,
+            "PlayerColony",
+            "duplicate death notification"));
+
+    AssertEqual(PrisonerTransitionStatus.Success, dead.Status);
+    AssertEqual(PrisonerTransitionStatus.AlreadyApplied, duplicateDeath.Status);
+    AssertEqual(PrisonerDisposition.Dead, state.GetPrisonerRecord(citizen.Id)!.Disposition);
+    AssertEqual(CitizenStatus.Dead, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CitizenDied));
+}
+
+static void TestPrisonerAlternativeOutcomes()
+{
+    var enslavedSetup = CreateLeasedCitizenForPrisonerTest(7103);
+    CapturePrisonerForTest(enslavedSetup.State, enslavedSetup.Citizen.Id, 7103);
+    var enslaved = PrisonerLifecycleService.Apply(
+        enslavedSetup.State,
+        new PrisonerTransitionRequest(
+            enslavedSetup.Citizen.Id,
+            7103,
+            PrisonerLifecycleAction.Enslave,
+            "PlayerColony",
+            "enslavement succeeded"));
+    AssertEqual(PrisonerTransitionStatus.Success, enslaved.Status);
+    AssertEqual(PrisonerDisposition.Enslaved, enslaved.Record!.Disposition);
+    AssertEqual(CitizenStatus.Alive, enslavedSetup.State.GetCitizen(enslavedSetup.Citizen.Id)!.Status);
+    AssertEqual(enslavedSetup.Citizen.Id, enslavedSetup.State.GetOwner(enslavedSetup.Citizen.Id));
+
+    var releasedSetup = CreateLeasedCitizenForPrisonerTest(7104);
+    CapturePrisonerForTest(releasedSetup.State, releasedSetup.Citizen.Id, 7104);
+    var released = PrisonerLifecycleService.Apply(
+        releasedSetup.State,
+        new PrisonerTransitionRequest(
+            releasedSetup.Citizen.Id,
+            7104,
+            PrisonerLifecycleAction.Release,
+            "PlayerColony",
+            "prisoner released"));
+    AssertEqual(PrisonerTransitionStatus.Success, released.Status);
+    AssertEqual(PrisonerDisposition.Released, released.Record!.Disposition);
+    AssertEqual(CitizenStatus.Alive, releasedSetup.State.GetCitizen(releasedSetup.Citizen.Id)!.Status);
+    AssertEqual(releasedSetup.Settlement.Id, releasedSetup.State.GetOwner(releasedSetup.Citizen.Id));
+    AssertEqual(1, releasedSetup.State.GetSettlementPopulation(releasedSetup.Settlement.Id).Total);
+
+    var escapedSetup = CreateLeasedCitizenForPrisonerTest(7105);
+    CapturePrisonerForTest(escapedSetup.State, escapedSetup.Citizen.Id, 7105);
+    var escaped = PrisonerLifecycleService.Apply(
+        escapedSetup.State,
+        new PrisonerTransitionRequest(
+            escapedSetup.Citizen.Id,
+            7105,
+            PrisonerLifecycleAction.Escape,
+            "PlayerColony",
+            "prison break"));
+    AssertEqual(PrisonerTransitionStatus.Success, escaped.Status);
+    AssertEqual(PrisonerDisposition.Escaped, escaped.Record!.Disposition);
+    AssertEqual(CitizenStatus.Missing, escapedSetup.State.GetCitizen(escapedSetup.Citizen.Id)!.Status);
+    AssertEqual(escapedSetup.Citizen.Id, escapedSetup.State.GetOwner(escapedSetup.Citizen.Id));
+
+    var recaptured = PrisonerLifecycleService.Apply(
+        escapedSetup.State,
+        new PrisonerTransitionRequest(
+            escapedSetup.Citizen.Id,
+            7105,
+            PrisonerLifecycleAction.Capture,
+            "PlayerColony",
+            "escapee recaptured"));
+    AssertEqual(PrisonerTransitionStatus.Success, recaptured.Status);
+    AssertEqual(PrisonerDisposition.Captive, recaptured.Record!.Disposition);
+    AssertEqual(escapedSetup.Settlement.Id, recaptured.Record.ReturnOwnerId);
+    AssertEqual(CitizenStatus.Prisoner, escapedSetup.State.GetCitizen(escapedSetup.Citizen.Id)!.Status);
+}
+
+static void TestPrisonerLifecycleSaveRoundTrip()
+{
+    var (state, _, citizen, _) = CreateLeasedCitizenForPrisonerTest(7106);
+    CapturePrisonerForTest(state, citizen.Id, 7106);
+    PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7106,
+            PrisonerLifecycleAction.Enslave,
+            "PlayerColony",
+            "enslaved before save"));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var restoredRecord = restored.GetPrisonerRecord(citizen.Id)!;
+
+    AssertEqual(1, restored.PrisonerRecords.Count);
+    AssertEqual(7106, restoredRecord.PawnThingId);
+    AssertEqual(PrisonerDisposition.Enslaved, restoredRecord.Disposition);
+    AssertEqual(citizen.Id, restored.GetOwner(citizen.Id));
+    AssertEqual(CitizenStatus.Alive, restored.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(1, restored.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.PrisonerCaptured));
+    AssertEqual(1, restored.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.PrisonerEnslaved));
+
+    var deathAfterLoad = PrisonerLifecycleService.Apply(
+        restored,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7106,
+            PrisonerLifecycleAction.Death,
+            "PlayerColony",
+            "enslaved pawn died after loading"));
+    AssertEqual(PrisonerTransitionStatus.Success, deathAfterLoad.Status);
+    AssertEqual(CitizenStatus.Dead, restored.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(PrisonerDisposition.Dead, restored.GetPrisonerRecord(citizen.Id)!.Disposition);
+    AssertEqual(0, restored.Validate().Count());
+}
+
+static void TestLegacyPrisonerLifecycleRecovery()
+{
+    var (state, settlement, citizen, lease) = CreateLeasedCitizenForPrisonerTest(7107);
+    MaterializationLeaseService.Resolve(
+        state,
+        new MaterializationLeaseResolveRequest(lease.Id, PawnFateKind.Prisoner, "legacy capture"));
+
+    AssertEqual(null, state.GetPrisonerRecord(citizen.Id));
+    var released = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizen.Id,
+            7107,
+            PrisonerLifecycleAction.Release,
+            "PlayerColony",
+            "released after loading an old save"));
+
+    AssertEqual(PrisonerTransitionStatus.Success, released.Status);
+    AssertEqual(PrisonerDisposition.Released, released.Record!.Disposition);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(settlement.Id, state.GetOwner(citizen.Id));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.PrisonerCaptured));
+    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.PrisonerReleased));
+}
+
+static (WorldState State, WorldSettlement Settlement, WorldCitizen Citizen, MaterializationLease Lease)
+    CreateLeasedCitizenForPrisonerTest(int pawnThingId)
+{
+    var state = new WorldState(7000 + pawnThingId);
+    state.AdvanceToTick(100);
+    var settlement = state.CreateSettlement($"prisoner-town-{pawnThingId}", "Prisoner Town", "Outlander");
+    var citizen = state.CreateCitizen("Ledger Prisoner", 31, Sex.Female, "settler", settlement.Id);
+    var lease = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            $"prisoner-test:{pawnThingId}",
+            1,
+            600)).Leases.Single();
+    MaterializationLeaseService.BindPawn(state, lease.Id, pawnThingId);
+    return (state, settlement, citizen, lease);
+}
+
+static void CapturePrisonerForTest(WorldState state, EntityId citizenId, int pawnThingId)
+{
+    var result = PrisonerLifecycleService.Apply(
+        state,
+        new PrisonerTransitionRequest(
+            citizenId,
+            pawnThingId,
+            PrisonerLifecycleAction.Capture,
+            "PlayerColony",
+            "captured for lifecycle test"));
+    AssertEqual(PrisonerTransitionStatus.Success, result.Status);
 }
 
 static void TestSettlementDefenseMaterializationReservesDefendersAndResources()
@@ -8197,9 +8498,41 @@ static void TestRimWorldPawnCapturePatch()
     AssertContains("[HarmonyPatch(typeof(Pawn_GuestTracker), \"CapturedBy\")]", source);
     AssertRimWorldMethodExists("RimWorld.Pawn_GuestTracker", "CapturedBy");
     AssertContains("IsPrisoner", source);
-    AssertContains("TryGetLedgerId", source);
-    AssertContains("LivingWorldPawnSyncService.Apply", source);
-    AssertContains("PawnFateKind.Prisoner", source);
+    AssertContains("LivingWorldPrisonerRuntime.TryApply", source);
+    AssertContains("PrisonerLifecycleAction.Capture", source);
+    AssertContains("Faction by", source);
+}
+
+static void TestRimWorldPrisonerLifecyclePatches()
+{
+    var path = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPrisonerLifecyclePatches.cs");
+    AssertFileExists(path);
+    var source = File.ReadAllText(path);
+
+    AssertContains("LivingWorldPawnIdentityService.TryGetLedgerId", source);
+    AssertContains("PrisonerLifecycleService.Apply", source);
+    AssertContains("PrisonerTransitionStatus.AlreadyApplied", source);
+    AssertContains("[HarmonyPatch(typeof(Pawn_GuestTracker), nameof(Pawn_GuestTracker.Notify_PawnRecruited))]", source);
+    AssertContains("[HarmonyPatch(typeof(Pawn_GuestTracker), nameof(Pawn_GuestTracker.SetGuestStatus))]", source);
+    AssertContains("[HarmonyPatch(typeof(Pawn), nameof(Pawn.Notify_Released))]", source);
+    AssertContains("[HarmonyPatch(typeof(Pawn), nameof(Pawn.Notify_PrisonBreakout))]", source);
+    AssertContains("[HarmonyPatch(typeof(Pawn), nameof(Pawn.SetFaction))]", source);
+    AssertContains("[HarmonyPatch(typeof(Pawn), nameof(Pawn.Kill))]", source);
+    AssertContains("PrisonerLifecycleAction.Recruit", source);
+    AssertContains("PrisonerLifecycleAction.Enslave", source);
+    AssertContains("PrisonerLifecycleAction.Release", source);
+    AssertContains("PrisonerLifecycleAction.Escape", source);
+    AssertContains("PrisonerLifecycleAction.Death", source);
+    AssertRimWorldMethodExists("RimWorld.Pawn_GuestTracker", "Notify_PawnRecruited");
+    AssertRimWorldMethodExists("RimWorld.Pawn_GuestTracker", "SetGuestStatus");
+    AssertRimWorldMethodExists("Verse.Pawn", "Notify_Released");
+    AssertRimWorldMethodExists("Verse.Pawn", "Notify_PrisonBreakout");
+    AssertRimWorldMethodExists("Verse.Pawn", "SetFaction");
+    AssertRimWorldMethodExists("Verse.Pawn", "Kill");
 }
 
 static void TestRimWorldPawnExitPatch()
@@ -8571,7 +8904,17 @@ static void TestRimWorldPawnCapturePatchUsesIdentity()
         "LivingWorld.RimWorld",
         "LivingWorldPawnCapturePatch.cs");
 
-    var source = File.ReadAllText(patchPath);
+    var source = File.ReadAllText(patchPath)
+        + File.ReadAllText(Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "LivingWorld.RimWorld",
+            "LivingWorldPrisonerLifecyclePatches.cs"))
+        + File.ReadAllText(Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "LivingWorld.RimWorld",
+            "LivingWorldPawnIdentityService.cs"));
 
     AssertContains("LivingWorldPawnIdentityService", source);
     AssertContains("TryGetLedgerId", source);
@@ -8625,6 +8968,11 @@ static void TestRimWorldInboundPatchesUsePawnSyncService()
         "src",
         "LivingWorld.RimWorld",
         "LivingWorldPawnCapturePatch.cs"));
+    var prisonerPatches = File.ReadAllText(Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldPrisonerLifecyclePatches.cs"));
     var exitPatch = File.ReadAllText(Path.Combine(
         FindRepoRoot(),
         "src",
@@ -8633,8 +8981,8 @@ static void TestRimWorldInboundPatchesUsePawnSyncService()
 
     AssertContains("LivingWorldPawnSyncService.Apply", killPatch);
     AssertContains("PawnFateKind.Dead", killPatch);
-    AssertContains("LivingWorldPawnSyncService.Apply", capturePatch);
-    AssertContains("PawnFateKind.Prisoner", capturePatch);
+    AssertContains("LivingWorldPrisonerRuntime.TryApply", capturePatch);
+    AssertContains("PrisonerLifecycleService.Apply", prisonerPatches);
     AssertContains("LivingWorldPawnSyncService.Apply", exitPatch);
     AssertContains("PawnFateKind.Returned", exitPatch);
     AssertContains("PawnFateKind.Missing", exitPatch);
