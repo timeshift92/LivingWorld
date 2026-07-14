@@ -82,7 +82,9 @@ public enum WorldEventKind
     CropStrainProjectStarted,
     CropStrainProjectCompleted,
     TechnologyDiffused,
-    WorldMissionDisrupted
+    WorldMissionDisrupted,
+    DrifterAssimilationJourneyStarted,
+    DrifterAssimilationJourneyCancelled
 }
 
 public sealed record WorldEvent(

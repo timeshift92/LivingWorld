@@ -178,6 +178,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
+        BindDrifterAssimilationOrigins();
+        SyncDrifterAssimilationMarkers();
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
         SyncPlayerReconnaissanceMarkers();
@@ -745,7 +747,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 settlementExpansionWorldBindings);
             DrifterAssimilationService.SimulateAssimilation(
                 State,
-                new DrifterAssimilationRequest(dayTick, settings.maxDrifterAssimilationsPerDay));
+                new DrifterAssimilationRequest(dayTick, settings.maxDrifterAssimilationsPerDay)
+                {
+                    TravelDurationTicks = TicksPerDay,
+                    RequirePhysicalOrigin = true
+                });
+            BindDrifterAssimilationOrigins();
 
             cachedTargetPopulation = flowTarget.TargetPopulation;
             cachedWorldPopulation = State.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive) + State.Drifters.Count;
@@ -799,6 +806,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Visualize the day's world-war army movements on the globe (display only — the ledger
         // remains the source of truth). Cheap: it only touches active traveling movements.
         SyncArmyWorldObjects();
+        SyncDrifterAssimilationMarkers();
 
         // Mark the ruins of settlements destroyed by faction collapse (display only). Reconciled the
         // same way as army markers: a marker per active ruin, dropped when the ruin is reclaimed or
@@ -828,6 +836,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 && !string.IsNullOrEmpty(marker.MarkerKey)
                 && !marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
                 && !marker.MarkerKey.StartsWith(ApproachingGroupRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
+                && !marker.MarkerKey.StartsWith("drifter:", StringComparison.Ordinal)
                 && !marker.MarkerKey.StartsWith(LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal))
             {
                 // Approaching-raid markers are managed by SyncApproachingRaidMarkers (they are keyed to
@@ -929,6 +938,121 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
 
         LivingWorldSettlementExpansionWorldBridge.Synchronize(State, settlementExpansionWorldBindings);
+    }
+
+    private void BindDrifterAssimilationOrigins()
+    {
+        var reservedTiles = new HashSet<int>();
+        foreach (var journey in State.DrifterAssimilationJourneys
+            .Where(candidate => candidate.Status == DrifterAssimilationJourneyStatus.Traveling)
+            .OrderBy(candidate => candidate.Id.Value))
+        {
+            if (TryParseWorldTileStableKey(journey.PhysicalOriginStableKey, out var existingTile))
+            {
+                reservedTiles.Add(existingTile);
+                continue;
+            }
+
+            if (!journey.PhysicalOriginRequired)
+            {
+                continue;
+            }
+
+            var target = State.GetSettlement(journey.TargetSettlementId);
+            var targetTile = target == null ? -1 : ParseSettlementTile(target.Slug);
+            if (targetTile < 0
+                || !LivingWorldSettlementExpansionWorldBridge.TrySelectFreeTile(
+                    $"drifter:{journey.Id.Value}",
+                    targetTile,
+                    reservedTiles,
+                    out var originTile))
+            {
+                continue;
+            }
+
+            State.BindDrifterAssimilationOrigin(journey.Id, $"worldtile:{originTile}");
+            reservedTiles.Add(originTile);
+        }
+    }
+
+    private void SyncDrifterAssimilationMarkers()
+    {
+        var worldObjects = Find.WorldObjects;
+        if (worldObjects == null)
+        {
+            return;
+        }
+
+        var existing = worldObjects.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .Where(marker => marker.MarkerKey.StartsWith("drifter:", StringComparison.Ordinal))
+            .ToDictionary(marker => marker.MarkerKey, StringComparer.Ordinal);
+        var live = new HashSet<string>(StringComparer.Ordinal);
+        var markerDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker");
+        if (markerDef != null)
+        {
+            foreach (var journey in State.DrifterAssimilationJourneys
+                .Where(candidate => candidate.Status == DrifterAssimilationJourneyStatus.Traveling)
+                .OrderBy(candidate => candidate.Id.Value))
+            {
+                var target = State.GetSettlement(journey.TargetSettlementId);
+                var targetTile = target == null ? -1 : ParseSettlementTile(target.Slug);
+                if (target == null || targetTile < 0
+                    || !TryParseWorldTileStableKey(journey.PhysicalOriginStableKey, out var originTile))
+                {
+                    continue;
+                }
+
+                var key = $"drifter:{journey.Id.Value}";
+                live.Add(key);
+                var faction = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == target.FactionId);
+                var isNew = !existing.TryGetValue(key, out var marker);
+                marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+                marker.Tile = originTile;
+                if (faction != null)
+                {
+                    marker.SetFaction(faction);
+                }
+
+                marker.Configure(
+                    key,
+                    "World/LivingWorld_Settler",
+                    "LW_MissionKind_Settler".Translate(),
+                    originTile,
+                    targetTile,
+                    journey.CreatedTick,
+                    journey.ArrivalTick,
+                    faction?.Name ?? target.FactionId,
+                    target.Name,
+                    1,
+                    0,
+                    string.Empty,
+                    journey.Reason);
+                if (isNew)
+                {
+                    worldObjects.Add(marker);
+                }
+            }
+        }
+
+        foreach (var pair in existing)
+        {
+            if (!live.Contains(pair.Key))
+            {
+                worldObjects.Remove(pair.Value);
+            }
+        }
+    }
+
+    private static bool TryParseWorldTileStableKey(string? stableKey, out int tile)
+    {
+        tile = -1;
+        const string prefix = "worldtile:";
+        return !string.IsNullOrWhiteSpace(stableKey)
+            && stableKey!.StartsWith(prefix, StringComparison.Ordinal)
+            && int.TryParse(stableKey.Substring(prefix.Length), out tile)
+            && tile >= 0;
     }
 
     private void EnsureMissionMarker(

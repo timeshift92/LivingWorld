@@ -86,6 +86,9 @@ public sealed record WorldStateSnapshot(
     public IReadOnlyList<SettlementTechnology> SettlementTechnologies { get; init; } =
         Array.Empty<SettlementTechnology>();
 
+    public IReadOnlyList<DrifterAssimilationJourney> DrifterAssimilationJourneys { get; init; } =
+        Array.Empty<DrifterAssimilationJourney>();
+
     public WorldEventArchiveCheckpoint EventArchive { get; init; } =
         WorldEventArchiveCheckpoint.Empty;
 }

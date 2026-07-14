@@ -152,6 +152,9 @@ var tests = new List<(string Name, Action Test)>
     ("leaves drifters in the pool when there is no settlement to join", TestDrifterAssimilationWithoutSettlement),
     ("respects the per-step assimilation cap", TestDrifterAssimilationRespectsCap),
     ("keeps world population conserved across arrival then assimilation", TestDrifterArrivalThenAssimilationConservesPopulation),
+    ("waits for a physical origin before a drifter can arrive", TestDrifterAssimilationWaitsForPhysicalOrigin),
+    ("cancels a drifter journey when its target changes owner", TestDrifterAssimilationCancelsChangedTarget),
+    ("round trips an active drifter assimilation journey", TestDrifterAssimilationJourneyRoundTrip),
     ("founds a settlement when a capable organizer leads enough drifters", TestDrifterFoundingCreatesSettlement),
     ("founds a raider band when the capable leader is a fighter", TestDrifterFoundingCreatesRaiderBand),
     ("does not found without a capable leader", TestDrifterFoundingNeedsCapableLeader),
@@ -4686,6 +4689,15 @@ static void TestDrifterAssimilationJoinsSettlement()
         state,
         new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 5));
 
+    AssertEqual(0, result.Assimilated);
+    AssertEqual(2, result.JourneysStarted);
+    AssertEqual(2, state.Drifters.Count);
+    AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
+
+    result = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(180_000, MaxAssimilationsPerStep: 0));
+
     AssertEqual(2, result.Assimilated);
     AssertEqual(0, state.Drifters.Count);
     AssertEqual(2, state.GetSettlementPopulation(settlement.Id).Total);
@@ -4710,6 +4722,12 @@ static void TestDrifterAssimilationSpreadsAcrossSettlements()
     DrifterAssimilationService.SimulateAssimilation(
         state,
         new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 2));
+
+    AssertEqual(0, state.GetSettlementPopulation(first.Id).Total);
+    AssertEqual(0, state.GetSettlementPopulation(second.Id).Total);
+    DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(180_000, MaxAssimilationsPerStep: 0));
 
     // Two empty settlements get one drifter each, not both into one.
     AssertEqual(1, state.GetSettlementPopulation(first.Id).Total);
@@ -4745,6 +4763,14 @@ static void TestDrifterAssimilationRespectsCap()
         state,
         new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 1));
 
+    AssertEqual(0, result.Assimilated);
+    AssertEqual(1, result.JourneysStarted);
+    AssertEqual(3, state.Drifters.Count);
+    AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
+
+    result = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(180_000, MaxAssimilationsPerStep: 0));
     AssertEqual(1, result.Assimilated);
     AssertEqual(2, state.Drifters.Count);
     AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Total);
@@ -4764,6 +4790,9 @@ static void TestDrifterArrivalThenAssimilationConservesPopulation()
     DrifterAssimilationService.SimulateAssimilation(
         state,
         new DrifterAssimilationRequest(120_000, MaxAssimilationsPerStep: 2));
+    DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(180_000, MaxAssimilationsPerStep: 0));
 
     var worldPopulation = state.Citizens.Count(c => c.Status == CitizenStatus.Alive) + state.Drifters.Count;
     AssertEqual(2, worldPopulation);
@@ -4774,6 +4803,78 @@ static void TestDrifterArrivalThenAssimilationConservesPopulation()
         state,
         new DrifterArrivalRequest(180_000, TargetWorldPopulation: 2, HardCeiling: 100, MaxArrivalsPerStep: 2));
     AssertEqual(0, refill.Arrived);
+}
+
+static void TestDrifterAssimilationWaitsForPhysicalOrigin()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    var drifter = state.CreateDrifter("Traveler", 28, Sex.Female);
+    var started = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(60_000, 1)
+        {
+            TravelDurationTicks = 60_000,
+            RequirePhysicalOrigin = true
+        });
+    AssertEqual(1, started.JourneysStarted);
+
+    var waiting = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, 0));
+    AssertEqual(0, waiting.Assimilated);
+    AssertEqual(drifter.Id, state.Drifters.Single().Id);
+
+    var journey = state.DrifterAssimilationJourneys.Single();
+    state.BindDrifterAssimilationOrigin(journey.Id, "worldtile:123");
+    var arrived = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_001, 0));
+    AssertEqual(1, arrived.Assimilated);
+    AssertEqual(1, state.GetSettlementPopulation(settlement.Id).Total);
+}
+
+static void TestDrifterAssimilationCancelsChangedTarget()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    var drifter = state.CreateDrifter("Traveler", 31, Sex.Male);
+    DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(60_000, 1) { TravelDurationTicks = 60_000 });
+    state.CaptureSettlement(settlement.Id, "Pirates");
+
+    var result = DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(120_000, 0));
+
+    AssertEqual(0, result.Assimilated);
+    AssertEqual(drifter.Id, state.Drifters.Single().Id);
+    AssertEqual(DrifterAssimilationJourneyStatus.Cancelled, state.DrifterAssimilationJourneys.Single().Status);
+}
+
+static void TestDrifterAssimilationJourneyRoundTrip()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("camp", "Camp", "Outlander");
+    state.CreateDrifter("Traveler", 31, Sex.Male);
+    DrifterAssimilationService.SimulateAssimilation(
+        state,
+        new DrifterAssimilationRequest(60_000, 1)
+        {
+            TravelDurationTicks = 120_000,
+            RequirePhysicalOrigin = true
+        });
+    var journey = state.DrifterAssimilationJourneys.Single();
+    state.BindDrifterAssimilationOrigin(journey.Id, "worldtile:321");
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    var roundTripped = restored.GetDrifterAssimilationJourney(journey.Id)!;
+    AssertEqual(settlement.Id, roundTripped.TargetSettlementId);
+    AssertEqual("worldtile:321", roundTripped.PhysicalOriginStableKey);
+    AssertEqual(true, roundTripped.PhysicalOriginRequired);
+    AssertEqual(DrifterAssimilationJourneyStatus.Traveling, roundTripped.Status);
+    AssertEqual(0, restored.Validate().Count());
 }
 
 static void TestDrifterFoundingCreatesSettlement()

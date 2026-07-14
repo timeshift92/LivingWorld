@@ -572,6 +572,27 @@ public static class WorldStateCodec
                             new XAttribute("combatAptitude", drifter.CombatAptitude),
                             new XAttribute("organizationAptitude", drifter.OrganizationAptitude)))),
                 new XElement(
+                    "DrifterAssimilationJourneys",
+                    snapshot.DrifterAssimilationJourneys.Select(journey =>
+                        new XElement(
+                            "Journey",
+                            IdAttributes(journey.Id),
+                            new XAttribute("drifterKind", journey.DrifterId.Kind),
+                            new XAttribute("drifterId", journey.DrifterId.Value),
+                            new XAttribute("targetKind", journey.TargetSettlementId.Kind),
+                            new XAttribute("targetId", journey.TargetSettlementId.Value),
+                            new XAttribute("expectedTargetFactionId", journey.ExpectedTargetFactionId),
+                            new XAttribute("createdTick", journey.CreatedTick),
+                            new XAttribute("arrivalTick", journey.ArrivalTick),
+                            new XAttribute("status", journey.Status),
+                            new XAttribute("reason", journey.Reason),
+                            journey.PhysicalOriginRequired
+                                ? new XAttribute("physicalOriginRequired", true)
+                                : null,
+                            string.IsNullOrWhiteSpace(journey.PhysicalOriginStableKey)
+                                ? null
+                                : new XAttribute("physicalOriginStableKey", journey.PhysicalOriginStableKey)))),
+                new XElement(
                     "ArmyMovements",
                     state.ArmyMovements
                         .OrderBy(movement => movement.ArmyId.Value)
@@ -786,6 +807,22 @@ public static class WorldStateCodec
             PlayerFactionId = OptionalString(root, "playerFactionId"),
             DrifterArrivalReservoir = OptionalInt(root, "drifterArrivalReservoir", 0),
             EventArchive = DecodeEventArchive(root),
+            DrifterAssimilationJourneys = OptionalContainer(root, "DrifterAssimilationJourneys")
+                .Elements("Journey")
+                .Select(element => new DrifterAssimilationJourney(
+                    ReadId(element),
+                    ReadEntityId(element, "drifterKind", "drifterId"),
+                    ReadEntityId(element, "targetKind", "targetId"),
+                    RequiredString(element, "expectedTargetFactionId"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredInt(element, "arrivalTick"),
+                    RequiredEnum<DrifterAssimilationJourneyStatus>(element, "status"),
+                    RequiredString(element, "reason"))
+                {
+                    PhysicalOriginRequired = OptionalBool(element, "physicalOriginRequired", false),
+                    PhysicalOriginStableKey = OptionalString(element, "physicalOriginStableKey") ?? string.Empty
+                })
+                .ToList(),
             FactionSettlementIntel = OptionalContainer(root, "FactionSettlementIntel")
                 .Elements("Intel")
                 .Select(element => new FactionSettlementIntel(

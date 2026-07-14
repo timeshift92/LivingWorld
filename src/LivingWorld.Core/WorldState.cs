@@ -27,6 +27,7 @@ public sealed class WorldState
     private readonly Dictionary<int, RaidPawnLink> _raidPawnLinks = new();
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
+    private readonly Dictionary<EntityId, DrifterAssimilationJourney> _drifterAssimilationJourneys = new();
     private readonly Dictionary<EntityId, WorldArmyMovement> _armyMovements = new();
     private readonly Dictionary<string, FactionBehavior> _factionBehaviors = new(StringComparer.Ordinal);
     private readonly Dictionary<(string, string), int> _factionRelations = new();
@@ -125,6 +126,9 @@ public sealed class WorldState
     public IReadOnlyCollection<WorldRaidOutcome> RaidOutcomes => _raidOutcomes.Values;
 
     public IReadOnlyCollection<Drifter> Drifters => _drifters.Values;
+
+    public IReadOnlyCollection<DrifterAssimilationJourney> DrifterAssimilationJourneys =>
+        _drifterAssimilationJourneys.Values;
 
     public int DrifterArrivalReservoir => drifterArrivalReservoir;
 
@@ -315,6 +319,9 @@ public sealed class WorldState
             SettlementTechnologies = _settlementTechnologies.Values
                 .OrderBy(technology => technology.SettlementId.Value)
                 .ThenBy(technology => technology.Domain)
+                .ToList(),
+            DrifterAssimilationJourneys = _drifterAssimilationJourneys.Values
+                .OrderBy(journey => journey.Id.Value)
                 .ToList(),
             EventArchive = eventArchive
         };
@@ -554,6 +561,12 @@ public sealed class WorldState
         {
             state._drifters.Add(drifter.Id, drifter);
             state.ReserveExistingId(drifter.Id);
+        }
+
+        foreach (var journey in snapshot.DrifterAssimilationJourneys)
+        {
+            state._drifterAssimilationJourneys.Add(journey.Id, journey);
+            state.ReserveExistingId(journey.Id);
         }
 
         return state;
@@ -1711,6 +1724,127 @@ public sealed class WorldState
             : null;
     }
 
+    public DrifterAssimilationJourney? GetDrifterAssimilationJourney(EntityId id)
+    {
+        return _drifterAssimilationJourneys.TryGetValue(id, out var journey)
+            ? journey
+            : null;
+    }
+
+    public bool IsDrifterReservedForAssimilation(EntityId drifterId)
+    {
+        return _drifterAssimilationJourneys.Values.Any(journey =>
+            journey.DrifterId == drifterId
+            && journey.Status == DrifterAssimilationJourneyStatus.Traveling);
+    }
+
+    public DrifterAssimilationJourney CreateDrifterAssimilationJourney(
+        EntityId drifterId,
+        EntityId targetSettlementId,
+        int createdTick,
+        int arrivalTick,
+        string reason,
+        bool physicalOriginRequired)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        var drifter = GetDrifter(drifterId)
+            ?? throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
+        var target = GetSettlement(targetSettlementId)
+            ?? throw new InvalidOperationException($"Settlement {targetSettlementId} does not exist.");
+        if (!target.IsActive)
+        {
+            throw new InvalidOperationException($"Settlement {targetSettlementId} is not active.");
+        }
+
+        if (_drifterAssimilationJourneys.Values.Any(journey =>
+            journey.DrifterId == drifter.Id
+            && journey.Status == DrifterAssimilationJourneyStatus.Traveling))
+        {
+            throw new InvalidOperationException($"Drifter {drifterId} already has an active assimilation journey.");
+        }
+
+        var journey = new DrifterAssimilationJourney(
+            NextId(EntityKind.DrifterAssimilationJourney),
+            drifter.Id,
+            target.Id,
+            target.FactionId,
+            Math.Max(0, createdTick),
+            Math.Max(Math.Max(0, createdTick), arrivalTick),
+            DrifterAssimilationJourneyStatus.Traveling,
+            reason)
+        {
+            PhysicalOriginRequired = physicalOriginRequired
+        };
+        _drifterAssimilationJourneys.Add(journey.Id, journey);
+        AppendEvent(
+            WorldEventKind.DrifterAssimilationJourneyStarted,
+            journey.Id,
+            $"Drifter {drifter.Id} started traveling toward {target.Id}: {reason}.");
+        return journey;
+    }
+
+    public DrifterAssimilationJourney BindDrifterAssimilationOrigin(EntityId journeyId, string stableKey)
+    {
+        ThrowIfNullOrWhiteSpace(stableKey, nameof(stableKey));
+        var journey = GetDrifterAssimilationJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter assimilation journey {journeyId} does not exist.");
+        if (journey.Status != DrifterAssimilationJourneyStatus.Traveling)
+        {
+            return journey;
+        }
+
+        var bound = journey with { PhysicalOriginStableKey = stableKey.Trim() };
+        _drifterAssimilationJourneys[journeyId] = bound;
+        return bound;
+    }
+
+    public DrifterAssimilationJourney CompleteDrifterAssimilationJourney(EntityId journeyId)
+    {
+        var journey = GetDrifterAssimilationJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter assimilation journey {journeyId} does not exist.");
+        if (journey.Status != DrifterAssimilationJourneyStatus.Traveling)
+        {
+            return journey;
+        }
+
+        var arrived = journey with { Status = DrifterAssimilationJourneyStatus.Arrived };
+        _drifterAssimilationJourneys[journeyId] = arrived;
+        try
+        {
+            AssimilateDrifter(journey.DrifterId, journey.TargetSettlementId);
+        }
+        catch
+        {
+            _drifterAssimilationJourneys[journeyId] = journey;
+            throw;
+        }
+
+        return arrived;
+    }
+
+    public DrifterAssimilationJourney CancelDrifterAssimilationJourney(EntityId journeyId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        var journey = GetDrifterAssimilationJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter assimilation journey {journeyId} does not exist.");
+        if (journey.Status != DrifterAssimilationJourneyStatus.Traveling)
+        {
+            return journey;
+        }
+
+        var cancelled = journey with
+        {
+            Status = DrifterAssimilationJourneyStatus.Cancelled,
+            Reason = reason.Trim()
+        };
+        _drifterAssimilationJourneys[journeyId] = cancelled;
+        AppendEvent(
+            WorldEventKind.DrifterAssimilationJourneyCancelled,
+            journey.Id,
+            $"Drifter {journey.DrifterId} assimilation journey cancelled: {reason}.");
+        return cancelled;
+    }
+
     public Drifter MaterializeDrifter(EntityId drifterId, int pawnThingId, int tick)
     {
         AdvanceToTick(tick);
@@ -1718,6 +1852,11 @@ public sealed class WorldState
         if (!_drifters.TryGetValue(drifterId, out var drifter))
         {
             throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
+        }
+
+        if (IsDrifterReservedForAssimilation(drifterId))
+        {
+            throw new InvalidOperationException($"Drifter {drifterId} is traveling toward a settlement.");
         }
 
         _drifters.Remove(drifterId);
@@ -1777,7 +1916,16 @@ public sealed class WorldState
             throw new InvalidOperationException($"Drifter {leaderDrifterId} does not exist.");
         }
 
+        if (IsDrifterReservedForAssimilation(leaderDrifterId))
+        {
+            throw new InvalidOperationException($"Drifter {leaderDrifterId} is traveling toward a settlement.");
+        }
+
         var members = memberDrifterIds.Where(id => id != leaderDrifterId).Distinct().ToList();
+        if (members.Any(IsDrifterReservedForAssimilation))
+        {
+            throw new InvalidOperationException("A founding drifter is already traveling toward another settlement.");
+        }
         var settlement = CreateSettlement(slug, name, factionId);
 
         var leader = ConvertDrifterToCitizen(leaderDrifterId, settlement.Id, "leader");
@@ -1799,6 +1947,11 @@ public sealed class WorldState
         if (!_drifters.TryGetValue(drifterId, out var drifter))
         {
             throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
+        }
+
+        if (IsDrifterReservedForAssimilation(drifterId))
+        {
+            throw new InvalidOperationException($"Drifter {drifterId} is traveling toward a settlement.");
         }
 
         _drifters.Remove(drifterId);
@@ -3456,6 +3609,40 @@ public sealed class WorldState
             {
                 yield return $"Alive citizen {citizen.Id} does not have an owner.";
             }
+        }
+
+        foreach (var journey in _drifterAssimilationJourneys.Values.OrderBy(journey => journey.Id.Value))
+        {
+            if (!_settlements.ContainsKey(journey.TargetSettlementId))
+            {
+                yield return $"Drifter assimilation journey {journey.Id} references missing target {journey.TargetSettlementId}.";
+            }
+
+            if (journey.Status == DrifterAssimilationJourneyStatus.Traveling
+                && !_drifters.ContainsKey(journey.DrifterId))
+            {
+                yield return $"Traveling drifter assimilation journey {journey.Id} references missing drifter {journey.DrifterId}.";
+            }
+
+            if (journey.ArrivalTick < journey.CreatedTick)
+            {
+                yield return $"Drifter assimilation journey {journey.Id} arrives before it starts.";
+            }
+
+            if (journey.PhysicalOriginRequired
+                && journey.Status == DrifterAssimilationJourneyStatus.Arrived
+                && string.IsNullOrWhiteSpace(journey.PhysicalOriginStableKey))
+            {
+                yield return $"Arrived drifter assimilation journey {journey.Id} has no physical origin.";
+            }
+        }
+
+        foreach (var duplicate in _drifterAssimilationJourneys.Values
+            .Where(journey => journey.Status == DrifterAssimilationJourneyStatus.Traveling)
+            .GroupBy(journey => journey.DrifterId)
+            .Where(group => group.Count() > 1))
+        {
+            yield return $"Drifter {duplicate.Key} has multiple active assimilation journeys.";
         }
 
         foreach (var record in _prisonerRecords.Values.OrderBy(record => record.CitizenId.Value))
