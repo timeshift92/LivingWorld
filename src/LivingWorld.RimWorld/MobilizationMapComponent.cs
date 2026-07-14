@@ -27,6 +27,8 @@ public sealed class MobilizationMapComponent : MapComponent
     private ThreatSignals lastSignals;
     private List<int> savedDraftedIds = new();
     private readonly MobilizationDriver driver = new();
+    private readonly ShelterDriver shelterDriver = new();
+    private Dictionary<int, int> savedShelterAreas = new();
 
     public MobilizationMapComponent(Map map)
         : base(map)
@@ -76,6 +78,7 @@ public sealed class MobilizationMapComponent : MapComponent
         }
 
         driver.Drive(map, IsMobilized, currentTier);
+        shelterDriver.Drive(map, currentTier);
     }
 
     private ThreatSignals ComputeSignals(Map liveMap, LivingWorldSettings settings)
@@ -138,8 +141,10 @@ public sealed class MobilizationMapComponent : MapComponent
     public string DiagnosePawn(Pawn pawn)
     {
         return $"phase={driver.PeekPhase(pawn, IsMobilized, currentTier)}, tier={currentTier}, "
+               + $"fighter={!MobilizationCandidates.IsNonCombatant(pawn)}, "
                + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}, "
-               + $"aiAutoControl={CaiBridge.IsAutoControlled(pawn)}";
+               + $"aiAutoControl={CaiBridge.IsAutoControlled(pawn)}, "
+               + $"inShelter={ShelterAreaService.IsInShelter(pawn)}, shelteredByUs={shelterDriver.WeChangedArea(pawn)}";
     }
 
     public override void ExposeData()
@@ -154,12 +159,21 @@ public sealed class MobilizationMapComponent : MapComponent
 
         Scribe_Collections.Look(ref savedDraftedIds, "livingWorld_draftedByUs", LookMode.Value);
         savedDraftedIds ??= new List<int>();
+
+        if (Scribe.mode == LoadSaveMode.Saving)
+        {
+            savedShelterAreas = shelterDriver.ExportPrevAreas();
+        }
+
+        Scribe_Collections.Look(ref savedShelterAreas, "livingWorld_shelterPrevAreas", LookMode.Value, LookMode.Value);
+        savedShelterAreas ??= new Dictionary<int, int>();
     }
 
     public override void FinalizeInit()
     {
         base.FinalizeInit();
         driver.ImportDraftedIds(savedDraftedIds, map);
+        shelterDriver.ImportPrevAreas(savedShelterAreas);
     }
 
     public static MobilizationMapComponent? For(Map map)
