@@ -397,6 +397,8 @@ var tests = new List<(string Name, Action Test)>
     ("shelter: needed and already in shelter -> None", TestShelterAlreadyInShelter),
     ("shelter: not needed and we changed the area -> Restore", TestShelterRestore),
     ("shelter: not needed and we never touched the area -> None", TestShelterNoRestoreNeeded),
+    ("shelter: a pawn promoted to fighter while sheltered is restored", TestShelterPromotedFighterRestored),
+    ("shelter: restore fires even for a busy pawn (area change does not yank them)", TestShelterRestoreIgnoresBusy),
 };
 
 var failures = new List<string>();
@@ -10768,4 +10770,22 @@ static void TestShelterNoRestoreNeeded()
 {
     var s = new NonCombatantState { IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = false };
     AssertEqual(ShelterPhase.None, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterPromotedFighterRestored()
+{
+    // We sheltered them (AreaChangedByUs), then they were toggled into the roster -> no longer a
+    // non-combatant, but the threat is still up. Must restore their area, not leave them locked in shelter.
+    var s = new NonCombatantState { IsNonCombatant = false, AreaChangedByUs = true, TierWantsShelter = true };
+    AssertEqual(ShelterPhase.Restore, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterRestoreIgnoresBusy()
+{
+    // Restoring only changes the allowed area (non-interrupting), so a busy pawn we changed still restores.
+    var s = new NonCombatantState
+    {
+        IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = true, IsBusyUrgent = true,
+    };
+    AssertEqual(ShelterPhase.Restore, ShelterPlan.NextAction(s));
 }

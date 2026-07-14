@@ -38,17 +38,21 @@ public static class ShelterPlan
 {
     public static ShelterPhase NextAction(in NonCombatantState s)
     {
-        if (!s.IsNonCombatant || s.IsBusyUrgent)
+        var shouldShelter = s.IsNonCombatant && s.TierWantsShelter;
+
+        // Restore whenever we changed their area but they should no longer be sheltered — threat passed, or
+        // they were promoted into the Fighters roster. Safe even mid-job: it only changes the allowed area.
+        if (s.AreaChangedByUs && !shouldShelter)
+        {
+            return ShelterPhase.Restore;
+        }
+
+        // Never path a busy-urgent pawn to shelter.
+        if (!shouldShelter || s.IsBusyUrgent)
         {
             return ShelterPhase.None;
         }
 
-        if (s.TierWantsShelter)
-        {
-            return s.InShelterArea ? ShelterPhase.None : ShelterPhase.Flee;
-        }
-
-        // No shelter needed: put their area back only if we were the ones who changed it.
-        return s.AreaChangedByUs ? ShelterPhase.Restore : ShelterPhase.None;
+        return s.InShelterArea ? ShelterPhase.None : ShelterPhase.Flee;
     }
 }

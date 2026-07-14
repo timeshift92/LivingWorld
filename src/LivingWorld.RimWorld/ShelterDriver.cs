@@ -21,7 +21,7 @@ public sealed class ShelterDriver
     public void Drive(Map map, ThreatTier tier)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
-        if (!settings.armoryMobilizationEnabled)
+        if (!settings.armoryMobilizationEnabled || !ModsConfig.OdysseyActive)
         {
             return;
         }
@@ -101,6 +101,9 @@ public sealed class ShelterDriver
     }
 
     public bool WeChangedArea(Pawn pawn) => pawn != null && prevAreaByPawn.ContainsKey(pawn.thingIDNumber);
+
+    public int PrevAreaId(Pawn pawn)
+        => pawn != null && prevAreaByPawn.TryGetValue(pawn.thingIDNumber, out var id) ? id : -1;
 
     public Dictionary<int, int> ExportPrevAreas() => new(prevAreaByPawn);
 

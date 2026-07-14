@@ -38,20 +38,15 @@ public static class MobilizationCandidates
         }
     }
 
-    // Everyone the shelter system moves: a colonist who is not a fighter. Deliberately broad — children and
-    // violence-incapable colonists are non-combatants too. Fail-safe: unknown state reads as non-combatant so
-    // they are protected (sheltered) rather than left in the open.
     public static bool IsNonCombatant(Pawn pawn)
     {
         try
         {
-            if (pawn == null || !pawn.IsColonist || pawn.Dead)
-            {
-                return false;
-            }
-
-            var roster = FightersRoster.Get();
-            return roster == null || !roster.IsFighter(pawn);
+            // A non-combatant is any living colonist who is NOT an active fighter (IsCandidate is "on the
+            // roster AND able to fight"). This makes fighters and non-combatants a strict complement — a
+            // rostered-but-incapable pawn (pacifist / child) is protected by shelter rather than left in
+            // the open. Fail-safe: unknown state reads as non-combatant so they are sheltered, not exposed.
+            return pawn != null && pawn.IsColonist && !pawn.Dead && !IsCandidate(pawn);
         }
         catch
         {
@@ -121,10 +116,5 @@ public static class MobilizationCandidates
         {
             return false;
         }
-    }
-
-    private static int SkillLevel(Pawn pawn, SkillDef skill)
-    {
-        return pawn?.skills?.GetSkill(skill)?.Level ?? 0;
     }
 }

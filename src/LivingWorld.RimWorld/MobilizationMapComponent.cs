@@ -144,7 +144,8 @@ public sealed class MobilizationMapComponent : MapComponent
                + $"fighter={!MobilizationCandidates.IsNonCombatant(pawn)}, "
                + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}, "
                + $"aiAutoControl={CaiBridge.IsAutoControlled(pawn)}, "
-               + $"inShelter={ShelterAreaService.IsInShelter(pawn)}, shelteredByUs={shelterDriver.WeChangedArea(pawn)}";
+               + $"inShelter={ShelterAreaService.IsInShelter(pawn)}, shelteredByUs={shelterDriver.WeChangedArea(pawn)}, "
+               + $"prevArea={shelterDriver.PrevAreaId(pawn)}";
     }
 
     public override void ExposeData()
