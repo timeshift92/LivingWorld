@@ -227,7 +227,8 @@
   <LW_PlayerCaravanPeacefulContactText>You can stop and exchange news with this group, revealing current but inexact information about its route and slightly improving relations.\n\n{details}</LW_PlayerCaravanPeacefulContactText>
   <LW_PlayerCaravanContactEngage>Engage</LW_PlayerCaravanContactEngage>
   <LW_PlayerCaravanContactAvoid>Avoid</LW_PlayerCaravanContactAvoid>
-  <LW_PlayerCaravanContactAvoided>Your caravan avoided the hostile force.</LW_PlayerCaravanContactAvoided>
+  <LW_PlayerCaravanContactAvoided>Your caravan spent one ration to detour around the hostile force.</LW_PlayerCaravanContactAvoided>
+  <LW_PlayerCaravanContactAvoidNeedsFood>Avoiding this force requires one ration for the detour.</LW_PlayerCaravanContactAvoidNeedsFood>
   <LW_PlayerCaravanContactBuy>Buy</LW_PlayerCaravanContactBuy>
   <LW_PlayerCaravanContactTalk>Talk</LW_PlayerCaravanContactTalk>
   <LW_PlayerCaravanContactPass>Continue</LW_PlayerCaravanContactPass>

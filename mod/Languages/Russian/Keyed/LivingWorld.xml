@@ -227,7 +227,8 @@
   <LW_PlayerCaravanPeacefulContactText>Можно остановиться и обменяться новостями: вы получите свежие, но неточные сведения о маршруте, а отношения немного улучшатся.\n\n{details}</LW_PlayerCaravanPeacefulContactText>
   <LW_PlayerCaravanContactEngage>Вступить в бой</LW_PlayerCaravanContactEngage>
   <LW_PlayerCaravanContactAvoid>Уклониться</LW_PlayerCaravanContactAvoid>
-  <LW_PlayerCaravanContactAvoided>Караван уклонился от вражеского отряда.</LW_PlayerCaravanContactAvoided>
+  <LW_PlayerCaravanContactAvoided>Караван потратил один паёк, чтобы обойти вражеский отряд.</LW_PlayerCaravanContactAvoided>
+  <LW_PlayerCaravanContactAvoidNeedsFood>Чтобы обойти этот отряд, каравану нужен один паёк.</LW_PlayerCaravanContactAvoidNeedsFood>
   <LW_PlayerCaravanContactBuy>Купить</LW_PlayerCaravanContactBuy>
   <LW_PlayerCaravanContactTalk>Поговорить</LW_PlayerCaravanContactTalk>
   <LW_PlayerCaravanContactPass>Продолжить путь</LW_PlayerCaravanContactPass>

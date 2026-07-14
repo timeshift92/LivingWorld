@@ -65,6 +65,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private int nextApproachGroupId;
     private List<LivingWorldSettlementExpansionWorldBinding> settlementExpansionWorldBindings = new();
     private List<string> notifiedPlayerCaravanMarkerContacts = new();
+    private readonly Dictionary<string, int> pendingPlayerCaravanMarkerContacts = new(StringComparer.Ordinal);
     private int lastPlayerCaravanMarkerContactCheckTick;
     private int lastLivingWorldMarkerContactCheckTick;
 
@@ -1160,12 +1161,23 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 || separator == contact.Length - 1
                 || !liveMarkerKeys.Contains(contact.Substring(separator + 1));
         });
+        foreach (var contact in pendingPlayerCaravanMarkerContacts
+            .Where(pair => now - pair.Value > 2_500
+                || pair.Key.IndexOf(':') < 0
+                || !liveMarkerKeys.Contains(pair.Key.Substring(pair.Key.IndexOf(':') + 1)))
+            .Select(pair => pair.Key)
+            .ToList())
+        {
+            pendingPlayerCaravanMarkerContacts.Remove(contact);
+        }
+
         foreach (var caravan in playerCaravans)
         {
             foreach (var marker in markers)
             {
                 var contactKey = $"{caravan.ID}:{marker.MarkerKey}";
-                if (notifiedPlayerCaravanMarkerContacts.Contains(contactKey))
+                if (notifiedPlayerCaravanMarkerContacts.Contains(contactKey)
+                    || pendingPlayerCaravanMarkerContacts.ContainsKey(contactKey))
                 {
                     continue;
                 }
@@ -1176,9 +1188,26 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     continue;
                 }
 
-                notifiedPlayerCaravanMarkerContacts.Add(contactKey);
                 var details = marker.DetailsText;
-                LivingWorldPlayerCaravanContactService.Handle(State, caravan, marker);
+                pendingPlayerCaravanMarkerContacts[contactKey] = now;
+                var opened = LivingWorldPlayerCaravanContactService.Handle(
+                    State,
+                    caravan,
+                    marker,
+                    () =>
+                    {
+                        pendingPlayerCaravanMarkerContacts.Remove(contactKey);
+                        if (!notifiedPlayerCaravanMarkerContacts.Contains(contactKey))
+                        {
+                            notifiedPlayerCaravanMarkerContacts.Add(contactKey);
+                        }
+                    });
+                if (!opened)
+                {
+                    pendingPlayerCaravanMarkerContacts.Remove(contactKey);
+                    continue;
+                }
+
                 if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
                 {
                     Log.Message($"[LivingWorld] Player caravan {caravan.ID} contacted world marker {marker.MarkerKey}: {details}");

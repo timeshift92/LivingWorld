@@ -10455,9 +10455,14 @@ static void TestRimWorldPlayerCaravanMarkerContacts()
     AssertContains("\"settler:\", EntityKind.MigrationGroup", service);
     AssertContains("GetMigrationGroup(groupId)?.SourceSettlementId", service);
     AssertContains("DiplomacyService.AdjustGoodwill", service);
+    AssertContains("TryAvoidHostileContact", service);
+    AssertContains("IsNutritionGivingIngestible", service);
+    AssertContains("Action onResolved", service);
 
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
     AssertContains("marker.IsVisibleByFilter", component);
+    AssertContains("pendingPlayerCaravanMarkerContacts", component);
+    AssertContains("if (!notifiedPlayerCaravanMarkerContacts.Contains(contactKey))", component);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -10469,6 +10474,7 @@ static void TestRimWorldPlayerCaravanMarkerContacts()
         "LW_PlayerCaravanContactEngage",
         "LW_PlayerCaravanContactBuy",
         "LW_PlayerCaravanContactTalk",
+        "LW_PlayerCaravanContactAvoidNeedsFood",
         "LW_PlayerCaravanTradeCompleted"
     })
     {

@@ -20,43 +20,62 @@ internal static class LivingWorldPlayerCaravanContactService
     private const int MaxTradeUnits = 25;
     private const float TradePriceMultiplier = 1.10f;
 
-    public static void Handle(WorldState state, Caravan playerCaravan, WorldObject_LivingWorldArmy marker)
+    public static bool Handle(
+        WorldState state,
+        Caravan playerCaravan,
+        WorldObject_LivingWorldArmy marker,
+        Action onResolved)
     {
-        if (state == null || playerCaravan == null || marker == null)
+        if (state == null || playerCaravan == null || marker == null || onResolved == null
+            || Find.WindowStack == null)
         {
-            return;
+            return false;
         }
 
         Find.TickManager?.Pause();
         if (marker.Faction?.HostileTo(Faction.OfPlayer) == true)
         {
-            ShowHostileContact(state, playerCaravan, marker);
-            return;
+            ShowHostileContact(state, playerCaravan, marker, onResolved);
+            return true;
         }
 
         if (TryParseMarkerEntity(marker.MarkerKey, "caravan:", EntityKind.Caravan, out var caravanId)
             && state.GetCaravan(caravanId) is { Status: CaravanStatus.Traveling })
         {
-            ShowTradeContact(state, playerCaravan, marker, caravanId);
-            return;
+            ShowTradeContact(state, playerCaravan, marker, caravanId, onResolved);
+            return true;
         }
 
-        ShowPeacefulContact(state, marker);
+        ShowPeacefulContact(state, marker, onResolved);
+        return true;
     }
 
-    private static void ShowHostileContact(WorldState state, Caravan playerCaravan, WorldObject_LivingWorldArmy marker)
+    private static void ShowHostileContact(
+        WorldState state,
+        Caravan playerCaravan,
+        WorldObject_LivingWorldArmy marker,
+        Action onResolved)
     {
         var body = "LW_PlayerCaravanHostileContactText".Translate(
             marker.DetailsText.Named("details"));
         Find.WindowStack?.Add(new Dialog_MessageBox(
             body,
             "LW_PlayerCaravanContactEngage".Translate(),
-            () => TryStartLedgerAmbush(state, playerCaravan, marker),
+            () =>
+            {
+                if (TryStartLedgerAmbush(state, playerCaravan, marker))
+                {
+                    onResolved();
+                }
+            },
             "LW_PlayerCaravanContactAvoid".Translate(),
-            () => Messages.Message(
-                "LW_PlayerCaravanContactAvoided".Translate(),
-                new LookTargets(playerCaravan),
-                MessageTypeDefOf.NeutralEvent),
+            () =>
+            {
+                if (TryAvoidHostileContact(playerCaravan))
+                {
+                    onResolved();
+                }
+            },
             title: "LW_PlayerCaravanMarkerContactLabel".Translate()));
     }
 
@@ -64,12 +83,13 @@ internal static class LivingWorldPlayerCaravanContactService
         WorldState state,
         Caravan playerCaravan,
         WorldObject_LivingWorldArmy marker,
-        EntityId ledgerCaravanId)
+        EntityId ledgerCaravanId,
+        Action onResolved)
     {
         var offer = BuildTradeOffer(state, playerCaravan, ledgerCaravanId);
         if (offer == null)
         {
-            ShowPeacefulContact(state, marker);
+            ShowPeacefulContact(state, marker, onResolved);
             return;
         }
 
@@ -81,26 +101,38 @@ internal static class LivingWorldPlayerCaravanContactService
         Find.WindowStack?.Add(new Dialog_MessageBox(
             body,
             "LW_PlayerCaravanContactBuy".Translate(),
-            () => ExecuteTrade(state, playerCaravan, ledgerCaravanId, offer),
+            () =>
+            {
+                if (ExecuteTrade(state, playerCaravan, ledgerCaravanId, offer))
+                {
+                    onResolved();
+                }
+            },
             "LW_PlayerCaravanContactPass".Translate(),
-            null,
+            onResolved,
             title: "LW_PlayerCaravanMarkerContactLabel".Translate()));
     }
 
-    private static void ShowPeacefulContact(WorldState state, WorldObject_LivingWorldArmy marker)
+    private static void ShowPeacefulContact(WorldState state, WorldObject_LivingWorldArmy marker, Action onResolved)
     {
         var body = "LW_PlayerCaravanPeacefulContactText".Translate(
             marker.DetailsText.Named("details"));
         Find.WindowStack?.Add(new Dialog_MessageBox(
             body,
             "LW_PlayerCaravanContactTalk".Translate(),
-            () => ResolveConversation(state, marker),
+            () =>
+            {
+                if (ResolveConversation(state, marker))
+                {
+                    onResolved();
+                }
+            },
             "LW_PlayerCaravanContactPass".Translate(),
-            null,
+            onResolved,
             title: "LW_PlayerCaravanMarkerContactLabel".Translate()));
     }
 
-    private static void TryStartLedgerAmbush(
+    private static bool TryStartLedgerAmbush(
         WorldState state,
         Caravan playerCaravan,
         WorldObject_LivingWorldArmy marker)
@@ -112,7 +144,7 @@ internal static class LivingWorldPlayerCaravanContactService
             if (!TryParseMarkerEntity(marker.MarkerKey, "army:", EntityKind.Army, out var armyId))
             {
                 SendContactFailure("LW_PlayerCaravanContactNoLedgerForce".Translate());
-                return;
+                return false;
             }
 
             var army = state.GetArmy(armyId);
@@ -125,14 +157,14 @@ internal static class LivingWorldPlayerCaravanContactService
                 || marker.Faction == null)
             {
                 SendContactFailure("LW_PlayerCaravanContactNoLedgerForce".Translate());
-                return;
+                return false;
             }
 
             var incident = DefDatabase<IncidentDef>.GetNamedSilentFail("Ambush");
             if (incident == null)
             {
                 SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
-                return;
+                return false;
             }
 
             var parms = StorytellerUtility.DefaultParmsNow(incident.category, playerCaravan);
@@ -145,18 +177,19 @@ internal static class LivingWorldPlayerCaravanContactService
             if (!LivingWorldRaidBindingRuntime.TryAddReservation(parms, armyId))
             {
                 SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
-                return;
+                return false;
             }
 
             if (!incident.Worker.TryExecute(parms))
             {
                 LivingWorldCaravanAmbushGenerationRuntime.RollBack(state, parms, armyId);
                 SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
-                return;
+                return false;
             }
 
             LivingWorldCaravanAmbushGenerationRuntime.Forget(parms);
             state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
+            return true;
         }
         catch (Exception error)
         {
@@ -167,6 +200,7 @@ internal static class LivingWorldPlayerCaravanContactService
 
             Log.Warning($"[LivingWorld] Player-caravan ambush failed safely: {error.GetType().Name}: {error.Message}");
             SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
+            return false;
         }
     }
 
@@ -196,7 +230,7 @@ internal static class LivingWorldPlayerCaravanContactService
         return null;
     }
 
-    private static void ExecuteTrade(
+    private static bool ExecuteTrade(
         WorldState state,
         Caravan playerCaravan,
         EntityId ledgerCaravanId,
@@ -206,7 +240,7 @@ internal static class LivingWorldPlayerCaravanContactService
             || state.GetOwnedResourceQuantity(ledgerCaravanId, offer.ResourceDef.defName) < offer.Quantity)
         {
             SendContactFailure("LW_PlayerCaravanTradeUnavailable".Translate());
-            return;
+            return false;
         }
 
         var consumed = state.ConsumeResource(
@@ -222,14 +256,14 @@ internal static class LivingWorldPlayerCaravanContactService
             }
 
             SendContactFailure("LW_PlayerCaravanTradeUnavailable".Translate());
-            return;
+            return false;
         }
 
         if (!TryRemoveThing(playerCaravan, ThingDefOf.Silver, offer.Price))
         {
             state.AddResource(ledgerCaravanId, offer.ResourceDef.defName, offer.Quantity);
             SendContactFailure("LW_PlayerCaravanTradeUnavailable".Translate());
-            return;
+            return false;
         }
 
         try
@@ -246,6 +280,7 @@ internal static class LivingWorldPlayerCaravanContactService
                     offer.Price.Named("price")),
                 new LookTargets(playerCaravan),
                 MessageTypeDefOf.PositiveEvent);
+            return true;
         }
         catch (Exception error)
         {
@@ -253,10 +288,11 @@ internal static class LivingWorldPlayerCaravanContactService
             GiveThing(playerCaravan, ThingDefOf.Silver, offer.Price);
             Log.Warning($"[LivingWorld] Contact trade rolled back safely: {error.GetType().Name}: {error.Message}");
             SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
+            return false;
         }
     }
 
-    private static void ResolveConversation(WorldState state, WorldObject_LivingWorldArmy marker)
+    private static bool ResolveConversation(WorldState state, WorldObject_LivingWorldArmy marker)
     {
         try
         {
@@ -294,12 +330,39 @@ internal static class LivingWorldPlayerCaravanContactService
                 "LW_PlayerCaravanConversationCompleted".Translate(),
                 new LookTargets((PlanetTile)marker.Tile),
                 MessageTypeDefOf.PositiveEvent);
+            return true;
         }
         catch (Exception error)
         {
             Log.Warning($"[LivingWorld] Caravan conversation failed safely: {error.GetType().Name}: {error.Message}");
             SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
+            return false;
         }
+    }
+
+    private static bool TryAvoidHostileContact(Caravan playerCaravan)
+    {
+        var ration = playerCaravan.AllThings
+            .Where(thing => thing != null
+                && !thing.Destroyed
+                && thing.def?.IsNutritionGivingIngestible == true)
+            .OrderBy(thing => thing.MarketValue)
+            .ThenBy(thing => thing.thingIDNumber)
+            .FirstOrDefault();
+        if (ration == null)
+        {
+            SendContactFailure("LW_PlayerCaravanContactAvoidNeedsFood".Translate());
+            return false;
+        }
+
+        var consumed = ration.stackCount == 1 ? ration : ration.SplitOff(1);
+        consumed.Destroy(DestroyMode.Vanish);
+        playerCaravan.RecacheInventory();
+        Messages.Message(
+            "LW_PlayerCaravanContactAvoided".Translate(),
+            new LookTargets(playerCaravan),
+            MessageTypeDefOf.NeutralEvent);
+        return true;
     }
 
     private static int CountThing(Caravan caravan, ThingDef def)
