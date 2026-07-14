@@ -8,7 +8,9 @@ namespace LivingWorld.RimWorld;
 /// Bridges the ledger's player-war-participation model to <b>real</b> RimWorld faction relations, so
 /// alliances and victories actually change the player's standing (real allies help in fights, trade,
 /// and stop raiding) instead of only moving ledger numbers. Fail-open: unknown, defeated, non-humanlike
-/// or permanent-enemy factions are skipped and nothing throws.
+/// or permanent-enemy factions are skipped and nothing throws. Also stands down entirely when Rim War
+/// (Torann.RimWar) is active — it hooks <see cref="Faction.TryAffectGoodwillWith"/> and would silently
+/// neutralize these changes — deferring real faction diplomacy to it (see <see cref="DeferToRimWar"/>).
 /// </summary>
 public static class LivingWorldFactionRelations
 {
@@ -21,6 +23,11 @@ public static class LivingWorldFactionRelations
     /// <summary>Raise the player's real goodwill with the faction up to the alliance threshold.</summary>
     public static bool FormRealAlliance(string factionDefName)
     {
+        if (DeferToRimWar("alliance", factionDefName))
+        {
+            return false;
+        }
+
         var player = Faction.OfPlayer;
         var other = ResolveReconcilableFaction(factionDefName);
         if (player == null || other == null)
@@ -43,6 +50,11 @@ public static class LivingWorldFactionRelations
     /// </summary>
     public static bool FormRealEnmity(string factionDefName)
     {
+        if (DeferToRimWar("enmity", factionDefName))
+        {
+            return false;
+        }
+
         var player = Faction.OfPlayer;
         var other = ResolveReconcilableFaction(factionDefName);
         if (player == null || other == null)
@@ -63,6 +75,11 @@ public static class LivingWorldFactionRelations
     /// <summary>Apply a real goodwill delta with the faction (e.g. a victory windfall).</summary>
     public static bool ApplyGoodwill(string factionDefName, int delta)
     {
+        if (DeferToRimWar("victory", factionDefName))
+        {
+            return false;
+        }
+
         var player = Faction.OfPlayer;
         var other = ResolveReconcilableFaction(factionDefName);
         if (player == null || other == null || delta == 0)
@@ -71,6 +88,31 @@ public static class LivingWorldFactionRelations
         }
 
         other.TryAffectGoodwillWith(player, delta, canSendMessage: false, canSendHostilityLetter: false, reason: null);
+        return true;
+    }
+
+    /// <summary>
+    /// True when the caller should stand down instead of writing real goodwill. Rim War (Torann.RimWar)
+    /// installs a Harmony prefix on <see cref="Faction.TryAffectGoodwillWith"/> that takes goodwillChange
+    /// by ref and can silently dampen, zero, or block it to keep its own diplomacy in control — so a
+    /// forced alliance may never reach +75 nor a war declaration fall to -80, with no warning. When Rim
+    /// War is active Living World defers real faction diplomacy to it (the same mutual exclusion it applies
+    /// to its own world-war loop) rather than pushing a mutation Rim War would quietly neutralize.
+    /// </summary>
+    private static bool DeferToRimWar(string action, string factionDefName)
+    {
+        if (!ModsConfig.IsActive("Torann.RimWar"))
+        {
+            return false;
+        }
+
+        if (LivingWorldSettings.Instance?.debugLogging == true)
+        {
+            Log.Message(
+                $"[LivingWorld] Rim War active — skipping real {action} goodwill for '{factionDefName}'; "
+                + "Rim War manages faction diplomacy.");
+        }
+
         return true;
     }
 

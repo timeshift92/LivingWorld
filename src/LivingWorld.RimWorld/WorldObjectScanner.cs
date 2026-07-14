@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LivingWorld.Core;
 using RimWorld.Planet;
 using Verse;
 
@@ -206,16 +207,31 @@ public sealed class VanillaSettlementImporter : IWorldObjectImporter
             return null;
         }
 
-        // The player's own colony is the active map, not a ledger NPC settlement. Never import it,
-        // so the world war can never silently target/capture the player's base or collapse the
-        // player faction (see docs/design/world-war-open-gaps.md, G1).
-        if (faction.IsPlayer)
+        var defName = SafeRead(() => obj.def?.defName, ref scanErrorCount) ?? obj.GetType().Name;
+        var factionId = SafeRead(() => faction.def?.defName, ref scanErrorCount) ?? "UnknownFaction";
+
+        // Decide keep/skip via the engine-agnostic Core predicate (testable without the RimWorld runtime).
+        // It rejects the player's own colony (the active map, never a ledger NPC settlement — see G1) AND
+        // player-owned/structural settlements from other mods: chiefly Empire's "PColony" vassal colonies,
+        // which are NOT Faction.OfPlayer and would otherwise be simulated / warred against / captured out
+        // from under the player. Missing generation flags fall back to "import" so the filter never hides a
+        // genuine NPC settlement on a malformed def.
+        // canMakeRandomly is flagged obsolete in current RimWorld ("will be removed in a future version") but
+        // is still the field the game loads and the field Empire's PColony def sets to false, so it remains
+        // the correct signal today. Read it deliberately; if RimWorld ever removes it this fails loudly at
+        // build time and the explicit PColony name-guard still protects the player in the meantime.
+#pragma warning disable CS0618
+        var descriptor = new SettlementFactionDescriptor(
+            factionId,
+            SafeReadBool(() => faction.IsPlayer, ref scanErrorCount, fallback: false),
+            SafeRead(() => faction.def?.settlementGenerationWeight ?? 1f, ref scanErrorCount, fallback: 1f),
+            SafeReadBool(() => faction.def?.canMakeRandomly ?? true, ref scanErrorCount, fallback: true));
+#pragma warning restore CS0618
+        if (!SettlementImportEligibility.ShouldImport(descriptor))
         {
             return null;
         }
 
-        var defName = SafeRead(() => obj.def?.defName, ref scanErrorCount) ?? obj.GetType().Name;
-        var factionId = SafeRead(() => faction.def?.defName, ref scanErrorCount) ?? "UnknownFaction";
         var label = SafeRead(() => obj.LabelCap, ref scanErrorCount);
         var name = string.IsNullOrWhiteSpace(label) ? defName : label!;
         var stableKey = $"worldobject:{defName}:{tile}:{factionId}";
@@ -254,6 +270,34 @@ public sealed class VanillaSettlementImporter : IWorldObjectImporter
         {
             scanErrorCount++;
             Log.Warning($"[LivingWorld] Failed to read world object integer data: {ex.GetType().Name}: {ex.Message}");
+            return fallback;
+        }
+    }
+
+    private static float SafeRead(Func<float> read, ref int scanErrorCount, float fallback)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex)
+        {
+            scanErrorCount++;
+            Log.Warning($"[LivingWorld] Failed to read world object float data: {ex.GetType().Name}: {ex.Message}");
+            return fallback;
+        }
+    }
+
+    private static bool SafeReadBool(Func<bool> read, ref int scanErrorCount, bool fallback)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex)
+        {
+            scanErrorCount++;
+            Log.Warning($"[LivingWorld] Failed to read world object boolean data: {ex.GetType().Name}: {ex.Message}");
             return fallback;
         }
     }

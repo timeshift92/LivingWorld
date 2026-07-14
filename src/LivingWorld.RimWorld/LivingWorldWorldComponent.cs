@@ -117,9 +117,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     // True when Rim War is driving world factions, so the Living World world-war loop stays off.
     public bool IsRimWarActive => RimWarIsActive;
 
-    // True when Empire is active. Empire manages the player's own empire (player-faction
-    // settlements, which K4 already keeps out of the ledger), so there is nothing to disable —
-    // this is surfaced only so the UI can tell the player who owns what.
+    // True when Empire (Matathias.Empire) is active. Empire manages the player's vassal colonies under the
+    // "PColony" faction, which is NOT Faction.OfPlayer, so the plain IsPlayer bootstrap filter does NOT keep
+    // it out on its own — the import eligibility predicate (SettlementImportEligibility) is what excludes it,
+    // and BootstrapFromRimWorldSettlements re-checks it here as defense-in-depth. Surfaced so the UI can tell
+    // the player who owns what.
     public bool IsEmpireActive => EmpireIsActive;
 
     public string GetSummary()
@@ -2302,7 +2304,26 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             RejectedWorldObjectTypes = scan.Summary.RejectedWorldObjectTypes;
             LastWorldSettlementSourceCount = scan.Summary.VanillaSettlementSourceCount;
 
-            if (scan.Candidates.Count == 0)
+            // Defense-in-depth for Empire (Matathias.Empire): the scanner's eligibility predicate already
+            // excludes the player's "PColony" vassal colonies, but re-check here so a future importer
+            // regression can never seed a player-owned settlement into the ledger — where the world war /
+            // demography would then simulate famine in, attack, or "capture" a base the player actually owns.
+            // Only engages when Empire is active; otherwise the scan candidates pass through untouched.
+            var candidates = EmpireIsActive
+                ? scan.Candidates
+                    .Where(candidate => !string.Equals(
+                        candidate.FactionId,
+                        SettlementImportEligibility.EmpirePlayerColonyFactionDefName,
+                        StringComparison.Ordinal))
+                    .ToList()
+                : (IReadOnlyList<WorldObjectSettlementCandidate>)scan.Candidates;
+
+            if (EmpireIsActive && candidates.Count != scan.Candidates.Count && settings.debugLogging)
+            {
+                Log.Warning($"[LivingWorld] Empire active: excluded {scan.Candidates.Count - candidates.Count} player-owned PColony vassal settlement(s) from the Living World ledger.");
+            }
+
+            if (candidates.Count == 0)
             {
                 LastBootstrapSource = "world-objects";
                 LastBootstrapStatus = "empty-source";
@@ -2316,7 +2337,9 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 return;
             }
 
-            foreach (var candidate in scan.Candidates)
+            // Iterate the Empire-filtered `candidates` list (not raw scan.Candidates) so bootstrap keeps
+            // main's defense-in-depth PColony exclusion, while reusing the extracted SeedImportedSettlement.
+            foreach (var candidate in candidates)
             {
                 SeedImportedSettlement(candidate, settings);
             }

@@ -315,6 +315,9 @@ var tests = new List<(string Name, Action Test)>
     ("explains empty Living World ledger in main tab", TestRimWorldMainTabExplainsEmptyLedger),
     ("scans RimWorld world objects for bootstrap candidates", TestRimWorldWorldObjectScanner),
     ("imports only whitelisted world object types", TestRimWorldWorldObjectScannerUsesImporterWhitelist),
+    ("excludes the player and Empire vassal colonies from import eligibility", TestSettlementImportEligibilityExcludesPlayerAndEmpire),
+    ("never seeds an Empire (PColony) vassal settlement into the ledger", TestBootstrapExcludesEmpireVassalSettlements),
+    ("world object importer defers eligibility to the Core predicate", TestRimWorldImporterUsesCoreEligibility),
     ("uses explicit world object scanner sorting", TestRimWorldWorldObjectScannerUsesExplicitSorting),
     ("keeps Living World bootstrap failures inside diagnostics", TestRimWorldBootstrapFailureDiagnostics),
     ("reports detailed world object bootstrap diagnostics", TestRimWorldDetailedBootstrapDiagnostics),
@@ -7176,6 +7179,10 @@ static void TestRimWorldEmpireInterop()
     // manages their empire vs the NPC world Living World tracks.
     AssertContains("public bool IsEmpireActive", component);
     AssertContains("Matathias.Empire", component);
+    // The flag is no longer UI-only: when Empire is active the bootstrap re-checks its candidates against
+    // the shared Core constant as defense-in-depth so a player-owned PColony vassal can never be seeded.
+    AssertContains("EmpireIsActive", component);
+    AssertContains("SettlementImportEligibility.EmpirePlayerColonyFactionDefName", component);
 
     var mainTab = File.ReadAllText(Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     AssertContains("IsEmpireActive", mainTab);
@@ -8347,6 +8354,17 @@ static void TestRimWorldRealFactionRelationsBridge()
     AssertContains("FormRealEnmity", bridge);
     AssertContains("EnemyGoodwillTarget", bridge);
 
+    // Mod-compat (Rim War): Torann.RimWar installs a Harmony prefix on Faction.TryAffectGoodwillWith
+    // that takes goodwillChange by ref and can silently dampen/zero/block it, so a forced alliance may
+    // never reach +75 nor a war declaration fall to -80 — with no warning. Living World stands down and
+    // defers real faction diplomacy to Rim War here (the same mutual-exclusion it applies to its own
+    // world-war loop) instead of fighting Rim War's relation-reduction system. The guard must short-
+    // circuit BEFORE any TryAffectGoodwillWith call so no dampened, misleading mutation is attempted.
+    AssertContains("ModsConfig.IsActive(\"Torann.RimWar\")", bridge);
+    AssertRimWorldMethodExists("Verse.ModsConfig", "IsActive");
+    // The stand-down is announced (debug-gated) rather than silent, so the collision is observable.
+    AssertContains("[LivingWorld]", bridge);
+
     // Wired into both ends of the arc.
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     AssertContains("LivingWorldFactionRelations.FormRealAlliance", mainTab);
@@ -9408,6 +9426,92 @@ static void TestRimWorldWorldObjectScannerUsesImporterWhitelist()
     AssertContains("return importer.ImportCandidate(obj, ref scanErrorCount);", source);
     AssertContains("obj is Settlement", source);
     AssertDoesNotContain("return new WorldObjectSettlementCandidate(", source);
+}
+
+// Living World simulates the organic NPC world. The player's own colony is never a ledger NPC settlement,
+// and Empire (Matathias.Empire) manages the player's vassal colonies under the "PColony" faction, which is
+// NOT Faction.OfPlayer and would otherwise be imported and then simulated / warred against / captured out
+// from under the player. The eligibility predicate that gates import must reject both, plus the general
+// class of factions the game never spawns naturally (zero settlement-generation weight AND not randomly
+// creatable — the profile of a player-management / structural faction).
+static void TestSettlementImportEligibilityExcludesPlayerAndEmpire()
+{
+    // The player's own colony faction: never imported.
+    AssertEqual(false, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("PlayerColony", IsPlayer: true, SettlementGenerationWeight: 0f, CanMakeRandomly: false)));
+
+    // Empire's vassal-colony faction (PColony): weight 0, not randomly creatable, and crucially NOT a
+    // player faction — the exact case that slipped through the old IsPlayer-only filter.
+    AssertEqual(false, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor(SettlementImportEligibility.EmpirePlayerColonyFactionDefName, IsPlayer: false, SettlementGenerationWeight: 0f, CanMakeRandomly: false)));
+
+    // Any other faction the game never spawns naturally (structural / mod-placed) is excluded too.
+    AssertEqual(false, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("SomeModStructuralFaction", IsPlayer: false, SettlementGenerationWeight: 0f, CanMakeRandomly: false)));
+
+    // A normal NPC neighbour (weighted, randomly creatable — e.g. OutlanderRough) is imported.
+    AssertEqual(true, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("OutlanderRough", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: true)));
+
+    // A weighted-but-unique NPC faction (e.g. Royalty's Empire: settlementGenerationWeight 1, canMakeRandomly
+    // false) is still a real NPC neighbour with real settlements and MUST keep being imported — the generalized
+    // rule must not over-reach and swallow it.
+    AssertEqual(true, SettlementImportEligibility.ShouldImport(
+        new SettlementFactionDescriptor("Empire", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: false)));
+}
+
+// End-to-end guard at the ledger level: run a realistic candidate set (two ordinary NPC settlements plus an
+// Empire PColony vassal) through the import filter and seed the survivors exactly as the RimWorld bootstrap
+// does (WorldState.CreateSettlement(slug, name, factionId)). The ledger must never contain a PColony entry,
+// so DemographyService / SettlementDailySimulationService / WorldWarService can never touch a player-owned
+// Empire settlement.
+static void TestBootstrapExcludesEmpireVassalSettlements()
+{
+    var candidates = new[]
+    {
+        new SettlementFactionDescriptor("OutlanderRough", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: true),
+        new SettlementFactionDescriptor(SettlementImportEligibility.EmpirePlayerColonyFactionDefName, IsPlayer: false, SettlementGenerationWeight: 0f, CanMakeRandomly: false),
+        new SettlementFactionDescriptor("TribeSavage", IsPlayer: false, SettlementGenerationWeight: 1f, CanMakeRandomly: true),
+    };
+
+    var state = new WorldState(1);
+    var index = 0;
+    foreach (var candidate in candidates)
+    {
+        index++;
+        if (!SettlementImportEligibility.ShouldImport(candidate))
+        {
+            continue;
+        }
+
+        state.CreateSettlement($"worldobject:Settlement:{index}:{candidate.FactionDefName}", $"Settlement {index}", candidate.FactionDefName);
+    }
+
+    AssertEqual(2, state.Settlements.Count);
+    AssertEqual(false, state.Settlements.Any(settlement =>
+        settlement.FactionId == SettlementImportEligibility.EmpirePlayerColonyFactionDefName));
+}
+
+// Locks the wiring: the RimWorld importer must delegate the keep/skip decision to the Core predicate rather
+// than re-implementing an IsPlayer-only filter, so the fix cannot silently regress in the untestable
+// (RimWorld-runtime) assembly.
+static void TestRimWorldImporterUsesCoreEligibility()
+{
+    var scannerPath = Path.Combine(
+        FindRepoRoot(),
+        "src",
+        "LivingWorld.RimWorld",
+        "WorldObjectScanner.cs");
+
+    var source = File.ReadAllText(scannerPath);
+
+    AssertContains("SettlementImportEligibility.ShouldImport", source);
+    AssertContains("SettlementFactionDescriptor", source);
+    AssertContains("settlementGenerationWeight", source);
+    AssertContains("canMakeRandomly", source);
+    // The old, insufficient filter must be gone from the importer: the decision now lives entirely in the
+    // Core predicate (which still honours IsPlayer via the descriptor).
+    AssertDoesNotContain("if (faction.IsPlayer)", source);
 }
 
 static void TestRimWorldWorldObjectScannerUsesExplicitSorting()
