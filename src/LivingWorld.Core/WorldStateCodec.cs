@@ -528,8 +528,9 @@ public static class WorldStateCodec
                             new XAttribute("quantity", resource.Quantity)))),
                 new XElement(
                     "Events",
-                    new XAttribute("format", "compact-v2"),
+                    new XAttribute("format", "compact-v3"),
                     EncodeEvents(snapshot.Events)),
+                EncodeEventArchive(snapshot.EventArchive),
                 new XElement(
                     "Drifters",
                     snapshot.Drifters.Select(drifter =>
@@ -744,6 +745,7 @@ public static class WorldStateCodec
         {
             PlayerFactionId = OptionalString(root, "playerFactionId"),
             DrifterArrivalReservoir = OptionalInt(root, "drifterArrivalReservoir", 0),
+            EventArchive = DecodeEventArchive(root),
             FactionSettlementIntel = OptionalContainer(root, "FactionSettlementIntel")
                 .Elements("Intel")
                 .Select(element => new FactionSettlementIntel(
@@ -1167,12 +1169,22 @@ public static class WorldStateCodec
                 worldEvent.Tick.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 worldEvent.SubjectId.HasValue ? worldEvent.SubjectId.Value.Kind.ToString() : string.Empty,
                 worldEvent.SubjectId.HasValue ? worldEvent.SubjectId.Value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
+                worldEvent.SettlementId.HasValue ? worldEvent.SettlementId.Value.Kind.ToString() : string.Empty,
+                worldEvent.SettlementId.HasValue ? worldEvent.SettlementId.Value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
                 EncodeString(worldEvent.Summary))));
     }
 
     private static IReadOnlyList<WorldEvent> DecodeEvents(XElement element)
     {
         var format = OptionalString(element, "format");
+        if (string.Equals(format, "compact-v3", StringComparison.Ordinal))
+        {
+            return element.Value
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(DecodeCompactEventV3)
+                .ToList();
+        }
+
         if (string.Equals(format, "compact-v2", StringComparison.Ordinal))
         {
             return element.Value
@@ -1212,6 +1224,118 @@ public static class WorldStateCodec
             int.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture),
             subjectId,
             DecodeString(fields[5]));
+    }
+
+    private static WorldEvent DecodeCompactEventV3(string row)
+    {
+        var fields = row.Split('|');
+        if (fields.Length != 8)
+        {
+            throw new InvalidOperationException("Compact v3 event row has an invalid field count.");
+        }
+
+        var subjectId = ParseOptionalEntityId(fields[3], fields[4]);
+        var settlementId = ParseOptionalEntityId(fields[5], fields[6]);
+        return new WorldEvent(
+            EntityId.Create(EntityKind.Event, long.Parse(fields[0], System.Globalization.CultureInfo.InvariantCulture)),
+            ParseEnum<WorldEventKind>(fields[1]),
+            int.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture),
+            subjectId,
+            DecodeString(fields[7]))
+        {
+            SettlementId = settlementId
+        };
+    }
+
+    private static EntityId? ParseOptionalEntityId(string kind, string value)
+    {
+        return string.IsNullOrWhiteSpace(kind)
+            ? null
+            : EntityId.Create(
+                ParseEnum<EntityKind>(kind),
+                long.Parse(value, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static XElement EncodeEventArchive(WorldEventArchiveCheckpoint archive)
+    {
+        return new XElement(
+            "EventArchive",
+            new XAttribute("format", "checkpoint-v1"),
+            new XAttribute("archivedEventCount", archive.ArchivedEventCount),
+            new XAttribute("firstArchivedEventId", archive.FirstArchivedEventId),
+            new XAttribute("lastArchivedEventId", archive.LastArchivedEventId),
+            new XAttribute("firstArchivedTick", archive.FirstArchivedTick),
+            new XAttribute("lastArchivedTick", archive.LastArchivedTick),
+            new XAttribute("auditHash", archive.AuditHash ?? string.Empty),
+            new XElement(
+                "KindCounts",
+                new XAttribute("format", "compact-v1"),
+                string.Join(
+                    "\n",
+                    archive.LifetimeKindCounts
+                        .OrderBy(entry => entry.Kind)
+                        .Select(entry => string.Join(
+                            "|",
+                            entry.Kind,
+                            entry.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))))),
+            new XElement(
+                "RecentAggregates",
+                new XAttribute("format", "compact-v1"),
+                string.Join(
+                    "\n",
+                    archive.RecentAggregates
+                        .OrderBy(entry => entry.Tick)
+                        .ThenBy(entry => entry.Kind)
+                        .ThenBy(entry => entry.SettlementId?.Kind)
+                        .ThenBy(entry => entry.SettlementId?.Value)
+                        .Select(entry => string.Join(
+                            "|",
+                            entry.Tick.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            entry.Kind,
+                            entry.SettlementId.HasValue ? entry.SettlementId.Value.Kind.ToString() : string.Empty,
+                            entry.SettlementId.HasValue ? entry.SettlementId.Value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
+                            entry.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))))));
+    }
+
+    private static WorldEventArchiveCheckpoint DecodeEventArchive(XElement root)
+    {
+        var element = OptionalContainer(root, "EventArchive");
+        var archivedEventCount = OptionalLong(element, "archivedEventCount", 0);
+        if (archivedEventCount <= 0)
+        {
+            return WorldEventArchiveCheckpoint.Empty;
+        }
+
+        var kindCounts = OptionalContainer(element, "KindCounts").Value
+            .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(row => row.Split('|'))
+            .Select(fields => fields.Length == 2
+                ? new WorldEventKindCount(
+                    ParseEnum<WorldEventKind>(fields[0]),
+                    long.Parse(fields[1], System.Globalization.CultureInfo.InvariantCulture))
+                : throw new InvalidOperationException("Event archive kind-count row has an invalid field count."))
+            .ToList();
+        var aggregates = OptionalContainer(element, "RecentAggregates").Value
+            .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(row => row.Split('|'))
+            .Select(fields => fields.Length == 5
+                ? new WorldEventArchiveAggregate(
+                    int.Parse(fields[0], System.Globalization.CultureInfo.InvariantCulture),
+                    ParseEnum<WorldEventKind>(fields[1]),
+                    ParseOptionalEntityId(fields[2], fields[3]),
+                    long.Parse(fields[4], System.Globalization.CultureInfo.InvariantCulture))
+                : throw new InvalidOperationException("Event archive aggregate row has an invalid field count."))
+            .ToList();
+
+        return WorldEventArchiveService.Normalize(new WorldEventArchiveCheckpoint(
+            archivedEventCount,
+            OptionalLong(element, "firstArchivedEventId", 0),
+            OptionalLong(element, "lastArchivedEventId", 0),
+            OptionalInt(element, "firstArchivedTick", 0),
+            OptionalInt(element, "lastArchivedTick", 0),
+            OptionalString(element, "auditHash") ?? string.Empty,
+            kindCounts,
+            aggregates));
     }
 
     private static WorldCitizen DecodeCompactCitizen(string row)
@@ -1323,6 +1447,14 @@ public static class WorldStateCodec
     private static long RequiredLong(XElement element, string name)
     {
         return long.Parse(RequiredString(element, name), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static long OptionalLong(XElement element, string name, long fallback)
+    {
+        var attribute = element.Attribute(name);
+        return attribute == null
+            ? fallback
+            : long.Parse(attribute.Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static T RequiredEnum<T>(XElement element, string name)

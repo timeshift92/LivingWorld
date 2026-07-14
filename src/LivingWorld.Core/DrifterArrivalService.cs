@@ -70,8 +70,7 @@ public static class DrifterArrivalService
 
     private static int WorldPopulation(WorldState state)
     {
-        return state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive)
-            + state.Drifters.Count;
+        return state.AliveCitizenCount + state.Drifters.Count;
     }
 
     private static int DeterministicAge(int worldSeed, int tick, int sequence)

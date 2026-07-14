@@ -54,9 +54,7 @@ public static class SettlementQueryService
         ThrowIfNullOrWhiteSpace(foodResourceKey, nameof(foodResourceKey));
 
         var food = GetFoodStatus(state, settlementId, foodResourceKey, foodPerCitizen);
-        var refugees = state.Citizens.Count(citizen =>
-            citizen.SettlementId == settlementId
-            && citizen.Status == CitizenStatus.Refugee);
+        var refugees = state.GetSettlementCitizenCount(settlementId, CitizenStatus.Refugee);
         var pressure = 0;
         var reason = MigrationService.ReasonNone;
 

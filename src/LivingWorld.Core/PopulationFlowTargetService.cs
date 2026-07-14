@@ -17,8 +17,7 @@ public static class PopulationFlowTargetService
             throw new ArgumentNullException(nameof(state));
         }
 
-        var currentPopulation = state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Alive)
-            + state.Drifters.Count;
+        var currentPopulation = state.AliveCitizenCount + state.Drifters.Count;
         var externalReserve = Math.Max(0, state.DrifterArrivalReservoir);
         var requestedTarget = currentPopulation + externalReserve;
         var ceiling = request.HardCeiling > 0

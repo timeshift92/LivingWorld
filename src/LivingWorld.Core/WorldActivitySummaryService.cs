@@ -36,80 +36,89 @@ public static class WorldActivitySummaryService
         var technology = 0;
         var total = 0;
 
-        foreach (var worldEvent in state.Events
-            .Where(worldEvent => worldEvent.Tick >= cutoff && worldEvent.Tick <= request.CurrentTick)
-            .OrderBy(worldEvent => worldEvent.Tick)
-            .ThenBy(worldEvent => worldEvent.Id.Value))
+        var archive = state.EventArchive;
+        var entireArchiveRequested = !request.SettlementId.HasValue
+            && archive.ArchivedEventCount > 0
+            && cutoff <= archive.FirstArchivedTick
+            && request.CurrentTick >= archive.LastArchivedTick;
+        if (entireArchiveRequested)
         {
+            foreach (var entry in archive.LifetimeKindCounts)
+            {
+                Accumulate(
+                    entry.Kind,
+                    entry.Count,
+                    ref populationDelta,
+                    ref economy,
+                    ref construction,
+                    ref military,
+                    ref trade,
+                    ref diplomacy,
+                    ref ecology,
+                    ref technology,
+                    ref total);
+            }
+        }
+        else
+        {
+            foreach (var aggregate in archive.RecentAggregates)
+            {
+                if (aggregate.Tick < cutoff || aggregate.Tick > request.CurrentTick)
+                {
+                    continue;
+                }
+
+                if (request.SettlementId.HasValue)
+                {
+                    if (aggregate.SettlementId != request.SettlementId)
+                    {
+                        continue;
+                    }
+                }
+                else if (aggregate.SettlementId.HasValue)
+                {
+                    continue;
+                }
+
+                Accumulate(
+                    aggregate.Kind,
+                    aggregate.Count,
+                    ref populationDelta,
+                    ref economy,
+                    ref construction,
+                    ref military,
+                    ref trade,
+                    ref diplomacy,
+                    ref ecology,
+                    ref technology,
+                    ref total);
+            }
+        }
+
+        foreach (var worldEvent in state.Events)
+        {
+            if (worldEvent.Tick < cutoff || worldEvent.Tick > request.CurrentTick)
+            {
+                continue;
+            }
+
             if (request.SettlementId.HasValue && !TouchesSettlement(state, worldEvent, request.SettlementId.Value))
             {
                 continue;
             }
 
-            var counted = false;
-            switch (worldEvent.Kind)
-            {
-                case WorldEventKind.CitizenBorn:
-                case WorldEventKind.DrifterAssimilated:
-                case WorldEventKind.MigrationCompleted:
-                    populationDelta++;
-                    counted = true;
-                    break;
-                case WorldEventKind.CitizenDied:
-                case WorldEventKind.RefugeeCreated:
-                case WorldEventKind.RaidPawnCaptured:
-                case WorldEventKind.RaidPawnMissing:
-                    populationDelta--;
-                    counted = true;
-                    break;
-            }
-
-            if (IsEconomy(worldEvent.Kind))
-            {
-                economy++;
-                counted = true;
-            }
-
-            if (IsConstruction(worldEvent.Kind))
-            {
-                construction++;
-                counted = true;
-            }
-
-            if (IsMilitary(worldEvent.Kind))
-            {
-                military++;
-                counted = true;
-            }
-
-            if (IsTrade(worldEvent.Kind))
-            {
-                trade++;
-                counted = true;
-            }
-
-            if (IsDiplomacy(worldEvent.Kind))
-            {
-                diplomacy++;
-                counted = true;
-            }
-
-            if (IsEcology(worldEvent.Kind))
-            {
-                ecology++;
-                counted = true;
-            }
-
-            if (IsTechnology(worldEvent.Kind))
-            {
-                technology++;
-                counted = true;
-            }
-
-            if (counted)
-            {
-                total++;
-            }
+            Accumulate(
+                worldEvent.Kind,
+                1,
+                ref populationDelta,
+                ref economy,
+                ref construction,
+                ref military,
+                ref trade,
+                ref diplomacy,
+                ref ecology,
+                ref technology,
+                ref total);
         }
 
         return new WorldActivitySummary(
@@ -126,6 +135,11 @@ public static class WorldActivitySummaryService
 
     private static bool TouchesSettlement(WorldState state, WorldEvent worldEvent, EntityId settlementId)
     {
+        if (worldEvent.SettlementId.HasValue)
+        {
+            return worldEvent.SettlementId.Value == settlementId;
+        }
+
         if (!worldEvent.SubjectId.HasValue)
         {
             return false;
@@ -164,6 +178,96 @@ public static class WorldActivitySummaryService
         }
 
         return state.GetOwner(subjectId) == settlementId;
+    }
+
+    private static void Accumulate(
+        WorldEventKind kind,
+        long count,
+        ref int populationDelta,
+        ref int economy,
+        ref int construction,
+        ref int military,
+        ref int trade,
+        ref int diplomacy,
+        ref int ecology,
+        ref int technology,
+        ref int total)
+    {
+        var boundedCount = count > int.MaxValue ? int.MaxValue : (int)Math.Max(0, count);
+        var counted = false;
+        switch (kind)
+        {
+            case WorldEventKind.CitizenBorn:
+            case WorldEventKind.DrifterAssimilated:
+            case WorldEventKind.MigrationCompleted:
+                populationDelta = SaturatingAdd(populationDelta, boundedCount);
+                counted = true;
+                break;
+            case WorldEventKind.CitizenDied:
+            case WorldEventKind.RefugeeCreated:
+            case WorldEventKind.RaidPawnCaptured:
+            case WorldEventKind.RaidPawnMissing:
+                populationDelta = SaturatingAdd(populationDelta, -boundedCount);
+                counted = true;
+                break;
+        }
+
+        if (IsEconomy(kind))
+        {
+            economy = SaturatingAdd(economy, boundedCount);
+            counted = true;
+        }
+
+        if (IsConstruction(kind))
+        {
+            construction = SaturatingAdd(construction, boundedCount);
+            counted = true;
+        }
+
+        if (IsMilitary(kind))
+        {
+            military = SaturatingAdd(military, boundedCount);
+            counted = true;
+        }
+
+        if (IsTrade(kind))
+        {
+            trade = SaturatingAdd(trade, boundedCount);
+            counted = true;
+        }
+
+        if (IsDiplomacy(kind))
+        {
+            diplomacy = SaturatingAdd(diplomacy, boundedCount);
+            counted = true;
+        }
+
+        if (IsEcology(kind))
+        {
+            ecology = SaturatingAdd(ecology, boundedCount);
+            counted = true;
+        }
+
+        if (IsTechnology(kind))
+        {
+            technology = SaturatingAdd(technology, boundedCount);
+            counted = true;
+        }
+
+        if (counted)
+        {
+            total = SaturatingAdd(total, boundedCount);
+        }
+    }
+
+    private static int SaturatingAdd(int current, int delta)
+    {
+        var result = (long)current + delta;
+        return result > int.MaxValue
+            ? int.MaxValue
+            : result < int.MinValue
+                ? int.MinValue
+                : (int)result;
     }
 
     private static bool IsEconomy(WorldEventKind kind)

@@ -52,7 +52,8 @@ public static class MigrationService
             return (0, 0);
         }
 
-        foreach (var settlement in state.Settlements.OrderBy(settlement => settlement.Id.Value).ToList())
+        var plans = new List<(WorldSettlement Settlement, SettlementMigrationStatus Status, IReadOnlyList<WorldCitizen> Candidates, WorldSettlement? Target)>();
+        foreach (var settlement in state.Settlements.OrderBy(settlement => settlement.Id.Value))
         {
             var status = state.GetSettlementMigrationStatus(settlement.Id, request.FoodResourceKey, request.FoodPerCitizen);
             if (status.Pressure < threshold)
@@ -60,34 +61,41 @@ public static class MigrationService
                 continue;
             }
 
-            var candidates = state.Citizens
+            var candidates = state.GetCitizensBySettlement(settlement.Id)
                 .Where(citizen =>
-                    citizen.SettlementId == settlement.Id
-                    && citizen.Status == CitizenStatus.Alive
+                    citizen.Status == CitizenStatus.Alive
                     && state.GetOwner(citizen.Id) == settlement.Id)
                 .OrderBy(citizen => citizen.IsChild ? 0 : 1)
                 .ThenBy(citizen => citizen.Id.Value)
                 .Take(maxPerSettlement)
                 .ToList();
 
-            foreach (var citizen in candidates)
+            plans.Add((
+                settlement,
+                status,
+                candidates,
+                FindStableTarget(state, settlement, request)));
+        }
+
+        foreach (var plan in plans)
+        {
+            foreach (var citizen in plan.Candidates)
             {
-                var refugee = state.MarkCitizenRefugee(citizen.Id, status.PrimaryReason);
+                var refugee = state.MarkCitizenRefugee(citizen.Id, plan.Status.PrimaryReason);
                 created++;
-                var target = FindStableTarget(state, settlement, request);
-                if (target == null)
+                if (plan.Target == null)
                 {
                     continue;
                 }
 
                 var travelTicks = Math.Max(1, request.TravelDurationTicks);
                 var group = state.CreateMigrationGroup(
-                    settlement.Id,
-                    target.Id,
-                    settlement.FactionId,
+                    plan.Settlement.Id,
+                    plan.Target.Id,
+                    plan.Settlement.FactionId,
                     request.Tick,
                     request.Tick + travelTicks,
-                    status.PrimaryReason);
+                    plan.Status.PrimaryReason);
                 var migrating = refugee with { Status = CitizenStatus.Migrating };
                 state.ReplaceCitizenForSimulation(migrating);
                 state.SetOwnerForLedger(migrating.Id, group.Id);
@@ -110,28 +118,35 @@ public static class MigrationService
             .ThenBy(group => group.Id.Value)
             .ToList();
 
-        foreach (var group in groups)
+        var arrivals = groups
+            .Select(group => new
+            {
+                Group = group,
+                Target = state.GetSettlement(group.TargetSettlementId!.Value),
+                Migrants = state.GetCitizensOwnedBy(group.Id)
+                    .Where(citizen => citizen.Status == CitizenStatus.Migrating)
+                    .OrderBy(citizen => citizen.Id.Value)
+                    .ToList(),
+                Resources = state.ResourcesForOwner(group.Id)
+            })
+            .ToList();
+
+        foreach (var arrival in arrivals)
         {
-            var target = state.GetSettlement(group.TargetSettlementId!.Value);
+            var group = arrival.Group;
+            var target = arrival.Target;
             if (target == null)
             {
                 continue;
             }
 
-            var migrants = state.Citizens
-                .Where(citizen =>
-                    citizen.Status == CitizenStatus.Migrating
-                    && state.GetOwner(citizen.Id) == group.Id)
-                .OrderBy(citizen => citizen.Id.Value)
-                .ToList();
-
-            foreach (var migrant in migrants)
+            foreach (var migrant in arrival.Migrants)
             {
                 state.CompleteCitizenMigration(migrant.Id, target.Id, "migration group arrived");
                 completed++;
             }
 
-            foreach (var resource in state.ResourcesForOwner(group.Id).ToList())
+            foreach (var resource in arrival.Resources)
             {
                 var transfer = state.TransferResource(
                     group.Id,

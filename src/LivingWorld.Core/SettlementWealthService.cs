@@ -64,12 +64,23 @@ public static class SettlementWealthService
             throw new ArgumentNullException(nameof(state));
         }
 
-        foreach (var factionId in state.Settlements
-            .Select(settlement => settlement.FactionId)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(factionId => factionId, StringComparer.Ordinal))
+        var factionTotals = new Dictionary<string, (int Silver, int Material)>(StringComparer.Ordinal);
+        foreach (var settlement in state.Settlements.OrderBy(settlement => settlement.Id.Value))
         {
-            RefreshFaction(state, factionId, prices);
+            var snapshot = RefreshSettlement(state, settlement.Id, prices);
+            factionTotals.TryGetValue(settlement.FactionId, out var current);
+            factionTotals[settlement.FactionId] = (
+                current.Silver + snapshot.Silver,
+                current.Material + snapshot.MaterialWealth);
+        }
+
+        foreach (var pair in factionTotals.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            state.RecordFactionWealth(new FactionWealthSnapshot(
+                pair.Key,
+                pair.Value.Silver,
+                pair.Value.Material,
+                pair.Value.Silver + pair.Value.Material));
         }
     }
 

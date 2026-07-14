@@ -85,4 +85,7 @@ public sealed record WorldStateSnapshot(
 
     public IReadOnlyList<SettlementTechnology> SettlementTechnologies { get; init; } =
         Array.Empty<SettlementTechnology>();
+
+    public WorldEventArchiveCheckpoint EventArchive { get; init; } =
+        WorldEventArchiveCheckpoint.Empty;
 }

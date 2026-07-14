@@ -89,4 +89,7 @@ public sealed record WorldEvent(
     WorldEventKind Kind,
     int Tick,
     EntityId? SubjectId,
-    string Summary);
+    string Summary)
+{
+    public EntityId? SettlementId { get; init; }
+}

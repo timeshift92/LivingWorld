@@ -43,9 +43,20 @@ public static class SettlementDailySimulationService
 
         state.AdvanceToTick(request.Tick);
 
-        foreach (var settlement in state.Settlements.OrderBy(settlement => settlement.Id.Value).ToList())
+        var settlements = state.Settlements
+            .OrderBy(settlement => settlement.Id.Value)
+            .Select(settlement => new
+            {
+                Settlement = settlement,
+                Population = state.GetSettlementPopulation(settlement.Id),
+                CitizenRecords = state.GetCitizensBySettlement(settlement.Id).Count
+            })
+            .ToList();
+
+        foreach (var entry in settlements)
         {
-            var population = state.GetSettlementPopulation(settlement.Id);
+            var settlement = entry.Settlement;
+            var population = entry.Population;
             if (population.Total == 0)
             {
                 continue;
@@ -76,7 +87,7 @@ public static class SettlementDailySimulationService
                 && HasHousingForBirth(state, settlement.Id, population.Total)
                 && state.GetOwnedResourceQuantity(settlement.Id, request.FoodResourceKey) >= population.Total)
             {
-                var childIndex = state.Citizens.Count(citizen => citizen.SettlementId == settlement.Id) + 1;
+                var childIndex = entry.CitizenRecords + 1;
                 var sex = DeterministicSex(state.WorldSeed, settlement.Id.Value, day, childIndex);
                 var child = state.CreateCitizen(
                     $"{settlement.Name} child {childIndex}",

@@ -17,7 +17,7 @@
 Источник истины:
 
 - compact state records;
-- append-only event log;
+- append-only event ingestion with a bounded detailed journal and checkpoint;
 - deterministic IDs.
 
 Не источник истины:
@@ -97,14 +97,17 @@ element per record:
 ```xml
 <Citizens format="compact-v2">...</Citizens>
 <Ownership format="compact-v2">...</Ownership>
-<Events format="compact-v2">...</Events>
+<Events format="compact-v3">...</Events>
+<EventArchive format="checkpoint-v1" ...>...</EventArchive>
 ```
 
 The compact rows are deterministic and are rebuilt into normal ledger records
 on load. String fields are UTF-8/base64 encoded inside the row so names,
 professions and event summaries can contain punctuation without changing the
-delimiter contract. The loader remains backward-compatible with legacy
-per-record XML:
+delimiter contract. Event `compact-v3` adds the settlement context captured at
+event time, so archived settlement summaries do not depend on later ownership
+changes. The loader remains backward-compatible with event `compact-v2` and
+legacy per-record XML:
 
 ```xml
 <Citizens>
@@ -117,6 +120,49 @@ per-record XML:
   <Event ... />
 </Events>
 ```
+
+### Event checkpoint
+
+`WorldState.Events` is a bounded detailed journal, not an unbounded list. Core
+keeps at most `8,192` detailed rows and compacts old rows in `1,024`-event
+batches. The persisted checkpoint has this shape:
+
+```xml
+<EventArchive format="checkpoint-v1"
+              archivedEventCount="120000"
+              firstArchivedEventId="1"
+              lastArchivedEventId="120000"
+              firstArchivedTick="60000"
+              lastArchivedTick="7200000"
+              auditHash="...">
+  <KindCounts format="compact-v1">ResourceAdded|42000
+CitizenDied|170</KindCounts>
+  <RecentAggregates format="compact-v1">7200000|CitizenDied|Settlement|18|2</RecentAggregates>
+</EventArchive>
+```
+
+Checkpoint invariants:
+
+- `archivedEventCount + Events.Count == TotalRecordedEventCount`;
+- `GetRecordedEventCount(kind)` combines checkpoint and detailed journal counts;
+- lifetime kind counts preserve aggregate history;
+- first/last event id and tick preserve the archived range;
+- SHA-256 chain digest changes with archived event order/content;
+- recent global/settlement aggregates support activity summaries without
+  scanning or retaining every old row;
+- event ID allocation reserves `lastArchivedEventId`, so load/compaction never
+  reuses an archived ID.
+
+Old saves without `EventArchive` load an empty checkpoint. If such a save has
+more than the current detailed limit, `WorldState.FromSnapshot` compacts the
+legacy backlog deterministically during load. Existing `compact-v2` rows infer
+settlement context from the loaded ledger where possible.
+
+This is a snapshot checkpoint model: current ledger state plus recent detailed
+events remains replay/debug friendly, while old event text is replaced by
+totals and an audit digest. A compact save cannot reconstruct every pre-checkpoint
+summary string; it can verify aggregate counts and audit lineage without
+unbounded growth.
 
 Derived aggregate caches are not saved. They are rebuilt lazily from citizens
 and ownership after load.
@@ -159,7 +205,8 @@ before persistent caravans. It is active state, not durable history: traveling
 caravans persist, while terminal caravans (`Arrived` or `Destroyed`) are removed
 by `CaravanPruneService` after the retention window. Delivered cargo remains
 owned by the target settlement; destroyed cargo is already removed before the
-caravan row is pruned. Long-term history stays in `WorldEvent`.
+caravan row is pruned. Long-term totals/audit lineage stay in
+`WorldEventArchiveCheckpoint`, while recent detail stays in `WorldEvent`.
 
 Текущие обязательные инварианты после загрузки:
 
@@ -173,8 +220,9 @@ caravan row is pruned. Long-term history stays in `WorldEvent`.
 - `SpecialistPools` читается как optional container для обратной совместимости со старыми сейвами;
 - `Caravans` читается как optional container для обратной совместимости со старыми сейвами;
 - terminal caravans may be absent after retention pruning; consumers must use
-  `WorldEvent` for long-term caravan history rather than assuming every completed
-  caravan row remains in active state;
+  recent `WorldEvent` detail plus `WorldEventArchiveCheckpoint` totals for
+  long-term caravan history rather than assuming every completed caravan row
+  remains in active state;
 - `playerFactionId` читается как optional root attribute: старые сейвы без него
   считаются не имеющими Core-защиты игрока, пока RimWorld layer не передаст id;
 - каждый `Alive` citizen должен иметь owner;
@@ -318,8 +366,8 @@ without deleting recent UI/cooldown context:
 ```
 
 `statusTick` is optional on load. Older saves fall back to `departTick`, then the
-next pruning pass can remove stale resolved records while preserving `WorldEvent`
-history.
+next pruning pass can remove stale resolved records while preserving recent
+`WorldEvent` detail and checkpointed aggregate history.
 
 ## Header
 

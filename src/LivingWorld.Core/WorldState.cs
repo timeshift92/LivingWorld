@@ -41,15 +41,22 @@ public sealed class WorldState
     private readonly Dictionary<string, WorldFactionRecord> _factionRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, SettlementDerivedAggregate> _settlementAggregates = new();
     private readonly Dictionary<string, FactionDerivedAggregate> _factionAggregates = new(StringComparer.Ordinal);
+    private readonly Dictionary<EntityId, IReadOnlyList<WorldCitizen>> _citizensBySettlement = new();
+    private readonly Dictionary<EntityId, IReadOnlyList<WorldCitizen>> _citizensByOwner = new();
+    private readonly Dictionary<(EntityId SettlementId, CitizenStatus Status), int> _citizenStatusCounts = new();
+    private readonly Dictionary<string, int> _factionLifecyclePopulation = new(StringComparer.Ordinal);
     private readonly Dictionary<EntityId, EntityId> _owners = new();
     private readonly Dictionary<(EntityId OwnerId, string ResourceKey), int> _resources = new();
+    private readonly Dictionary<EntityId, SortedSet<string>> _resourceKeysByOwner = new();
     private readonly List<WorldEvent> _events = new();
     private readonly Dictionary<EntityKind, long> _nextIds = new();
     private int eventSuppressionDepth;
     private int initialWorldSeedingDepth;
     private int drifterArrivalReservoir;
+    private int aliveCitizenCount;
     private bool derivedAggregatesDirty = true;
     private string? playerFactionId;
+    private WorldEventArchiveCheckpoint eventArchive = WorldEventArchiveCheckpoint.Empty;
 
     public WorldState(int worldSeed)
     {
@@ -139,6 +146,24 @@ public sealed class WorldState
 
     public IReadOnlyList<WorldEvent> Events => _events;
 
+    public WorldEventArchiveCheckpoint EventArchive => eventArchive;
+
+    public long TotalRecordedEventCount => eventArchive.ArchivedEventCount + _events.Count;
+
+    public long GetRecordedEventCount(WorldEventKind kind)
+    {
+        return eventArchive.Count(kind) + _events.LongCount(worldEvent => worldEvent.Kind == kind);
+    }
+
+    public int AliveCitizenCount
+    {
+        get
+        {
+            EnsureDerivedAggregates();
+            return aliveCitizenCount;
+        }
+    }
+
     public bool IsInitialWorldSeedingActive => initialWorldSeedingDepth > 0;
 
     public void AdvanceToTick(int tick)
@@ -189,6 +214,7 @@ public sealed class WorldState
 
     public WorldStateSnapshot CreateSnapshot()
     {
+        CompactEventJournalIfNeeded(compactLegacyBacklog: true);
         return new WorldStateSnapshot(
             WorldSeed,
             CurrentTick,
@@ -289,7 +315,8 @@ public sealed class WorldState
             SettlementTechnologies = _settlementTechnologies.Values
                 .OrderBy(technology => technology.SettlementId.Value)
                 .ThenBy(technology => technology.Domain)
-                .ToList()
+                .ToList(),
+            EventArchive = eventArchive
         };
     }
 
@@ -304,8 +331,14 @@ public sealed class WorldState
         {
             CurrentTick = snapshot.CurrentTick,
             drifterArrivalReservoir = Math.Max(0, snapshot.DrifterArrivalReservoir),
-            playerFactionId = snapshot.PlayerFactionId
+            playerFactionId = snapshot.PlayerFactionId,
+            eventArchive = WorldEventArchiveService.Normalize(snapshot.EventArchive)
         };
+
+        if (state.eventArchive.LastArchivedEventId > 0)
+        {
+            state.ReserveExistingId(EntityId.Create(EntityKind.Event, state.eventArchive.LastArchivedEventId));
+        }
 
         foreach (var settlement in snapshot.Settlements)
         {
@@ -503,13 +536,19 @@ public sealed class WorldState
         foreach (var resource in snapshot.Resources)
         {
             state._resources[(resource.OwnerId, resource.ResourceKey)] = resource.Quantity;
+            state.AddResourceKeyToIndex(resource.OwnerId, resource.ResourceKey);
         }
 
-        foreach (var worldEvent in snapshot.Events)
+        foreach (var worldEvent in snapshot.Events.OrderBy(worldEvent => worldEvent.Id.Value))
         {
-            state._events.Add(worldEvent);
-            state.ReserveExistingId(worldEvent.Id);
+            var normalized = worldEvent.SettlementId.HasValue
+                ? worldEvent
+                : worldEvent with { SettlementId = state.ResolveEventSettlementId(worldEvent.SubjectId) };
+            state._events.Add(normalized);
+            state.ReserveExistingId(normalized.Id);
         }
+
+        state.CompactEventJournalIfNeeded(compactLegacyBacklog: true);
 
         foreach (var drifter in snapshot.Drifters)
         {
@@ -1943,10 +1982,13 @@ public sealed class WorldState
 
     public IReadOnlyList<ResourceStack> ResourcesForOwner(EntityId ownerId)
     {
-        return _resources
-            .Where(pair => pair.Key.OwnerId == ownerId)
-            .OrderBy(pair => pair.Key.ResourceKey, StringComparer.Ordinal)
-            .Select(pair => new ResourceStack(pair.Key.OwnerId, pair.Key.ResourceKey, pair.Value))
+        if (!_resourceKeysByOwner.TryGetValue(ownerId, out var resourceKeys))
+        {
+            return Array.Empty<ResourceStack>();
+        }
+
+        return resourceKeys
+            .Select(resourceKey => new ResourceStack(ownerId, resourceKey, _resources[(ownerId, resourceKey)]))
             .ToList();
     }
 
@@ -3262,6 +3304,35 @@ public sealed class WorldState
                 new SettlementPower(0, 0));
     }
 
+    public IReadOnlyList<WorldCitizen> GetCitizensBySettlement(EntityId settlementId)
+    {
+        EnsureDerivedAggregates();
+        return _citizensBySettlement.TryGetValue(settlementId, out var citizens)
+            ? citizens
+            : Array.Empty<WorldCitizen>();
+    }
+
+    public IReadOnlyList<WorldCitizen> GetCitizensOwnedBy(EntityId ownerId)
+    {
+        EnsureDerivedAggregates();
+        return _citizensByOwner.TryGetValue(ownerId, out var citizens)
+            ? citizens
+            : Array.Empty<WorldCitizen>();
+    }
+
+    public int GetSettlementCitizenCount(EntityId settlementId, CitizenStatus status)
+    {
+        EnsureDerivedAggregates();
+        return _citizenStatusCounts.TryGetValue((settlementId, status), out var count) ? count : 0;
+    }
+
+    public int GetFactionLifecyclePopulation(string factionId)
+    {
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        EnsureDerivedAggregates();
+        return _factionLifecyclePopulation.TryGetValue(factionId, out var count) ? count : 0;
+    }
+
     public SettlementFoodStatus GetSettlementFoodStatus(
         EntityId settlementId,
         string foodResourceKey,
@@ -3630,11 +3701,31 @@ public sealed class WorldState
         if (quantity <= 0)
         {
             _resources.Remove(key);
+            if (_resourceKeysByOwner.TryGetValue(ownerId, out var resourceKeys))
+            {
+                resourceKeys.Remove(resourceKey);
+                if (resourceKeys.Count == 0)
+                {
+                    _resourceKeysByOwner.Remove(ownerId);
+                }
+            }
         }
         else
         {
             _resources[key] = quantity;
+            AddResourceKeyToIndex(ownerId, resourceKey);
         }
+    }
+
+    private void AddResourceKeyToIndex(EntityId ownerId, string resourceKey)
+    {
+        if (!_resourceKeysByOwner.TryGetValue(ownerId, out var resourceKeys))
+        {
+            resourceKeys = new SortedSet<string>(StringComparer.Ordinal);
+            _resourceKeysByOwner[ownerId] = resourceKeys;
+        }
+
+        resourceKeys.Add(resourceKey);
     }
 
     internal void SetOwnerForLedger(EntityId assetId, EntityId ownerId)
@@ -3949,9 +4040,38 @@ public sealed class WorldState
         var settlementAccumulators = _settlements.Values.ToDictionary(
             settlement => settlement.Id,
             settlement => new SettlementAggregateAccumulator(settlement.Id, settlement.FactionId));
+        var citizensBySettlement = new Dictionary<EntityId, List<WorldCitizen>>();
+        var citizensByOwner = new Dictionary<EntityId, List<WorldCitizen>>();
+
+        _citizenStatusCounts.Clear();
+        _factionLifecyclePopulation.Clear();
+        aliveCitizenCount = 0;
 
         foreach (var citizen in _citizens.Values)
         {
+            AddCitizenToIndex(citizensBySettlement, citizen.SettlementId, citizen);
+            var statusKey = (citizen.SettlementId, citizen.Status);
+            _citizenStatusCounts.TryGetValue(statusKey, out var statusCount);
+            _citizenStatusCounts[statusKey] = statusCount + 1;
+
+            if (citizen.Status == CitizenStatus.Alive)
+            {
+                aliveCitizenCount++;
+            }
+
+            if (_settlements.TryGetValue(citizen.SettlementId, out var homeSettlement)
+                && citizen.Status != CitizenStatus.Dead
+                && citizen.Status != CitizenStatus.Missing)
+            {
+                _factionLifecyclePopulation.TryGetValue(homeSettlement.FactionId, out var factionCount);
+                _factionLifecyclePopulation[homeSettlement.FactionId] = factionCount + 1;
+            }
+
+            if (_owners.TryGetValue(citizen.Id, out var indexedOwnerId))
+            {
+                AddCitizenToIndex(citizensByOwner, indexedOwnerId, citizen);
+            }
+
             if (citizen.Status != CitizenStatus.Alive
                 || !_owners.TryGetValue(citizen.Id, out var ownerId)
                 || ownerId != citizen.SettlementId
@@ -3962,6 +4082,9 @@ public sealed class WorldState
 
             accumulator.Add(citizen);
         }
+
+        RebuildCitizenIndex(_citizensBySettlement, citizensBySettlement);
+        RebuildCitizenIndex(_citizensByOwner, citizensByOwner);
 
         _settlementAggregates.Clear();
         foreach (var accumulator in settlementAccumulators.Values)
@@ -4022,7 +4145,107 @@ public sealed class WorldState
             kind,
             CurrentTick,
             subjectId,
-            summary));
+            summary)
+        {
+            SettlementId = ResolveEventSettlementId(subjectId)
+        });
+        CompactEventJournalIfNeeded(compactLegacyBacklog: false);
+    }
+
+    private void CompactEventJournalIfNeeded(bool compactLegacyBacklog)
+    {
+        if (_events.Count <= WorldEventJournalPolicy.DetailedEventLimit)
+        {
+            return;
+        }
+
+        var archiveCount = compactLegacyBacklog
+            ? _events.Count - WorldEventJournalPolicy.DetailedEventLimit
+            : Math.Min(WorldEventJournalPolicy.CompactionBatchSize, _events.Count);
+        var archived = _events.GetRange(0, archiveCount);
+        eventArchive = WorldEventArchiveService.Append(eventArchive, archived);
+        _events.RemoveRange(0, archiveCount);
+    }
+
+    private EntityId? ResolveEventSettlementId(EntityId? subjectId)
+    {
+        if (!subjectId.HasValue)
+        {
+            return null;
+        }
+
+        var id = subjectId.Value;
+        if (id.Kind == EntityKind.Settlement)
+        {
+            return id;
+        }
+
+        if (id.Kind == EntityKind.Citizen && _citizens.TryGetValue(id, out var citizen))
+        {
+            return citizen.SettlementId;
+        }
+
+        if (id.Kind == EntityKind.SettlementFacility && _settlementFacilities.TryGetValue(id, out var facility))
+        {
+            return facility.SettlementId;
+        }
+
+        if (id.Kind == EntityKind.SettlementProject && _settlementProjects.TryGetValue(id, out var project))
+        {
+            return project.SettlementId;
+        }
+
+        if (id.Kind == EntityKind.Animal && _animalCohorts.TryGetValue(id, out var cohort))
+        {
+            return cohort.OwnerId.Kind == EntityKind.Settlement ? cohort.OwnerId : null;
+        }
+
+        if (_owners.TryGetValue(id, out var ownerId) && ownerId.Kind == EntityKind.Settlement)
+        {
+            return ownerId;
+        }
+
+        if (id.Kind == EntityKind.Army && _armies.TryGetValue(id, out var army))
+        {
+            return army.SourceSettlementId;
+        }
+
+        if (id.Kind == EntityKind.Caravan && _caravans.TryGetValue(id, out var caravan))
+        {
+            return caravan.SourceSettlementId;
+        }
+
+        if (id.Kind == EntityKind.Mission && _missions.TryGetValue(id, out var mission))
+        {
+            return mission.OriginSettlementId;
+        }
+
+        return null;
+    }
+
+    private static void AddCitizenToIndex(
+        IDictionary<EntityId, List<WorldCitizen>> index,
+        EntityId key,
+        WorldCitizen citizen)
+    {
+        if (!index.TryGetValue(key, out var citizens))
+        {
+            citizens = new List<WorldCitizen>();
+            index[key] = citizens;
+        }
+
+        citizens.Add(citizen);
+    }
+
+    private static void RebuildCitizenIndex(
+        IDictionary<EntityId, IReadOnlyList<WorldCitizen>> target,
+        IReadOnlyDictionary<EntityId, List<WorldCitizen>> source)
+    {
+        target.Clear();
+        foreach (var pair in source)
+        {
+            target[pair.Key] = pair.Value.OrderBy(citizen => citizen.Id.Value).ToArray();
+        }
     }
 
     private sealed class SettlementAggregateAccumulator

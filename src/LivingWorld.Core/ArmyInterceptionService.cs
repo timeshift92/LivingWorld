@@ -157,11 +157,10 @@ public static class ArmyInterceptionService
 
     private static List<WorldCitizen> Combatants(WorldState state, EntityId armyId)
     {
-        return state.Citizens
+        return state.GetCitizensOwnedBy(armyId)
             .Where(citizen =>
                 citizen.Status == CitizenStatus.Alive
-                && citizen.IsAdult
-                && state.GetOwner(citizen.Id) == armyId)
+                && citizen.IsAdult)
             .OrderBy(citizen => citizen.Id.Value)
             .ToList();
     }
@@ -181,10 +180,9 @@ public static class ArmyInterceptionService
 
     private static void TransferSurvivors(WorldState state, EntityId armyId, EntityId destinationId, string reason)
     {
-        foreach (var citizen in state.Citizens
+        foreach (var citizen in state.GetCitizensOwnedBy(armyId)
             .Where(citizen =>
-                citizen.Status == CitizenStatus.Alive
-                && state.GetOwner(citizen.Id) == armyId)
+                citizen.Status == CitizenStatus.Alive)
             .OrderBy(citizen => citizen.Id.Value)
             .ToList())
         {

@@ -66,7 +66,7 @@ public static class FactionLifecycleService
                 continue;
             }
 
-            if (CountLivingFactionCitizens(state, factionId) > 0)
+            if (state.GetFactionLifecyclePopulation(factionId) > 0)
             {
                 continue;
             }
@@ -79,26 +79,5 @@ public static class FactionLifecycleService
         }
 
         return new FactionLifecycleResult(collapsed);
-    }
-
-    private static int CountLivingFactionCitizens(WorldState state, string factionId)
-    {
-        var count = 0;
-        foreach (var citizen in state.Citizens)
-        {
-            if (citizen.Status == CitizenStatus.Dead || citizen.Status == CitizenStatus.Missing)
-            {
-                continue;
-            }
-
-            var settlement = state.GetSettlement(citizen.SettlementId);
-            if (settlement != null
-                && string.Equals(settlement.FactionId, factionId, StringComparison.Ordinal))
-            {
-                count++;
-            }
-        }
-
-        return count;
     }
 }

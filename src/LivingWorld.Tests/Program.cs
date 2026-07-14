@@ -269,6 +269,13 @@ var tests = new List<(string Name, Action Test)>
     ("serializes and restores Living World state", TestWorldStateSerializationRoundTrip),
     ("serializes citizens in compact save block", TestWorldStateSerializesCitizensCompactly),
     ("serializes ownership and events in compact save blocks", TestWorldStateSerializesOwnershipAndEventsCompactly),
+    ("compacts event history into a deterministic audit checkpoint", TestWorldEventJournalCompactsIntoCheckpoint),
+    ("round trips event checkpoints and preserves event ids", TestWorldEventCheckpointRoundTrip),
+    ("loads compact v2 events without an archive", TestWorldStateLoadsCompactV2Events),
+    ("compacts an unbounded legacy event snapshot on load", TestLegacyEventSnapshotCompactsOnLoad),
+    ("keeps a 100k event save payload bounded", TestWorldEventJournalHundredThousandLoad),
+    ("serves 50k citizen daily aggregate queries without faction cross scans", TestCitizenAggregateIndexesAtFiftyThousand),
+    ("refreshes 20k resource stacks through owner indexes", TestResourceOwnerIndexesAtTwentyThousand),
     ("loads legacy per-citizen save blocks", TestWorldStateLoadsLegacyCitizenElements),
     ("serializes and restores drifters", TestDrifterSerializationRoundTrip),
     ("defines RimWorld source mod metadata", TestRimWorldSourceModMetadata),
@@ -8007,12 +8014,252 @@ static void TestWorldStateSerializesOwnershipAndEventsCompactly()
     var restored = WorldStateCodec.Deserialize(payload);
 
     AssertContains("<Ownership format=\"compact-v2\">", payload);
-    AssertContains("<Events format=\"compact-v2\">", payload);
+    AssertContains("<Events format=\"compact-v3\">", payload);
+    AssertContains("<EventArchive format=\"checkpoint-v1\"", payload);
     AssertDoesNotContain("<Owner ", payload);
     AssertDoesNotContain("<Event ", payload);
     AssertEqual(state.Citizens.Count, restored.Citizens.Count);
     AssertEqual(state.Events.Count, restored.Events.Count);
     AssertEqual(state.GetOwner(state.Citizens.First().Id), restored.GetOwner(state.Citizens.First().Id));
+}
+
+static void TestWorldEventJournalCompactsIntoCheckpoint()
+{
+    var state = new WorldState(731);
+    var settlement = state.CreateSettlement("archive-town", "Archive Town", "Archivists");
+    const int recorded = WorldEventJournalPolicy.DetailedEventLimit + 2_500;
+    for (var i = 0; i < recorded; i++)
+    {
+        state.AdvanceToTick((i / 500) * 60_000);
+        state.RecordEvent(WorldEventKind.ResourceAdded, settlement.Id, $"resource event {i}");
+    }
+
+    AssertEqual((long)recorded + 1, state.TotalRecordedEventCount);
+    if (state.Events.Count > WorldEventJournalPolicy.DetailedEventLimit)
+    {
+        throw new InvalidOperationException($"Detailed event journal grew to {state.Events.Count} rows.");
+    }
+
+    if (state.EventArchive.ArchivedEventCount <= 0 || string.IsNullOrWhiteSpace(state.EventArchive.AuditHash))
+    {
+        throw new InvalidOperationException("Expected compacted events and a non-empty audit hash.");
+    }
+
+    AssertEqual(
+        state.TotalRecordedEventCount,
+        state.EventArchive.ArchivedEventCount + state.Events.Count);
+    AssertEqual(
+        (long)recorded,
+        state.GetRecordedEventCount(WorldEventKind.ResourceAdded));
+
+    var worldSummary = WorldActivitySummaryService.Summarize(
+        state,
+        new WorldActivitySummaryRequest(state.CurrentTick, state.CurrentTick));
+    var settlementSummary = WorldActivitySummaryService.Summarize(
+        state,
+        new WorldActivitySummaryRequest(state.CurrentTick, state.CurrentTick, settlement.Id));
+    AssertEqual(recorded, worldSummary.EconomyEvents);
+    AssertEqual(recorded, settlementSummary.EconomyEvents);
+
+    var replay = new WorldState(731);
+    var replaySettlement = replay.CreateSettlement("archive-town", "Archive Town", "Archivists");
+    for (var i = 0; i < recorded; i++)
+    {
+        replay.AdvanceToTick((i / 500) * 60_000);
+        replay.RecordEvent(WorldEventKind.ResourceAdded, replaySettlement.Id, $"resource event {i}");
+    }
+
+    AssertEqual(state.EventArchive.AuditHash, replay.EventArchive.AuditHash);
+    AssertEqual(true, state.EventArchive.LifetimeKindCounts.SequenceEqual(replay.EventArchive.LifetimeKindCounts));
+}
+
+static void TestWorldEventCheckpointRoundTrip()
+{
+    var state = new WorldState(732);
+    var settlement = state.CreateSettlement("roundtrip-archive", "Roundtrip Archive", "Archivists");
+    for (var i = 0; i < WorldEventJournalPolicy.DetailedEventLimit + 1_500; i++)
+    {
+        state.AdvanceToTick((i / 250) * 60_000);
+        state.RecordEvent(WorldEventKind.SettlementTradeRecorded, settlement.Id, $"trade event {i}");
+    }
+
+    var payload = WorldStateCodec.Serialize(state);
+    var restored = WorldStateCodec.Deserialize(payload);
+    AssertEqual(state.TotalRecordedEventCount, restored.TotalRecordedEventCount);
+    AssertEqual(state.EventArchive.ArchivedEventCount, restored.EventArchive.ArchivedEventCount);
+    AssertEqual(state.EventArchive.AuditHash, restored.EventArchive.AuditHash);
+    AssertEqual(true, state.EventArchive.LifetimeKindCounts.SequenceEqual(restored.EventArchive.LifetimeKindCounts));
+    AssertEqual(true, state.EventArchive.RecentAggregates.SequenceEqual(restored.EventArchive.RecentAggregates));
+    AssertEqual(true, state.Events.SequenceEqual(restored.Events));
+
+    var previousLastId = Math.Max(
+        restored.EventArchive.LastArchivedEventId,
+        restored.Events.Count == 0 ? 0 : restored.Events.Max(worldEvent => worldEvent.Id.Value));
+    restored.RecordEvent(WorldEventKind.SettlementTradeRecorded, settlement.Id, "after restore");
+    var nextId = restored.Events.Max(worldEvent => worldEvent.Id.Value);
+    AssertEqual(previousLastId + 1, nextId);
+}
+
+static void TestWorldStateLoadsCompactV2Events()
+{
+    var summary = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("legacy event"));
+    var payload =
+        "<LivingWorldState version=\"1\" worldSeed=\"123\" currentTick=\"60000\">" +
+        "<Settlements><Settlement kind=\"Settlement\" id=\"1\" slug=\"legacy\" name=\"Legacy\" factionId=\"Pirate\" /></Settlements>" +
+        "<Citizens format=\"compact-v2\" />" +
+        "<Armies />" +
+        "<Ownership format=\"compact-v2\" />" +
+        "<Resources />" +
+        $"<Events format=\"compact-v2\">1|ResourceAdded|60000|Settlement|1|{summary}</Events>" +
+        "</LivingWorldState>";
+
+    var restored = WorldStateCodec.Deserialize(payload);
+    var worldEvent = restored.Events.Single();
+    AssertEqual(WorldEventArchiveCheckpoint.Empty, restored.EventArchive);
+    AssertEqual(EntityId.Create(EntityKind.Settlement, 1), worldEvent.SettlementId);
+    AssertEqual("legacy event", worldEvent.Summary);
+}
+
+static void TestLegacyEventSnapshotCompactsOnLoad()
+{
+    const int legacyCount = 20_000;
+    var legacyEvents = Enumerable.Range(1, legacyCount)
+        .Select(index => new WorldEvent(
+            EntityId.Create(EntityKind.Event, index),
+            WorldEventKind.IntelReported,
+            index,
+            null,
+            $"legacy {index}"))
+        .ToList();
+    var snapshot = new WorldStateSnapshot(
+        733,
+        legacyCount,
+        Array.Empty<WorldSettlement>(),
+        Array.Empty<WorldCitizen>(),
+        Array.Empty<WorldArmy>(),
+        Array.Empty<WorldMigrationGroup>(),
+        Array.Empty<WorldIntelReport>(),
+        Array.Empty<KnownSettlementInfo>(),
+        Array.Empty<RaidOpportunity>(),
+        Array.Empty<RaidPawnLink>(),
+        Array.Empty<WorldRaidOutcome>(),
+        Array.Empty<SettlementProductionProfile>(),
+        Array.Empty<WorldFactionRecord>(),
+        Array.Empty<OwnershipRecord>(),
+        Array.Empty<ResourceStack>(),
+        legacyEvents,
+        Array.Empty<Drifter>());
+
+    var restored = WorldState.FromSnapshot(snapshot);
+    AssertEqual(WorldEventJournalPolicy.DetailedEventLimit, restored.Events.Count);
+    AssertEqual((long)legacyCount - WorldEventJournalPolicy.DetailedEventLimit, restored.EventArchive.ArchivedEventCount);
+    AssertEqual((long)legacyCount, restored.TotalRecordedEventCount);
+    restored.RecordEvent(WorldEventKind.IntelReported, null, "new event");
+    AssertEqual((long)legacyCount + 1, restored.TotalRecordedEventCount);
+    AssertEqual((long)legacyCount + 1, restored.Events.Max(worldEvent => worldEvent.Id.Value));
+}
+
+static void TestWorldEventJournalHundredThousandLoad()
+{
+    const int eventCount = 100_000;
+    var state = new WorldState(734);
+    var settlement = state.CreateSettlement("load-town", "Load Town", "Loaders");
+    state.AdvanceToTick(60_000);
+    for (var i = 0; i < eventCount; i++)
+    {
+        state.RecordEvent(WorldEventKind.SettlementProductionUpdated, settlement.Id, "bounded production audit event");
+    }
+
+    var payload = WorldStateCodec.Serialize(state);
+    if (payload.Length > 2_500_000)
+    {
+        throw new InvalidOperationException($"100k-event payload was not bounded: {payload.Length} chars.");
+    }
+
+    var restored = WorldStateCodec.Deserialize(payload);
+    AssertEqual((long)eventCount + 1, restored.TotalRecordedEventCount);
+    if (restored.Events.Count > WorldEventJournalPolicy.DetailedEventLimit)
+    {
+        throw new InvalidOperationException("Detailed journal exceeded its configured limit after roundtrip.");
+    }
+
+    AssertEqual(
+        (long)eventCount,
+        restored.GetRecordedEventCount(WorldEventKind.SettlementProductionUpdated));
+}
+
+static void TestCitizenAggregateIndexesAtFiftyThousand()
+{
+    const int factionCount = 250;
+    const int citizensPerFaction = 200;
+    var state = new WorldState(735);
+    state.RunWithoutEvents(() =>
+    {
+        for (var factionIndex = 0; factionIndex < factionCount; factionIndex++)
+        {
+            var factionId = $"Faction-{factionIndex:D3}";
+            var settlement = state.CreateSettlement($"load-{factionIndex:D3}", $"Load {factionIndex:D3}", factionId);
+            for (var citizenIndex = 0; citizenIndex < citizensPerFaction; citizenIndex++)
+            {
+                state.CreateCitizen(
+                    $"Citizen {factionIndex:D3}-{citizenIndex:D3}",
+                    20 + (citizenIndex % 40),
+                    citizenIndex % 2 == 0 ? Sex.Female : Sex.Male,
+                    "worker",
+                    settlement.Id);
+            }
+        }
+    });
+
+    var started = System.Diagnostics.Stopwatch.StartNew();
+    var target = PopulationFlowTargetService.Calculate(state, new PopulationFlowTargetRequest(60_000));
+    var lifecycle = FactionLifecycleService.SimulateCollapses(
+        state,
+        new FactionLifecycleRequest(60_000));
+    started.Stop();
+
+    AssertEqual(factionCount * citizensPerFaction, target.CurrentPopulation);
+    AssertEqual(0, lifecycle.CollapsedFactions);
+    AssertEqual(citizensPerFaction, state.GetFactionLifecyclePopulation("Faction-249"));
+    if (started.Elapsed > TimeSpan.FromSeconds(10))
+    {
+        throw new InvalidOperationException($"50k aggregate queries took {started.Elapsed}.");
+    }
+}
+
+static void TestResourceOwnerIndexesAtTwentyThousand()
+{
+    const int settlementCount = 5_000;
+    var state = new WorldState(736);
+    state.RunWithoutEvents(() =>
+    {
+        for (var index = 0; index < settlementCount; index++)
+        {
+            var settlement = state.CreateSettlement(
+                $"resource-{index:D4}",
+                $"Resource {index:D4}",
+                $"Faction-{index % 250:D3}");
+            state.AddResource(settlement.Id, "Silver", index + 1);
+            state.AddResource(settlement.Id, "Steel", 50);
+            state.AddResource(settlement.Id, "PackagedSurvivalMeal", 25);
+            state.AddResource(settlement.Id, "ComponentIndustrial", 5);
+        }
+    });
+
+    var started = System.Diagnostics.Stopwatch.StartNew();
+    SettlementWealthService.RefreshAll(state, SettlementWealthService.DefaultPriceBook);
+    started.Stop();
+
+    AssertEqual(250, state.FactionWealth.Count);
+    var lastSettlement = state.Settlements.OrderBy(settlement => settlement.Id.Value).Last();
+    AssertEqual(
+        true,
+        new[] { "ComponentIndustrial", "PackagedSurvivalMeal", "Silver", "Steel" }
+            .SequenceEqual(state.ResourcesForOwner(lastSettlement.Id).Select(resource => resource.ResourceKey)));
+    if (started.Elapsed > TimeSpan.FromSeconds(10))
+    {
+        throw new InvalidOperationException($"20k indexed resource refresh took {started.Elapsed}.");
+    }
 }
 
 static void TestWorldStateLoadsLegacyCitizenElements()

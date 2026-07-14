@@ -36,10 +36,9 @@ public static class SettlementLifecycleService
         MoveAllResources(state, settlementId, ruin.Id, "settlement destroyed");
 
         var refugees = 0;
-        foreach (var citizen in state.Citizens
+        foreach (var citizen in state.GetCitizensBySettlement(settlementId)
             .Where(citizen =>
-                citizen.SettlementId == settlementId
-                && citizen.Status == CitizenStatus.Alive
+                citizen.Status == CitizenStatus.Alive
                 && state.GetOwner(citizen.Id) == settlementId)
             .OrderBy(citizen => citizen.Id.Value)
             .ToList())
@@ -88,10 +87,9 @@ public static class SettlementLifecycleService
             Math.Max(state.CurrentTick, arrivalTick),
             reason);
         var movedCitizens = 0;
-        foreach (var citizen in state.Citizens
+        foreach (var citizen in state.GetCitizensBySettlement(sourceSettlementId)
             .Where(citizen =>
-                citizen.SettlementId == sourceSettlementId
-                && citizen.Status == CitizenStatus.Alive
+                citizen.Status == CitizenStatus.Alive
                 && state.GetOwner(citizen.Id) == sourceSettlementId)
             .OrderBy(citizen => citizen.Id.Value)
             .ToList())

@@ -155,11 +155,10 @@ public static class WorldBattleService
 
     private static List<WorldCitizen> Combatants(WorldState state, EntityId ownerId)
     {
-        return state.Citizens
+        return state.GetCitizensOwnedBy(ownerId)
             .Where(citizen =>
                 citizen.Status == CitizenStatus.Alive
-                && citizen.IsAdult
-                && state.GetOwner(citizen.Id) == ownerId)
+                && citizen.IsAdult)
             .OrderBy(citizen => citizen.Id.Value)
             .ToList();
     }
