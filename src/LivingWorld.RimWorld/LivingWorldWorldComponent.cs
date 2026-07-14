@@ -176,11 +176,17 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         RepairMissingProductionProfilesFromRimWorldSettlements();
         MigrateEconomicDiversityForLegacySave();
         MigrateVisibleDynamicsForLegacySave();
+        var releasedTraffic = WorldTrafficPolicy.ReconcileExcessMissions(State);
+        if (releasedTraffic > 0 && LivingWorldMod.Settings?.debugLogging == true)
+        {
+            Log.Message($"[LivingWorld] Released {releasedTraffic} excess legacy world mission(s) during load.");
+        }
         // Reconcile world-map army markers with the loaded ledger so stale markers from before the
         // save are dropped and surviving movements keep their icon.
         SyncArmyWorldObjects();
         BindDrifterAssimilationOrigins();
         SyncDrifterAssimilationMarkers();
+        LivingWorldDrifterFoundingWorldBridge.SyncMarkers(State);
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
         SyncPlayerReconnaissanceMarkers();
@@ -808,6 +814,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // remains the source of truth). Cheap: it only touches active traveling movements.
         SyncArmyWorldObjects();
         SyncDrifterAssimilationMarkers();
+        LivingWorldDrifterFoundingWorldBridge.SyncMarkers(State);
 
         // Mark the ruins of settlements destroyed by faction collapse (display only). Reconciled the
         // same way as army markers: a marker per active ruin, dropped when the ruin is reclaimed or
@@ -838,6 +845,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 && !marker.MarkerKey.StartsWith(ApproachingRaidRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
                 && !marker.MarkerKey.StartsWith(ApproachingGroupRuntime.MarkerKeyPrefix, StringComparison.Ordinal)
                 && !marker.MarkerKey.StartsWith("drifter:", StringComparison.Ordinal)
+                && !marker.MarkerKey.StartsWith(LivingWorldDrifterFoundingWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal)
                 && !marker.MarkerKey.StartsWith(LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal))
             {
                 // Approaching-raid markers are managed by SyncApproachingRaidMarkers (they are keyed to
@@ -1234,7 +1242,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .OfType<WorldObject_LivingWorldArmy>()
             .Where(marker => marker.MarkerKey.StartsWith("army:", StringComparison.Ordinal)
                 || marker.MarkerKey.StartsWith("caravan:", StringComparison.Ordinal)
-                || marker.MarkerKey.StartsWith("mission:", StringComparison.Ordinal))
+                || marker.MarkerKey.StartsWith("mission:", StringComparison.Ordinal)
+                || marker.MarkerKey.StartsWith(LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal)
+                || marker.MarkerKey.StartsWith("drifter:", StringComparison.Ordinal)
+                || marker.MarkerKey.StartsWith(LivingWorldDrifterFoundingWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal))
             .OrderBy(marker => marker.MarkerKey, StringComparer.Ordinal)
             .ToList();
         var consumed = new HashSet<string>(StringComparer.Ordinal);
@@ -1268,6 +1279,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         if (consumed.Count > 0)
         {
             SyncArmyWorldObjects();
+            SyncDrifterAssimilationMarkers();
+            LivingWorldDrifterFoundingWorldBridge.SyncMarkers(State);
         }
     }
 
@@ -1303,7 +1316,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private static bool TryParseTrafficMarkerId(string key, out EntityId id)
     {
         return TryParseMarkerId(key, "caravan:", EntityKind.Caravan, out id)
-            || TryParseMarkerId(key, "mission:", EntityKind.Mission, out id);
+            || TryParseMarkerId(key, "mission:", EntityKind.Mission, out id)
+            || TryParseMarkerId(key, LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, EntityKind.MigrationGroup, out id)
+            || TryParseMarkerId(key, "drifter:", EntityKind.DrifterAssimilationJourney, out id)
+            || TryParseMarkerId(key, LivingWorldDrifterFoundingWorldBridge.MarkerKeyPrefix, EntityKind.DrifterFoundingJourney, out id);
     }
 
     private static bool TryParseMarkerId(string key, string prefix, EntityKind kind, out EntityId id)

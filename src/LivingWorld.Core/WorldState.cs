@@ -28,6 +28,7 @@ public sealed class WorldState
     private readonly Dictionary<EntityId, WorldRaidOutcome> _raidOutcomes = new();
     private readonly Dictionary<EntityId, Drifter> _drifters = new();
     private readonly Dictionary<EntityId, DrifterAssimilationJourney> _drifterAssimilationJourneys = new();
+    private readonly Dictionary<EntityId, DrifterFoundingJourney> _drifterFoundingJourneys = new();
     private readonly Dictionary<EntityId, WorldArmyMovement> _armyMovements = new();
     private readonly Dictionary<string, FactionBehavior> _factionBehaviors = new(StringComparer.Ordinal);
     private readonly Dictionary<(string, string), int> _factionRelations = new();
@@ -129,6 +130,9 @@ public sealed class WorldState
 
     public IReadOnlyCollection<DrifterAssimilationJourney> DrifterAssimilationJourneys =>
         _drifterAssimilationJourneys.Values;
+
+    public IReadOnlyCollection<DrifterFoundingJourney> DrifterFoundingJourneys =>
+        _drifterFoundingJourneys.Values;
 
     public int DrifterArrivalReservoir => drifterArrivalReservoir;
 
@@ -321,6 +325,9 @@ public sealed class WorldState
                 .ThenBy(technology => technology.Domain)
                 .ToList(),
             DrifterAssimilationJourneys = _drifterAssimilationJourneys.Values
+                .OrderBy(journey => journey.Id.Value)
+                .ToList(),
+            DrifterFoundingJourneys = _drifterFoundingJourneys.Values
                 .OrderBy(journey => journey.Id.Value)
                 .ToList(),
             EventArchive = eventArchive
@@ -566,6 +573,12 @@ public sealed class WorldState
         foreach (var journey in snapshot.DrifterAssimilationJourneys)
         {
             state._drifterAssimilationJourneys.Add(journey.Id, journey);
+            state.ReserveExistingId(journey.Id);
+        }
+
+        foreach (var journey in snapshot.DrifterFoundingJourneys)
+        {
+            state._drifterFoundingJourneys.Add(journey.Id, journey);
             state.ReserveExistingId(journey.Id);
         }
 
@@ -1556,6 +1569,39 @@ public sealed class WorldState
         AppendEvent(WorldEventKind.MigrationCompleted, group.Id, reason);
     }
 
+    public WorldMigrationGroup DisruptSettlementExpedition(EntityId groupId, EntityId captorOwnerId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        if (!_migrationGroups.TryGetValue(groupId, out var group)
+            || group.Status != MigrationGroupStatus.Traveling
+            || !string.Equals(group.Reason, MigrationService.ReasonSettlementFounding, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Migration group {groupId} is not a traveling settlement expedition.");
+        }
+
+        if (!OwnerExists(captorOwnerId))
+        {
+            throw new InvalidOperationException($"Captor owner {captorOwnerId} does not exist.");
+        }
+
+        foreach (var resource in ResourcesForOwner(group.Id).ToList())
+        {
+            var transfer = TransferResource(
+                group.Id,
+                captorOwnerId,
+                resource.ResourceKey,
+                resource.Quantity,
+                "settlement expedition cargo captured");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+        }
+
+        RejectSettlementExpedition(group, reason);
+        return _migrationGroups[group.Id];
+    }
+
     private void MoveResourceIfAvailable(EntityId fromOwnerId, EntityId toOwnerId, string resourceKey, int requestedQuantity, string reason)
     {
         var available = GetOwnedResourceQuantity(fromOwnerId, resourceKey);
@@ -1738,6 +1784,18 @@ public sealed class WorldState
             && journey.Status == DrifterAssimilationJourneyStatus.Traveling);
     }
 
+    public bool IsDrifterReservedForFounding(EntityId drifterId)
+    {
+        return _drifterFoundingJourneys.Values.Any(journey =>
+            journey.Status == DrifterFoundingJourneyStatus.Traveling
+            && journey.FounderDrifterIds.Contains(drifterId));
+    }
+
+    public bool IsDrifterReserved(EntityId drifterId)
+    {
+        return IsDrifterReservedForAssimilation(drifterId) || IsDrifterReservedForFounding(drifterId);
+    }
+
     public DrifterAssimilationJourney CreateDrifterAssimilationJourney(
         EntityId drifterId,
         EntityId targetSettlementId,
@@ -1756,11 +1814,9 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {targetSettlementId} is not active.");
         }
 
-        if (_drifterAssimilationJourneys.Values.Any(journey =>
-            journey.DrifterId == drifter.Id
-            && journey.Status == DrifterAssimilationJourneyStatus.Traveling))
+        if (IsDrifterReserved(drifter.Id))
         {
-            throw new InvalidOperationException($"Drifter {drifterId} already has an active assimilation journey.");
+            throw new InvalidOperationException($"Drifter {drifterId} already has an active journey.");
         }
 
         var journey = new DrifterAssimilationJourney(
@@ -1845,6 +1901,245 @@ public sealed class WorldState
         return cancelled;
     }
 
+    public DrifterFoundingJourney? GetDrifterFoundingJourney(EntityId id)
+    {
+        return _drifterFoundingJourneys.TryGetValue(id, out var journey) ? journey : null;
+    }
+
+    public DrifterFoundingJourney CreateDrifterFoundingJourney(
+        EntityId leaderDrifterId,
+        IEnumerable<EntityId> founderDrifterIds,
+        EntityId sponsorSettlementId,
+        string factionId,
+        string plannedSlug,
+        string plannedName,
+        string physicalStableKey,
+        int createdTick,
+        int arrivalTick,
+        bool isRaiderBand,
+        int foodQuantity,
+        int steelQuantity,
+        int componentQuantity)
+    {
+        if (founderDrifterIds == null)
+        {
+            throw new ArgumentNullException(nameof(founderDrifterIds));
+        }
+
+        ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        ThrowIfNullOrWhiteSpace(plannedSlug, nameof(plannedSlug));
+        ThrowIfNullOrWhiteSpace(plannedName, nameof(plannedName));
+        ThrowIfNullOrWhiteSpace(physicalStableKey, nameof(physicalStableKey));
+        var sponsor = GetSettlement(sponsorSettlementId)
+            ?? throw new InvalidOperationException($"Sponsor settlement {sponsorSettlementId} does not exist.");
+        if (!sponsor.IsActive || !string.Equals(sponsor.FactionId, factionId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Sponsor settlement {sponsorSettlementId} cannot found for {factionId}.");
+        }
+
+        var founders = founderDrifterIds
+            .Append(leaderDrifterId)
+            .Distinct()
+            .OrderBy(id => id.Value)
+            .ToList();
+        if (founders.Count == 0 || founders.Any(id => GetDrifter(id) == null))
+        {
+            throw new InvalidOperationException("Every founding expedition member must be a real drifter.");
+        }
+
+        if (founders.Any(IsDrifterReserved))
+        {
+            throw new InvalidOperationException("A founding drifter already belongs to another active journey.");
+        }
+
+        foodQuantity = Math.Max(0, foodQuantity);
+        steelQuantity = Math.Max(0, steelQuantity);
+        componentQuantity = Math.Max(0, componentQuantity);
+        if (GetOwnedResourceQuantity(sponsor.Id, "PackagedSurvivalMeal") < foodQuantity
+            || GetOwnedResourceQuantity(sponsor.Id, "Steel") < steelQuantity
+            || GetOwnedResourceQuantity(sponsor.Id, "ComponentIndustrial") < componentQuantity)
+        {
+            throw new InvalidOperationException("The sponsor cannot provide the founding expedition supplies.");
+        }
+
+        var journey = new DrifterFoundingJourney(
+            NextId(EntityKind.DrifterFoundingJourney),
+            leaderDrifterId,
+            founders,
+            sponsor.Id,
+            factionId.Trim(),
+            plannedSlug.Trim(),
+            plannedName.Trim(),
+            physicalStableKey.Trim(),
+            Math.Max(0, createdTick),
+            Math.Max(Math.Max(0, createdTick), arrivalTick),
+            DrifterFoundingJourneyStatus.Traveling,
+            isRaiderBand,
+            foodQuantity,
+            steelQuantity,
+            componentQuantity);
+        _drifterFoundingJourneys.Add(journey.Id, journey);
+        try
+        {
+            TransferFoundingResource(sponsor.Id, journey.Id, "PackagedSurvivalMeal", foodQuantity);
+            TransferFoundingResource(sponsor.Id, journey.Id, "Steel", steelQuantity);
+            TransferFoundingResource(sponsor.Id, journey.Id, "ComponentIndustrial", componentQuantity);
+        }
+        catch
+        {
+            ReturnFoundingResources(journey);
+            _drifterFoundingJourneys.Remove(journey.Id);
+            throw;
+        }
+
+        AppendEvent(
+            WorldEventKind.DrifterFoundingJourneyStarted,
+            journey.Id,
+            $"{founders.Count} drifters departed {sponsor.Id} to found {plannedName} for {factionId}.");
+        return journey;
+    }
+
+    public DrifterFoundingJourney RebindDrifterFoundingDestination(EntityId journeyId, string physicalStableKey)
+    {
+        ThrowIfNullOrWhiteSpace(physicalStableKey, nameof(physicalStableKey));
+        var journey = GetDrifterFoundingJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter founding journey {journeyId} does not exist.");
+        if (journey.Status != DrifterFoundingJourneyStatus.Traveling)
+        {
+            return journey;
+        }
+
+        var rebound = journey with
+        {
+            PhysicalStableKey = physicalStableKey.Trim(),
+            PlannedSlug = physicalStableKey.Trim()
+        };
+        _drifterFoundingJourneys[journeyId] = rebound;
+        return rebound;
+    }
+
+    public WorldSettlement CompleteDrifterFoundingJourney(EntityId journeyId)
+    {
+        var journey = GetDrifterFoundingJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter founding journey {journeyId} does not exist.");
+        if (journey.Status != DrifterFoundingJourneyStatus.Traveling)
+        {
+            throw new InvalidOperationException($"Drifter founding journey {journeyId} is not traveling.");
+        }
+
+        if (journey.ArrivalTick > CurrentTick)
+        {
+            throw new InvalidOperationException($"Drifter founding journey {journeyId} has not arrived.");
+        }
+
+        if (journey.FounderDrifterIds.Any(id => GetDrifter(id) == null))
+        {
+            throw new InvalidOperationException($"Drifter founding journey {journeyId} lost a reserved founder.");
+        }
+
+        _drifterFoundingJourneys[journeyId] = journey with { Status = DrifterFoundingJourneyStatus.Arrived };
+        try
+        {
+            var settlement = FoundSettlement(
+                journey.PlannedSlug,
+                journey.PlannedName,
+                journey.FactionId,
+                journey.LeaderDrifterId,
+                journey.FounderDrifterIds.Where(id => id != journey.LeaderDrifterId));
+            TransferFoundingResource(journey.Id, settlement.Id, "PackagedSurvivalMeal", journey.FoodQuantity);
+            TransferFoundingResource(journey.Id, settlement.Id, "Steel", journey.SteelQuantity);
+            TransferFoundingResource(journey.Id, settlement.Id, "ComponentIndustrial", journey.ComponentQuantity);
+            return settlement;
+        }
+        catch
+        {
+            _drifterFoundingJourneys[journeyId] = journey;
+            throw;
+        }
+    }
+
+    public DrifterFoundingJourney CancelDrifterFoundingJourney(EntityId journeyId, string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        var journey = GetDrifterFoundingJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter founding journey {journeyId} does not exist.");
+        if (journey.Status != DrifterFoundingJourneyStatus.Traveling)
+        {
+            return journey;
+        }
+
+        ReturnFoundingResources(journey);
+        var cancelled = journey with { Status = DrifterFoundingJourneyStatus.Cancelled };
+        _drifterFoundingJourneys[journeyId] = cancelled;
+        AppendEvent(
+            WorldEventKind.DrifterFoundingJourneyCancelled,
+            journey.Id,
+            $"Drifter founding journey {journey.Id} was cancelled: {reason}.");
+        return cancelled;
+    }
+
+    public DrifterFoundingJourney DisruptDrifterFoundingJourney(
+        EntityId journeyId,
+        EntityId captorOwnerId,
+        string reason)
+    {
+        ThrowIfNullOrWhiteSpace(reason, nameof(reason));
+        var journey = GetDrifterFoundingJourney(journeyId)
+            ?? throw new InvalidOperationException($"Drifter founding journey {journeyId} does not exist.");
+        if (journey.Status != DrifterFoundingJourneyStatus.Traveling)
+        {
+            return journey;
+        }
+
+        if (!OwnerExists(captorOwnerId))
+        {
+            throw new InvalidOperationException($"Captor owner {captorOwnerId} does not exist.");
+        }
+
+        foreach (var resource in ResourcesForOwner(journey.Id).ToList())
+        {
+            var transfer = TransferResource(
+                journey.Id,
+                captorOwnerId,
+                resource.ResourceKey,
+                resource.Quantity,
+                "drifter founding supplies captured");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+        }
+
+        var cancelled = journey with { Status = DrifterFoundingJourneyStatus.Cancelled };
+        _drifterFoundingJourneys[journey.Id] = cancelled;
+        AppendEvent(
+            WorldEventKind.DrifterFoundingJourneyCancelled,
+            journey.Id,
+            $"Drifter founding journey {journey.Id} was disrupted: {reason}.");
+        return cancelled;
+    }
+
+    private void ReturnFoundingResources(DrifterFoundingJourney journey)
+    {
+        TransferFoundingResource(journey.Id, journey.SponsorSettlementId, "PackagedSurvivalMeal", GetOwnedResourceQuantity(journey.Id, "PackagedSurvivalMeal"));
+        TransferFoundingResource(journey.Id, journey.SponsorSettlementId, "Steel", GetOwnedResourceQuantity(journey.Id, "Steel"));
+        TransferFoundingResource(journey.Id, journey.SponsorSettlementId, "ComponentIndustrial", GetOwnedResourceQuantity(journey.Id, "ComponentIndustrial"));
+    }
+
+    private void TransferFoundingResource(EntityId sourceId, EntityId targetId, string resourceKey, int quantity)
+    {
+        if (quantity <= 0)
+        {
+            return;
+        }
+
+        var transfer = TransferResource(sourceId, targetId, resourceKey, quantity, "drifter founding expedition supplies");
+        if (transfer.Status != OwnershipTransferStatus.Success)
+        {
+            throw new InvalidOperationException(transfer.Reason);
+        }
+    }
+
     public Drifter MaterializeDrifter(EntityId drifterId, int pawnThingId, int tick)
     {
         AdvanceToTick(tick);
@@ -1854,9 +2149,9 @@ public sealed class WorldState
             throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
         }
 
-        if (IsDrifterReservedForAssimilation(drifterId))
+        if (IsDrifterReserved(drifterId))
         {
-            throw new InvalidOperationException($"Drifter {drifterId} is traveling toward a settlement.");
+            throw new InvalidOperationException($"Drifter {drifterId} is already traveling.");
         }
 
         _drifters.Remove(drifterId);
@@ -1916,13 +2211,13 @@ public sealed class WorldState
             throw new InvalidOperationException($"Drifter {leaderDrifterId} does not exist.");
         }
 
-        if (IsDrifterReservedForAssimilation(leaderDrifterId))
+        if (IsDrifterReserved(leaderDrifterId))
         {
-            throw new InvalidOperationException($"Drifter {leaderDrifterId} is traveling toward a settlement.");
+            throw new InvalidOperationException($"Drifter {leaderDrifterId} is already traveling.");
         }
 
         var members = memberDrifterIds.Where(id => id != leaderDrifterId).Distinct().ToList();
-        if (members.Any(IsDrifterReservedForAssimilation))
+        if (members.Any(IsDrifterReserved))
         {
             throw new InvalidOperationException("A founding drifter is already traveling toward another settlement.");
         }
@@ -1949,7 +2244,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Drifter {drifterId} does not exist.");
         }
 
-        if (IsDrifterReservedForAssimilation(drifterId))
+        if (IsDrifterReserved(drifterId))
         {
             throw new InvalidOperationException($"Drifter {drifterId} is traveling toward a settlement.");
         }
@@ -3645,6 +3940,53 @@ public sealed class WorldState
             yield return $"Drifter {duplicate.Key} has multiple active assimilation journeys.";
         }
 
+        foreach (var journey in _drifterFoundingJourneys.Values.OrderBy(journey => journey.Id.Value))
+        {
+            if (!_settlements.ContainsKey(journey.SponsorSettlementId))
+            {
+                yield return $"Drifter founding journey {journey.Id} references missing sponsor {journey.SponsorSettlementId}.";
+            }
+
+            if (journey.ArrivalTick < journey.CreatedTick)
+            {
+                yield return $"Drifter founding journey {journey.Id} arrives before it starts.";
+            }
+
+            if (journey.Status == DrifterFoundingJourneyStatus.Traveling)
+            {
+                if (string.IsNullOrWhiteSpace(journey.PhysicalStableKey))
+                {
+                    yield return $"Traveling drifter founding journey {journey.Id} has no physical destination.";
+                }
+
+                foreach (var founderId in journey.FounderDrifterIds)
+                {
+                    if (!_drifters.ContainsKey(founderId))
+                    {
+                        yield return $"Traveling drifter founding journey {journey.Id} references missing drifter {founderId}.";
+                    }
+                }
+
+                if (!journey.FounderDrifterIds.Contains(journey.LeaderDrifterId))
+                {
+                    yield return $"Drifter founding journey {journey.Id} does not include its leader.";
+                }
+            }
+        }
+
+        var reservedDrifters = _drifterAssimilationJourneys.Values
+            .Where(journey => journey.Status == DrifterAssimilationJourneyStatus.Traveling)
+            .Select(journey => (journey.DrifterId, JourneyId: journey.Id))
+            .Concat(_drifterFoundingJourneys.Values
+                .Where(journey => journey.Status == DrifterFoundingJourneyStatus.Traveling)
+                .SelectMany(journey => journey.FounderDrifterIds.Select(id => (id, JourneyId: journey.Id))));
+        foreach (var duplicate in reservedDrifters
+            .GroupBy(reservation => reservation.Item1)
+            .Where(group => group.Count() > 1))
+        {
+            yield return $"Drifter {duplicate.Key} is reserved by multiple active journeys.";
+        }
+
         foreach (var record in _prisonerRecords.Values.OrderBy(record => record.CitizenId.Value))
         {
             if (!_citizens.TryGetValue(record.CitizenId, out var citizen))
@@ -4024,6 +4366,7 @@ public sealed class WorldState
             EntityKind.Army => _armies.ContainsKey(ownerId),
             EntityKind.Caravan => _caravans.ContainsKey(ownerId),
             EntityKind.Mission => _missions.ContainsKey(ownerId),
+            EntityKind.DrifterFoundingJourney => _drifterFoundingJourneys.ContainsKey(ownerId),
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(ownerId),
             EntityKind.IntelReport => _intelReports.ContainsKey(ownerId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(ownerId),
@@ -4045,6 +4388,7 @@ public sealed class WorldState
             EntityKind.Army => _armies.ContainsKey(assetId),
             EntityKind.Caravan => _caravans.ContainsKey(assetId),
             EntityKind.Mission => _missions.ContainsKey(assetId),
+            EntityKind.DrifterFoundingJourney => _drifterFoundingJourneys.ContainsKey(assetId),
             EntityKind.MigrationGroup => _migrationGroups.ContainsKey(assetId),
             EntityKind.IntelReport => _intelReports.ContainsKey(assetId),
             EntityKind.RaidOpportunity => _raidOpportunities.ContainsKey(assetId),

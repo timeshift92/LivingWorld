@@ -157,6 +157,8 @@ var tests = new List<(string Name, Action Test)>
     ("round trips an active drifter assimilation journey", TestDrifterAssimilationJourneyRoundTrip),
     ("founds a settlement when a capable organizer leads enough drifters", TestDrifterFoundingCreatesSettlement),
     ("founds a raider band when the capable leader is a fighter", TestDrifterFoundingCreatesRaiderBand),
+    ("drifter founding travels with conserved founders and supplies", TestDrifterFoundingJourneyConservesFoundersAndSupplies),
+    ("cancelled drifter founding returns supplies and releases founders", TestDrifterFoundingJourneyCancellationReturnsEverything),
     ("does not found without a capable leader", TestDrifterFoundingNeedsCapableLeader),
     ("does not found without enough drifters", TestDrifterFoundingNeedsEnoughDrifters),
     ("collapses factions with no living citizens", TestFactionLifecycleCollapsesEmptyFaction),
@@ -190,6 +192,8 @@ var tests = new List<(string Name, Action Test)>
     ("hostile armies contest the same target in transit", TestHostileArmiesContestSameTargetInTransit),
     ("hostile armies can intercept caravans in transit", TestHostileArmiesInterceptCaravansInTransit),
     ("physical marker contact resolves army traffic", TestPhysicalMarkerContactResolvesArmyTraffic),
+    ("physical army contact disrupts settler expeditions and captures cargo", TestPhysicalArmyContactDisruptsSettlerExpedition),
+    ("physical army contact disrupts drifter founding and captures supplies", TestPhysicalArmyContactDisruptsDrifterFounding),
     ("hostile armies can intercept same-target caravans in transit", TestHostileArmiesInterceptSameTargetCaravansInTransit),
     ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
     ("travelling missions reserve and return real citizens", TestWorldMissionReservesAndReturnsRealCitizen),
@@ -4932,6 +4936,87 @@ static void TestDrifterFoundingCreatesRaiderBand()
     AssertEqual(true, result.Founded);
     AssertEqual(true, result.IsRaiderBand);
     AssertEqual(3, state.GetSettlementPopulation(result.SettlementId!.Value).Total);
+}
+
+static void TestDrifterFoundingJourneyConservesFoundersAndSupplies()
+{
+    var state = new WorldState(4242);
+    var sponsor = state.CreateSettlement("worldobject:Settlement:100:Outlander", "Sponsor", "Outlander");
+    state.AddResource(sponsor.Id, "PackagedSurvivalMeal", 100);
+    state.AddResource(sponsor.Id, "Steel", 500);
+    state.AddResource(sponsor.Id, "ComponentIndustrial", 50);
+    state.CreateDrifter("Organizer", 34, Sex.Female, 15, 80);
+    state.CreateDrifter("Hand 1", 26, Sex.Male, 10, 12);
+    state.CreateDrifter("Hand 2", 29, Sex.Male, 8, 14);
+
+    var result = DrifterFoundingService.SimulateFounding(
+        state,
+        new DrifterFoundingRequest(60_000, 3, 60)
+        {
+            EligibleFactionIds = new[] { "Outlander" },
+            PreferredFactionId = "Outlander",
+            PhysicalStableKey = "worldobject:Settlement:200:Outlander",
+            SponsorSettlementId = sponsor.Id,
+            TravelDurationTicks = 120_000
+        });
+
+    AssertEqual(false, result.Founded);
+    AssertEqual(true, result.JourneyStarted);
+    AssertEqual(3, state.Drifters.Count);
+    AssertEqual(1, state.Settlements.Count);
+    var journey = state.GetDrifterFoundingJourney(result.JourneyId!.Value)!;
+    AssertEqual(9, state.GetOwnedResourceQuantity(journey.Id, "PackagedSurvivalMeal"));
+    AssertEqual(30, state.GetOwnedResourceQuantity(journey.Id, "Steel"));
+    AssertEqual(1, state.GetOwnedResourceQuantity(journey.Id, "ComponentIndustrial"));
+    AssertEqual(true, journey.FounderDrifterIds.All(state.IsDrifterReservedForFounding));
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    restored.AdvanceToTick(180_000);
+    var settlement = restored.CompleteDrifterFoundingJourney(journey.Id);
+
+    AssertEqual(0, restored.Drifters.Count);
+    AssertEqual(3, restored.GetSettlementPopulation(settlement.Id).Total);
+    AssertEqual(9, restored.GetOwnedResourceQuantity(settlement.Id, "PackagedSurvivalMeal"));
+    AssertEqual(30, restored.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(1, restored.GetOwnedResourceQuantity(settlement.Id, "ComponentIndustrial"));
+    AssertEqual(DrifterFoundingJourneyStatus.Arrived, restored.GetDrifterFoundingJourney(journey.Id)!.Status);
+    AssertEqual(0, restored.Validate().Count());
+}
+
+static void TestDrifterFoundingJourneyCancellationReturnsEverything()
+{
+    var state = new WorldState(4242);
+    var sponsor = state.CreateSettlement("worldobject:Settlement:100:Outlander", "Sponsor", "Outlander");
+    state.AddResource(sponsor.Id, "PackagedSurvivalMeal", 20);
+    state.AddResource(sponsor.Id, "Steel", 50);
+    state.AddResource(sponsor.Id, "ComponentIndustrial", 5);
+    var leader = state.CreateDrifter("Organizer", 34, Sex.Female, 15, 80);
+    var hand1 = state.CreateDrifter("Hand 1", 26, Sex.Male, 10, 12);
+    var hand2 = state.CreateDrifter("Hand 2", 29, Sex.Male, 8, 14);
+    var journey = state.CreateDrifterFoundingJourney(
+        leader.Id,
+        new[] { leader.Id, hand1.Id, hand2.Id },
+        sponsor.Id,
+        "Outlander",
+        "worldobject:Settlement:200:Outlander",
+        "New Home",
+        "worldobject:Settlement:200:Outlander",
+        60_000,
+        180_000,
+        false,
+        9,
+        30,
+        1);
+
+    state.CancelDrifterFoundingJourney(journey.Id, "route blocked");
+
+    AssertEqual(20, state.GetOwnedResourceQuantity(sponsor.Id, "PackagedSurvivalMeal"));
+    AssertEqual(50, state.GetOwnedResourceQuantity(sponsor.Id, "Steel"));
+    AssertEqual(5, state.GetOwnedResourceQuantity(sponsor.Id, "ComponentIndustrial"));
+    AssertEqual(3, state.Drifters.Count);
+    AssertEqual(false, state.IsDrifterReserved(leader.Id));
+    AssertEqual(DrifterFoundingJourneyStatus.Cancelled, state.GetDrifterFoundingJourney(journey.Id)!.Status);
+    AssertEqual(0, state.Validate().Count());
 }
 
 static void TestDrifterFoundingNeedsCapableLeader()
@@ -10524,6 +10609,90 @@ static void TestPhysicalMarkerContactResolvesArmyTraffic()
     AssertEqual(CaravanStatus.Destroyed, state.GetCaravan(caravan.Id)!.Status);
     AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
     AssertEqual(false, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, caravan.Id, 60_001));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestPhysicalArmyContactDisruptsSettlerExpedition()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("worldobject:Settlement:100:Settlers", "Source", "Settlers");
+    var raiderHome = state.CreateSettlement("worldobject:Settlement:200:Raiders", "Raiders", "Raiders");
+    var armyTarget = state.CreateSettlement("worldobject:Settlement:300:Neutral", "Target", "Neutral");
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("Settler " + i, 30, Sex.Male, "worker", source.Id);
+        state.CreateCitizen("Raider " + i, 30, Sex.Male, "fighter", raiderHome.Id);
+    }
+
+    state.AddResource(source.Id, "PackagedSurvivalMeal", 30);
+    state.AddResource(source.Id, "Steel", 100);
+    state.AddResource(source.Id, "ComponentIndustrial", 10);
+    var group = state.StartSettlementExpedition(
+        source.Id,
+        "worldobject:Settlement:400:Settlers",
+        "New Home",
+        3,
+        60_000,
+        180_000,
+        requirePhysicalDestination: true);
+    state.BindSettlementExpeditionLocation(group.Id, "worldobject:Settlement:400:Settlers");
+    var army = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Raiders", "Interception army", 4, FoodPerCitizen: 0)).Army!;
+    state.DispatchArmy(army.Id, armyTarget.Id, 600_000);
+
+    AssertEqual(true, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, group.Id, 90_000));
+    AssertEqual(MigrationGroupStatus.Lost, state.GetMigrationGroup(group.Id)!.Status);
+    AssertEqual(3, state.Citizens.Count(citizen => citizen.Status == CitizenStatus.Missing));
+    AssertEqual(0, state.ResourcesForOwner(group.Id).Sum(resource => resource.Quantity));
+    AssertEqual(true, state.ResourcesForOwner(army.Id).Sum(resource => resource.Quantity) > 0);
+    AssertEqual(false, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, group.Id, 90_001));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestPhysicalArmyContactDisruptsDrifterFounding()
+{
+    var state = new WorldState(4242);
+    var sponsor = state.CreateSettlement("worldobject:Settlement:100:Outlander", "Sponsor", "Outlander");
+    var raiderHome = state.CreateSettlement("worldobject:Settlement:200:Raiders", "Raiders", "Raiders");
+    var armyTarget = state.CreateSettlement("worldobject:Settlement:300:Neutral", "Target", "Neutral");
+    state.AddResource(sponsor.Id, "PackagedSurvivalMeal", 20);
+    state.AddResource(sponsor.Id, "Steel", 50);
+    state.AddResource(sponsor.Id, "ComponentIndustrial", 5);
+    var leader = state.CreateDrifter("Organizer", 34, Sex.Female, 15, 80);
+    var hand1 = state.CreateDrifter("Hand 1", 26, Sex.Male, 10, 12);
+    var hand2 = state.CreateDrifter("Hand 2", 29, Sex.Male, 8, 14);
+    for (var i = 0; i < 6; i++)
+    {
+        state.CreateCitizen("Raider " + i, 30, Sex.Male, "fighter", raiderHome.Id);
+    }
+
+    var journey = state.CreateDrifterFoundingJourney(
+        leader.Id,
+        new[] { leader.Id, hand1.Id, hand2.Id },
+        sponsor.Id,
+        "Outlander",
+        "worldobject:Settlement:400:Outlander",
+        "New Home",
+        "worldobject:Settlement:400:Outlander",
+        60_000,
+        180_000,
+        false,
+        9,
+        30,
+        1);
+    var army = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Raiders", "Interception army", 4, FoodPerCitizen: 0)).Army!;
+    state.DispatchArmy(army.Id, armyTarget.Id, 600_000);
+
+    AssertEqual(true, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, journey.Id, 90_000));
+    AssertEqual(DrifterFoundingJourneyStatus.Cancelled, state.GetDrifterFoundingJourney(journey.Id)!.Status);
+    AssertEqual(3, state.Drifters.Count);
+    AssertEqual(false, state.IsDrifterReserved(leader.Id));
+    AssertEqual(0, state.ResourcesForOwner(journey.Id).Sum(resource => resource.Quantity));
+    AssertEqual(true, state.ResourcesForOwner(army.Id).Sum(resource => resource.Quantity) > 0);
+    AssertEqual(false, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, journey.Id, 90_001));
     AssertEqual(0, state.Validate().Count());
 }
 

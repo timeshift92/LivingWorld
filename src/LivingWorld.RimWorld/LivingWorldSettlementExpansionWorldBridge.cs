@@ -484,7 +484,7 @@ internal static class LivingWorldSettlementExpansionWorldBridge
         return false;
     }
 
-    private static bool IsFreeFoundingTile(int candidate, int originTile, HashSet<int> reservedTiles)
+    internal static bool IsFreeFoundingTile(int candidate, int originTile, HashSet<int> reservedTiles)
     {
         var grid = Find.WorldGrid;
         var worldObjects = Find.WorldObjects;

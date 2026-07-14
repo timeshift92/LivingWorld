@@ -90,7 +90,7 @@ public static class DrifterAssimilationService
         }
 
         var candidates = state.Drifters
-            .Where(drifter => !state.IsDrifterReservedForAssimilation(drifter.Id))
+            .Where(drifter => !state.IsDrifterReserved(drifter.Id))
             .OrderBy(drifter => drifter.ArrivalTick)
             .ThenBy(drifter => drifter.Id.Value)
             .Take(max)

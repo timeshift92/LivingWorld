@@ -59,6 +59,45 @@ public static class TransitEncounterService
             return true;
         }
 
+        if (trafficId.Kind == EntityKind.MigrationGroup)
+        {
+            var group = state.GetMigrationGroup(trafficId);
+            if (group?.Status != MigrationGroupStatus.Traveling
+                || !IsHostile(state, army.FactionId, group.FactionId))
+            {
+                return false;
+            }
+
+            state.DisruptSettlementExpedition(group.Id, army.Id, $"physically intercepted by {armyId}");
+            return true;
+        }
+
+        if (trafficId.Kind == EntityKind.DrifterAssimilationJourney)
+        {
+            var journey = state.GetDrifterAssimilationJourney(trafficId);
+            if (journey?.Status != DrifterAssimilationJourneyStatus.Traveling
+                || !IsHostile(state, army.FactionId, journey.ExpectedTargetFactionId))
+            {
+                return false;
+            }
+
+            state.CancelDrifterAssimilationJourney(journey.Id, $"physically intercepted by {armyId}");
+            return true;
+        }
+
+        if (trafficId.Kind == EntityKind.DrifterFoundingJourney)
+        {
+            var journey = state.GetDrifterFoundingJourney(trafficId);
+            if (journey?.Status != DrifterFoundingJourneyStatus.Traveling
+                || !IsHostile(state, army.FactionId, journey.FactionId))
+            {
+                return false;
+            }
+
+            state.DisruptDrifterFoundingJourney(journey.Id, army.Id, $"physically intercepted by {armyId}");
+            return true;
+        }
+
         return false;
     }
 

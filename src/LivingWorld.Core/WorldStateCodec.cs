@@ -593,6 +593,34 @@ public static class WorldStateCodec
                                 ? null
                                 : new XAttribute("physicalOriginStableKey", journey.PhysicalOriginStableKey)))),
                 new XElement(
+                    "DrifterFoundingJourneys",
+                    snapshot.DrifterFoundingJourneys.Select(journey =>
+                        new XElement(
+                            "Journey",
+                            IdAttributes(journey.Id),
+                            new XAttribute("leaderKind", journey.LeaderDrifterId.Kind),
+                            new XAttribute("leaderId", journey.LeaderDrifterId.Value),
+                            new XAttribute("sponsorKind", journey.SponsorSettlementId.Kind),
+                            new XAttribute("sponsorId", journey.SponsorSettlementId.Value),
+                            new XAttribute("factionId", journey.FactionId),
+                            new XAttribute("plannedSlug", journey.PlannedSlug),
+                            new XAttribute("plannedName", journey.PlannedName),
+                            new XAttribute("physicalStableKey", journey.PhysicalStableKey),
+                            new XAttribute("createdTick", journey.CreatedTick),
+                            new XAttribute("arrivalTick", journey.ArrivalTick),
+                            new XAttribute("status", journey.Status),
+                            new XAttribute("isRaiderBand", journey.IsRaiderBand),
+                            new XAttribute("foodQuantity", journey.FoodQuantity),
+                            new XAttribute("steelQuantity", journey.SteelQuantity),
+                            new XAttribute("componentQuantity", journey.ComponentQuantity),
+                            new XElement(
+                                "Founders",
+                                journey.FounderDrifterIds.Select(founderId =>
+                                    new XElement(
+                                        "Founder",
+                                        new XAttribute("kind", founderId.Kind),
+                                        new XAttribute("id", founderId.Value))))))),
+                new XElement(
                     "ArmyMovements",
                     state.ArmyMovements
                         .OrderBy(movement => movement.ArmyId.Value)
@@ -822,6 +850,28 @@ public static class WorldStateCodec
                     PhysicalOriginRequired = OptionalBool(element, "physicalOriginRequired", false),
                     PhysicalOriginStableKey = OptionalString(element, "physicalOriginStableKey") ?? string.Empty
                 })
+                .ToList(),
+            DrifterFoundingJourneys = OptionalContainer(root, "DrifterFoundingJourneys")
+                .Elements("Journey")
+                .Select(element => new DrifterFoundingJourney(
+                    ReadId(element),
+                    ReadEntityId(element, "leaderKind", "leaderId"),
+                    OptionalContainer(element, "Founders")
+                        .Elements("Founder")
+                        .Select(founder => ReadEntityId(founder, "kind", "id"))
+                        .ToList(),
+                    ReadEntityId(element, "sponsorKind", "sponsorId"),
+                    RequiredString(element, "factionId"),
+                    RequiredString(element, "plannedSlug"),
+                    RequiredString(element, "plannedName"),
+                    RequiredString(element, "physicalStableKey"),
+                    RequiredInt(element, "createdTick"),
+                    RequiredInt(element, "arrivalTick"),
+                    RequiredEnum<DrifterFoundingJourneyStatus>(element, "status"),
+                    RequiredBool(element, "isRaiderBand"),
+                    RequiredInt(element, "foodQuantity"),
+                    RequiredInt(element, "steelQuantity"),
+                    RequiredInt(element, "componentQuantity")))
                 .ToList(),
             FactionSettlementIntel = OptionalContainer(root, "FactionSettlementIntel")
                 .Elements("Intel")

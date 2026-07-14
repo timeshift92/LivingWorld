@@ -14,6 +14,9 @@ public sealed record DrifterFoundingRequest(
     public string? PhysicalStableKey { get; init; }
 
     public EntityId? SponsorSettlementId { get; init; }
+
+    /// <summary>Zero keeps standalone Core's immediate behavior; runtime worlds use real travel.</summary>
+    public int TravelDurationTicks { get; init; }
 }
 
 public sealed record DrifterFoundingResult(
@@ -22,7 +25,12 @@ public sealed record DrifterFoundingResult(
     EntityId? SettlementId,
     string? FactionId,
     int FounderCount,
-    bool IsRaiderBand);
+    bool IsRaiderBand)
+{
+    public EntityId? JourneyId { get; init; }
+
+    public bool JourneyStarted { get; init; }
+}
 
 /// <summary>
 /// Lets a group of drifters found a brand-new settlement
@@ -46,13 +54,22 @@ public static class DrifterFoundingService
 
         state.AdvanceToTick(request.Tick);
 
+        if (state.DrifterFoundingJourneys.Any(journey =>
+            journey.Status == DrifterFoundingJourneyStatus.Traveling))
+        {
+            return NotFounded("A drifter founding expedition is already traveling.");
+        }
+
+        var availableDrifters = state.Drifters
+            .Where(drifter => !state.IsDrifterReserved(drifter.Id))
+            .ToList();
         var minFounders = Math.Max(1, request.MinFounders);
-        if (state.Drifters.Count < minFounders)
+        if (availableDrifters.Count < minFounders)
         {
             return NotFounded("Not enough drifters to form a founding group.");
         }
 
-        var leader = state.Drifters
+        var leader = availableDrifters
             .OrderByDescending(drifter => drifter.LeadershipAptitude)
             .ThenBy(drifter => drifter.Id.Value)
             .First();
@@ -62,7 +79,7 @@ public static class DrifterFoundingService
             return NotFounded("No drifter is capable enough to lead a new settlement.");
         }
 
-        var members = state.Drifters
+        var members = availableDrifters
             .Where(drifter => drifter.Id != leader.Id)
             .OrderBy(drifter => drifter.ArrivalTick)
             .ThenBy(drifter => drifter.Id.Value)
@@ -119,6 +136,41 @@ public static class DrifterFoundingService
         var slug = string.IsNullOrWhiteSpace(request.PhysicalStableKey)
             ? (isRaiderBand ? "drifter-band-" : "drifter-settlement-") + ordinal
             : request.PhysicalStableKey!.Trim();
+
+        if (request.TravelDurationTicks > 0)
+        {
+            if (sponsor == null || string.IsNullOrWhiteSpace(request.PhysicalStableKey))
+            {
+                return NotFounded("A traveling founding group needs a sponsor and physical destination.");
+            }
+
+            var founderIds = members.Prepend(leader.Id).ToList();
+            var journey = state.CreateDrifterFoundingJourney(
+                leader.Id,
+                founderIds,
+                sponsor.Id,
+                factionId!,
+                slug,
+                name,
+                request.PhysicalStableKey!,
+                request.Tick,
+                checked(request.Tick + Math.Max(1, request.TravelDurationTicks)),
+                isRaiderBand,
+                foodCost,
+                steelCost,
+                componentCost);
+            return new DrifterFoundingResult(
+                false,
+                $"{founderCount} drifters departed to found {name}.",
+                null,
+                factionId,
+                founderCount,
+                isRaiderBand)
+            {
+                JourneyId = journey.Id,
+                JourneyStarted = true
+            };
+        }
 
         var settlement = state.FoundSettlement(slug, name, factionId!, leader.Id, members);
         if (sponsor != null)

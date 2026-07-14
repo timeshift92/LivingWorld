@@ -89,6 +89,9 @@ public sealed record WorldStateSnapshot(
     public IReadOnlyList<DrifterAssimilationJourney> DrifterAssimilationJourneys { get; init; } =
         Array.Empty<DrifterAssimilationJourney>();
 
+    public IReadOnlyList<DrifterFoundingJourney> DrifterFoundingJourneys { get; init; } =
+        Array.Empty<DrifterFoundingJourney>();
+
     public WorldEventArchiveCheckpoint EventArchive { get; init; } =
         WorldEventArchiveCheckpoint.Empty;
 }

@@ -84,7 +84,9 @@ public enum WorldEventKind
     TechnologyDiffused,
     WorldMissionDisrupted,
     DrifterAssimilationJourneyStarted,
-    DrifterAssimilationJourneyCancelled
+    DrifterAssimilationJourneyCancelled,
+    DrifterFoundingJourneyStarted,
+    DrifterFoundingJourneyCancelled
 }
 
 public sealed record WorldEvent(
