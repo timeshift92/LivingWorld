@@ -391,6 +391,12 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: exhaustive invariants over the whole state space", TestMobPlanExhaustiveInvariants),
     ("mob plan: a pawn engaged at a stale tier still tears down on stand-down", TestMobPlanStaleTierEngagedTearsDown),
     ("mob plan: a non-candidate engaged at a stale tier still unwinds", TestMobPlanNonCandidateStaleEngagedUnwinds),
+    ("shelter: a fighter (not a non-combatant) is left alone", TestShelterNotNonCombatant),
+    ("shelter: a busy-urgent non-combatant is not moved", TestShelterBusyUrgent),
+    ("shelter: needed and not yet in shelter -> Flee", TestShelterFlee),
+    ("shelter: needed and already in shelter -> None", TestShelterAlreadyInShelter),
+    ("shelter: not needed and we changed the area -> Restore", TestShelterRestore),
+    ("shelter: not needed and we never touched the area -> None", TestShelterNoRestoreNeeded),
 };
 
 var failures = new List<string>();
@@ -10726,4 +10732,40 @@ static void TestMobPlanNonCandidateStaleEngagedUnwinds()
     // Non-candidate now (downed/removed), engaged earlier at a tier that no longer matches -> still unwind.
     var s = new PawnMobState { IsCandidate = false, HasLwDuty = false, WasEngagedByUs = true };
     AssertEqual(MobPhase.ClearCombat, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestShelterNotNonCombatant()
+{
+    var s = new NonCombatantState { IsNonCombatant = false, TierWantsShelter = true };
+    AssertEqual(ShelterPhase.None, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterBusyUrgent()
+{
+    var s = new NonCombatantState { IsNonCombatant = true, IsBusyUrgent = true, TierWantsShelter = true };
+    AssertEqual(ShelterPhase.None, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterFlee()
+{
+    var s = new NonCombatantState { IsNonCombatant = true, TierWantsShelter = true, InShelterArea = false };
+    AssertEqual(ShelterPhase.Flee, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterAlreadyInShelter()
+{
+    var s = new NonCombatantState { IsNonCombatant = true, TierWantsShelter = true, InShelterArea = true };
+    AssertEqual(ShelterPhase.None, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterRestore()
+{
+    var s = new NonCombatantState { IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = true };
+    AssertEqual(ShelterPhase.Restore, ShelterPlan.NextAction(s));
+}
+
+static void TestShelterNoRestoreNeeded()
+{
+    var s = new NonCombatantState { IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = false };
+    AssertEqual(ShelterPhase.None, ShelterPlan.NextAction(s));
 }
