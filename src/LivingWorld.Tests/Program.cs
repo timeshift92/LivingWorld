@@ -9249,7 +9249,7 @@ static void TestRimWorldBootstrapPrimesImmediateDynamics()
 
     var source = File.ReadAllText(componentPath);
 
-    AssertContains("SettlementPopulationSeedingService.StableSettlementSeed(settlement.StableKey)", source);
+    AssertContains("SettlementPopulationSeedingService.StableSettlementSeed(candidate.StableKey)", source);
     AssertContains("SettlementPopulationSeedingService.CalculateChildCount", source);
     AssertContains("SettlementPopulationSeedingService.CalculateChildAge", source);
     AssertContains("SettlementBootstrapPrimer.PrimeSettlement", source);
