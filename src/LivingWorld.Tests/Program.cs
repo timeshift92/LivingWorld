@@ -8267,6 +8267,17 @@ static void TestRimWorldRealFactionRelationsBridge()
     AssertContains("FormRealEnmity", bridge);
     AssertContains("EnemyGoodwillTarget", bridge);
 
+    // Mod-compat (Rim War): Torann.RimWar installs a Harmony prefix on Faction.TryAffectGoodwillWith
+    // that takes goodwillChange by ref and can silently dampen/zero/block it, so a forced alliance may
+    // never reach +75 nor a war declaration fall to -80 — with no warning. Living World stands down and
+    // defers real faction diplomacy to Rim War here (the same mutual-exclusion it applies to its own
+    // world-war loop) instead of fighting Rim War's relation-reduction system. The guard must short-
+    // circuit BEFORE any TryAffectGoodwillWith call so no dampened, misleading mutation is attempted.
+    AssertContains("ModsConfig.IsActive(\"Torann.RimWar\")", bridge);
+    AssertRimWorldMethodExists("Verse.ModsConfig", "IsActive");
+    // The stand-down is announced (debug-gated) rather than silent, so the collision is observable.
+    AssertContains("[LivingWorld]", bridge);
+
     // Wired into both ends of the arc.
     var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
     AssertContains("LivingWorldFactionRelations.FormRealAlliance", mainTab);
