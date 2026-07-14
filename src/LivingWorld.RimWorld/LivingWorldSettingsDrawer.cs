@@ -60,6 +60,7 @@ public static class LivingWorldSettingsDrawer
         listing.CheckboxLabeled("LW_Settings_ArmoryMobilization".Translate(), ref settings.armoryMobilizationEnabled, "LW_Settings_ArmoryMobilizationTip".Translate());
         DrawIntSlider(listing, "LW_Settings_MobilizationSkill".Translate(), ref settings.mobilizationSkillThreshold, 0, 20);
         listing.CheckboxLabeled("LW_Settings_AutoDraft".Translate(), ref settings.autoMobilizeOnThreat, "LW_Settings_AutoDraftTip".Translate());
+        listing.CheckboxLabeled("LW_Settings_Muster".Translate(), ref settings.musterEnabled, "LW_Settings_MusterTip".Translate());
         listing.CheckboxLabeled("LW_Settings_MobilizationDiagnostics".Translate(), ref settings.mobilizationDiagnostics, "LW_Settings_MobilizationDiagnosticsTip".Translate());
         DrawIntSlider(listing, "LW_Settings_WorldWarTravelDays".Translate(), ref settings.worldWarTravelDays, 1, 15);
         DrawIntSlider(listing, "LW_Settings_WorldWarRaidCombatants".Translate(), ref settings.worldWarRaidCombatants, 1, 30);

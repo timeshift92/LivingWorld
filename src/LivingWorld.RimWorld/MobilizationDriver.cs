@@ -20,7 +20,7 @@ public sealed class MobilizationDriver
     private readonly Dictionary<Pawn, ThreatTier> engagedByUs = new();
     private readonly HashSet<Pawn> draftedByUs = new();
 
-    public void Drive(Map map, bool mobilized, ThreatTier tier)
+    public void Drive(Map map, bool mobilized, ThreatTier tier, in MusterContext muster)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
         if (!settings.armoryMobilizationEnabled || !ModsConfig.OdysseyActive)
@@ -30,9 +30,6 @@ public sealed class MobilizationDriver
 
         try
         {
-            // Read anchor before the defensive null-conditional chain below — Roslyn's nullable flow analysis
-            // otherwise treats `map` as maybe-null afterward even though the parameter itself is non-nullable.
-            var anchor = map.Center;
             var colonists = map.mapPawns?.FreeColonistsSpawned;
             if (colonists == null)
             {
@@ -51,7 +48,7 @@ public sealed class MobilizationDriver
 
                 var state = Snapshot(pawn, tier);
                 var action = MobilizationPlan.NextAction(mobilized, state);
-                Execute(pawn, action, tier, anchor, settings.mobilizationDiagnostics);
+                Execute(pawn, action, tier, muster, settings.mobilizationDiagnostics);
             }
 
             // Player combat creatures (Odyssey ghouls): drafted + CAI-driven alongside the fighters. No outfit
@@ -68,7 +65,7 @@ public sealed class MobilizationDriver
                     continue;
                 }
 
-                DriveCreature(creature, mobilized, tier, anchor, settings.mobilizationDiagnostics);
+                DriveCreature(creature, mobilized, tier, muster, settings.mobilizationDiagnostics);
             }
         }
         catch (Exception ex)
@@ -77,7 +74,57 @@ public sealed class MobilizationDriver
         }
     }
 
-    private void DriveCreature(Pawn creature, bool mobilized, ThreatTier tier, IntVec3 anchor, bool diagnostics)
+    // Pass-1 for the muster gate: how many reachable fighters (colonists + combat creatures) exist, and how many
+    // have reached the anchor. Unreachable fighters are excluded from BOTH counts — they can never gather, so
+    // counting them would keep the gate below 100% forever. Cheap (distance + reachability), fail-safe.
+    public (int total, int atAnchor) MusterProgress(Map map, IntVec3 anchor, float holdRadius)
+    {
+        var total = 0;
+        var at = 0;
+        try
+        {
+            if (map?.mapPawns == null || !anchor.IsValid)
+            {
+                return (0, 0);
+            }
+
+            foreach (var p in map.mapPawns.FreeColonistsSpawned?.ToList() ?? new List<Pawn>())
+            {
+                if (p == null || !MobilizationCandidates.IsCandidate(p) || !CanReach(p, anchor))
+                {
+                    continue;
+                }
+
+                total++;
+                if (AtAnchor(p, anchor, holdRadius))
+                {
+                    at++;
+                }
+            }
+
+            foreach (var c in map.mapPawns.SpawnedPawnsInFaction(Faction.OfPlayer)?.ToList() ?? new List<Pawn>())
+            {
+                if (c == null || !MobilizationCandidates.IsCombatCreature(c) || !CanReach(c, anchor))
+                {
+                    continue;
+                }
+
+                total++;
+                if (AtAnchor(c, anchor, holdRadius))
+                {
+                    at++;
+                }
+            }
+        }
+        catch
+        {
+            // fall through with whatever we counted
+        }
+
+        return (total, at);
+    }
+
+    private void DriveCreature(Pawn creature, bool mobilized, ThreatTier tier, in MusterContext muster, bool diagnostics)
     {
         if (!mobilized)
         {
@@ -93,24 +140,106 @@ public sealed class MobilizationDriver
             return;
         }
 
-        // Already engaged at the current tier — steady.
-        if (engagedByUs.TryGetValue(creature, out var engagedTier) && engagedTier == tier)
+        EngageOrMuster(creature, tier, muster, diagnostics, " (creature)");
+    }
+
+    // The fight step for a ready fighter/creature: instead of always free-engaging where it stands, march to the
+    // muster anchor and hold there (vanilla drafted Wait_Combat — fires from the cell, melee does not chase, and
+    // crucially CAI's aggro-contagion cannot fray a line we never handed to CAI), until the squad is released.
+    // Drafting is done up front (needed for both hold and engage); a held pawn carries NO CAI duty.
+    private void EngageOrMuster(Pawn pawn, ThreatTier tier, in MusterContext muster, bool diagnostics, string tag)
+    {
+        if (pawn.drafter != null)
+        {
+            pawn.drafter.Drafted = true;
+            draftedByUs.Add(pawn);
+        }
+
+        var state = new MusterState
+        {
+            IsFighter = true,
+            Mobilized = true,
+            IsBusyUrgent = false,
+            WantsMuster = muster.WantsMuster,
+            AtAnchor = AtAnchor(pawn, muster.Anchor, muster.HoldRadius),
+            AnchorReachable = CanReach(pawn, muster.Anchor),
+            Released = muster.Released,
+        };
+
+        string action;
+        switch (MusterPlan.NextAction(state))
+        {
+            case MusterPhase.March:
+                if (engagedByUs.Remove(pawn))
+                {
+                    CaiBridge.Disengage(pawn);
+                }
+
+                PushGoto(pawn, muster.Anchor);
+                action = "March";
+                break;
+
+            case MusterPhase.Hold:
+                // Vanilla think-tree drops the drafted pawn into Wait_Combat on its own — hold, no CAI duty.
+                if (engagedByUs.Remove(pawn))
+                {
+                    CaiBridge.Disengage(pawn);
+                }
+
+                action = "Hold";
+                break;
+
+            default: // Release
+                if (engagedByUs.TryGetValue(pawn, out var engagedTier) && engagedTier == tier)
+                {
+                    return; // already engaged at this tier — steady, no re-issue
+                }
+
+                CaiBridge.TryEngage(pawn, tier, muster.Anchor);
+                engagedByUs[pawn] = tier;
+                action = "Engage";
+                break;
+        }
+
+        if (diagnostics)
+        {
+            Log.Message($"[LivingWorld] Muster: {pawn.LabelShort}{tag} -> {action} "
+                        + $"(tier {tier}, anchor={muster.Anchor}, atAnchor={state.AtAnchor}, released={muster.Released})");
+        }
+    }
+
+    // Idempotent drafted move to the anchor. Skip re-issuing when the pawn is already heading there — restarting
+    // the Goto after arrival would cancel the Wait_Combat auto-attack the hold relies on.
+    private static void PushGoto(Pawn pawn, IntVec3 anchor)
+    {
+        if (pawn?.jobs == null || !anchor.IsValid)
         {
             return;
         }
 
-        if (creature.drafter != null)
+        var cur = pawn.CurJob;
+        if (cur != null && cur.def == JobDefOf.Goto && cur.targetA.Cell == anchor)
         {
-            creature.drafter.Drafted = true;
-            draftedByUs.Add(creature);
+            return;
         }
 
-        CaiBridge.TryEngage(creature, tier, anchor);
-        engagedByUs[creature] = tier;
+        var job = JobMaker.MakeJob(JobDefOf.Goto, anchor);
+        pawn.jobs.TryTakeOrderedJob(job, JobTag.DraftedOrder, requestQueueing: false);
+    }
 
-        if (diagnostics)
+    private static bool AtAnchor(Pawn pawn, IntVec3 anchor, float holdRadius)
+        => pawn != null && anchor.IsValid && (pawn.Position - anchor).LengthHorizontal <= holdRadius;
+
+    private static bool CanReach(Pawn pawn, IntVec3 anchor)
+    {
+        try
         {
-            Log.Message($"[LivingWorld] Mobilization: {creature.LabelShort} (creature) -> Engage (tier {tier})");
+            return pawn?.Map != null && anchor.IsValid
+                   && pawn.Map.reachability.CanReach(pawn.Position, anchor, PathEndMode.Touch, TraverseParms.For(pawn));
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -192,7 +321,7 @@ public sealed class MobilizationDriver
         };
     }
 
-    private void Execute(Pawn pawn, MobPhase action, ThreatTier tier, IntVec3 anchor, bool diagnostics)
+    private void Execute(Pawn pawn, MobPhase action, ThreatTier tier, in MusterContext muster, bool diagnostics)
     {
         switch (action)
         {
@@ -214,23 +343,12 @@ public sealed class MobilizationDriver
                 break;
 
             case MobPhase.Engage:
-                // CAI's autonomous control (aiAutoControl) only takes effect on a DRAFTED pawn, and giving an
-                // UNDRAFTED colonist a CAI duty makes the free-colonist think tree spam "ThinkNode_Duty with no
-                // duty" (and fights a ritual/lord for control). So draft first — this makes aiAutoControl
-                // effective, uses the drafted think tree (no duty error), and cleanly pulls the pawn out of any
-                // ritual — then hand CAI the objective + reactive control on top (best-effort).
-                if (pawn.drafter != null)
-                {
-                    pawn.drafter.Drafted = true;
-                    draftedByUs.Add(pawn);
-                }
-
-                CaiBridge.TryEngage(pawn, tier, anchor);
-
-                // Mark handled at this tier either way: stops the re-Engage loop, and a tier change re-issues.
-                // If CAI could not take the pawn it is still drafted (fallback); ClearCombat disengages + undrafts.
-                engagedByUs[pawn] = tier;
-                break;
+                // A ready fighter musters and holds the line (vanilla) until the squad is released, then free-
+                // engages via CAI. EngageOrMuster drafts first (aiAutoControl needs Drafted; a drafted pawn also
+                // avoids the "ThinkNode_Duty with no duty" spam and is cleanly pulled out of any ritual/lord),
+                // sets engagedByUs on release so the re-Engage loop stops, and re-issues on a tier change.
+                EngageOrMuster(pawn, tier, muster, diagnostics, string.Empty);
+                return;
 
             case MobPhase.Draft:
                 if (pawn.drafter != null)

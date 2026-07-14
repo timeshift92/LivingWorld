@@ -316,6 +316,8 @@
   <LW_MobilizedLetterLabel>Колония мобилизована</LW_MobilizedLetterLabel>
   <LW_MobilizedLetterText>На карте опасность ({0}, врагов: {1}). Бойцы вооружаются и выдвигаются, небоевые уходят в укрытие. После отбоя колония вернётся к гражданской жизни.</LW_MobilizedLetterText>
   <LW_StoodDownMessage>Угроза миновала — колония возвращается к работе.</LW_StoodDownMessage>
+  <LW_Settings_Muster>Сбор в укреплённой точке (мустер)</LW_Settings_Muster>
+  <LW_Settings_MusterTip>Если включено, при угрозе бойцы не дерутся где стоят, а стягиваются к точке сбора, держат оборону и открывают свободный бой, когда собралось большинство или враг прорвал линию. Точку можно задать вручную: покрась разрешённую зону и назови её ровно «LW Muster» (как «LW Shelter» для укрытия). Без заданной зоны точка выбирается автоматически — на краю базы со стороны врага.</LW_Settings_MusterTip>
   <LW_Settings_DangerousAnimalBodySize>Порог размера тела «опасного» зверя</LW_Settings_DangerousAnimalBodySize>
   <LW_Settings_DangerousAnimalBodySizeTip>Одиночный дикий зверь с размером тела не меньше этого порога считается серьёзной угрозой (рейд), а не мелкой докукой. По умолчанию 2.0 — ловит слонов, трумбо, носорогов, медведей; мелочь (крысы, белки) остаётся докукой.</LW_Settings_DangerousAnimalBodySizeTip>
 </LanguageData>

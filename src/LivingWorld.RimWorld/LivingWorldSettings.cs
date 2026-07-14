@@ -43,6 +43,10 @@ public sealed class LivingWorldSettings : ModSettings
     public float mobilizationAtBaseRadius = 18f;
     public int mobilizationDeescalateRechecks = 2;
     public float mobilizationDangerousAnimalBodySize = 2f;
+    public bool musterEnabled = true;
+    public float musterReadyFraction = 0.7f;
+    public float musterHoldRadius = 8f;
+    public int musterReleaseTimeoutRechecks = 10;
 
     public LivingWorldSettings()
     {
@@ -88,6 +92,10 @@ public sealed class LivingWorldSettings : ModSettings
         Scribe_Values.Look(ref mobilizationAtBaseRadius, "mobilizationAtBaseRadius", 18f);
         Scribe_Values.Look(ref mobilizationDeescalateRechecks, "mobilizationDeescalateRechecks", 2);
         Scribe_Values.Look(ref mobilizationDangerousAnimalBodySize, "mobilizationDangerousAnimalBodySize", 2f);
+        Scribe_Values.Look(ref musterEnabled, "musterEnabled", true);
+        Scribe_Values.Look(ref musterReadyFraction, "musterReadyFraction", 0.7f);
+        Scribe_Values.Look(ref musterHoldRadius, "musterHoldRadius", 8f);
+        Scribe_Values.Look(ref musterReleaseTimeoutRechecks, "musterReleaseTimeoutRechecks", 10);
 
         if (worldMapSpeedMultiplier != 3 && worldMapSpeedMultiplier != 5 && worldMapSpeedMultiplier != 10)
         {

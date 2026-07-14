@@ -418,6 +418,18 @@ var tests = new List<(string Name, Action Test)>
     ("shelter: not needed and we never touched the area -> None", TestShelterNoRestoreNeeded),
     ("shelter: a pawn promoted to fighter while sheltered is restored", TestShelterPromotedFighterRestored),
     ("shelter: restore fires even for a busy pawn (area change does not yank them)", TestShelterRestoreIgnoresBusy),
+    ("muster: a non-fighter is left alone", TestMusterNonFighterNone),
+    ("muster: an unmobilized fighter is left alone", TestMusterUnmobilizedNone),
+    ("muster: a busy-urgent fighter is not pulled to the line", TestMusterBusyUrgentNone),
+    ("muster: wants muster, not at anchor -> March", TestMusterMarch),
+    ("muster: wants muster, arrived -> Hold", TestMusterHold),
+    ("muster: released squad -> Release (free engage)", TestMusterReleasedEngages),
+    ("muster: tier does not want a line -> Release", TestMusterNoLineEngages),
+    ("muster: unreachable anchor -> Release (do not freeze a straggler)", TestMusterUnreachableEngages),
+    ("muster gate: a breach releases immediately", TestMusterGateBreachReleases),
+    ("muster gate: below the ready fraction holds", TestMusterGateBelowFractionHolds),
+    ("muster gate: at the ready fraction releases", TestMusterGateAtFractionReleases),
+    ("muster gate: zero fighters never blocks", TestMusterGateZeroReleases),
     ("reconcile imports new physical settlement", TestReconcilePlansImportForNewPhysicalSettlement),
     ("reconcile destroys missing physical when enabled", TestReconcilePlansDestructionForMissingPhysicalWhenEnabled),
     ("reconcile skips destruction when disabled", TestReconcileSkipsDestructionWhenDisabled),
@@ -11144,6 +11156,102 @@ static void TestShelterRestoreIgnoresBusy()
         IsNonCombatant = true, TierWantsShelter = false, AreaChangedByUs = true, IsBusyUrgent = true,
     };
     AssertEqual(ShelterPhase.Restore, ShelterPlan.NextAction(s));
+}
+
+static void TestMusterNonFighterNone()
+{
+    var s = new MusterState { IsFighter = false, Mobilized = true, WantsMuster = true };
+    AssertEqual(MusterPhase.None, MusterPlan.NextAction(s));
+}
+
+static void TestMusterUnmobilizedNone()
+{
+    var s = new MusterState { IsFighter = true, Mobilized = false, WantsMuster = true };
+    AssertEqual(MusterPhase.None, MusterPlan.NextAction(s));
+}
+
+static void TestMusterBusyUrgentNone()
+{
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, IsBusyUrgent = true,
+    };
+    AssertEqual(MusterPhase.None, MusterPlan.NextAction(s));
+}
+
+static void TestMusterMarch()
+{
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, AtAnchor = false,
+    };
+    AssertEqual(MusterPhase.March, MusterPlan.NextAction(s));
+}
+
+static void TestMusterHold()
+{
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, AtAnchor = true,
+    };
+    AssertEqual(MusterPhase.Hold, MusterPlan.NextAction(s));
+}
+
+static void TestMusterReleasedEngages()
+{
+    // Once the squad is released, even a fighter still at the anchor breaks the line and free-engages.
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = true, AtAnchor = true,
+        Released = true,
+    };
+    AssertEqual(MusterPhase.Release, MusterPlan.NextAction(s));
+}
+
+static void TestMusterNoLineEngages()
+{
+    // The tier does not want a held line (e.g. a lone nuisance) — engage where found, no muster.
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = false, AnchorReachable = true,
+    };
+    AssertEqual(MusterPhase.Release, MusterPlan.NextAction(s));
+}
+
+static void TestMusterUnreachableEngages()
+{
+    // A fighter that cannot path to the anchor must not freeze at the marshalling stage — it engages instead.
+    var s = new MusterState
+    {
+        IsFighter = true, Mobilized = true, WantsMuster = true, AnchorReachable = false, AtAnchor = false,
+    };
+    AssertEqual(MusterPhase.Release, MusterPlan.NextAction(s));
+}
+
+static void TestMusterGateBreachReleases()
+{
+    var s = new MusterSignals { FightersTotal = 10, FightersAtAnchor = 0, LineBreached = true };
+    AssertEqual(true, MusterGate.WantsRelease(s, 0.7));
+}
+
+static void TestMusterGateBelowFractionHolds()
+{
+    // 6 of 10 gathered, need ceil(10*0.7)=7 — hold the line.
+    var s = new MusterSignals { FightersTotal = 10, FightersAtAnchor = 6, LineBreached = false };
+    AssertEqual(false, MusterGate.WantsRelease(s, 0.7));
+}
+
+static void TestMusterGateAtFractionReleases()
+{
+    // 7 of 10 gathered, need ceil(10*0.7)=7 — release the whole line together.
+    var s = new MusterSignals { FightersTotal = 10, FightersAtAnchor = 7, LineBreached = false };
+    AssertEqual(true, MusterGate.WantsRelease(s, 0.7));
+}
+
+static void TestMusterGateZeroReleases()
+{
+    var s = new MusterSignals { FightersTotal = 0, FightersAtAnchor = 0, LineBreached = false };
+    AssertEqual(true, MusterGate.WantsRelease(s, 0.7));
 }
 
 static void TestSettlementSlugParsesTile()

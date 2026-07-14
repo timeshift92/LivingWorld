@@ -31,6 +31,14 @@ public sealed class MobilizationMapComponent : MapComponent
     private readonly ShelterDriver shelterDriver = new();
     private Dictionary<int, int> savedShelterAreas = new();
 
+    // Muster state: where the fighters hold (cached, recomputed only on a tier transition so it does not jitter
+    // between rechecks), the tier it was computed for, and the one-way per-alert "release the line" latch.
+    private IntVec3 cachedAnchor = IntVec3.Invalid;
+    private IntVec3 hostileCentroid = IntVec3.Invalid;
+    private ThreatTier anchorTier = ThreatTier.None;
+    private bool musterReleased;
+    private int musterHoldRechecks;
+
     public MobilizationMapComponent(Map map)
         : base(map)
     {
@@ -61,6 +69,8 @@ public sealed class MobilizationMapComponent : MapComponent
 
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
 
+        hostileCentroid = IntVec3.Invalid;
+
         try
         {
             lastSignals = settings.autoMobilizeOnThreat ? ComputeSignals(map, settings) : default;
@@ -81,8 +91,64 @@ public sealed class MobilizationMapComponent : MapComponent
 
         AnnounceThreatEdge(settings);
 
-        driver.Drive(map, IsMobilized, currentTier);
+        var muster = BuildMusterContext(settings);
+        driver.Drive(map, IsMobilized, currentTier, muster);
         shelterDriver.Drive(map, currentTier);
+    }
+
+    // Resolve the muster anchor (cached, recomputed only when the tier changes) and advance the one-way release
+    // latch: hold the line until enough fighters have gathered (MusterGate) or the line is breached, with a
+    // timeout safety valve so one unreachable straggler cannot freeze the squad forever. Reset on full stand-down.
+    private MusterContext BuildMusterContext(LivingWorldSettings settings)
+    {
+        var wantsMuster = settings.musterEnabled
+                          && (currentTier == ThreatTier.Raid || currentTier == ThreatTier.Serious);
+
+        if (!IsMobilized)
+        {
+            musterReleased = false;
+            musterHoldRechecks = 0;
+            anchorTier = ThreatTier.None;
+        }
+        else
+        {
+            if (wantsMuster && (currentTier != anchorTier || !cachedAnchor.IsValid))
+            {
+                cachedAnchor = MusterAnchorService.Resolve(map, hostileCentroid, lastSignals.EnemyAtBase, out _);
+                anchorTier = currentTier;
+            }
+
+            if (wantsMuster && !musterReleased)
+            {
+                // The enemy already inside the perimeter makes a held line moot — engage now.
+                var breached = lastSignals.EnemyAtBase || lastSignals.AnySapper || lastSignals.AnyEntity
+                               || lastSignals.AnyMechanoid || lastSignals.AnyInsect;
+
+                var (total, atAnchor) = driver.MusterProgress(map, cachedAnchor, settings.musterHoldRadius);
+                musterHoldRechecks++;
+
+                var progress = new MusterSignals
+                {
+                    FightersTotal = total,
+                    FightersAtAnchor = atAnchor,
+                    LineBreached = breached,
+                };
+
+                if (MusterGate.WantsRelease(progress, settings.musterReadyFraction)
+                    || musterHoldRechecks >= settings.musterReleaseTimeoutRechecks)
+                {
+                    musterReleased = true;
+                }
+            }
+        }
+
+        return new MusterContext
+        {
+            Anchor = cachedAnchor.IsValid ? cachedAnchor : map.Center,
+            HoldRadius = settings.musterHoldRadius,
+            WantsMuster = wantsMuster,
+            Released = musterReleased,
+        };
     }
 
     // Fire a one-shot alert on the rising/falling edge of an AUTOMATIC threat so the player notices the colony
@@ -137,6 +203,16 @@ public sealed class MobilizationMapComponent : MapComponent
         var center = liveMap.Center;
         var atBaseRadius = settings.mobilizationAtBaseRadius;
 
+        // Centroid of the live hostiles — the muster anchor faces this direction (perimeter-facing hold).
+        long hx = 0, hz = 0;
+        foreach (var h in hostiles)
+        {
+            hx += h.Position.x;
+            hz += h.Position.z;
+        }
+
+        hostileCentroid = new IntVec3((int)(hx / hostiles.Count), 0, (int)(hz / hostiles.Count));
+
         var dangerBody = settings.mobilizationDangerousAnimalBodySize;
         return new ThreatSignals
         {
@@ -186,7 +262,8 @@ public sealed class MobilizationMapComponent : MapComponent
                + $"engagedByUs={driver.IsEngagedByUs(pawn)}, draftedByUs={driver.IsDraftedByUs(pawn)}, "
                + $"aiAutoControl={CaiBridge.IsAutoControlled(pawn)}, "
                + $"inShelter={ShelterAreaService.IsInShelter(pawn)}, shelteredByUs={shelterDriver.WeChangedArea(pawn)}, "
-               + $"prevArea={shelterDriver.PrevAreaId(pawn)}";
+               + $"prevArea={shelterDriver.PrevAreaId(pawn)}, "
+               + $"musterAnchor={cachedAnchor}, musterReleased={musterReleased}";
     }
 
     public override void ExposeData()
@@ -194,6 +271,11 @@ public sealed class MobilizationMapComponent : MapComponent
         base.ExposeData();
         Scribe_Values.Look(ref manualMobilized, "livingWorld_manualMobilized", false);
         Scribe_Values.Look(ref announcedThreat, "livingWorld_announcedThreat", false);
+        // Persist the muster line + release latch so a mid-raid reload keeps holding (or keeps free-engaging)
+        // instead of yanking already-released fighters back to the line.
+        Scribe_Values.Look(ref cachedAnchor, "livingWorld_musterAnchor", IntVec3.Invalid);
+        Scribe_Values.Look(ref anchorTier, "livingWorld_musterAnchorTier", ThreatTier.None);
+        Scribe_Values.Look(ref musterReleased, "livingWorld_musterReleased", false);
 
         if (Scribe.mode == LoadSaveMode.Saving)
         {
