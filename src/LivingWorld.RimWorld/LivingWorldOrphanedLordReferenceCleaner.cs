@@ -42,6 +42,7 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
 
         var cleaned = 0;
         cleaned += CleanOrphanedLordOwnedPawns(map);
+        cleaned += CleanDesyncedPawnLordBacklinks(map);
         cleaned += CleanOrphanedDirectPawnRelations(map);
         foreach (var thing in map.listerThings.AllThings
             .Where(IsDormancyWakeUpSignal)
@@ -159,7 +160,13 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
                     continue;
                 }
 
-                if (IsPawnDeepSavedByMap(map, pawn))
+                // Prune only pawns saved nowhere (destroyed/discarded) — the ones that would
+                // dangle a save reference. A pawn that is merely off this map but alive and
+                // saved elsewhere (caravan, world pawn, another map, a settlement visit) is a
+                // legitimate lord member: removing it out-of-band here bypasses vanilla's
+                // Lord.Notify_PawnLost/duty teardown and desyncs the lord, which later logs
+                // "Lord lost pawn X it didn't have. Condition=LeftVoluntarily".
+                if (IsPawnSavedAnywhere(pawn))
                 {
                     continue;
                 }
@@ -167,6 +174,55 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
                 ownedPawns.RemoveAt(index);
                 cleaned++;
             }
+        }
+
+        return cleaned;
+    }
+
+    // Heal the pawn side of a broken lord backlink. Pawn.lord is a direct field; vanilla only clears it
+    // inside Lord.RemovePawn, which runs solely when the lord's ownedPawns still contains the pawn. If the
+    // pawn was pruned from ownedPawns out-of-band (our historic over-aggressive cleaner) or the lord self-
+    // disposed, Pawn.lord dangles: GetLord() keeps returning a dead lord, so ThinkNode_JoinVoluntarilyJoinable
+    // spams "Lord lost pawn X it didn't have. Condition=LeftVoluntarily" every tick, and the pawn saves an
+    // un-deep-saved "lord" reference. Clear the pawn side exactly as Lord.RemovePawn does (lord + duty).
+    private static int CleanDesyncedPawnLordBacklinks(Map map)
+    {
+        var pawns = map.mapPawns?.AllPawns;
+        if (pawns == null || pawns.Count == 0)
+        {
+            return 0;
+        }
+
+        var lords = map.lordManager?.lords;
+        var cleaned = 0;
+        foreach (var pawn in pawns.ToList())
+        {
+            if (pawn == null)
+            {
+                continue;
+            }
+
+            var lord = pawn.lord;
+            if (lord == null)
+            {
+                continue;
+            }
+
+            // A healthy backlink: the lord is still tracked by the manager AND actually owns the pawn.
+            var live = lords?.Contains(lord) == true;
+            var owns = lord.ownedPawns?.Contains(pawn) == true;
+            if (live && owns)
+            {
+                continue;
+            }
+
+            pawn.lord = null;
+            if (pawn.mindState != null)
+            {
+                pawn.mindState.duty = null;
+            }
+
+            cleaned++;
         }
 
         return cleaned;

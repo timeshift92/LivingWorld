@@ -98,6 +98,9 @@ public static class RaidPopulationAllocator
 
         var settlements = state.Settlements
             .Where(settlement => string.Equals(settlement.FactionId, request.FactionId, StringComparison.Ordinal))
+            // Never raise an army from a settlement that is no longer active: WorldState.CreateArmy rejects
+            // an inactive source and would throw an unhandled exception during the storyteller raid tick.
+            .Where(settlement => settlement.IsActive)
             .OrderByDescending(settlement => GetRaidReadyAdults(state, settlement.Id, request))
             .ThenBy(settlement => settlement.Id.Value)
             .ToList();

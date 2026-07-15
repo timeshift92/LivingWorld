@@ -72,6 +72,8 @@ var tests = new List<(string Name, Action Test)>
     ("rejects raid when supplies are insufficient", TestRaidPlannerRejectsInsufficientSupplies),
     ("reserves vanilla raid combatants from faction population", TestRaidPopulationAllocatorReservesFactionCombatants),
     ("caps vanilla raid combatants to available adults", TestRaidPopulationAllocatorCapsToAvailableAdults),
+    ("skips inactive settlements when reserving raid combatants", TestRaidPopulationAllocatorSkipsInactiveSettlement),
+    ("vanilla raid interception fails safe if reservation throws", TestVanillaRaidInterceptorGuardsReservation),
     ("creates raid opportunity from valuable trade intel", TestTradeIntelCreatesRaidOpportunity),
     ("consumes raid opportunity before vanilla raid allocation", TestRaidOpportunityConsumesOnce),
     ("records faction knowledge from trade intel without exact values", TestFactionKnowledgeRecordsTradeIntelAboutPlayer),
@@ -380,6 +382,7 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: a committed candidate holds steady", TestMobPlanReadyEngagedSteadies),
     ("mob plan: a standless candidate still engages so it does not idle", TestMobPlanStandlessEngages),
     ("mob plan: stand-down clears our CAI duty first", TestMobPlanStandDownClearsDuty),
+    ("mob driver: a mobilized ghoul charges in melee, never CAI", TestRimWorldGhoulMeleeChargeNotCai),
     ("mob plan: stand-down undrafts a pawn we drafted", TestMobPlanStandDownClearsDraft),
     ("mob plan: stand-down switches to the civilian policy", TestMobPlanSetCivilianPolicy),
     ("mob plan: stand-down returns the kit to the stand", TestMobPlanReturnKit),
@@ -2461,6 +2464,54 @@ static void TestRaidPopulationAllocatorCapsToAvailableAdults()
     AssertEqual(2, result.AvailableCombatants);
     AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
     AssertEqual(2, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == result.Army!.Id));
+}
+
+static void TestRaidPopulationAllocatorSkipsInactiveSettlement()
+{
+    var settlementId = EntityId.Create(EntityKind.Settlement, 1);
+    var citizenId = EntityId.Create(EntityKind.Citizen, 1);
+
+    // The faction's only settlement is Destroyed (inactive) yet still carries an alive adult in the ledger
+    // — exactly the residual state that made a storyteller raid pick it and throw "Settlement ... is not
+    // active." from WorldState.CreateArmy.
+    var state = WorldState.FromSnapshot(new WorldStateSnapshot(
+        12345,
+        0,
+        new[] { new WorldSettlement(settlementId, "dead-camp", "Dead Camp", "Pirate", SettlementLifecycleStatus.Destroyed) },
+        new[] { new WorldCitizen(citizenId, "Raider", 30, Sex.Male, "soldier", settlementId, CitizenStatus.Alive) },
+        Array.Empty<WorldArmy>(),
+        Array.Empty<WorldMigrationGroup>(),
+        Array.Empty<WorldIntelReport>(),
+        Array.Empty<KnownSettlementInfo>(),
+        Array.Empty<RaidOpportunity>(),
+        Array.Empty<RaidPawnLink>(),
+        Array.Empty<WorldRaidOutcome>(),
+        Array.Empty<SettlementProductionProfile>(),
+        Array.Empty<WorldFactionRecord>(),
+        new[] { new OwnershipRecord(citizenId, settlementId) },
+        Array.Empty<ResourceStack>(),
+        Array.Empty<WorldEvent>(),
+        Array.Empty<Drifter>()));
+
+    // FoodPerCitizen 0 removes the food gate so the adult would otherwise be raid-ready; the only reason
+    // no army is raised must be the inactive-settlement filter. Before the fix this call throws.
+    var result = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "vanilla raid", 3, "PackagedSurvivalMeal", 0));
+
+    AssertEqual(RaidPopulationAllocationStatus.UnknownFaction, result.Status);
+    AssertEqual(0, state.Armies.Count);
+}
+
+static void TestVanillaRaidInterceptorGuardsReservation()
+{
+    var src = File.ReadAllText(
+        Path.Combine(FindRepoRoot(), "src", "LivingWorld.Core", "VanillaRaidInterceptor.cs"));
+
+    // Defense in depth: even if reserving throws (a residual ledger desync pointing a raid at an inactive
+    // settlement), the vanilla raid must fall through untouched, never crash the storyteller tick.
+    AssertContains("catch (InvalidOperationException", src);
+    AssertContains("PassThrough(", src);
 }
 
 static void TestTradeIntelCreatesRaidOpportunity()
@@ -9233,8 +9284,18 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("WorldObjects?.Caravans", cleaner);
     AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
     AssertContains("ownedPawns.RemoveAt(index)", cleaner);
+    // Lord members are pruned only when saved nowhere (destroyed/discarded), never when
+    // merely off-map-but-alive: removing a live member out-of-band desyncs the vanilla lord
+    // and makes it log "Lord lost pawn X it didn't have. Condition=LeftVoluntarily".
+    AssertContains("if (IsPawnSavedAnywhere(pawn))", cleaner);
     AssertContains("IsPawnDeepSavedByMap", cleaner);
     AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
+    // Heal the pawn side of a broken lord backlink: a pawn whose Pawn.lord points to a lord that is gone
+    // from the lordManager (or no longer owns it) spams "Lord lost pawn X it didn't have" every tick and
+    // saves an un-deep-saved lord reference. Clear pawn.lord + duty exactly as vanilla Lord.RemovePawn does.
+    AssertContains("CleanDesyncedPawnLordBacklinks", cleaner);
+    AssertContains("pawn.mindState.duty = null", cleaner);
+    AssertRimWorldMethodExists("Verse.AI.Group.Lord", "RemovePawn");
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
     AssertContains("Scribe.mode == LoadSaveMode.Saving", component);
     AssertContains("currentTick % 250 == 0", component);
@@ -10126,6 +10187,22 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertEqual(1, RimWorldMethodMatchCount(
         "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
         new[] { "IEnumerable`1", "Faction", "PlanetTile", "Direction8Way", "PlanetTile", "Boolean" }));
+}
+
+static void TestRimWorldGhoulMeleeChargeNotCai()
+{
+    var driver = File.ReadAllText(
+        Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MobilizationDriver.cs"));
+
+    // Ghouls are melee-only. CAI's ranged tactical layer (cover/duck/cast position search) cannot
+    // position them, so it makes them flee. The free-engage path must route a combat creature to a
+    // melee charge on the nearest hostile (vanilla AttackMelee) and must NOT hand it to CAI.
+    AssertContains("MobilizationCandidates.IsCombatCreature(pawn)", driver);
+    AssertContains("PushMeleeCharge(pawn)", driver);
+    AssertContains("JobDefOf.AttackMelee", driver);
+    // The vanilla melee job def resolves in this build (the net472 compile of JobDefOf.AttackMelee
+    // already proves it, but assert the type is present for a clear failure if the API moves).
+    AssertRimWorldMethodExists("Verse.AI.JobDriver_AttackMelee", "MakeNewToils");
 }
 
 static void TestLiveVisitAnimalCaravanDocs()

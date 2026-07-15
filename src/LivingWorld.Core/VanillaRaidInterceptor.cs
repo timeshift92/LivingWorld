@@ -50,9 +50,20 @@ public static class VanillaRaidInterceptor
         }
 
         var requested = Math.Max(1, request.EstimatedCombatants);
-        var reservation = RaidPopulationAllocator.ReserveForRaid(
-            state,
-            new RaidPopulationAllocationRequest(request.FactionId, request.ArmyName, requested));
+        RaidPopulationAllocationResult reservation;
+        try
+        {
+            reservation = RaidPopulationAllocator.ReserveForRaid(
+                state,
+                new RaidPopulationAllocationRequest(request.FactionId, request.ArmyName, requested));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Defense in depth: a residual ledger desync (e.g. a raid source that just went inactive) must
+            // never crash the storyteller tick — leave the vanilla raid untouched instead.
+            return PassThrough(
+                $"Living World raid reservation failed safely ({ex.Message}); vanilla raid left untouched.");
+        }
 
         if (reservation.Status != RaidPopulationAllocationStatus.Success || reservation.ReservedCombatants <= 0)
         {
