@@ -56,9 +56,20 @@ public static class VanillaRaidInterceptor
         var armyName = request.ArmyName.StartsWith("Vanilla raid", StringComparison.OrdinalIgnoreCase)
             ? request.ArmyName
             : $"Vanilla raid: {request.ArmyName}";
-        var reservation = RaidPopulationAllocator.ReserveForRaid(
-            state,
-            new RaidPopulationAllocationRequest(request.FactionId, armyName, requested));
+        RaidPopulationAllocationResult reservation;
+        try
+        {
+            reservation = RaidPopulationAllocator.ReserveForRaid(
+                state,
+                new RaidPopulationAllocationRequest(request.FactionId, armyName, requested));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Defense in depth: a residual ledger desync (e.g. a raid source that just went inactive) must
+            // never crash the storyteller tick — leave the vanilla raid untouched instead.
+            return PassThrough(
+                $"Living World raid reservation failed safely ({ex.Message}); vanilla raid left untouched.");
+        }
 
         if (reservation.Status != RaidPopulationAllocationStatus.Success || reservation.ReservedCombatants <= 0)
         {

@@ -20,29 +20,19 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         {
             foreach (var map in maps)
             {
-                try
-                {
-                    cleaned += CleanMap(map);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning($"[LivingWorld] Orphan-reference repair skipped safely for map {map?.uniqueID}: {ex.GetType().Name}: {ex.Message}");
-                }
+                cleaned += CleanMap(map);
             }
         }
 
-        // World pawns (colonists away in a caravan, world settlement pawns) also hold
-        // reciprocal DirectPawnRelations whose otherPawn can dangle. CleanMap only scans
-        // map pawns, so scan the world-pawn pool once here — before a save flushes them all.
-        // Not gated on maps existing: world pawns must be swept regardless.
-        try
-        {
-            cleaned += CleanOrphanedDirectPawnRelationsForWorldPawns();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning($"[LivingWorld] World-pawn orphan-reference repair skipped safely: {ex.GetType().Name}: {ex.Message}");
-        }
+        // World pawns (world settlement pawns, quest pawns) also hold reciprocal DirectPawnRelations whose
+        // otherPawn can dangle. CleanMap only scans map pawns, so sweep the world-pawn pool once here —
+        // before a save flushes them all. Not gated on maps existing: world pawns must be swept regardless.
+        cleaned += CleanOrphanedDirectPawnRelationsForWorldPawns();
+
+        // Caravan pawns (colonists away in a caravan) are deep-saved in Caravan.pawns and are in NEITHER
+        // map.mapPawns NOR Find.WorldPawns, so the two sweeps above miss them entirely. Scan them too, or a
+        // caravan colonist's relation to a discarded pawn dangles into the save.
+        cleaned += CleanOrphanedDirectPawnRelationsForCaravans();
 
         return cleaned;
     }
@@ -96,6 +86,23 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         // AllPawnsAliveOrDead covers pawns that are saved but not on any map — the exact
         // holders of orphaned relations that map-only scans miss.
         return CleanOrphanedDirectPawnRelations(Find.WorldPawns?.AllPawnsAliveOrDead);
+    }
+
+    private static int CleanOrphanedDirectPawnRelationsForCaravans()
+    {
+        var caravans = Find.WorldObjects?.Caravans;
+        if (caravans == null || caravans.Count == 0)
+        {
+            return 0;
+        }
+
+        var cleaned = 0;
+        foreach (var caravan in caravans.ToList())
+        {
+            cleaned += CleanOrphanedDirectPawnRelations(caravan?.PawnsListForReading);
+        }
+
+        return cleaned;
     }
 
     private static int CleanOrphanedDirectPawnRelations(IEnumerable<Pawn>? pawns)
@@ -179,7 +186,7 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
                 // saved elsewhere (caravan, world pawn, another map, a settlement visit) is a
                 // legitimate lord member: removing it out-of-band here bypasses vanilla's
                 // Lord.Notify_PawnLost/duty teardown and desyncs the lord, which later logs
-                // "Lord lost pawn X it didn't have. Condition=ChangedFaction/LeftVoluntarily".
+                // "Lord lost pawn X it didn't have. Condition=LeftVoluntarily".
                 if (IsPawnSavedAnywhere(pawn))
                 {
                     continue;
@@ -196,11 +203,9 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
     // Heal the pawn side of a broken lord backlink. Pawn.lord is a direct field; vanilla only clears it
     // inside Lord.RemovePawn, which runs solely when the lord's ownedPawns still contains the pawn. If the
     // pawn was pruned from ownedPawns out-of-band (our historic over-aggressive cleaner) or the lord self-
-    // disposed, Pawn.lord dangles: GetLord() keeps returning a dead lord. On a faction change vanilla
-    // Pawn.SetFaction then calls that lord's Notify_PawnLost, which logs "Lord lost pawn X it didn't have.
-    // Condition=ChangedFaction" (it never owned the pawn) and skips the teardown, so the pawn keeps a
-    // non-null Pawn.lord with a null duty and its duty ThinkNodes spam "X doing ThinkNode_DutyConstant with
-    // no duty" every tick. Clear the pawn side exactly as Lord.RemovePawn does (lord + duty).
+    // disposed, Pawn.lord dangles: GetLord() keeps returning a dead lord, so ThinkNode_JoinVoluntarilyJoinable
+    // spams "Lord lost pawn X it didn't have. Condition=LeftVoluntarily" every tick, and the pawn saves an
+    // un-deep-saved "lord" reference. Clear the pawn side exactly as Lord.RemovePawn does (lord + duty).
     private static int CleanDesyncedPawnLordBacklinks(Map map)
     {
         var pawns = map.mapPawns?.AllPawns;
