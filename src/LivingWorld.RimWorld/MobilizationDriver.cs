@@ -410,6 +410,15 @@ public sealed class MobilizationDriver
 
             case MobPhase.Wake:
                 RestUtility.WakeUp(pawn, startNewJob: false);
+                // Keep them up. A bare WakeUp lets an off-shift/exhausted pawn crawl straight back into bed
+                // before the next 250-tick recheck, so the machine just re-Wakes forever and the pawn never
+                // equips or fights (observed live: "Тиберий -> Wake" every recheck). Drafting holds them awake
+                // and in place; equipping still works (it is issued as an ordered job), and stand-down undrafts.
+                if (pawn.drafter != null)
+                {
+                    pawn.drafter.Drafted = true;
+                    draftedByUs.Add(pawn);
+                }
                 break;
 
             case MobPhase.SetCombatPolicy:
