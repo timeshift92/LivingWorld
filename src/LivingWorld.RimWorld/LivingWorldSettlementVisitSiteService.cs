@@ -100,8 +100,9 @@ public static class LivingWorldSettlementVisitSiteService
             .FirstOrDefault(candidate =>
                 candidate != null
                 && !candidate.Destroyed
-                && (candidate.SettlementId == settlementId
-                    || candidate.SourceSettlementWorldObjectId == sourceSettlement.ID));
+                && candidate.SettlementId == settlementId
+                && (candidate.SourceSettlementWorldObjectId == sourceSettlement.ID
+                    || !candidate.HasMap));
 
         return site != null;
     }

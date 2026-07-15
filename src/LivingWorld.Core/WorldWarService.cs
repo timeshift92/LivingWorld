@@ -61,6 +61,7 @@ public static class WorldWarService
         state.AdvanceToTick(request.Tick);
 
         WorldTrafficPolicy.ReconcileExcessMissions(state);
+        WorldTrafficPolicy.ReconcileExcessCaravans(state);
         ArmyInterceptionService.SimulateDay(state, new ArmyInterceptionRequest(request.Tick));
         TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(request.Tick));
         ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(request.Tick));

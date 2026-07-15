@@ -52,7 +52,12 @@ public static class LivingWorldSettlementVisitMapEntryService
 
             var mapComponent = LivingWorldSettlementVisitMapComponent.For(map);
             mapComponent?.ConfigureFrom(visitSite);
-            LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, visitSite);
+            if (mapComponent?.Lifecycle == LivingWorldMapMaterializationLifecycle.None)
+            {
+                // GenerateMap normally materializes through Harmony. This is only a fail-safe for
+                // an integration that skipped that postfix, never a second materialization pass.
+                LivingWorldSettlementMapMaterializationService.MaterializeSettlementMap(map, visitSite);
+            }
             mapComponent = LivingWorldSettlementVisitMapComponent.For(map);
             if (mapComponent?.IsPlayable != true)
             {
@@ -115,8 +120,12 @@ public static class LivingWorldSettlementVisitMapEntryService
         catch (Exception exception)
         {
             Log.Error($"[LivingWorld] Could not enter settlement '{visitSite.Label}' with caravan '{caravanLabel}': {exception}");
+            var caravanPawnIds = caravanPawns.Select(pawn => pawn.thingIDNumber).ToHashSet();
             var enteredPlayerPawns = map?.mapPawns.PawnsInFaction(Faction.OfPlayer)
-                .Where(pawn => pawn != null && pawn.Spawned && !pawn.Dead)
+                .Where(pawn => pawn != null
+                    && caravanPawnIds.Contains(pawn.thingIDNumber)
+                    && pawn.Spawned
+                    && !pawn.Dead)
                 .ToList() ?? new List<Pawn>();
             if (map != null && enteredPlayerPawns.Count > 0)
             {

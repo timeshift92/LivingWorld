@@ -8,9 +8,9 @@ public sealed record WorldMissionRequest(int Tick);
 public sealed record WorldMissionResult(int ScoutingArrivals, int DiplomaticArrivals);
 
 /// <summary>
-/// Advances in-transit world-war missions and applies their effect on arrival: a scout records intel
-/// about the target, a diplomat improves relations. Arrived missions are removed immediately (they
-/// carry nothing to conserve). Mirrors <see cref="ArmyMovementService"/>/<see cref="CaravanMovementService"/>.
+/// Advances in-transit world-war missions. Diplomacy applies at the target; scout observations only
+/// become faction knowledge after the physical scout returns. Mirrors
+/// <see cref="ArmyMovementService"/>/<see cref="CaravanMovementService"/>.
 /// </summary>
 public static class WorldMissionService
 {
@@ -43,7 +43,15 @@ public static class WorldMissionService
             {
                 if (request.Tick >= mission.ReturnArrivalTick)
                 {
-                    state.CompleteMissionReturn(mission.Id);
+                    var completed = state.CompleteMissionReturn(mission.Id);
+                    if (completed.Status == WorldMissionStatus.Arrived
+                        && completed.Kind == WorldMissionKind.Scout
+                        && completed.ReportCollected)
+                    {
+                        PublishScoutReport(state, completed, request.Tick);
+                        state.MarkMissionEffectApplied(completed.Id);
+                        scouting++;
+                    }
                 }
 
                 continue;
@@ -95,19 +103,11 @@ public static class WorldMissionService
                     if (mission.TargetsPlayerContact)
                     {
                         var playerEndpoint = state.PlayerContactEndpoint!;
-                        var playerSummary =
-                            $"Scouts from {mission.OriginSettlementId} confirmed a {playerEndpoint.ValueBand} player colony opportunity.";
-                        state.RecordRaidIntelFact(
-                            IntelSourceKind.Scout,
-                            mission.FactionId,
-                            RaidIntelTargetKind.PlayerColony,
-                            playerEndpoint.StableKey,
+                        state.CollectScoutReport(
+                            mission.Id,
                             playerEndpoint.ValueBand,
-                            PlayerScoutIntelConfidence,
-                            PlayerScoutIntelLifetimeTicks,
                             Math.Max(1, Math.Min(100, playerEndpoint.CombatantDemand)),
-                            playerSummary);
-                        scouting++;
+                            playerEndpoint.StableKey);
                         break;
                     }
 
@@ -117,21 +117,7 @@ public static class WorldMissionService
                         continue;
                     }
 
-                    var summary = $"Scouts from {mission.OriginSettlementId} surveyed {mission.TargetSettlementId}.";
-                    state.RecordIntelReport(IntelSourceKind.Scout, mission.FactionId, Math.Max(1, mission.Amount), summary);
-                    state.RecordFactionSettlementIntel(
-                        mission.FactionId,
-                        mission.TargetSettlementId.Value,
-                        IntelSourceKind.Scout,
-                        request.Tick,
-                        Math.Max(1, Math.Min(100, mission.Amount)));
-                    // NPC scouts inform their own faction ledger. They must not grant the player
-                    // omniscient knowledge merely because the mission exists in the simulation.
-                    if (state.IsPlayerFaction(mission.FactionId))
-                    {
-                        PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId.Value, summary);
-                    }
-                    scouting++;
+                    state.CollectScoutReport(mission.Id);
                     break;
 
                 case WorldMissionKind.Diplomat:
@@ -158,9 +144,55 @@ public static class WorldMissionService
                     break;
             }
 
-            state.SetMissionPhase(mission.Id, WorldTransitPhase.Returning, effectApplied: true);
+            state.SetMissionPhase(
+                mission.Id,
+                WorldTransitPhase.Returning,
+                effectApplied: mission.Kind == WorldMissionKind.Diplomat);
         }
 
         return new WorldMissionResult(scouting, diplomatic);
+    }
+
+    private static void PublishScoutReport(WorldState state, WorldMission mission, int tick)
+    {
+        if (mission.TargetsPlayerContact)
+        {
+            var targetKey = string.IsNullOrWhiteSpace(mission.ReportedTargetKey)
+                ? mission.TargetContactKey
+                : mission.ReportedTargetKey;
+            var playerSummary =
+                $"Scouts from {mission.OriginSettlementId} returned with a {mission.ReportedValueBand} player colony report.";
+            state.RecordRaidIntelFact(
+                IntelSourceKind.Scout,
+                mission.FactionId,
+                RaidIntelTargetKind.PlayerColony,
+                targetKey,
+                mission.ReportedValueBand,
+                PlayerScoutIntelConfidence,
+                PlayerScoutIntelLifetimeTicks,
+                Math.Max(1, Math.Min(100, mission.ReportedCombatantDemand)),
+                playerSummary);
+            return;
+        }
+
+        if (!mission.TargetSettlementId.HasValue)
+        {
+            return;
+        }
+
+        var summary = $"Scouts from {mission.OriginSettlementId} returned after surveying {mission.TargetSettlementId}.";
+        state.RecordIntelReport(IntelSourceKind.Scout, mission.FactionId, Math.Max(1, mission.Amount), summary);
+        state.RecordFactionSettlementIntel(
+            mission.FactionId,
+            mission.TargetSettlementId.Value,
+            IntelSourceKind.Scout,
+            tick,
+            Math.Max(1, Math.Min(100, mission.Amount)));
+        // NPC scouts inform their own faction ledger. They must not grant the player
+        // omniscient knowledge merely because the mission exists in the simulation.
+        if (state.IsPlayerFaction(mission.FactionId))
+        {
+            PlayerKnowledgeService.RecordScoutSettlementInfo(state, mission.TargetSettlementId.Value, summary);
+        }
     }
 }

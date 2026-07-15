@@ -64,7 +64,8 @@ public static class MigrationService
             var candidates = state.GetCitizensBySettlement(settlement.Id)
                 .Where(citizen =>
                     citizen.Status == CitizenStatus.Alive
-                    && state.GetOwner(citizen.Id) == settlement.Id)
+                    && state.GetOwner(citizen.Id) == settlement.Id
+                    && !state.HasActiveMaterializationLease(citizen.Id))
                 .OrderBy(citizen => citizen.IsChild ? 0 : 1)
                 .ThenBy(citizen => citizen.Id.Value)
                 .Take(maxPerSettlement)

@@ -33,6 +33,8 @@ public sealed record MaterializationLease(
     MaterializationLeaseLifecycle Lifecycle,
     int? PawnThingId)
 {
+    public string ReturnFactionId { get; init; } = string.Empty;
+
     public bool IsActive => Lifecycle is MaterializationLeaseLifecycle.Reserved or MaterializationLeaseLifecycle.Materialized;
 
     public MaterializationLease BindPawn(int pawnThingId)

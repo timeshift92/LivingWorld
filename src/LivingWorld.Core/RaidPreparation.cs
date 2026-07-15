@@ -69,7 +69,8 @@ public static class RaidPreparationService
                 $"Prepared raid: {request.Intent.FactionId}",
                 desiredCombatants,
                 request.SupplyResourceKey,
-                Math.Max(0, request.SupplyPerCombatant)));
+                Math.Max(0, request.SupplyPerCombatant),
+                RequireExactCombatants: true));
 
         if (allocation.Status != RaidPopulationAllocationStatus.Success || allocation.Army == null || allocation.SourceSettlement == null)
         {

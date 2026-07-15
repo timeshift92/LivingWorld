@@ -67,7 +67,8 @@ public static class RaidPlanner
                 citizen.SettlementId == request.SourceSettlementId
                 && citizen.Status == CitizenStatus.Alive
                 && citizen.IsAdult
-                && state.GetOwner(citizen.Id) == request.SourceSettlementId)
+                && state.GetOwner(citizen.Id) == request.SourceSettlementId
+                && !state.HasActiveMaterializationLease(citizen.Id))
             .OrderBy(citizen => citizen.Id.Value)
             .Take(request.Combatants)
             .ToList();

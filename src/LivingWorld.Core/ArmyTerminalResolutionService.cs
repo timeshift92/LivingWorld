@@ -82,6 +82,24 @@ public static class ArmyTerminalResolutionService
         }
     }
 
+    public static int LoseCargo(WorldState state, EntityId armyId, string reason)
+    {
+        var lost = 0;
+        foreach (var resource in state.ResourcesForOwner(armyId).ToList())
+        {
+            var consumed = state.ConsumeResource(armyId, resource.ResourceKey, resource.Quantity, reason);
+            if (consumed != resource.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Army {armyId} lost {consumed}/{resource.Quantity} {resource.ResourceKey}.");
+            }
+
+            lost += consumed;
+        }
+
+        return lost;
+    }
+
     private static void TransferArmyAssets(WorldState state, EntityId armyId, EntityId destinationId, string reason)
     {
         foreach (var citizen in state.GetCitizensOwnedBy(armyId)

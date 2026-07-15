@@ -20,9 +20,20 @@ internal static class MaterializationLeaseResourceReturnService
         var returned = new List<ResourceStack>(resources.Count);
         foreach (var resource in resources)
         {
+            if (!returnOwnerId.HasValue)
+            {
+                ResourceLedgerService.ConsumeResource(
+                    state,
+                    lease.Id,
+                    resource.ResourceKey,
+                    resource.Quantity,
+                    $"{reason}; no same-faction return settlement survived");
+                continue;
+            }
+
             var transfer = state.TransferResource(
                 lease.Id,
-                returnOwnerId,
+                returnOwnerId.Value,
                 resource.ResourceKey,
                 resource.Quantity,
                 reason);
@@ -32,25 +43,30 @@ internal static class MaterializationLeaseResourceReturnService
                     $"Could not return {resource.Quantity} {resource.ResourceKey} from materialization lease {lease.Id}: {transfer.Reason}");
             }
 
-            returned.Add(new ResourceStack(returnOwnerId, resource.ResourceKey, resource.Quantity));
+            returned.Add(new ResourceStack(returnOwnerId.Value, resource.ResourceKey, resource.Quantity));
         }
 
         return returned;
     }
 
-    private static EntityId ResolveReturnOwner(WorldState state, MaterializationLease lease)
+    private static EntityId? ResolveReturnOwner(WorldState state, MaterializationLease lease)
     {
+        if (!string.IsNullOrWhiteSpace(lease.ReturnFactionId))
+        {
+            return FactionReturnService.Resolve(state, lease.ReturnFactionId, lease.ReturnOwnerId)?.Id;
+        }
+
+        // Legacy saves predate ReturnFactionId. Preserve their previous behavior when the
+        // original owner still exists; all newly-created leases use faction-safe routing.
         if (state.OwnerExistsForLedger(lease.ReturnOwnerId))
         {
             return lease.ReturnOwnerId;
         }
-
         if (state.OwnerExistsForLedger(lease.SourceOwnerId))
         {
             return lease.SourceOwnerId;
         }
 
-        throw new InvalidOperationException(
-            $"Materialization lease {lease.Id} has no valid return owner; resources remain owned by the active lease.");
+        return null;
     }
 }

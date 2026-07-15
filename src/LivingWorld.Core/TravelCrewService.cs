@@ -9,7 +9,8 @@ internal static class TravelCrewService
                 citizen.Status == CitizenStatus.Alive
                 && citizen.IsAdult
                 && citizen.SettlementId == sourceSettlementId
-                && state.GetOwner(citizen.Id) == sourceSettlementId)
+                && state.GetOwner(citizen.Id) == sourceSettlementId
+                && !state.HasActiveMaterializationLease(citizen.Id))
             .OrderBy(citizen => citizen.Id.Value)
             .FirstOrDefault();
     }
@@ -30,7 +31,8 @@ internal static class TravelCrewService
         if (citizen == null
             || citizen.Status != CitizenStatus.Alive
             || !citizen.IsAdult
-            || state.GetOwner(citizen.Id) != sourceSettlementId)
+            || state.GetOwner(citizen.Id) != sourceSettlementId
+            || state.HasActiveMaterializationLease(citizen.Id))
         {
             return false;
         }
@@ -43,6 +45,7 @@ internal static class TravelCrewService
         WorldState state,
         EntityId travelOwnerId,
         EntityId returnSettlementId,
+        string factionId,
         EntityId? crewCitizenId,
         string reason)
     {
@@ -57,15 +60,24 @@ internal static class TravelCrewService
             return;
         }
 
-        var transfer = state.TransferAsset(citizen.Id, travelOwnerId, returnSettlementId, reason);
+        var destination = FactionReturnService.Resolve(state, factionId, returnSettlementId);
+        if (destination == null)
+        {
+            state.SetOwnerForLedger(citizen.Id, citizen.Id);
+            state.ReplaceCitizenForSimulation(citizen with { Status = CitizenStatus.Missing });
+            state.RecordEvent(WorldEventKind.RaidPawnMissing, citizen.Id, $"Travel crew {citizen.Id} has no valid faction settlement: {reason}.");
+            return;
+        }
+
+        var transfer = state.TransferAsset(citizen.Id, travelOwnerId, destination.Id, reason);
         if (transfer.Status != OwnershipTransferStatus.Success)
         {
             throw new InvalidOperationException(transfer.Reason);
         }
 
-        if (citizen.SettlementId != returnSettlementId)
+        if (citizen.SettlementId != destination.Id)
         {
-            state.ReplaceCitizenForSimulation(citizen with { SettlementId = returnSettlementId });
+            state.ReplaceCitizenForSimulation(citizen with { SettlementId = destination.Id });
         }
     }
 
@@ -73,6 +85,7 @@ internal static class TravelCrewService
         WorldState state,
         EntityId travelOwnerId,
         EntityId returnSettlementId,
+        string factionId,
         EntityId? crewCitizenId,
         string reason)
     {
@@ -87,17 +100,26 @@ internal static class TravelCrewService
             return;
         }
 
-        var transfer = state.TransferAsset(citizen.Id, travelOwnerId, returnSettlementId, reason);
-        if (transfer.Status != OwnershipTransferStatus.Success)
+        var destination = FactionReturnService.Resolve(state, factionId, returnSettlementId);
+        if (destination == null)
         {
-            throw new InvalidOperationException(transfer.Reason);
+            state.SetOwnerForLedger(citizen.Id, citizen.Id);
+            state.ReplaceCitizenForSimulation(citizen with { Status = CitizenStatus.Missing });
         }
-
-        state.ReplaceCitizenForSimulation(citizen with
+        else
         {
-            SettlementId = returnSettlementId,
-            Status = CitizenStatus.Missing
-        });
+            var transfer = state.TransferAsset(citizen.Id, travelOwnerId, destination.Id, reason);
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+
+            state.ReplaceCitizenForSimulation(citizen with
+            {
+                SettlementId = destination.Id,
+                Status = CitizenStatus.Missing
+            });
+        }
         state.RecordEvent(WorldEventKind.RaidPawnMissing, citizen.Id, $"Travel crew {citizen.Id} missing: {reason}.");
     }
 }

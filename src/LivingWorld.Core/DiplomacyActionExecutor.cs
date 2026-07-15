@@ -17,6 +17,11 @@ internal static class DiplomacyActionExecutor
                 targetFaction == null ? "no known diplomatic target faction" : "diplomatic request has no source or effect");
         }
 
+        if (state.GetSpecialistPool(source.Id) is not { Diplomats: > 0 })
+        {
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoCrew, "source settlement has no diplomat specialist");
+        }
+
         var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
         if (crew == null)
         {

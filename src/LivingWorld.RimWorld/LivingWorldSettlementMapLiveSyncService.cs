@@ -15,6 +15,35 @@ namespace LivingWorld.RimWorld;
 /// </summary>
 internal static class LivingWorldSettlementMapLiveSyncService
 {
+    public static bool CheckpointWarehouseForWorldSimulation(
+        Map map,
+        LivingWorldSettlementVisitMapComponent mapComponent)
+    {
+        var worldComponent = LivingWorldWorldComponent.Instance;
+        var settlementId = mapComponent?.SettlementId;
+        if (worldComponent == null
+            || map == null
+            || mapComponent == null
+            || !settlementId.HasValue
+            || mapComponent.Lifecycle != LivingWorldMapMaterializationLifecycle.Materialized)
+        {
+            return false;
+        }
+
+        var settlement = worldComponent.State.GetSettlement(settlementId.Value);
+        if (settlement is not { IsActive: true })
+        {
+            return false;
+        }
+
+        LivingWorldSettlementMapResourceTracker.ReconcileMap(
+            worldComponent.State,
+            map,
+            "loaded settlement daily ledger checkpoint");
+        mapComponent.RefreshWarehouseMaterializedCounts();
+        return true;
+    }
+
     public static void Sync(Map map, LivingWorldSettlementVisitMapComponent mapComponent, int tick)
     {
         var worldComponent = LivingWorldWorldComponent.Instance;
@@ -35,6 +64,7 @@ internal static class LivingWorldSettlementMapLiveSyncService
         try
         {
             SyncResidents(state, map, mapComponent, settlementId.Value, faction);
+            SyncAnimalBirths(map, mapComponent, faction);
             SyncWarehouse(state, map, mapComponent, settlementId.Value);
             ApplyPeacefulSchedules(state, map, mapComponent, tick);
             mapComponent.RefreshMaterializedPopulation();
@@ -106,6 +136,8 @@ internal static class LivingWorldSettlementMapLiveSyncService
             }
         }
 
+        ReleaseLostResidentLeases(state, map, mapComponent.PurposeKey);
+
         var prepared = SettlementResidentMaterializationService.PrepareResidents(
             state,
             new SettlementResidentMaterializationRequest(
@@ -123,6 +155,79 @@ internal static class LivingWorldSettlementMapLiveSyncService
         }
 
         SettlementResidentMaterializationService.ReleaseUnmaterialized(state, mapComponent.PurposeKey);
+    }
+
+    private static void ReleaseLostResidentLeases(WorldState state, Map map, string purposeKey)
+    {
+        var mappedPawnIds = map.mapPawns.AllPawns
+            .Where(pawn => pawn != null)
+            .Select(pawn => pawn.thingIDNumber)
+            .ToHashSet();
+        var worldPawnIds = (Find.WorldPawns?.AllPawnsAliveOrDead?.Cast<Pawn>() ?? Enumerable.Empty<Pawn>())
+            .Where(pawn => pawn != null)
+            .Select(pawn => pawn.thingIDNumber)
+            .ToHashSet();
+        var lost = state.MaterializationLeases
+            .Where(lease =>
+                lease.IsActive
+                && lease.Lifecycle == MaterializationLeaseLifecycle.Materialized
+                && lease.PawnThingId.HasValue
+                && string.Equals(lease.PurposeKey, purposeKey, StringComparison.Ordinal)
+                && !mappedPawnIds.Contains(lease.PawnThingId.Value)
+                && !worldPawnIds.Contains(lease.PawnThingId.Value))
+            .OrderBy(lease => lease.Id.Value)
+            .ToList();
+        foreach (var lease in lost)
+        {
+            MaterializationLeaseService.Release(
+                state,
+                lease.Id,
+                "loaded settlement could not find the materialized resident pawn");
+        }
+    }
+
+    private static void SyncAnimalBirths(
+        Map map,
+        LivingWorldSettlementVisitMapComponent mapComponent,
+        Faction faction)
+    {
+        var trackedByPawnId = mapComponent.Animals.ToDictionary(animal => animal.PawnThingId);
+        if (trackedByPawnId.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var pawn in map.mapPawns.AllPawnsSpawned
+            .Where(pawn => pawn != null
+                && !pawn.Dead
+                && pawn.RaceProps?.Animal == true
+                && pawn.Faction == faction
+                && !trackedByPawnId.ContainsKey(pawn.thingIDNumber))
+            .OrderBy(pawn => pawn.thingIDNumber))
+        {
+            var parent = pawn.relations?.DirectRelations
+                .Where(relation => relation.def == PawnRelationDefOf.Parent && relation.otherPawn != null)
+                .Select(relation => relation.otherPawn)
+                .FirstOrDefault(candidate => trackedByPawnId.ContainsKey(candidate.thingIDNumber));
+            if (parent == null
+                || !trackedByPawnId.TryGetValue(parent.thingIDNumber, out var parentRecord)
+                || !string.Equals(parentRecord.AnimalKind, pawn.kindDef?.defName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var newborn = new MaterializedAnimalStack(
+                parentRecord.CohortId,
+                parentRecord.AnimalKind,
+                parentRecord.Type,
+                Count: 1);
+            LivingWorldAnimalMapPawnTracker.Track(pawn, newborn);
+            trackedByPawnId[pawn.thingIDNumber] = new LivingWorldTrackedMapAnimal(
+                pawn.thingIDNumber,
+                newborn.CohortId.Value,
+                newborn.AnimalKind,
+                (int)newborn.Type);
+        }
     }
 
     private static void SyncWarehouse(

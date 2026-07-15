@@ -118,6 +118,11 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             return false;
         }
 
+        if (Lifecycle == LivingWorldMapMaterializationLifecycle.Failed && rollbackPending)
+        {
+            return false;
+        }
+
         settlementIdValue = settlementId.Kind == EntityKind.Settlement ? settlementId.Value : 0L;
         purposeKey = sessionPurposeKey ?? string.Empty;
         failureReason = string.Empty;

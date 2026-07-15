@@ -57,8 +57,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private List<long> processedDiplomaticArrivalMissionIds = new();
     private List<PendingApproachingRaid> approachingRaids = new();
     private int nextApproachRaidId;
-    private List<PendingPlayerReconnaissance> playerReconnaissance = new();
-    private int nextPlayerReconnaissanceId;
     private List<MechClusterNode> mechClusters = new();
     private int nextMechClusterId;
     private List<int> mechClusterSiteNodeIds = new();
@@ -180,7 +178,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         RepairMissingProductionProfilesFromRimWorldSettlements();
         MigrateEconomicDiversityForLegacySave();
         MigrateVisibleDynamicsForLegacySave();
-        var releasedTraffic = WorldTrafficPolicy.ReconcileExcessMissions(State);
+        var releasedTraffic = WorldTrafficPolicy.ReconcileExcessMissions(State)
+            + WorldTrafficPolicy.ReconcileExcessCaravans(State);
         if (releasedTraffic > 0 && LivingWorldMod.Settings?.debugLogging == true)
         {
             Log.Message($"[LivingWorld] Released {releasedTraffic} excess legacy world mission(s) during load.");
@@ -193,7 +192,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         LivingWorldDrifterFoundingWorldBridge.SyncMarkers(State);
         EnsureRuinSites();
         SyncApproachingRaidMarkers();
-        SyncPlayerReconnaissanceMarkers();
         EnsureMechClusterSites();
         SyncMechClusterMarkers();
         SyncApproachingGroupMarkers();
@@ -219,7 +217,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // Materialize any travelling raids that have reached the colony — every tick, ahead of the
         // daily-simulation gate below, so arrival lands on time rather than on the next day rollover.
         ProcessApproachingRaidArrivals(Find.TickManager?.TicksGame ?? 0);
-        ProcessPlayerReconnaissanceArrivals(Find.TickManager?.TicksGame ?? 0);
+        ProcessPlayerContactScoutDetection(Find.TickManager?.TicksGame ?? 0);
         ProcessApproachingGroupArrivals(Find.TickManager?.TicksGame ?? 0);
 
         var currentTick = Find.TickManager?.TicksGame ?? 0;
@@ -246,6 +244,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         while (lastSimulatedDay < currentDay && simulatedDays < MaxCatchUpSimulationDays)
         {
             var nextDay = lastSimulatedDay + 1;
+            var checkpointedSettlementMaps = CheckpointLoadedSettlementWarehouses();
             try
             {
                 SimulateWorldDay(nextDay);
@@ -263,6 +262,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 Log.Error(
                     $"[LivingWorld] Daily simulation day {nextDay} failed; the watermark was not advanced and the day will be retried: {ex}");
                 break;
+            }
+            finally
+            {
+                RematerializeLoadedSettlementWarehouses(checkpointedSettlementMaps, nextDay * TicksPerDay);
             }
         }
 
@@ -361,6 +364,44 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             offeredConflicts.Add(conflict.Id.Value);
             SendAllianceOffer(offerDef, mission.FactionId, enemy);
             return; // One offer per catch-up, never a flood.
+        }
+    }
+
+    private static List<(Map Map, LivingWorldSettlementVisitMapComponent Component)> CheckpointLoadedSettlementWarehouses()
+    {
+        var checkpointed = new List<(Map, LivingWorldSettlementVisitMapComponent)>();
+        foreach (var map in Find.Maps.OrderBy(candidate => candidate.uniqueID))
+        {
+            var component = LivingWorldSettlementVisitMapComponent.For(map);
+            if (component == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                if (LivingWorldSettlementMapLiveSyncService.CheckpointWarehouseForWorldSimulation(map, component))
+                {
+                    checkpointed.Add((map, component));
+                }
+            }
+            catch (Exception error)
+            {
+                Log.Error($"[LivingWorld] Could not checkpoint loaded settlement warehouse before daily simulation: {error}");
+                throw;
+            }
+        }
+
+        return checkpointed;
+    }
+
+    private static void RematerializeLoadedSettlementWarehouses(
+        IReadOnlyList<(Map Map, LivingWorldSettlementVisitMapComponent Component)> checkpointed,
+        int tick)
+    {
+        foreach (var entry in checkpointed)
+        {
+            LivingWorldSettlementMapLiveSyncService.Sync(entry.Map, entry.Component, tick);
         }
     }
 
@@ -816,8 +857,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 });
         }
 
-        LaunchPlayerReconnaissance(day * TicksPerDay);
-
         // Faction extinction, then its physical consequences: collapsed non-player settlements
         // become ruins, starving non-player settlements relocate to a stable sibling, and stale
         // ruins are pruned. ResolveFactionCollapses folds the collapse pass into the driver (same
@@ -1037,11 +1076,15 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .FirstOrDefault();
         if (playerSettlement != null)
         {
+            var valueBand = ResolvePlayerContactValueBand(playerSettlement.Map);
+            var combatantDemand = ResolvePlayerContactCombatantDemand(playerSettlement.Map, valueBand);
             State.SetPlayerContactEndpoint(
                 playerFactionId!,
                 $"worldtile:{playerSettlement.Tile}",
                 isAvailable: true,
-                tick);
+                tick,
+                valueBand,
+                combatantDemand);
             return;
         }
 
@@ -1051,8 +1094,36 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 playerFactionId!,
                 existing.StableKey,
                 isAvailable: false,
-                tick);
+                tick,
+                existing.ValueBand,
+                existing.CombatantDemand);
         }
+    }
+
+    private static RaidIntelValueBand ResolvePlayerContactValueBand(Map? map)
+    {
+        var wealth = Math.Max(0f, map?.wealthWatcher?.WealthTotal ?? 0f);
+        return wealth >= 250_000f
+            ? RaidIntelValueBand.Extreme
+            : wealth >= 100_000f
+                ? RaidIntelValueBand.High
+                : wealth >= 30_000f
+                    ? RaidIntelValueBand.Moderate
+                    : RaidIntelValueBand.Low;
+    }
+
+    private static int ResolvePlayerContactCombatantDemand(Map? map, RaidIntelValueBand valueBand)
+    {
+        var baseDemand = valueBand switch
+        {
+            RaidIntelValueBand.Extreme => 10,
+            RaidIntelValueBand.High => 7,
+            RaidIntelValueBand.Moderate => 4,
+            _ => 2,
+        };
+        var defenders = map?.mapPawns?.FreeColonistsSpawnedCount ?? 0;
+        var defenseBand = defenders >= 12 ? 3 : defenders >= 8 ? 2 : defenders >= 4 ? 1 : 0;
+        return Math.Min(12, baseDemand + defenseBand);
     }
 
     private bool IsConflictKnownToPlayer(WorldConflict conflict)
@@ -1800,221 +1871,46 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Cancelled,
     }
 
-    private void LaunchPlayerReconnaissance(int tick)
+    private void ProcessPlayerContactScoutDetection(int tick)
     {
-        if (RimWarIsActive || tick <= 0 || (tick / TicksPerDay) % 4 != 1)
+        var endpoint = State.PlayerContactEndpoint;
+        if (endpoint?.IsAvailable != true
+            || !TryParseWorldTileStableKey(endpoint.StableKey, out var contactTile))
         {
             return;
         }
 
-        var map = Find.Maps?.Where(candidate => candidate.IsPlayerHome)
-            .OrderBy(candidate => (int)candidate.Tile)
+        var map = Find.Maps?.FirstOrDefault(candidate =>
+            candidate.IsPlayerHome && (int)candidate.Tile == contactTile);
+        var mission = State.Missions
+            .Where(candidate => candidate.Status == WorldMissionStatus.Traveling
+                && candidate.Kind == WorldMissionKind.Scout
+                && candidate.TargetsPlayerContact
+                && candidate.Phase == WorldTransitPhase.AtTarget
+                && !candidate.EffectApplied)
+            .OrderBy(candidate => candidate.Id.Value)
             .FirstOrDefault();
-        if (map == null)
+        if (map == null || mission == null || !IsPlayerScoutDetected(mission, map))
         {
             return;
         }
 
-        var activeFacts = new HashSet<string>(
-            State.RaidIntelFacts
-                .Where(fact => fact.TargetKind == RaidIntelTargetKind.PlayerColony && !fact.IsExpired(tick))
-                .Select(fact => fact.FactionId),
-            StringComparer.Ordinal);
-        var pendingFactions = new HashSet<string>(
-            playerReconnaissance.Select(scout => scout.FactionDefName),
-            StringComparer.Ordinal);
-        var source = State.Settlements
-            .Where(settlement => settlement.IsActive && SettlementSlug.ParseTile(settlement.Slug) >= 0)
-            .Where(settlement => !activeFacts.Contains(settlement.FactionId))
-            .Where(settlement => !pendingFactions.Contains(settlement.FactionId))
-            .Where(settlement =>
-            {
-                var faction = Find.FactionManager?.AllFactionsListForReading
-                    .FirstOrDefault(candidate => candidate.def?.defName == settlement.FactionId);
-                return faction?.def?.humanlikeFaction == true
-                    && faction != Faction.OfPlayer
-                    && faction.HostileTo(Faction.OfPlayer);
-            })
-            .OrderBy(settlement => settlement.Id.Value)
-            .FirstOrDefault();
-        if (source == null)
-        {
-            return;
-        }
-
-        var markerKey = $"playerscout:{nextPlayerReconnaissanceId++}";
-        var originTile = SettlementSlug.ParseTile(source.Slug);
-        var distance = Find.WorldGrid?.ApproxDistanceInTiles(originTile, map.Tile) ?? 0f;
-        var travelTicks = ApproachingRaidRuntime.TravelTicksFor(distance);
-        var leases = MaterializationLeaseService.CreateLeases(
-            State,
-            new MaterializationLeaseRequest(
-                source.Id,
-                source.Id,
-                MaterializationPurpose.ScoutingParty,
-                markerKey,
-                Count: 1,
-                LifetimeTicks: (travelTicks * 2) + TicksPerDay));
-        if (leases.Status != MaterializationLeaseStatus.Success || leases.Leases.Count != 1)
-        {
-            return;
-        }
-
-        playerReconnaissance.Add(new PendingPlayerReconnaissance
-        {
-            FactionDefName = source.FactionId,
-            SourceSettlementId = source.Id.Value,
-            LeaseId = leases.Leases[0].Id.Value,
-            OriginTile = originTile,
-            TargetTile = map.Tile,
-            DepartTick = tick,
-            ArrivalTick = tick + travelTicks,
-            MarkerKey = markerKey,
-            TargetLabel = ResolveColonyLabel(map),
-        });
-        SyncPlayerReconnaissanceMarkers();
+        State.AdvanceToTick(tick);
+        State.FailMission(mission.Id, "foreign scout was detected near the player colony");
+        Find.LetterStack?.ReceiveLetter(
+            "LW_PlayerScoutDetectedLabel".Translate(),
+            "LW_PlayerScoutDetectedText".Translate(),
+            LetterDefOf.NeutralEvent,
+            new LookTargets(map.Parent));
+        SyncArmyWorldObjects();
     }
 
-    private void ProcessPlayerReconnaissanceArrivals(int tick)
-    {
-        var arrived = playerReconnaissance
-            .Where(scout => scout.ArrivalTick <= tick)
-            .OrderBy(scout => scout.ArrivalTick)
-            .ThenBy(scout => scout.MarkerKey, StringComparer.Ordinal)
-            .ToList();
-        foreach (var scout in arrived)
-        {
-            var leaseId = EntityId.Create(EntityKind.MaterializationLease, scout.LeaseId);
-            var lease = State.GetMaterializationLease(leaseId);
-            if (lease?.IsActive != true)
-            {
-                playerReconnaissance.Remove(scout);
-                continue;
-            }
-
-            if (!scout.Returning)
-            {
-                var map = Find.Maps?.FirstOrDefault(candidate => (int)candidate.Tile == scout.TargetTile);
-                if (map != null && IsPlayerScoutDetected(scout, map))
-                {
-                    MaterializationLeaseService.Resolve(
-                        State,
-                        new MaterializationLeaseResolveRequest(
-                            lease.Id,
-                            PawnFateKind.Missing,
-                            "hostile scout was detected near the player colony"));
-                    Find.LetterStack?.ReceiveLetter(
-                        "LW_PlayerScoutDetectedLabel".Translate(),
-                        "LW_PlayerScoutDetectedText".Translate(),
-                        LetterDefOf.NeutralEvent,
-                        new LookTargets(map.Parent));
-                    playerReconnaissance.Remove(scout);
-                    continue;
-                }
-
-                if (map != null)
-                {
-                    var reportedWealth = NoisyObservedWealth(scout.MarkerKey, map.wealthWatcher?.WealthTotal ?? 0f);
-                    scout.ReportedValueBand = reportedWealth >= 250_000f
-                        ? RaidIntelValueBand.Extreme
-                        : reportedWealth >= 100_000f
-                            ? RaidIntelValueBand.High
-                            : reportedWealth >= 30_000f
-                                ? RaidIntelValueBand.Moderate
-                                : RaidIntelValueBand.Low;
-                    scout.ReportedCombatantDemand = scout.ReportedValueBand switch
-                    {
-                        RaidIntelValueBand.Extreme => 12,
-                        RaidIntelValueBand.High => 8,
-                        RaidIntelValueBand.Moderate => 4,
-                        _ => 2,
-                    };
-                    scout.HasReport = true;
-                }
-
-                var oldOrigin = scout.OriginTile;
-                scout.OriginTile = scout.TargetTile;
-                scout.TargetTile = oldOrigin;
-                scout.DepartTick = tick;
-                var distance = Find.WorldGrid?.ApproxDistanceInTiles(scout.OriginTile, scout.TargetTile) ?? 0f;
-                scout.ArrivalTick = tick + ApproachingRaidRuntime.TravelTicksFor(distance);
-                scout.Returning = true;
-                continue;
-            }
-
-            State.AdvanceToTick(tick);
-            if (scout.HasReport)
-            {
-                State.RecordRaidIntelFact(
-                    IntelSourceKind.Scout,
-                    scout.FactionDefName,
-                    RaidIntelTargetKind.PlayerColony,
-                    $"player-colony:{scout.OriginTile}",
-                    scout.ReportedValueBand,
-                    confidence: 55,
-                    lifetimeTicks: RaidIntelService.DefaultTradeIntelLifetimeTicks,
-                    combatantDemand: scout.ReportedCombatantDemand,
-                    summary: $"A scout returned and reported {scout.ReportedValueBand.ToString().ToLowerInvariant()} value.");
-            }
-            MaterializationLeaseService.Release(
-                State,
-                lease.Id,
-                scout.HasReport ? "player scout physically returned with intel" : "player scout returned without a report");
-            playerReconnaissance.Remove(scout);
-        }
-
-        if (arrived.Count > 0)
-        {
-            SyncPlayerReconnaissanceMarkers();
-        }
-    }
-
-    public bool TryInterceptPlayerScout(string markerKey)
-    {
-        var scout = playerReconnaissance.FirstOrDefault(candidate =>
-            string.Equals(candidate.MarkerKey, markerKey, StringComparison.Ordinal));
-        if (scout == null)
-        {
-            return false;
-        }
-
-        var lease = State.GetMaterializationLease(
-            EntityId.Create(EntityKind.MaterializationLease, scout.LeaseId));
-        if (lease?.IsActive != true)
-        {
-            playerReconnaissance.Remove(scout);
-            SyncPlayerReconnaissanceMarkers();
-            return false;
-        }
-
-        var result = MaterializationLeaseService.Resolve(
-            State,
-            new MaterializationLeaseResolveRequest(
-                lease.Id,
-                PawnFateKind.Missing,
-                "hostile scout intercepted by a player caravan"));
-        if (result.Status != MaterializationLeaseResolveStatus.Success)
-        {
-            return false;
-        }
-
-        playerReconnaissance.Remove(scout);
-        SyncPlayerReconnaissanceMarkers();
-        return true;
-    }
-
-    private static bool IsPlayerScoutDetected(PendingPlayerReconnaissance scout, Map map)
+    private static bool IsPlayerScoutDetected(WorldMission mission, Map map)
     {
         var defenders = map.mapPawns?.FreeColonistsSpawnedCount ?? 0;
         var wealthPressure = (int)Math.Min(30f, Math.Max(0f, map.wealthWatcher?.WealthTotal ?? 0f) / 50_000f * 5f);
         var detectionChance = Math.Min(85, 10 + (defenders * 6) + wealthPressure);
-        return StableReconRoll(scout.MarkerKey + "|detected") < detectionChance;
-    }
-
-    private static float NoisyObservedWealth(string markerKey, float actualWealth)
-    {
-        var percent = 70 + (StableReconRoll(markerKey + "|estimate") % 61);
-        return Math.Max(0f, actualWealth) * (percent / 100f);
+        return StableReconRoll($"mission:{mission.Id.Value}|detected") < detectionChance;
     }
 
     private static int StableReconRoll(string value)
@@ -2029,78 +1925,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             }
 
             return (int)(hash % 100);
-        }
-    }
-
-    private void SyncPlayerReconnaissanceMarkers()
-    {
-        var worldObjects = Find.WorldObjects;
-        if (worldObjects == null)
-        {
-            return;
-        }
-
-        var existing = worldObjects.AllWorldObjects
-            .OfType<WorldObject_LivingWorldArmy>()
-            .Where(marker => marker.MarkerKey.StartsWith("playerscout:", StringComparison.Ordinal))
-            .ToDictionary(marker => marker.MarkerKey, StringComparer.Ordinal);
-        var live = new HashSet<string>(StringComparer.Ordinal);
-        var markerDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_ArmyMarker");
-        if (markerDef != null)
-        {
-            foreach (var scout in playerReconnaissance)
-            {
-                if (scout.OriginTile < 0 || scout.TargetTile < 0)
-                {
-                    continue;
-                }
-
-                live.Add(scout.MarkerKey);
-                var faction = Find.FactionManager?.AllFactionsListForReading
-                    .FirstOrDefault(candidate => candidate.def?.defName == scout.FactionDefName);
-                var isNew = !existing.TryGetValue(scout.MarkerKey, out var marker);
-                marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
-                marker.Tile = scout.OriginTile;
-                if (faction != null)
-                {
-                    marker.SetFaction(faction);
-                }
-
-                marker.Configure(
-                    scout.MarkerKey,
-                    "World/LivingWorld_Scout",
-                    "LW_MissionKind_Scout".Translate(),
-                    scout.OriginTile,
-                    scout.TargetTile,
-                    scout.DepartTick,
-                    scout.ArrivalTick,
-                    faction?.Name ?? scout.FactionDefName,
-                    scout.Returning
-                        ? State.GetSettlement(EntityId.Create(EntityKind.Settlement, scout.SourceSettlementId))?.Name
-                            ?? "LW_UnknownDestination".Translate().ToString()
-                        : scout.TargetLabel,
-                    0,
-                    0,
-                    string.Empty,
-                    "LW_MissionReason_Scout".Translate(1.Named("amount")));
-                marker.SetStrategicVisibility(LivingWorldTransitVisibility.IsPhysicallyObservedOnly(
-                    scout.OriginTile,
-                    scout.TargetTile,
-                    scout.DepartTick,
-                    scout.ArrivalTick));
-                if (isNew)
-                {
-                    worldObjects.Add(marker);
-                }
-            }
-        }
-
-        foreach (var pair in existing)
-        {
-            if (!live.Contains(pair.Key))
-            {
-                worldObjects.Remove(pair.Value);
-            }
         }
     }
 
@@ -3581,9 +3405,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Collections.Look(ref approachingRaids, "livingWorld_approachingRaids", LookMode.Deep);
         approachingRaids ??= new List<PendingApproachingRaid>();
         Scribe_Values.Look(ref nextApproachRaidId, "livingWorld_nextApproachRaidId", 0);
-        Scribe_Collections.Look(ref playerReconnaissance, "livingWorld_playerReconnaissance", LookMode.Deep);
-        playerReconnaissance ??= new List<PendingPlayerReconnaissance>();
-        Scribe_Values.Look(ref nextPlayerReconnaissanceId, "livingWorld_nextPlayerReconnaissanceId", 0);
         Scribe_Collections.Look(ref mechClusters, "livingWorld_mechClusters", LookMode.Deep);
         mechClusters ??= new List<MechClusterNode>();
         Scribe_Values.Look(ref nextMechClusterId, "livingWorld_nextMechClusterId", 0);

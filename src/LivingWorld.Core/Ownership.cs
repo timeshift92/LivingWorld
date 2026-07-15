@@ -6,7 +6,8 @@ public enum OwnershipTransferStatus
     InvalidQuantity,
     UnknownOwner,
     OwnerMismatch,
-    InsufficientOwnedAssets
+    InsufficientOwnedAssets,
+    AssetMaterialized
 }
 
 public sealed record OwnershipTransferResult(

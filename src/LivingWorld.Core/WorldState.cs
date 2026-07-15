@@ -936,8 +936,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Caravan {caravanId} is not returning.");
         }
 
-        TransferAllResources(caravanId, caravan.SourceSettlementId, "caravan returned");
-        TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, "caravan returned");
+        ReturnCaravanAssets(caravan, "caravan returned");
         var completed = caravan with
         {
             Status = caravan.CompleteAsRecalled ? CaravanStatus.Recalled : CaravanStatus.Arrived,
@@ -968,7 +967,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Terminal caravan {caravanId} cannot be recalled.");
         }
 
-        TransferAllResources(caravanId, caravan.SourceSettlementId, reason);
+        ReturnCaravanAssets(caravan, reason);
         var recalled = caravan with
         {
             Status = CaravanStatus.Recalled,
@@ -976,7 +975,6 @@ public sealed class WorldState
             StatusTick = CurrentTick
         };
         _caravans[caravanId] = recalled;
-        TravelCrewService.ReturnCrew(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, reason);
         AppendEvent(WorldEventKind.CaravanDestroyed, caravanId, $"Caravan {caravanId} recalled: {reason}.");
         return recalled;
     }
@@ -1002,7 +1000,7 @@ public sealed class WorldState
 
         var destroyed = caravan with { Status = CaravanStatus.Destroyed };
         _caravans[caravanId] = destroyed;
-        TravelCrewService.MarkCrewMissing(this, caravanId, caravan.SourceSettlementId, caravan.CrewCitizenId, reason);
+        TravelCrewService.MarkCrewMissing(this, caravanId, caravan.SourceSettlementId, caravan.FactionId, caravan.CrewCitizenId, reason);
         AppendEvent(WorldEventKind.CaravanDestroyed, caravanId, $"Caravan {caravanId} destroyed: {reason}.");
         return destroyed;
     }
@@ -1242,11 +1240,11 @@ public sealed class WorldState
         _missions[missionId] = failed;
         if (returnCrew)
         {
-            TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, reason);
+            TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.FactionId, mission.CrewCitizenId, reason);
         }
         else
         {
-            TravelCrewService.MarkCrewMissing(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, reason);
+            TravelCrewService.MarkCrewMissing(this, missionId, mission.OriginSettlementId, mission.FactionId, mission.CrewCitizenId, reason);
         }
         AppendEvent(WorldEventKind.WorldMissionDisrupted, missionId, $"Mission {missionId} failed: {reason}.");
         return failed;
@@ -1270,6 +1268,44 @@ public sealed class WorldState
                 : mission.ReturnArrivalTick,
             EffectApplied = mission.EffectApplied || effectApplied,
         };
+        _missions[missionId] = updated;
+        return updated;
+    }
+
+    public WorldMission CollectScoutReport(
+        EntityId missionId,
+        RaidIntelValueBand valueBand = RaidIntelValueBand.Low,
+        int combatantDemand = 0,
+        string targetKey = "")
+    {
+        if (!_missions.TryGetValue(missionId, out var mission)
+            || mission.Status != WorldMissionStatus.Traveling
+            || mission.Kind != WorldMissionKind.Scout
+            || mission.Phase != WorldTransitPhase.AtTarget)
+        {
+            throw new InvalidOperationException($"Mission {missionId} is not a scout observing its target.");
+        }
+
+        var updated = mission with
+        {
+            ReportCollected = true,
+            ReportedValueBand = valueBand,
+            ReportedCombatantDemand = Math.Max(0, combatantDemand),
+            ReportedTargetKey = targetKey?.Trim() ?? string.Empty,
+            StatusTick = CurrentTick,
+        };
+        _missions[missionId] = updated;
+        return updated;
+    }
+
+    public WorldMission MarkMissionEffectApplied(EntityId missionId)
+    {
+        if (!_missions.TryGetValue(missionId, out var mission))
+        {
+            throw new InvalidOperationException($"Mission {missionId} does not exist.");
+        }
+
+        var updated = mission with { EffectApplied = true };
         _missions[missionId] = updated;
         return updated;
     }
@@ -1301,7 +1337,7 @@ public sealed class WorldState
             throw new InvalidOperationException($"Mission {missionId} is not returning.");
         }
 
-        TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.CrewCitizenId, "mission returned");
+        TravelCrewService.ReturnCrew(this, missionId, mission.OriginSettlementId, mission.FactionId, mission.CrewCitizenId, "mission returned");
         var completed = mission with
         {
             Status = mission.CompleteAsFailure ? WorldMissionStatus.Failed : WorldMissionStatus.Arrived,
@@ -1315,6 +1351,30 @@ public sealed class WorldState
     internal bool RemoveMissionForLedger(EntityId missionId)
     {
         return _missions.Remove(missionId);
+    }
+
+    private void ReturnCaravanAssets(WorldCaravan caravan, string reason)
+    {
+        var destination = FactionReturnService.Resolve(this, caravan.FactionId, caravan.SourceSettlementId);
+        if (destination == null)
+        {
+            foreach (var resource in ResourcesForOwner(caravan.Id).ToList())
+            {
+                SetResourceQuantityForLedger(caravan.Id, resource.ResourceKey, 0);
+            }
+        }
+        else
+        {
+            TransferAllResources(caravan.Id, destination.Id, reason);
+        }
+
+        TravelCrewService.ReturnCrew(
+            this,
+            caravan.Id,
+            caravan.SourceSettlementId,
+            caravan.FactionId,
+            caravan.CrewCitizenId,
+            reason);
     }
 
     public WorldCitizen MarkCitizenDead(EntityId citizenId, string reason)
@@ -1584,7 +1644,8 @@ public sealed class WorldState
             .Where(citizen => citizen.SettlementId == sourceSettlementId
                 && citizen.Status == CitizenStatus.Alive
                 && citizen.IsAdult
-                && GetOwner(citizen.Id) == sourceSettlementId)
+                && GetOwner(citizen.Id) == sourceSettlementId
+                && !HasActiveMaterializationLease(citizen.Id))
             .OrderBy(citizen => citizen.Id.Value)
             .Take(settlerCount)
             .ToList();
@@ -1654,7 +1715,8 @@ public sealed class WorldState
             .Where(citizen => citizen.SettlementId == sourceSettlementId
                 && citizen.Status == CitizenStatus.Alive
                 && citizen.IsAdult
-                && GetOwner(citizen.Id) == sourceSettlementId)
+                && GetOwner(citizen.Id) == sourceSettlementId
+                && !HasActiveMaterializationLease(citizen.Id))
             .OrderBy(citizen => citizen.Id.Value)
             .Take(settlerCount)
             .ToList();
@@ -2935,6 +2997,13 @@ public sealed class WorldState
             : null;
     }
 
+    public bool HasActiveMaterializationLease(EntityId citizenId)
+    {
+        return citizenId.Kind == EntityKind.Citizen
+            && _materializationLeases.Values.Any(lease =>
+                lease.IsActive && lease.CitizenId == citizenId);
+    }
+
     public PrisonerRecord? GetPrisonerRecord(EntityId citizenId)
     {
         return _prisonerRecords.TryGetValue(citizenId, out var record)
@@ -3920,6 +3989,9 @@ public sealed class WorldState
             throw new InvalidOperationException($"Citizen {citizenId} is not owned by {sourceOwnerId}.");
         }
 
+        var returnFactionId = FactionReturnService.ResolveFactionId(this, sourceOwnerId)
+            ?? FactionReturnService.ResolveFactionId(this, returnOwnerId)
+            ?? string.Empty;
         var lease = new MaterializationLease(
             NextId(EntityKind.MaterializationLease),
             citizenId,
@@ -3930,7 +4002,10 @@ public sealed class WorldState
             CurrentTick,
             CurrentTick + Math.Max(0, lifetimeTicks),
             MaterializationLeaseLifecycle.Reserved,
-            null);
+            null)
+        {
+            ReturnFactionId = returnFactionId
+        };
 
         _materializationLeases.Add(lease.Id, lease);
         AppendEvent(WorldEventKind.MaterializationLeaseCreated, lease.Id, $"Materialization lease {lease.Id} created for {citizenId}: {purpose}.");
@@ -3977,7 +4052,16 @@ public sealed class WorldState
 
         if (_citizens.TryGetValue(lease.CitizenId, out var citizen))
         {
-            var status = fate switch
+            var resolvedFate = fate;
+            var returnSettlement = fate == PawnFateKind.Returned
+                ? ResolveMaterializationReturnSettlement(lease)
+                : null;
+            if (fate == PawnFateKind.Returned && returnSettlement == null)
+            {
+                resolvedFate = PawnFateKind.Missing;
+            }
+
+            var status = resolvedFate switch
             {
                 PawnFateKind.Dead => CitizenStatus.Dead,
                 PawnFateKind.Prisoner => CitizenStatus.Prisoner,
@@ -3987,17 +4071,26 @@ public sealed class WorldState
             };
 
             _citizens[lease.CitizenId] = citizen with { Status = status };
-            if (fate == PawnFateKind.Returned)
+            if (resolvedFate == PawnFateKind.Returned)
             {
-                _owners[lease.CitizenId] = lease.ReturnOwnerId;
+                _owners[lease.CitizenId] = returnSettlement!.Id;
+            }
+            else if (resolvedFate == PawnFateKind.Missing)
+            {
+                _owners[lease.CitizenId] = lease.CitizenId;
             }
 
             MarkDerivedAggregatesDirty();
         }
 
-        var resolved = lease.Resolve(fate);
+        var finalFate = _citizens.TryGetValue(lease.CitizenId, out var resolvedCitizen)
+            && resolvedCitizen.Status == CitizenStatus.Missing
+            && fate == PawnFateKind.Returned
+                ? PawnFateKind.Missing
+                : fate;
+        var resolved = lease.Resolve(finalFate);
         _materializationLeases[leaseId] = resolved;
-        AppendEvent(WorldEventKind.MaterializationLeaseResolved, lease.Id, $"Materialization lease {lease.Id} resolved as {fate}: {reason}.");
+        AppendEvent(WorldEventKind.MaterializationLeaseResolved, lease.Id, $"Materialization lease {lease.Id} resolved as {finalFate}: {reason}.");
 
         return resolved;
     }
@@ -4018,12 +4111,33 @@ public sealed class WorldState
         _materializationLeases[leaseId] = released;
         if (_citizens.TryGetValue(lease.CitizenId, out var citizen) && citizen.Status == CitizenStatus.Alive)
         {
-            _owners[lease.CitizenId] = lease.ReturnOwnerId;
+            var returnSettlement = ResolveMaterializationReturnSettlement(lease);
+            if (returnSettlement != null)
+            {
+                _owners[lease.CitizenId] = returnSettlement.Id;
+            }
+            else
+            {
+                _citizens[lease.CitizenId] = citizen with { Status = CitizenStatus.Missing };
+                _owners[lease.CitizenId] = lease.CitizenId;
+            }
             MarkDerivedAggregatesDirty();
         }
 
         AppendEvent(WorldEventKind.MaterializationLeaseResolved, lease.Id, $"Materialization lease {lease.Id} released.");
         return released;
+    }
+
+    private WorldSettlement? ResolveMaterializationReturnSettlement(MaterializationLease lease)
+    {
+        if (!string.IsNullOrWhiteSpace(lease.ReturnFactionId))
+        {
+            return FactionReturnService.Resolve(this, lease.ReturnFactionId, lease.ReturnOwnerId);
+        }
+
+        // Compatibility for leases loaded from saves written before ReturnFactionId existed.
+        var legacy = GetSettlement(lease.ReturnOwnerId);
+        return legacy?.IsActive == true ? legacy : null;
     }
 
     internal PrisonerRecord CapturePrisonerForLedger(
@@ -4235,7 +4349,13 @@ public sealed class WorldState
 
         var army = GetArmy(link.ArmyId)
             ?? throw new InvalidOperationException($"Army {link.ArmyId} does not exist.");
-        var transfer = TransferAsset(link.CitizenId, link.ArmyId, army.SourceSettlementId, reason);
+        var destination = FactionReturnService.Resolve(this, army.FactionId, army.SourceSettlementId);
+        if (destination == null)
+        {
+            return MarkRaidPawnMissing(pawnThingId, $"{reason}; no same-faction return settlement survived");
+        }
+
+        var transfer = TransferAsset(link.CitizenId, link.ArmyId, destination.Id, reason);
         if (transfer.Status != OwnershipTransferStatus.Success)
         {
             throw new InvalidOperationException(transfer.Reason);
@@ -4243,7 +4363,7 @@ public sealed class WorldState
 
         var returnedLink = link.MarkReturned();
         _raidPawnLinks[pawnThingId] = returnedLink;
-        AppendEvent(WorldEventKind.RaidPawnReturned, link.CitizenId, $"Pawn {pawnThingId} returned to {army.SourceSettlementId}: {reason}.");
+        AppendEvent(WorldEventKind.RaidPawnReturned, link.CitizenId, $"Pawn {pawnThingId} returned to {destination.Id}: {reason}.");
 
         return returnedLink;
     }

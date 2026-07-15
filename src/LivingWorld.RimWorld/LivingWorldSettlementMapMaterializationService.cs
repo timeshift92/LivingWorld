@@ -544,6 +544,14 @@ public static class LivingWorldSettlementMapMaterializationService
                     DetachRelationsAndDestroy(pawn);
                 }
 
+                if (state.GetMaterializationLease(lease.Id)?.IsActive == true)
+                {
+                    MaterializationLeaseService.Release(
+                        state,
+                        lease.Id,
+                        "resident pawn materialization failed after reservation");
+                }
+
                 Log.Warning($"[LivingWorld] Could not materialize resident {citizen.Id}: {error.Message}");
             }
         }

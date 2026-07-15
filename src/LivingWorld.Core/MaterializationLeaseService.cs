@@ -229,7 +229,7 @@ public static class MaterializationLeaseService
         var updated = state.ResolveMaterializationLease(request.LeaseId, request.Fate, request.Reason);
         return new MaterializationLeaseResolveResult(
             MaterializationLeaseResolveStatus.Success,
-            $"Materialization lease {request.LeaseId} resolved as {request.Fate}.",
+            $"Materialization lease {request.LeaseId} resolved as {updated.Lifecycle}.",
             updated);
     }
 

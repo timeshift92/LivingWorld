@@ -361,6 +361,9 @@ public static class WorldStateCodec
                             new XAttribute("sourceOwnerId", lease.SourceOwnerId.Value),
                             new XAttribute("returnOwnerKind", lease.ReturnOwnerId.Kind),
                             new XAttribute("returnOwnerId", lease.ReturnOwnerId.Value),
+                            !string.IsNullOrWhiteSpace(lease.ReturnFactionId)
+                                ? new XAttribute("returnFactionId", lease.ReturnFactionId)
+                                : null,
                             new XAttribute("purpose", lease.Purpose),
                             new XAttribute("purposeKey", lease.PurposeKey),
                             new XAttribute("createdTick", lease.CreatedTick),
@@ -1152,7 +1155,10 @@ public static class WorldStateCodec
                     RequiredInt(element, "createdTick"),
                     RequiredInt(element, "expiresTick"),
                     RequiredEnum<MaterializationLeaseLifecycle>(element, "lifecycle"),
-                    TryOptionalInt(element, "pawnThingId")))
+                    TryOptionalInt(element, "pawnThingId"))
+                {
+                    ReturnFactionId = OptionalString(element, "returnFactionId") ?? string.Empty
+                })
                 .ToList(),
             PrisonerRecords = OptionalContainer(root, "PrisonerRecords")
                 .Elements("PrisonerRecord")

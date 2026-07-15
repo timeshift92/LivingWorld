@@ -86,6 +86,13 @@ public static class OwnershipService
                 $"Asset {assetId} is owned by {currentOwnerId.Value}, not {fromOwnerId}.");
         }
 
+        if (assetId.Kind == EntityKind.Citizen && state.HasActiveMaterializationLease(assetId))
+        {
+            return new OwnershipTransferResult(
+                OwnershipTransferStatus.AssetMaterialized,
+                $"Citizen {assetId} has an active materialization lease and cannot change ledger owner.");
+        }
+
         if (!state.OwnerExistsForLedger(toOwnerId))
         {
             return new OwnershipTransferResult(

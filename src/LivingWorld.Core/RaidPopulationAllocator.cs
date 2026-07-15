@@ -14,7 +14,8 @@ public sealed record RaidPopulationAllocationRequest(
     int RequestedCombatants,
     string FoodResourceKey = "PackagedSurvivalMeal",
     int FoodPerCitizen = 1,
-    bool TransferFoodToArmy = false);
+    bool TransferFoodToArmy = false,
+    bool RequireExactCombatants = false);
 
 public sealed record RaidPopulationAllocationResult(
     RaidPopulationAllocationStatus Status,
@@ -123,8 +124,18 @@ public static class RaidPopulationAllocator
         }
 
         var sourceSettlement = settlements[0];
+        var sourceCapacity = GetRaidReadyAdults(state, sourceSettlement.Id, request);
+        if (request.RequireExactCombatants && sourceCapacity < request.RequestedCombatants)
+        {
+            return RaidPopulationAllocationResult.Failed(
+                RaidPopulationAllocationStatus.NoAvailableCombatants,
+                $"Settlement {sourceSettlement.Id} can supply only {sourceCapacity} of {request.RequestedCombatants} required combatants.",
+                request.RequestedCombatants,
+                availableCombatants);
+        }
+
         var combatants = GetAvailableCombatants(state, sourceSettlement.Id)
-            .Take(Math.Min(request.RequestedCombatants, GetRaidReadyAdults(state, sourceSettlement.Id, request)))
+            .Take(Math.Min(request.RequestedCombatants, sourceCapacity))
             .ToList();
 
         var army = state.CreateArmy(request.Name, sourceSettlement.FactionId, sourceSettlement.Id);
@@ -179,7 +190,8 @@ public static class RaidPopulationAllocator
                 citizen.SettlementId == settlementId
                 && citizen.Status == CitizenStatus.Alive
                 && citizen.IsAdult
-                && state.GetOwner(citizen.Id) == settlementId)
+                && state.GetOwner(citizen.Id) == settlementId
+                && !state.HasActiveMaterializationLease(citizen.Id))
             .OrderBy(citizen => citizen.Id.Value);
     }
 

@@ -87,6 +87,46 @@ public static class WorldTrafficPolicy
         return excess.Count;
     }
 
+    /// <summary>
+    /// Repairs legacy caravan waves above the global and per-faction limits. Excess caravans are
+    /// recalled through the normal terminal path so their exact crew and cargo return atomically.
+    /// </summary>
+    public static int ReconcileExcessCaravans(WorldState state)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var active = state.Caravans
+            .Where(caravan => caravan.Status == CaravanStatus.Traveling)
+            .OrderBy(caravan => caravan.DepartTick)
+            .ThenBy(caravan => caravan.Id.Value)
+            .ToList();
+        var excess = new HashSet<EntityId>();
+        foreach (var factionGroup in active.GroupBy(caravan => caravan.FactionId, StringComparer.Ordinal))
+        {
+            foreach (var duplicate in factionGroup.Skip(1))
+            {
+                excess.Add(duplicate.Id);
+            }
+        }
+
+        foreach (var overflow in active
+            .Where(caravan => !excess.Contains(caravan.Id))
+            .Skip(MaxConcurrentCaravans))
+        {
+            excess.Add(overflow.Id);
+        }
+
+        foreach (var caravanId in excess.OrderBy(id => id.Value))
+        {
+            state.MarkCaravanRecalled(caravanId, "world traffic capacity reconciliation");
+        }
+
+        return excess.Count;
+    }
+
     public static ulong StableDailyFactionOrder(string factionId, int tick)
     {
         var day = Math.Max(0, tick) / 60_000;

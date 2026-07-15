@@ -84,33 +84,20 @@ internal static class LivingWorldPlayerCaravanContactService
         Caravan playerCaravan,
         WorldObject_LivingWorldArmy marker)
     {
-        if (!marker.MarkerKey.StartsWith("playerscout:", StringComparison.Ordinal))
+        if (TryParseMarkerEntity(marker.MarkerKey, "mission:", EntityKind.Mission, out var missionId))
         {
-            return TryStartLedgerAmbush(state, playerCaravan, marker);
+            var mission = state.GetMission(missionId);
+            if (mission?.Status != WorldMissionStatus.Traveling)
+            {
+                SendContactFailure("LW_PlayerCaravanContactNoLedgerForce".Translate());
+                return false;
+            }
+
+            state.FailMission(mission.Id, "world mission intercepted by a player caravan");
+            return true;
         }
 
-        var component = LivingWorldWorldComponent.Instance;
-        var intercept = component == null
-            ? null
-            : AccessTools.Method(component.GetType(), "TryInterceptPlayerScout", new[] { typeof(string) });
-        if (component == null || intercept == null)
-        {
-            SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
-            return false;
-        }
-
-        try
-        {
-            return intercept.Invoke(component, new object[] { marker.MarkerKey }) is true;
-        }
-        catch (Exception error)
-        {
-            Log.Warning(
-                $"[LivingWorld] Player scout interception failed safely: "
-                + $"{error.GetType().Name}: {error.Message}");
-            SendContactFailure("LW_PlayerCaravanContactFailed".Translate());
-            return false;
-        }
+        return TryStartLedgerAmbush(state, playerCaravan, marker);
     }
 
     private static void ShowTradeContact(
@@ -222,6 +209,10 @@ internal static class LivingWorldPlayerCaravanContactService
             }
 
             LivingWorldCaravanAmbushGenerationRuntime.Forget(parms);
+            ArmyTerminalResolutionService.LoseCargo(
+                state,
+                armyId,
+                "army cargo was consumed or lost when the player caravan ambush began");
             state.SetArmyMovementStatus(armyId, ArmyMovementStatus.Disbanded);
             return true;
         }

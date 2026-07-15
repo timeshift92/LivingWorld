@@ -46,6 +46,18 @@ public sealed record WorldMission(
 
     public bool EffectApplied { get; init; }
 
+    /// <summary>
+    /// The scout physically observed the target, but the report is not faction knowledge until
+    /// the crew returns. Keeping the observation on the mission makes the result save-stable.
+    /// </summary>
+    public bool ReportCollected { get; init; }
+
+    public RaidIntelValueBand ReportedValueBand { get; init; } = RaidIntelValueBand.Low;
+
+    public int ReportedCombatantDemand { get; init; }
+
+    public string ReportedTargetKey { get; init; } = string.Empty;
+
     public string TargetContactKey { get; init; } = string.Empty;
 
     public bool TargetsPlayerContact =>
