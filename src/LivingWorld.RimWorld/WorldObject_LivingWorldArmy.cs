@@ -107,6 +107,8 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
         }
     }
 
+    internal bool IsKnownToPlayer => strategicallyVisible && IsVisibleByFilter;
+
     internal void SetStrategicVisibility(bool visible)
     {
         strategicallyVisible = visible;
@@ -276,7 +278,8 @@ public sealed class WorldObject_LivingWorldArmy : WorldObject
                     CargoBand().Named("band")));
             }
 
-            if (!string.IsNullOrWhiteSpace(reason))
+            var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || Prefs.DevMode;
+            if (debugExact && !string.IsNullOrWhiteSpace(reason))
             {
                 builder.AppendLine();
                 builder.Append("LW_MissionMarkerReasonLine".Translate(reason.Named("reason")));

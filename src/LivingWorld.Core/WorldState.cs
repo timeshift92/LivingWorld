@@ -4138,6 +4138,15 @@ public sealed class WorldState
 
     private WorldSettlement? ResolveMaterializationReturnSettlement(MaterializationLease lease)
     {
+        if (lease.Purpose is MaterializationPurpose.SettlementDefense or MaterializationPurpose.SettlementVisit)
+        {
+            var currentSettlement = GetSettlement(lease.ReturnOwnerId);
+            if (currentSettlement?.IsActive == true)
+            {
+                return currentSettlement;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(lease.ReturnFactionId))
         {
             return FactionReturnService.Resolve(this, lease.ReturnFactionId, lease.ReturnOwnerId);

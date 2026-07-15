@@ -19,7 +19,6 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
     private const int TicksPerDay = 60_000;
     private const int MaxCatchUpSimulationDays = 7;
-    private const int FailedDayRetryDelayTicks = 250;
     private const int BirthIntervalDays = 10;
     private const int AgeIntervalDays = 30;
     private const int NaturalDeathAge = 85;
@@ -235,17 +234,15 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
-        if (nextDailySimulationRetryTick > currentTick)
-        {
-            return;
-        }
-
         var simulatedDays = 0;
-        var simulationFailed = false;
         while (lastSimulatedDay < currentDay && simulatedDays < MaxCatchUpSimulationDays)
         {
             var nextDay = lastSimulatedDay + 1;
             var checkpointedSettlementMaps = CheckpointLoadedSettlementWarehouses();
+            // Commit the day watermark before the non-transactional multi-service simulation. If a
+            // late service throws, earlier births/resources must not be replayed on the next tick.
+            lastSimulatedDay = nextDay;
+            simulatedDays++;
             try
             {
                 SimulateWorldDay(nextDay);
@@ -253,15 +250,11 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 // arrival while the conserved mission still exists instead of inventing an
                 // offer later from the conflict list.
                 MaybeSendAllianceOffers();
-                lastSimulatedDay = nextDay;
-                simulatedDays++;
             }
             catch (Exception ex)
             {
-                simulationFailed = true;
-                nextDailySimulationRetryTick = currentTick + FailedDayRetryDelayTicks;
                 Log.Error(
-                    $"[LivingWorld] Daily simulation day {nextDay} failed; the watermark was not advanced and the day will be retried: {ex}");
+                    $"[LivingWorld] Daily simulation day {nextDay} failed after partial effects; the committed day will not be replayed: {ex}");
                 break;
             }
             finally
@@ -270,10 +263,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             }
         }
 
-        if (!simulationFailed)
-        {
-            nextDailySimulationRetryTick = 0;
-        }
+        nextDailySimulationRetryTick = 0;
 
         // Safety net for any add/capture the hooks missed (mods bypassing the standard API). Never
         // destroys — removal is driven solely by the authoritative Remove hook — so a transiently
@@ -531,11 +521,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .ThenByDescending(fact => fact.Confidence)
             .ThenBy(fact => fact.Id.Value))
         {
-            notifiedRaidWarningFactIds.Add(fact.Id.Value);
             if (sent >= 2)
             {
                 // Cap warnings per pass so a burst of intel never floods the player.
-                continue;
+                break;
             }
 
             var factionName = Find.FactionManager?.AllFactionsListForReading
@@ -557,6 +546,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 "LW_RaidWarningLetterLabel".Translate(),
                 warningText,
                 LetterDefOf.ThreatSmall);
+            notifiedRaidWarningFactIds.Add(fact.Id.Value);
             sent++;
 
             if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
@@ -607,11 +597,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .OrderBy(outcome => outcome.Tick)
             .ThenBy(outcome => outcome.ArmyId.Value))
         {
-            notifiedResolvedRaidArmyIds.Add(outcome.ArmyId.Value);
             if (sent >= 3)
             {
                 // Cap letters per pass so a long catch-up never floods the player.
-                continue;
+                break;
             }
 
             var settlement = State.GetSettlement(outcome.SourceSettlementId);
@@ -630,6 +619,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     outcome.Returned.Named("returned"),
                     lost.Named("lost")),
                 LetterDefOf.NeutralEvent);
+            notifiedResolvedRaidArmyIds.Add(outcome.ArmyId.Value);
             sent++;
         }
     }
@@ -864,6 +854,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     settings.worldWarRaidCombatants,
                     settings.worldWarWarbandCooldownDays)
                 {
+                    WarbandEquipmentPerCombatant = 5,
                     RequirePhysicalSettlementDestinations = true,
                 });
         }
@@ -1446,8 +1437,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
         var markers = worldObjects.AllWorldObjects
             .OfType<WorldObject_LivingWorldArmy>()
-            .Where(marker => marker.IsVisibleByFilter
-                && !string.IsNullOrWhiteSpace(marker.MarkerKey))
+            .Where(marker => !string.IsNullOrWhiteSpace(marker.MarkerKey))
             .ToList();
         var liveMarkerKeys = new HashSet<string>(
             markers.Select(marker => marker.MarkerKey),
@@ -1506,6 +1496,12 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     continue;
                 }
 
+                pendingPlayerCaravanMarkerContacts.Remove(contactKey);
+                if (!notifiedPlayerCaravanMarkerContacts.Contains(contactKey))
+                {
+                    notifiedPlayerCaravanMarkerContacts.Add(contactKey);
+                }
+
                 if ((LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging)
                 {
                     Log.Message($"[LivingWorld] Player caravan {caravan.ID} contacted world marker {marker.MarkerKey}: {details}");
@@ -1533,6 +1529,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .Where(marker => marker.MarkerKey.StartsWith("army:", StringComparison.Ordinal)
                 || marker.MarkerKey.StartsWith("caravan:", StringComparison.Ordinal)
                 || marker.MarkerKey.StartsWith("mission:", StringComparison.Ordinal)
+                || marker.MarkerKey.StartsWith("migration:", StringComparison.Ordinal)
                 || marker.MarkerKey.StartsWith(LivingWorldSettlementExpansionWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal)
                 || marker.MarkerKey.StartsWith("drifter:", StringComparison.Ordinal)
                 || marker.MarkerKey.StartsWith(LivingWorldDrifterFoundingWorldBridge.MarkerKeyPrefix, StringComparison.Ordinal))
@@ -1673,7 +1670,10 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                         scaledIntent,
                         FoodResourceKey,
                         SupplyPerCombatant: 3,
-                        LifetimeTicks: 3 * TicksPerDay));
+                        LifetimeTicks: 3 * TicksPerDay)
+                    {
+                        EquipmentPerCombatant = 5,
+                    });
             }
             catch (InvalidOperationException)
             {
@@ -3439,6 +3439,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         if (Scribe.mode == LoadSaveMode.LoadingVars && !string.IsNullOrWhiteSpace(serializedState))
         {
             State = WorldStateCodec.Deserialize(serializedState);
+            nextDailySimulationRetryTick = 0;
             LastBootstrapSource = "save";
             LastBootstrapStatus = "loaded";
             LastWorldSettlementSourceCount = State.Settlements.Count;

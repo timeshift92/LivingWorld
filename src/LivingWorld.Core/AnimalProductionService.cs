@@ -37,7 +37,9 @@ public static class AnimalProductionService
         var hunted = 0;
 
         foreach (var cohort in state.AnimalCohorts
-            .Where(cohort => cohort.Count > 0)
+            .Where(cohort => cohort.Count > 0
+                && cohort.OwnerId.Kind == EntityKind.Settlement
+                && state.GetSettlement(cohort.OwnerId)?.IsActive == true)
             .OrderBy(cohort => cohort.OwnerId.Kind)
             .ThenBy(cohort => cohort.OwnerId.Value)
             .ThenBy(cohort => cohort.AnimalKind, StringComparer.Ordinal)

@@ -51,6 +51,15 @@ internal static class MaterializationLeaseResourceReturnService
 
     private static EntityId? ResolveReturnOwner(WorldState state, MaterializationLease lease)
     {
+        if (lease.Purpose is MaterializationPurpose.SettlementDefense or MaterializationPurpose.SettlementVisit)
+        {
+            var currentSettlement = state.GetSettlement(lease.ReturnOwnerId);
+            if (currentSettlement?.IsActive == true)
+            {
+                return currentSettlement.Id;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(lease.ReturnFactionId))
         {
             return FactionReturnService.Resolve(state, lease.ReturnFactionId, lease.ReturnOwnerId)?.Id;

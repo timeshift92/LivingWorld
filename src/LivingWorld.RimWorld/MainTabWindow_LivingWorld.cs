@@ -64,12 +64,24 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         }
 
         var state = component.State;
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || Prefs.DevMode;
         var listing = new Listing_Standard();
         listing.Begin(inRect);
         listing.Label("LW_MainTitle".Translate());
         listing.GapLine();
-        listing.Label(component.GetSummary());
-        listing.Label(component.GetDiagnosticSummary());
+        if (debugExact)
+        {
+            listing.Label(component.GetSummary());
+            listing.Label(component.GetDiagnosticSummary());
+        }
+        else
+        {
+            var exactKnown = state.KnownSettlementInfos.Count(info =>
+                PlayerKnowledgeService.HasFreshExactSnapshot(info, Find.TickManager?.TicksGame ?? 0));
+            listing.Label("LW_PlayerKnowledgeSummary".Translate(
+                state.KnownSettlementInfos.Count.Named("known"),
+                exactKnown.Named("exact")));
+        }
 
         if (state.Settlements.Count == 0)
         {
@@ -82,8 +94,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         }
 
         var actionRect = listing.GetRect(32f);
-        var retryRect = new Rect(actionRect.x, actionRect.y, (actionRect.width - 8f) / 2f, actionRect.height);
-        var debugRect = new Rect(retryRect.xMax + 8f, actionRect.y, retryRect.width, actionRect.height);
+        var retryRect = debugExact
+            ? new Rect(actionRect.x, actionRect.y, (actionRect.width - 8f) / 2f, actionRect.height)
+            : actionRect;
         if (Widgets.ButtonText(retryRect, "LW_RetryBootstrapButton".Translate()))
         {
             component.RetryBootstrapFromRimWorldSettlements();
@@ -91,11 +104,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             lastActionResult = "LW_BootstrapRetried".Translate();
         }
 
-        if (Widgets.ButtonText(debugRect, "LW_CreateDebugLedgerButton".Translate()))
+        if (debugExact)
         {
-            component.CreateDebugLedger();
-            state = component.State;
-            lastActionResult = "LW_DebugLedgerCreated".Translate();
+            var debugRect = new Rect(retryRect.xMax + 8f, actionRect.y, retryRect.width, actionRect.height);
+            if (Widgets.ButtonText(debugRect, "LW_CreateDebugLedgerButton".Translate()))
+            {
+                component.CreateDebugLedger();
+                state = component.State;
+                lastActionResult = "LW_DebugLedgerCreated".Translate();
+            }
         }
 
         listing.Label(lastActionResult ?? "LW_RaidHookStatus".Translate());
@@ -146,13 +163,18 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         var y = 0f;
         Widgets.Label(new Rect(0f, y, viewRect.width, 28f), "LW_SettlementsHeader".Translate());
         y += 30f;
-        if (state.Settlements.Count > cachedSettlementRows.Count)
+        var visibleSettlementCount = debugExact
+            ? state.Settlements.Count
+            : state.Settlements.Count(settlement => settlement.IsActive
+                && (state.GetKnownSettlementInfo(settlement.Id) != null
+                    || state.IsPlayerFaction(settlement.FactionId)));
+        if (visibleSettlementCount > cachedSettlementRows.Count)
         {
             Widgets.Label(
                 new Rect(0f, y, viewRect.width, 24f),
                 "LW_ListLimited".Translate(
                     cachedSettlementRows.Count.Named("shown"),
-                    state.Settlements.Count.Named("total")));
+                    visibleSettlementCount.Named("total")));
             y += 26f;
         }
 
@@ -331,7 +353,12 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         cachedProductionProfileCount = state.ProductionProfiles.Count;
         cachedCaravanCount = state.Caravans.Count;
         cachedMissionCount = state.Missions.Count;
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || Prefs.DevMode;
         cachedSettlementRows = state.Settlements
+            .Where(settlement => settlement.IsActive)
+            .Where(settlement => debugExact
+                || state.GetKnownSettlementInfo(settlement.Id) != null
+                || state.IsPlayerFaction(settlement.FactionId))
             .OrderBy(settlement => settlement.Id.Value)
             .Take(MaxSettlementRows)
             .Select(settlement =>
@@ -358,14 +385,13 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                 var freshness = PlayerKnowledgeService.GetFreshness(info, currentTick, KnowledgeStaleAfterTicks);
                 return "LW_KnownIntelFreshnessLine".Translate(
                     (settlement?.Name ?? info.SettlementId.ToString()).Named("name"),
-                    info.SourceKind.Named("source"),
-                    info.Confidence.Named("confidence"),
+                    LivingWorldKnowledgeLabels.Source(info.SourceKind).Named("source"),
+                    LivingWorldKnowledgeLabels.Confidence(info.Confidence).Named("confidence"),
                     freshness.AgeDays.Named("ageDays"),
-                    freshness.IsStale.Named("stale"),
-                    info.Summary.Named("summary")).ToString();
+                    LivingWorldKnowledgeLabels.Boolean(freshness.IsStale).Named("stale"),
+                    LivingWorldKnowledgeLabels.Summary(info).Named("summary")).ToString();
             })
             .ToList();
-        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
         var travelingArmyIds = new HashSet<EntityId>(state.ArmyMovements
             .Where(movement => movement.Status == ArmyMovementStatus.Traveling)
             .Select(movement => movement.ArmyId));
@@ -437,11 +463,14 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .OrderByDescending(record => record.Tick)
             .ThenBy(record => record.FactionId, System.StringComparer.Ordinal)
             .Take(MaxFactionCollapseRows)
-            .Select(record =>
-                "LW_FactionCollapseLine".Translate(
+            .Select(record => debugExact
+                ? "LW_FactionCollapseLine".Translate(
                     record.FactionId.Named("faction"),
                     record.Tick.Named("tick"),
-                    record.Reason.Named("reason")).ToString())
+                    record.Reason.Named("reason")).ToString()
+                : "LW_FactionCollapseKnownLine".Translate(
+                    record.FactionId.Named("faction"),
+                    record.Tick.Named("tick")).ToString())
             .ToList();
         cachedDrifterRows = (debugExact ? state.Drifters : System.Array.Empty<Drifter>())
             .OrderBy(drifter => drifter.ArrivalTick)
@@ -458,10 +487,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         var knownSettlementIds = new HashSet<EntityId>(state.Settlements
             .Where(settlement => LivingWorldTransitVisibility.CanRevealSettlement(state, settlement.Id))
             .Select(settlement => settlement.Id));
-        cachedEventRows = state.Events
-            .Where(worldEvent => debugExact
-                || (worldEvent.SettlementId.HasValue
-                    && LivingWorldTransitVisibility.CanRevealSettlement(state, worldEvent.SettlementId.Value)))
+        cachedEventRows = (debugExact ? state.Events : System.Array.Empty<WorldEvent>())
             .Skip(System.Math.Max(0, state.Events.Count - MaxEventRows))
             .Take(MaxEventRows)
             .Select(worldEvent =>
@@ -538,13 +564,11 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .Select(row => (row.FactionId, row.Text, maxStrength > 0 ? (float)row.Value / maxStrength : 0f))
             .ToList();
 
-        cachedWarHistoryRows = state.Events
+        cachedWarHistoryRows = (debugExact ? state.Events : System.Array.Empty<WorldEvent>())
             .Where(worldEvent =>
                 (worldEvent.Kind == WorldEventKind.SettlementCaptured
                     || worldEvent.Kind == WorldEventKind.WarbandLaunched
-                    || worldEvent.Kind == WorldEventKind.FactionCollapsed)
-                && (debugExact
-                    || (worldEvent.SettlementId.HasValue && knownSettlementIds.Contains(worldEvent.SettlementId.Value))))
+                    || worldEvent.Kind == WorldEventKind.FactionCollapsed))
             .OrderByDescending(worldEvent => worldEvent.Tick)
             .ThenByDescending(worldEvent => worldEvent.Id.Value)
             .Take(MaxWarRows)
@@ -965,15 +989,15 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         var freshness = PlayerKnowledgeService.GetFreshness(known, currentTick, KnowledgeStaleAfterTicks);
         return "LW_KnowledgeLine".Translate(
-            known.SourceKind.Named("source"),
-            known.Confidence.Named("confidence"),
+            LivingWorldKnowledgeLabels.Source(known.SourceKind).Named("source"),
+            LivingWorldKnowledgeLabels.Confidence(known.Confidence).Named("confidence"),
             known.Tick.Named("tick"),
             freshness.AgeDays.Named("ageDays"),
-            freshness.IsStale.Named("stale"),
-            known.PopulationBand.Named("populationBand"),
-            known.Food.Named("food"),
-            known.Migration.Named("migration"),
-            known.Production.Named("production")).ToString();
+            LivingWorldKnowledgeLabels.Boolean(freshness.IsStale).Named("stale"),
+            LivingWorldKnowledgeLabels.Population(known.PopulationBand).Named("populationBand"),
+            LivingWorldKnowledgeLabels.Food(known.Food).Named("food"),
+            LivingWorldKnowledgeLabels.Migration(known.Migration).Named("migration"),
+            LivingWorldKnowledgeLabels.Production(known.Production).Named("production")).ToString();
     }
 
     private static string FormatProductionLine(SettlementKnowledgeSnapshot snapshot)

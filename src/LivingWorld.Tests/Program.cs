@@ -32,6 +32,7 @@ var tests = new List<(string Name, Action Test)>
     ("animal incubation projects create ledger cohorts", TestAnimalIncubationProjectsCreateLedgerCohorts),
     ("animal breeding driver starts and completes projects", TestAnimalBreedingDriverStartsAndCompletesProjects),
     ("serializes animal breeding projects", TestAnimalBreedingProjectSerialization),
+    ("destroyed settlements stop animal production and breeding", TestDestroyedSettlementStopsAnimalSimulation),
     ("crop strain projects improve settlement production", TestCropStrainProjectsImproveSettlementProduction),
     ("technology diffusion upgrades lower tier settlements", TestTechnologyDiffusionUpgradesLowerTierSettlements),
     ("serializes crop strains and settlement technologies", TestCropStrainAndTechnologySerialization),
@@ -70,6 +71,7 @@ var tests = new List<(string Name, Action Test)>
     ("reroutes migration when its destination becomes invalid", TestMigrationReroutesInvalidTarget),
     ("returns migration people and cargo when no reroute exists", TestMigrationReturnsPeopleAndCargo),
     ("records explicit lost people and cargo when migration has no refuge", TestMigrationLosesPeopleAndCargoExplicitly),
+    ("moves refugees stranded by settlement destruction", TestDestroyedSettlementRefugeesResumeMigration),
     ("queries ownership through public api", TestPublicApiOwnershipQuery),
     ("plans raid army from real citizens and resources", TestRaidPlannerAllocatesRealAssets),
     ("rejects raid when combatants are insufficient", TestRaidPlannerRejectsInsufficientCombatants),
@@ -77,6 +79,7 @@ var tests = new List<(string Name, Action Test)>
     ("reserves vanilla raid combatants from faction population", TestRaidPopulationAllocatorReservesFactionCombatants),
     ("caps vanilla raid combatants to available adults", TestRaidPopulationAllocatorCapsToAvailableAdults),
     ("skips inactive settlements when reserving raid combatants", TestRaidPopulationAllocatorSkipsInactiveSettlement),
+    ("raid allocation reserves real equipment materials", TestRaidPopulationAllocatorReservesEquipment),
     ("vanilla raid interception fails safe if reservation throws", TestVanillaRaidInterceptorGuardsReservation),
     ("creates raid opportunity from valuable trade intel", TestTradeIntelCreatesRaidOpportunity),
     ("consumes raid opportunity before vanilla raid allocation", TestRaidOpportunityConsumesOnce),
@@ -96,9 +99,10 @@ var tests = new List<(string Name, Action Test)>
     ("active materialization lease blocks every competing citizen allocation", TestActiveMaterializationLeaseBlocksCompetingAllocations),
     ("expired materialization lease releases reserved citizens", TestExpiredMaterializationLeaseReleasesReservedCitizen),
     ("materialization lease reconciles pawn fate into ledger", TestMaterializationLeaseReconcilesPawnFate),
-    ("materialization lease returns only to its original faction", TestMaterializationLeaseAvoidsCapturedReturnOwner),
+    ("settlement materialization stays with a captured settlement", TestMaterializationLeaseStaysWithCapturedSettlement),
     ("pawn fate sync resolves active materialization lease", TestPawnFateSyncResolvesMaterializationLease),
     ("materialization lease survives save load", TestMaterializationLeaseSurvivesSaveLoad),
+    ("materialization lease cannot be rebound to another pawn", TestMaterializationLeaseRejectsPawnRebind),
     ("traveling neutral group reserves citizens cargo and animals atomically", TestTravelingGroupReservationIsConservative),
     ("traveling neutral group rollback returns every reserved asset", TestTravelingGroupRollbackReturnsAssets),
     ("traveling neutral group failed reservation leaks no assets", TestTravelingGroupReservationFailureLeaksNothing),
@@ -174,6 +178,7 @@ var tests = new List<(string Name, Action Test)>
     ("collapses factions with no living citizens", TestFactionLifecycleCollapsesEmptyFaction),
     ("keeps factions alive while prisoners or migrants exist", TestFactionLifecycleCountsNonResidentSurvivors),
     ("collapses each faction only once", TestFactionLifecycleIsIdempotent),
+    ("collapses a faction after its last settlement is captured", TestFactionLifecycleCollapsesAfterLastCapture),
     ("serializes collapsed faction records", TestFactionLifecycleSerializationRoundTrip),
     ("keeps the player faction out of lifecycle collapse", TestFactionLifecycleSkipsPlayerFaction),
     ("serializes player faction identity", TestPlayerFactionIdentitySerialization),
@@ -204,6 +209,7 @@ var tests = new List<(string Name, Action Test)>
     ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
     ("attacker survivors return home after failed attack", TestBattleAttackerSurvivorsReturnHomeAfterDefeat),
     ("terminal army cargo is explicitly consumed instead of stranded", TestTerminalArmyCargoIsExplicitlyLost),
+    ("terminal armies release dead citizen ownership", TestTerminalArmyReleasesDeadOwnership),
     ("battle applies faction combat behavior multiplier", TestBattleAppliesFactionCombatBehaviorMultiplier),
     ("world battle against the player faction is blocked for materialization", TestBattleAgainstPlayerFactionIsBlocked),
     ("opposing armies intercept each other in transit", TestOpposingArmiesInterceptInTransit),
@@ -217,9 +223,11 @@ var tests = new List<(string Name, Action Test)>
     ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
     ("travelling missions reserve and return real citizens", TestWorldMissionReservesAndReturnsRealCitizen),
     ("missions fail without intel when the target is inactive", TestWorldMissionFailsWhenTargetInactive),
+    ("scouts recall when target ownership or alliance changes", TestWorldMissionRecallsInvalidScoutTargets),
     ("npc scouts learn about the player only after a physical round trip", TestNpcScoutPlayerContactRoundTrip),
     ("intercepted returning scouts lose their unreported intel", TestReturningScoutInterceptionLosesReport),
     ("travellers never return people or cargo to a captured origin", TestTravellersAvoidCapturedOrigin),
+    ("aborted raids return people and cargo to a surviving faction settlement", TestRaidRecallAvoidsCapturedSource),
     ("world traffic caps simultaneous scout waves", TestWorldTrafficCapsSimultaneousScoutWaves),
     ("world traffic repairs legacy scout spam without losing crews", TestWorldTrafficRepairsLegacyScoutSpam),
     ("world traffic repairs legacy caravan spam without losing crew or cargo", TestWorldTrafficRepairsLegacyCaravanSpam),
@@ -269,6 +277,7 @@ var tests = new List<(string Name, Action Test)>
     ("caravan recalls crew and cargo when target is inactive", TestCaravanRecallsWhenTargetInactive),
     ("destroying a persistent caravan removes its cargo", TestDestroyPersistentCaravanRemovesCargo),
     ("prunes terminal caravans after the retention window", TestCaravanPruneRemovesTerminalCaravans),
+    ("caravans recall instead of trading with a hostile captor", TestCaravanRecallsFromHostileCaptor),
     ("world mission survives save load and arrives", TestWorldMissionSurvivesSaveLoadAndArrives),
     ("persistent caravan still delivers after load", TestPersistentCaravanArrivesAfterLoad),
     ("derived aggregates track capture and expansion", TestDerivedAggregatesTrackCaptureAndExpansion),
@@ -3228,7 +3237,7 @@ static void TestPawnFateSyncResolvesMaterializationLease()
     AssertEqual(MaterializationLeaseLifecycle.Missing, state.GetMaterializationLease(lease.Id)!.Lifecycle);
 }
 
-static void TestMaterializationLeaseAvoidsCapturedReturnOwner()
+static void TestMaterializationLeaseStaysWithCapturedSettlement()
 {
     var state = new WorldState(12345);
     var source = state.CreateSettlement("leased-source", "Leased Source", "Outlander");
@@ -3251,10 +3260,10 @@ static void TestMaterializationLeaseAvoidsCapturedReturnOwner()
 
     AssertEqual("Outlander", lease.ReturnFactionId);
     AssertEqual(MaterializationLeaseResolveStatus.Success, released.Status);
-    AssertEqual(fallback.Id, state.GetOwner(citizen.Id));
+    AssertEqual(source.Id, state.GetOwner(citizen.Id));
     AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
-    AssertEqual(10, state.GetOwnedResourceQuantity(fallback.Id, "Steel"));
-    AssertEqual(0, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+    AssertEqual(0, state.GetOwnedResourceQuantity(fallback.Id, "Steel"));
+    AssertEqual(10, state.GetOwnedResourceQuantity(source.Id, "Steel"));
 }
 
 static void TestMaterializationLeaseSurvivesSaveLoad()
@@ -6333,6 +6342,57 @@ static void TestWorldMissionFailsWhenTargetInactive()
     AssertEqual(scouts.Id, state.GetOwner(citizen.Id));
     AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
+    AssertEqual(0, state.Validate().Count());
+}
+
+static void TestWorldMissionRecallsInvalidScoutTargets()
+{
+    var state = new WorldState(4242);
+    var scouts = state.CreateSettlement("scouts", "Scouts", "Scouts");
+    var capturedTarget = state.CreateSettlement("captured", "Captured Target", "Settlers");
+    var alliedTarget = state.CreateSettlement("allied", "Allied Target", "Neighbors");
+    var captureScout = state.CreateCitizen("Capture Scout", 30, Sex.Female, "scout", scouts.Id);
+    var allianceScout = state.CreateCitizen("Alliance Scout", 31, Sex.Male, "scout", scouts.Id);
+
+    var captureMission = state.DispatchMission(
+        WorldMissionKind.Scout,
+        "Scouts",
+        scouts.Id,
+        capturedTarget.Id,
+        0,
+        60_000,
+        amount: 100,
+        crewCitizenId: captureScout.Id);
+    var allianceMission = state.DispatchMission(
+        WorldMissionKind.Scout,
+        "Scouts",
+        scouts.Id,
+        alliedTarget.Id,
+        0,
+        60_000,
+        amount: 100,
+        crewCitizenId: allianceScout.Id);
+    state.TransferAsset(captureScout.Id, scouts.Id, captureMission.Id, "scouting mission launched");
+    state.TransferAsset(allianceScout.Id, scouts.Id, allianceMission.Id, "scouting mission launched");
+
+    state.CaptureSettlement(capturedTarget.Id, "Scouts");
+    DiplomacyService.AdjustGoodwill(state, "Scouts", "Neighbors", 80);
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(60_000));
+
+    AssertEqual(WorldTransitPhase.Returning, state.GetMission(captureMission.Id)!.Phase);
+    AssertEqual(WorldTransitPhase.Returning, state.GetMission(allianceMission.Id)!.Phase);
+    AssertEqual(false, state.GetMission(captureMission.Id)!.ReportCollected);
+    AssertEqual(false, state.GetMission(allianceMission.Id)!.ReportCollected);
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(120_000));
+
+    AssertEqual(WorldMissionStatus.Failed, state.GetMission(captureMission.Id)!.Status);
+    AssertEqual(WorldMissionStatus.Failed, state.GetMission(allianceMission.Id)!.Status);
+    AssertEqual(scouts.Id, state.GetOwner(captureScout.Id));
+    AssertEqual(scouts.Id, state.GetOwner(allianceScout.Id));
+    AssertEqual(false, state.HasFactionSettlementIntel("Scouts", capturedTarget.Id));
+    AssertEqual(false, state.HasFactionSettlementIntel("Scouts", alliedTarget.Id));
     AssertEqual(0, state.Validate().Count());
 }
 
@@ -9693,6 +9753,8 @@ static void TestRimWorldInstallScript()
 
     AssertContains("C:\\Games\\RimWorld\\Mods\\LivingWorld", source);
     AssertContains("dotnet build", source);
+    AssertContains("[string]$Configuration = \"Release\"", source);
+    AssertContains("-c $Configuration", source);
     AssertContains("mod", source);
     AssertContains("1.6\\Assemblies", source);
     AssertContains("LivingWorld.RimWorld.dll", source);
@@ -9931,12 +9993,13 @@ static void TestRimWorldSettlementInspectPatch()
     AssertContains("<LW_InspectPopulationMissingLine>", englishXml);
     AssertContains("<LW_InspectPopulationMissingLine>", russianXml);
 
-    // UI-5: a threat header appears when a world-war army is marching on the settlement (public
-    // info, consistent with the on-map warband marker). It reads only army movements, never the
-    // fog-gated ledger population/food, so it cannot leak unscouted state.
+    // UI-5: a threat header appears only when a player-known world-war marker is marching on the
+    // settlement. The movement ledger alone must not leak an undiscovered army or its ETA.
     AssertContains("BuildThreatLine", source);
     AssertContains("state.ArmyMovements", source);
     AssertContains("ArmyMovementStatus.Traveling", source);
+    AssertContains("IsMovementVisible(movement.ArmyId)", source);
+    AssertContains("marker.IsKnownToPlayer", source);
     AssertContains("LW_InspectThreatLine", source);
     AssertContains("<LW_InspectThreatLine>", englishXml);
     AssertContains("<LW_InspectThreatLine>", russianXml);
@@ -10788,7 +10851,7 @@ static void TestRimWorldEconomyWindow()
     AssertContains("SettlementDevelopmentService.GetTier", window);
     // Prefers the Core wealth snapshot, falls back to a live material sum so it is never empty.
     AssertContains("GetFactionWealth", window);
-    AssertContains("exactVisible ? data.Population.ToString() : data.PopulationBand.ToString()", window);
+    AssertContains("LivingWorldKnowledgeLabels.Population(data.PopulationBand)", window);
     AssertContains("exactVisible ? data.Wealth.ToString() : \"?\"", window);
     AssertContains("PlayerKnowledgeService.HasFreshExactSnapshot", window);
     AssertContains("info.ExactSnapshot!", window);
@@ -11036,7 +11099,7 @@ static void TestRimWorldSettlementVisitSiteFoundation()
     AssertContains("FindExisting(", service);
     AssertContains("OfType<WorldObject_LivingWorldSettlementVisitSite>()", service);
     AssertContains("candidate.SettlementId == settlementId", service);
-    AssertContains("candidate.SourceSettlementWorldObjectId == sourceSettlement.ID", service);
+    AssertDoesNotContain("candidate.SourceSettlementWorldObjectId == sourceSettlement.ID", service);
     AssertContains("site.Configure(", service);
     AssertContains("site!.RefreshSource(", service);
     AssertContains("site.Faction != sourceSettlement.Faction", service);
@@ -11111,6 +11174,8 @@ static void TestRimWorldSettlementVisitCaravanRoute()
     AssertContains("ledgerSettlementIdValue", action);
     AssertContains("sourceLabel", action);
     AssertContains("TryResolveLiveSource", action);
+    AssertContains("LivingWorldSettlementVisitFloatMenuPatch.CanVisit(sourceSettlement)", action);
+    AssertContains("LW_SettlementVisitUnavailableChanged", action);
     AssertDoesNotContain("Scribe_References.Look(ref sourceSettlement", action);
     AssertDoesNotContain("new LookTargets", action);
     AssertContains("StillValid(Caravan caravan, PlanetTile destinationTile)", action);
@@ -11229,6 +11294,8 @@ static void TestRimWorldSettlementVisitLiveLifecycle()
     AssertContains("CheckpointWarehouseForWorldSimulation", liveSync);
     AssertContains("loaded settlement daily ledger checkpoint", liveSync);
     AssertContains("LivingWorldSettlementMapResourceTracker.ReconcileMap", liveSync);
+    AssertContains("LivingWorldSettlementMapFacilityTracker.ReconcileLiveMap", liveSync);
+    AssertContains("loaded settlement daily facility checkpoint", liveSync);
     AssertContains("BuildResourceRequest", liveSync);
     AssertContains("loaded settlement warehouse sync", liveSync);
     AssertContains("JobDefOf.LayDown", liveSync);
@@ -11236,6 +11303,8 @@ static void TestRimWorldSettlementVisitLiveLifecycle()
     AssertContains("pawn.CurJobDef != JobDefOf.Goto", liveSync);
     AssertContains("ConfigureWarehouseManifest", component);
     AssertContains("RefreshWarehouseMaterializedCounts", component);
+    AssertContains("livingWorld_facilityCheckpointSurvivors", component);
+    AssertContains("GetFacilitySurvivorCheckpoint", component);
     AssertContains("Lifecycle == LivingWorldMapMaterializationLifecycle.Failed && rollbackPending", component);
     AssertContains("CheckpointLoadedSettlementWarehouses", worldComponent);
     AssertContains("RematerializeLoadedSettlementWarehouses", worldComponent);
@@ -11246,6 +11315,9 @@ static void TestRimWorldSettlementVisitLiveLifecycle()
     AssertContains("SettlementMapDamageStatus.NoDamage", facilityTracker);
     AssertContains("CloseProxiesForRemovedSource", siteLifecycle);
     AssertContains("sourceRemoved", site);
+    AssertContains("livingWorld_cleanupPending", site);
+    AssertContains("cleanupPending && HasMap", site);
+    AssertContains("Current.Game?.DeinitAndRemoveMap", site);
     AssertContains("alsoRemoveWorldObject = canRemove", site);
     AssertDoesNotContain("new LookTargets(playerCaravan)", contact);
     AssertDoesNotContain("new LookTargets((PlanetTile)marker.Tile)", contact);
@@ -11545,9 +11617,11 @@ static void TestRimWorldPlayerCaravanMarkerContacts()
     AssertContains("Action onResolved", service);
 
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
-    AssertContains("marker.IsVisibleByFilter", component);
+    AssertContains(".Where(marker => !string.IsNullOrWhiteSpace(marker.MarkerKey))", component);
+    AssertContains("marker.MarkerKey.StartsWith(\"migration:\"", component);
     AssertContains("pendingPlayerCaravanMarkerContacts", component);
     AssertContains("if (!notifiedPlayerCaravanMarkerContacts.Contains(contactKey))", component);
+    AssertDoesNotContain(".Where(marker => marker.IsVisibleByFilter", component);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -11566,6 +11640,9 @@ static void TestRimWorldPlayerCaravanMarkerContacts()
         AssertContains($"<{key}>", en);
         AssertContains($"<{key}>", ru);
     }
+
+    AssertContains("LW_SettlementVisitUnavailableChanged", en);
+    AssertContains("LW_SettlementVisitUnavailableChanged", ru);
 }
 
 static void TestRimWorldWorldActionMarkerLegendAndFilters()
@@ -11652,6 +11729,7 @@ static void TestRimWorldWorldTrafficFogOfWar()
     AssertContains("IsPhysicallyObservedOnly", visibility);
     AssertContains("worldObject?.Faction != Faction.OfPlayer", visibility);
     AssertContains("SetStrategicVisibility", marker);
+    AssertContains("IsKnownToPlayer => strategicallyVisible && IsVisibleByFilter", marker);
     AssertContains("if (!strategicallyVisible)", marker);
     AssertContains("LivingWorldTransitVisibility.IsKnown(", component);
     AssertContains("$\"migration:{group.Id.Value}\"", component);
@@ -11918,10 +11996,10 @@ static void TestWorldComponentCatchesUpMissedSimulationDays()
     AssertContains("lastSimulatedDay = nextDay", source);
     AssertEqual(
         true,
-        source.IndexOf("SimulateWorldDay(nextDay)", StringComparison.Ordinal)
-            < source.IndexOf("lastSimulatedDay = nextDay", StringComparison.Ordinal));
-    AssertContains("the watermark was not advanced", source);
-    AssertContains("FailedDayRetryDelayTicks", source);
+        source.IndexOf("lastSimulatedDay = nextDay", StringComparison.Ordinal)
+            < source.IndexOf("SimulateWorldDay(nextDay)", StringComparison.Ordinal));
+    AssertContains("the committed day will not be replayed", source);
+    AssertDoesNotContain("FailedDayRetryDelayTicks", source);
     AssertContains("livingWorld_nextDailySimulationRetryTick", source);
 }
 
@@ -12734,8 +12812,8 @@ static void TestLiveVisitAnimalCaravanDocs()
 
     var taskBoard = File.ReadAllText(
         Path.Combine(root, "docs", "superpowers", "plans", "2026-07-08-next-systems-task-board.md"));
-    AssertContains("Direct observer slice landed", taskBoard);
-    AssertContains("player-taken/tamed animals stay out of the source cohort", taskBoard);
+    AssertContains("dedicated settlement visits use stable citizen identity", taskBoard);
+    AssertContains("player-taken animals stay removed", taskBoard);
 
     var armoryPlan = File.ReadAllText(
         Path.Combine(root, "docs", "superpowers", "plans", "2026-07-09-armory-mobilization.md"));
@@ -14086,6 +14164,226 @@ static void TestFindActiveSettlementByTileIgnoresDestroyed()
     SettlementLifecycleService.DestroySettlement(state, settlement.Id, 100, "test");
 
     AssertEqual(true, state.FindActiveSettlementByTile(512) is null);
+}
+
+static void TestDestroyedSettlementStopsAnimalSimulation()
+{
+    var state = new WorldState(8101);
+    var settlement = state.CreateSettlement("ranch", "Ranch", "Outlander");
+    state.RecordSettlementCapability(new SettlementCapability(settlement.Id, 20, 100, 20, 10, 2, 20, 0, 2, 0, 0));
+    state.RecordSpecialistPool(new SpecialistPool(settlement.Id, 0, 2, 0, 1, 0, 1, 0, 0, 0));
+    var herd = state.CreateAnimalCohort(
+        settlement.Id,
+        "Muffalo",
+        AnimalCohortType.Domesticated,
+        8,
+        90,
+        80,
+        20,
+        0);
+    state.AddResource(settlement.Id, "Hay", 40);
+    state.AddResource(settlement.Id, "MedicineIndustrial", 4);
+    state.AddResource(settlement.Id, "ComponentIndustrial", 3);
+    var project = AnimalBreedingService.StartSelectionProject(
+        state,
+        new AnimalBreedingStartRequest(
+            1_000,
+            settlement.Id,
+            herd.Id,
+            AnimalBreedingTrait.Fertility,
+            1_000,
+            "Hay",
+            10,
+            "MedicineIndustrial",
+            1,
+            "ComponentIndustrial",
+            1)).Project!;
+
+    var destroyed = SettlementLifecycleService.DestroySettlement(state, settlement.Id, 1_500, "burned");
+    var ruin = destroyed.Ruin!;
+    var countBefore = state.GetAnimalCohort(herd.Id)!.Count;
+    var foodBefore = state.GetOwnedResourceQuantity(ruin.Id, "PackagedSurvivalMeal");
+
+    var ecology = AnimalEcologyService.SimulateDay(state, new AnimalEcologyRequest(2_500, "Hay", 1));
+    var production = AnimalProductionService.SimulateDay(
+        state,
+        new AnimalProductionRequest(2_500, "PackagedSurvivalMeal", 2, 3, 2));
+    var breeding = AnimalBreedingService.CompleteReadyProjects(state, 2_500);
+
+    AssertEqual(ruin.Id, state.GetAnimalCohort(herd.Id)!.OwnerId);
+    AssertEqual(countBefore, state.GetAnimalCohort(herd.Id)!.Count);
+    AssertEqual(AnimalBreedingProjectStatus.Cancelled, state.GetAnimalBreedingProject(project.Id)!.Status);
+    AssertEqual(0, ecology.Births + ecology.Deaths);
+    AssertEqual(0, production.RanchFoodProduced + production.HuntingFoodProduced);
+    AssertEqual(0, breeding.CompletedProjects);
+    AssertEqual(foodBefore, state.GetOwnedResourceQuantity(ruin.Id, "PackagedSurvivalMeal"));
+}
+
+static void TestDestroyedSettlementRefugeesResumeMigration()
+{
+    var state = new WorldState(8102);
+    var source = state.CreateSettlement("source", "Lost Home", "Settlers");
+    var target = state.CreateSettlement("target", "Safe Home", "Settlers");
+    var citizen = state.CreateCitizen("Refugee", 32, Sex.Female, "worker", source.Id);
+    state.AddResource(target.Id, "Food", 200);
+    SettlementLifecycleService.DestroySettlement(state, source.Id, 1_000, "destroyed");
+
+    var launched = MigrationService.SimulateDay(
+        state,
+        new MigrationSimulationRequest(2_000, "Food", 1, 100, 4, 1_000));
+    var group = state.MigrationGroups.Single(candidate => candidate.Reason == "destroyed-settlement-refugees");
+
+    AssertEqual(1, launched.MigrationGroupsCreated);
+    AssertEqual(CitizenStatus.Migrating, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(group.Id, state.GetOwner(citizen.Id));
+
+    var arrived = MigrationService.SimulateDay(
+        state,
+        new MigrationSimulationRequest(3_000, "Food", 1, 100, 4, 1_000));
+    AssertEqual(1, arrived.MigrationsCompleted);
+    AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(target.Id, state.GetOwner(citizen.Id));
+    AssertEqual(target.Id, state.GetCitizen(citizen.Id)!.SettlementId);
+}
+
+static void TestRaidPopulationAllocatorReservesEquipment()
+{
+    var state = new WorldState(8103);
+    var settlement = state.CreateSettlement("camp", "Camp", "Pirates");
+    state.CreateCitizen("Raider A", 28, Sex.Male, "soldier", settlement.Id);
+    state.CreateCitizen("Raider B", 29, Sex.Female, "soldier", settlement.Id);
+    state.AddResource(settlement.Id, "PackagedSurvivalMeal", 10);
+    state.AddResource(settlement.Id, "Steel", 20);
+
+    var result = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest(
+            "Pirates",
+            "equipped raid",
+            2,
+            EquipmentResourceKey: "Steel",
+            EquipmentPerCombatant: 5));
+
+    AssertEqual(RaidPopulationAllocationStatus.Success, result.Status);
+    AssertEqual(10, state.GetOwnedResourceQuantity(settlement.Id, "Steel"));
+    AssertEqual(10, state.GetOwnedResourceQuantity(result.Army!.Id, "Steel"));
+}
+
+static void TestMaterializationLeaseRejectsPawnRebind()
+{
+    var state = new WorldState(8104);
+    var settlement = state.CreateSettlement("town", "Town", "Outlander");
+    state.CreateCitizen("Resident", 30, Sex.Female, "worker", settlement.Id);
+    var lease = MaterializationLeaseService.CreateLeases(
+        state,
+        new MaterializationLeaseRequest(
+            settlement.Id,
+            settlement.Id,
+            MaterializationPurpose.SettlementVisit,
+            "visit:town",
+            1,
+            60_000)).Leases.Single();
+
+    var first = MaterializationLeaseService.BindPawn(state, lease.Id, 1001);
+    var idempotent = MaterializationLeaseService.BindPawn(state, lease.Id, 1001);
+    var rejected = MaterializationLeaseService.BindPawn(state, lease.Id, 1002);
+
+    AssertEqual(MaterializationLeaseBindStatus.Success, first.Status);
+    AssertEqual(MaterializationLeaseBindStatus.Success, idempotent.Status);
+    AssertEqual(MaterializationLeaseBindStatus.PawnAlreadyLeased, rejected.Status);
+    AssertEqual(1001, state.GetMaterializationLease(lease.Id)!.PawnThingId);
+}
+
+static void TestFactionLifecycleCollapsesAfterLastCapture()
+{
+    var state = new WorldState(8105);
+    var settlement = state.CreateSettlement("last", "Last Home", "OldFaction");
+    state.CreateCitizen("Resident", 30, Sex.Male, "worker", settlement.Id);
+    state.AssignFactionBehavior("OldFaction", FactionBehavior.Cautious);
+    state.CaptureSettlement(settlement.Id, "Captors");
+
+    var result = FactionLifecycleService.SimulateCollapses(
+        state,
+        new FactionLifecycleRequest(60_000, new[] { "OldFaction" }));
+
+    AssertEqual(1, result.CollapsedFactions);
+    AssertEqual(WorldFactionStatus.Collapsed, state.GetFactionRecord("OldFaction")!.Status);
+}
+
+static void TestTerminalArmyReleasesDeadOwnership()
+{
+    var state = new WorldState(8106);
+    var source = state.CreateSettlement("home", "Home", "Raiders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    var citizen = state.CreateCitizen("Fallen", 31, Sex.Male, "soldier", source.Id);
+    var army = state.CreateArmy("Army", "Raiders", source.Id);
+    state.TransferAsset(citizen.Id, source.Id, army.Id, "deployed");
+    state.MarkCitizenDead(citizen.Id, "killed in battle");
+    state.DispatchArmy(army.Id, target.Id, 60_000);
+
+    ArmyTerminalResolutionService.ReturnToFaction(
+        state,
+        army.Id,
+        ArmyMovementStatus.Disbanded,
+        "battle ended");
+
+    AssertEqual(citizen.Id, state.GetOwner(citizen.Id));
+    AssertEqual(CitizenStatus.Dead, state.GetCitizen(citizen.Id)!.Status);
+    AssertEqual(0, state.GetCitizensOwnedBy(army.Id).Count);
+}
+
+static void TestRaidRecallAvoidsCapturedSource()
+{
+    var state = new WorldState(8107);
+    var source = state.CreateSettlement("source", "Source", "Raiders");
+    var fallback = state.CreateSettlement("fallback", "Fallback", "Raiders");
+    state.CreateCitizen("Raider A", 28, Sex.Male, "soldier", source.Id);
+    state.CreateCitizen("Raider B", 29, Sex.Female, "soldier", source.Id);
+    state.AddResource(source.Id, "PackagedSurvivalMeal", 10);
+    state.AddResource(source.Id, "Steel", 10);
+    var allocation = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest(
+            "Raiders",
+            "recalled raid",
+            2,
+            TransferFoodToArmy: true,
+            EquipmentPerCombatant: 5));
+    state.CaptureSettlement(source.Id, "Captors");
+
+    var released = RaidReconciliationService.ReleaseUndeployedReserves(state, allocation.Army!.Id);
+
+    AssertEqual(2, released);
+    AssertEqual(2, state.GetSettlementPopulation(fallback.Id).Total);
+    AssertEqual(2, state.GetOwnedResourceQuantity(fallback.Id, "PackagedSurvivalMeal"));
+    AssertEqual(10, state.GetOwnedResourceQuantity(fallback.Id, "Steel"));
+    AssertEqual(0, state.ResourcesForOwner(allocation.Army.Id).Count);
+}
+
+static void TestCaravanRecallsFromHostileCaptor()
+{
+    var state = new WorldState(8108);
+    var source = state.CreateSettlement("source", "Source", "Traders");
+    var target = state.CreateSettlement("target", "Target", "Settlers");
+    state.AddResource(source.Id, "Steel", 20);
+    var caravan = state.CreateCaravan(
+        "Steel caravan",
+        "Traders",
+        source.Id,
+        target.Id,
+        0,
+        60_000,
+        tradeResourceKey: "Steel",
+        requestedTradeQuantity: 10);
+    state.TransferResource(source.Id, caravan.Id, "Steel", 10, "cargo");
+    state.CaptureSettlement(target.Id, "HostileCaptors");
+    DiplomacyService.AdjustGoodwill(state, "Traders", "HostileCaptors", -100);
+
+    CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(60_000));
+
+    AssertEqual(WorldTransitPhase.Returning, state.GetCaravan(caravan.Id)!.Phase);
+    AssertEqual(0, state.GetOwnedResourceQuantity(target.Id, "Steel"));
+    AssertEqual(10, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
 }
 
 static PhysicalSettlementFact Fact(int tile, string faction) =>

@@ -38,7 +38,12 @@ public sealed record RaidPreparationRequest(
     RaidIntent Intent,
     string SupplyResourceKey,
     int SupplyPerCombatant,
-    int LifetimeTicks);
+    int LifetimeTicks)
+{
+    public string EquipmentResourceKey { get; init; } = "Steel";
+
+    public int EquipmentPerCombatant { get; init; }
+}
 
 public static class RaidPreparationService
 {
@@ -70,7 +75,9 @@ public static class RaidPreparationService
                 desiredCombatants,
                 request.SupplyResourceKey,
                 Math.Max(0, request.SupplyPerCombatant),
-                RequireExactCombatants: true));
+                RequireExactCombatants: true,
+                EquipmentResourceKey: request.EquipmentResourceKey,
+                EquipmentPerCombatant: Math.Max(0, request.EquipmentPerCombatant)));
 
         if (allocation.Status != RaidPopulationAllocationStatus.Success || allocation.Army == null || allocation.SourceSettlement == null)
         {
@@ -149,18 +156,6 @@ public static class RaidPreparationService
         if (preparation.Status != RaidPreparationStatus.Ready)
         {
             return preparation;
-        }
-
-        var availableSupplies = state.GetOwnedResourceQuantity(preparation.ArmyId, preparation.SupplyResourceKey);
-        var suppliesToReturn = Math.Min(preparation.ReservedSupplies, availableSupplies);
-        if (suppliesToReturn > 0)
-        {
-            state.TransferResource(
-                preparation.ArmyId,
-                preparation.SourceSettlementId,
-                preparation.SupplyResourceKey,
-                suppliesToReturn,
-                reason);
         }
 
         RaidReconciliationService.ReleaseUndeployedReserves(state, preparation.ArmyId);

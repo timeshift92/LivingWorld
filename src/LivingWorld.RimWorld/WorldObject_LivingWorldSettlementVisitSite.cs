@@ -22,6 +22,7 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     private bool activeMapSession;
     private bool playerCaravanEntered;
     private bool sourceRemoved;
+    private bool cleanupPending;
 
     public EntityId? SettlementId => settlementIdValue > 0
         ? EntityId.Create(EntityKind.Settlement, settlementIdValue)
@@ -40,6 +41,8 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     public bool ActiveMapSession => activeMapSession;
 
     public bool SourceRemoved => sourceRemoved;
+
+    public bool CleanupPending => cleanupPending;
 
     protected override bool UseGenericEnterMapFloatMenuOption => false;
 
@@ -66,13 +69,17 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         activeMapSession = false;
         playerCaravanEntered = false;
         sourceRemoved = false;
+        cleanupPending = false;
         Tile = sourceTile;
     }
 
     public void BeginMapSession()
     {
         activeMapSession = true;
-        playerCaravanEntered = false;
+        if (!HasMap)
+        {
+            playerCaravanEntered = false;
+        }
         reconciled = false;
     }
 
@@ -99,12 +106,14 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     {
         activeMapSession = true;
         playerCaravanEntered = true;
+        cleanupPending = false;
     }
 
     public void AbortMapSession()
     {
         activeMapSession = false;
         playerCaravanEntered = false;
+        cleanupPending = HasMap;
     }
 
     public void MarkMaterialized(int version)
@@ -136,14 +145,31 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         activeMapSession = false;
         playerCaravanEntered = false;
         reconciled = true;
+        cleanupPending = false;
     }
 
     protected override void Tick()
     {
         base.Tick();
         var tick = Find.TickManager?.TicksGame ?? 0;
-        if ((tick + ID) % 2_500 == 0
-            && !LivingWorldSettlementVisitSiteService.TryResolveSource(this, out _))
+        if ((tick + ID) % 2_500 != 0)
+        {
+            return;
+        }
+
+        if (cleanupPending && HasMap)
+        {
+            var hasTransferredPawn = Map.mapPawns.PawnsInFaction(Faction.OfPlayer)
+                .Any(pawn => pawn != null && pawn.Spawned && !pawn.Dead);
+            if (!hasTransferredPawn && !TransporterUtility.IncomingTransporterPreventingMapRemoval(Map))
+            {
+                Current.Game?.DeinitAndRemoveMap(Map, notifyPlayer: false);
+            }
+
+            return;
+        }
+
+        if (!LivingWorldSettlementVisitSiteService.TryResolveSource(this, out _))
         {
             LivingWorldSettlementVisitSiteService.CloseOrphanedSite(this);
         }
@@ -152,6 +178,15 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
     public override bool ShouldRemoveMapNow(out bool alsoRemoveWorldObject)
     {
         alsoRemoveWorldObject = false;
+        if (cleanupPending && Map != null)
+        {
+            var canCleanUp = !Map.mapPawns.PawnsInFaction(Faction.OfPlayer)
+                    .Any(pawn => pawn != null && pawn.Spawned && !pawn.Dead)
+                && !TransporterUtility.IncomingTransporterPreventingMapRemoval(Map);
+            alsoRemoveWorldObject = canCleanUp;
+            return canCleanUp;
+        }
+
         if (!activeMapSession || !playerCaravanEntered || Map == null)
         {
             return false;
@@ -189,5 +224,6 @@ public sealed class WorldObject_LivingWorldSettlementVisitSite : MapParent
         Scribe_Values.Look(ref activeMapSession, "livingWorld_activeMapSession", false);
         Scribe_Values.Look(ref playerCaravanEntered, "livingWorld_playerCaravanEntered", false);
         Scribe_Values.Look(ref sourceRemoved, "livingWorld_sourceRemoved", false);
+        Scribe_Values.Look(ref cleanupPending, "livingWorld_cleanupPending", false);
     }
 }

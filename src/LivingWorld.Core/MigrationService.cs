@@ -36,9 +36,62 @@ public static class MigrationService
         state.AdvanceToTick(request.Tick);
 
         var completed = CompleteArrivedMigrationGroups(state, request);
+        var strandedGroups = CreateStrandedRefugeeMigrations(state, request);
         var (created, groupsCreated) = CreateRefugees(state, request);
 
-        return new MigrationSimulationResult(created, groupsCreated, completed);
+        return new MigrationSimulationResult(created, groupsCreated + strandedGroups, completed);
+    }
+
+    private static int CreateStrandedRefugeeMigrations(WorldState state, MigrationSimulationRequest request)
+    {
+        var created = 0;
+        var maxPerSource = Math.Max(0, request.MaxRefugeesPerSettlement);
+        if (maxPerSource == 0)
+        {
+            return 0;
+        }
+
+        foreach (var source in state.Settlements
+            .Where(settlement => !settlement.IsActive)
+            .OrderBy(settlement => settlement.Id.Value))
+        {
+            var target = state.Settlements
+                .Where(settlement => settlement.IsActive
+                    && string.Equals(settlement.FactionId, source.FactionId, StringComparison.Ordinal)
+                    && !state.GetSettlementFoodStatus(settlement.Id, request.FoodResourceKey, request.FoodPerCitizen).IsShortage)
+                .OrderByDescending(settlement => state.GetSettlementFoodStatus(
+                    settlement.Id,
+                    request.FoodResourceKey,
+                    request.FoodPerCitizen).FoodDays)
+                .ThenBy(settlement => settlement.Id.Value)
+                .FirstOrDefault();
+            if (target == null)
+            {
+                continue;
+            }
+
+            foreach (var refugee in state.GetCitizensBySettlement(source.Id)
+                .Where(citizen => citizen.Status == CitizenStatus.Refugee
+                    && state.GetOwner(citizen.Id) == citizen.Id
+                    && !state.HasActiveMaterializationLease(citizen.Id))
+                .OrderBy(citizen => citizen.Id.Value)
+                .Take(maxPerSource)
+                .ToList())
+            {
+                var group = state.CreateMigrationGroup(
+                    source.Id,
+                    target.Id,
+                    source.FactionId,
+                    request.Tick,
+                    request.Tick + Math.Max(1, request.TravelDurationTicks),
+                    "destroyed-settlement-refugees");
+                state.ReplaceCitizenForSimulation(refugee with { Status = CitizenStatus.Migrating });
+                state.SetOwnerForLedger(refugee.Id, group.Id);
+                created++;
+            }
+        }
+
+        return created;
     }
 
     private static (int RefugeesCreated, int MigrationGroupsCreated) CreateRefugees(WorldState state, MigrationSimulationRequest request)

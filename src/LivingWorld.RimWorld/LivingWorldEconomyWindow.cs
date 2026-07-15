@@ -141,7 +141,7 @@ public sealed class LivingWorldEconomyWindow : Window
 
         if (isHeader)
         {
-            var debugHeaders = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+            var debugHeaders = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || Prefs.DevMode;
             Widgets.Label(new Rect(rect.x, rect.y, xSettlements - rect.x, rect.height), "LW_EconomyCol_Faction".Translate());
             Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height),
                 (debugHeaders ? "LW_EconomyCol_Settlements" : "LW_EconomyCol_KnownSettlements").Translate());
@@ -174,18 +174,24 @@ public sealed class LivingWorldEconomyWindow : Window
 
         var factionName = faction?.Name ?? data.FactionId;
         Widgets.Label(new Rect(nameX, rect.y, xSettlements - nameX, rect.height), factionName);
-        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || Prefs.DevMode;
         var exactVisible = debugExact || data.ExactVisible;
-        var population = exactVisible ? data.Population.ToString() : data.PopulationBand.ToString();
+        var population = exactVisible
+            ? data.Population.ToString()
+            : LivingWorldKnowledgeLabels.Population(data.PopulationBand);
         var wealth = exactVisible ? data.Wealth.ToString() : "?";
 
         Widgets.Label(new Rect(xSettlements, rect.y, xPopulation - xSettlements, rect.height), data.Settlements.ToString());
         Widgets.Label(new Rect(xPopulation, rect.y, xPopTrend - xPopulation, rect.height), population);
         Widgets.Label(new Rect(xPopTrend, rect.y, xTier - xPopTrend, rect.height),
-            exactVisible ? FormatSigned(data.DailyPopulationChange) : data.MigrationKnowledge.ToString());
+            exactVisible
+                ? FormatSigned(data.DailyPopulationChange)
+                : LivingWorldKnowledgeLabels.Migration(data.MigrationKnowledge));
         Widgets.Label(new Rect(xTier, rect.y, xOutput - xTier, rect.height), exactVisible ? TierLabel(data.TopTier) : "?");
         Widgets.Label(new Rect(xOutput, rect.y, xChange - xOutput, rect.height),
-            exactVisible ? FormatSigned(data.DailyOutputValue) : data.ProductionKnowledge.ToString());
+            exactVisible
+                ? FormatSigned(data.DailyOutputValue)
+                : LivingWorldKnowledgeLabels.Production(data.ProductionKnowledge));
         Widgets.Label(new Rect(xChange, rect.y, xWealth - xChange, rect.height), exactVisible ? FormatSigned(data.DailyWealthChange) : "?");
 
         // Wealth cell: comparative faction-coloured bar (share of the richest faction) + value.
@@ -216,7 +222,7 @@ public sealed class LivingWorldEconomyWindow : Window
         cachedSettlementCount = state.Settlements.Count;
         cachedRows.Clear();
 
-        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging;
+        var debugExact = (LivingWorldSettings.Instance ?? new LivingWorldSettings()).debugLogging || Prefs.DevMode;
         var visibleSettlements = debugExact ? state.Settlements.Where(settlement => settlement.IsActive) : KnownSettlementsForPlayer(state);
         var knownBySettlement = state.KnownSettlementInfos.ToDictionary(info => info.SettlementId);
         var rows = visibleSettlements

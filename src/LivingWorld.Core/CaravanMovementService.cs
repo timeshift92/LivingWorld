@@ -30,9 +30,11 @@ public static class CaravanMovementService
         {
             if (caravan.Phase == WorldTransitPhase.Outbound && request.Tick >= caravan.ArrivalTick)
             {
-                if (!state.IsActiveSettlement(caravan.TargetSettlementId))
+                var target = state.GetSettlement(caravan.TargetSettlementId);
+                if (target?.IsActive != true
+                    || DiplomacyService.GetStance(state, caravan.FactionId, target.FactionId) == RelationStance.Hostile)
                 {
-                    state.BeginCaravanReturn(caravan.Id, completeAsRecalled: true, "target settlement unavailable");
+                    state.BeginCaravanReturn(caravan.Id, completeAsRecalled: true, "target settlement unavailable or hostile");
                     beganReturn++;
                 }
                 else
@@ -43,7 +45,16 @@ public static class CaravanMovementService
             }
             else if (caravan.Phase == WorldTransitPhase.AtTarget && request.Tick > caravan.StatusTick)
             {
-                state.ExecuteCaravanTradeAndBeginReturn(caravan.Id);
+                var target = state.GetSettlement(caravan.TargetSettlementId);
+                if (target?.IsActive != true
+                    || DiplomacyService.GetStance(state, caravan.FactionId, target.FactionId) == RelationStance.Hostile)
+                {
+                    state.BeginCaravanReturn(caravan.Id, completeAsRecalled: true, "trade target became unavailable or hostile");
+                }
+                else
+                {
+                    state.ExecuteCaravanTradeAndBeginReturn(caravan.Id);
+                }
                 beganReturn++;
             }
             else if (caravan.Phase == WorldTransitPhase.Returning && request.Tick >= caravan.ReturnArrivalTick)

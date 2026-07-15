@@ -57,17 +57,58 @@ public static class RaidReconciliationService
             .OrderBy(citizen => citizen.Id.Value)
             .ToList();
 
+        var destination = FactionReturnService.Resolve(state, army.FactionId, army.SourceSettlementId);
         var released = 0;
         foreach (var citizen in undeployed)
         {
+            if (destination == null)
+            {
+                state.ReplaceCitizenForSimulation(citizen with { Status = CitizenStatus.Missing });
+                state.SetOwnerForLedger(citizen.Id, citizen.Id);
+                state.RecordEvent(
+                    WorldEventKind.RaidPawnMissing,
+                    citizen.Id,
+                    $"Undeployed reservist {citizen.Id} was stranded after its faction lost every settlement.");
+                continue;
+            }
+
             var transfer = state.TransferAsset(
                 citizen.Id,
                 army.Id,
-                army.SourceSettlementId,
+                destination.Id,
                 "reservist stood down without deploying");
             if (transfer.Status == OwnershipTransferStatus.Success)
             {
+                if (citizen.SettlementId != destination.Id)
+                {
+                    state.ReplaceCitizenForSimulation(citizen with { SettlementId = destination.Id });
+                }
+
                 released++;
+            }
+        }
+
+        foreach (var resource in state.ResourcesForOwner(army.Id).ToList())
+        {
+            if (destination == null)
+            {
+                state.ConsumeResource(
+                    army.Id,
+                    resource.ResourceKey,
+                    resource.Quantity,
+                    "undeployed raid cargo lost because no same-faction settlement survived");
+                continue;
+            }
+
+            var transfer = state.TransferResource(
+                army.Id,
+                destination.Id,
+                resource.ResourceKey,
+                resource.Quantity,
+                "undeployed raid supplies returned");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
             }
         }
 

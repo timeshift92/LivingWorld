@@ -9,7 +9,12 @@ namespace LivingWorld.RimWorld;
 
 public static class LivingWorldSettlementMapResourceTracker
 {
-    public static void Track(Thing? thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = -1)
+    public static void Track(
+        Thing? thing,
+        EntityId returnOwnerId,
+        string resourceKey,
+        int reservedQuantity = -1,
+        bool checkpointEligible = true)
     {
         var map = thing?.MapHeld;
         if (thing == null || map == null)
@@ -21,7 +26,8 @@ public static class LivingWorldSettlementMapResourceTracker
             thing,
             returnOwnerId,
             resourceKey,
-            reservedQuantity);
+            reservedQuantity,
+            checkpointEligible);
     }
 
     public static void TrackSplit(Thing? source, Thing? split)
@@ -32,7 +38,12 @@ public static class LivingWorldSettlementMapResourceTracker
         }
 
         var splitQuantity = tracked.SplitOff(source.stackCount, split.stackCount);
-        component.TrackResource(split, tracked.ReturnOwnerId, tracked.ResourceKey, splitQuantity);
+        component.TrackResource(
+            split,
+            tracked.ReturnOwnerId,
+            tracked.ResourceKey,
+            splitQuantity,
+            tracked.CheckpointEligible);
     }
 
     public static bool AllowStack(Thing? destination, Thing? source)
@@ -51,7 +62,8 @@ public static class LivingWorldSettlementMapResourceTracker
 
         return destinationInfo.ReturnOwnerKind == sourceInfo.ReturnOwnerKind
             && destinationInfo.ReturnOwnerValue == sourceInfo.ReturnOwnerValue
-            && destinationInfo.ResourceKey == sourceInfo.ResourceKey;
+            && destinationInfo.ResourceKey == sourceInfo.ResourceKey
+            && destinationInfo.CheckpointEligible == sourceInfo.CheckpointEligible;
     }
 
     public static void NotifyAbsorbed(
@@ -64,7 +76,11 @@ public static class LivingWorldSettlementMapResourceTracker
             || source == null
             || !TryGetTrackedResource(destination, out var destinationTracked, out var destinationComponent)
             || !TryGetTrackedResource(source, out var sourceTracked, out var sourceComponent)
-            || destinationComponent != sourceComponent)
+            || destinationComponent != sourceComponent
+            || destinationTracked.ReturnOwnerKind != sourceTracked.ReturnOwnerKind
+            || destinationTracked.ReturnOwnerValue != sourceTracked.ReturnOwnerValue
+            || destinationTracked.ResourceKey != sourceTracked.ResourceKey
+            || destinationTracked.CheckpointEligible != sourceTracked.CheckpointEligible)
         {
             return;
         }
@@ -84,7 +100,7 @@ public static class LivingWorldSettlementMapResourceTracker
         }
     }
 
-    public static int ReconcileMap(WorldState state, Map? map, string reason)
+    public static int ReconcileMap(WorldState state, Map? map, string reason, bool checkpointOnly = false)
     {
         if (state == null || map == null)
         {
@@ -100,6 +116,11 @@ public static class LivingWorldSettlementMapResourceTracker
         var returned = 0;
         foreach (var tracked in component.Resources.ToList())
         {
+            if (checkpointOnly && !tracked.CheckpointEligible)
+            {
+                continue;
+            }
+
             if (tracked.ReconciliationState == LivingWorldTrackedResourceState.Removed)
             {
                 component.RemoveResource(tracked.ThingId);

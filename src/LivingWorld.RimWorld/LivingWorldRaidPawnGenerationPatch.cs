@@ -37,10 +37,24 @@ public static class LivingWorldRaidPawnGenerationPatch
 
         try
         {
-            RaidPawnBindingService.BindRaidPawns(
+            var links = RaidPawnBindingService.BindRaidPawns(
                 component.State,
                 reservation.ArmyId,
                 pawns.Select(pawn => pawn.thingIDNumber));
+            var equipmentCost = links.BoundCount * 5;
+            if (equipmentCost > 0)
+            {
+                var consumed = component.State.ConsumeResource(
+                    reservation.ArmyId,
+                    "Steel",
+                    equipmentCost,
+                    "raid equipment materialized as pawn gear");
+                if (consumed != equipmentCost)
+                {
+                    throw new InvalidOperationException(
+                        $"Raid {reservation.ArmyId} materialized {links.BoundCount} pawn loadouts but paid only {consumed}/{equipmentCost} Steel.");
+                }
+            }
             foreach (var pawn in pawns)
             {
                 var link = component.State.GetRaidPawnLink(pawn.thingIDNumber);

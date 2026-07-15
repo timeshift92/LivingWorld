@@ -61,7 +61,9 @@ public static class WorldMissionService
                 && state.PlayerContactEndpoint is { IsAvailable: true } endpoint
                 && string.Equals(endpoint.StableKey, mission.TargetContactKey, StringComparison.Ordinal)
                 && string.Equals(endpoint.FactionId, mission.TargetFactionId, StringComparison.Ordinal);
-            if (!state.IsActiveSettlement(mission.OriginSettlementId)
+            var origin = state.GetSettlement(mission.OriginSettlementId);
+            if (origin?.IsActive != true
+                || !string.Equals(origin.FactionId, mission.FactionId, StringComparison.Ordinal)
                 || (mission.TargetsPlayerContact
                     ? !endpointAvailable
                     : !mission.TargetSettlementId.HasValue
@@ -74,11 +76,15 @@ public static class WorldMissionService
             var target = mission.TargetSettlementId.HasValue
                 ? state.GetSettlement(mission.TargetSettlementId.Value)
                 : null;
+            var targetFactionId = target?.FactionId ?? string.Empty;
             if (!mission.TargetsPlayerContact
-                && mission.Kind == WorldMissionKind.Diplomat
-                && !string.Equals(target!.FactionId, mission.TargetFactionId, StringComparison.Ordinal))
+                && ((!string.IsNullOrWhiteSpace(mission.TargetFactionId)
+                        && !string.Equals(targetFactionId, mission.TargetFactionId, StringComparison.Ordinal))
+                    || (mission.Kind == WorldMissionKind.Scout
+                        && (string.Equals(targetFactionId, mission.FactionId, StringComparison.Ordinal)
+                            || DiplomacyService.GetStance(state, mission.FactionId, targetFactionId) == RelationStance.Ally))))
             {
-                state.RecallMission(mission.Id, "diplomatic target changed ownership");
+                state.RecallMission(mission.Id, "mission target ownership or relations changed");
                 continue;
             }
 

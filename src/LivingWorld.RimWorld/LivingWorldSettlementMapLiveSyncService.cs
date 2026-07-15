@@ -36,10 +36,15 @@ internal static class LivingWorldSettlementMapLiveSyncService
             return false;
         }
 
+        LivingWorldSettlementMapFacilityTracker.ReconcileLiveMap(
+            worldComponent.State,
+            map,
+            "loaded settlement daily facility checkpoint");
         LivingWorldSettlementMapResourceTracker.ReconcileMap(
             worldComponent.State,
             map,
-            "loaded settlement daily ledger checkpoint");
+            "loaded settlement daily ledger checkpoint",
+            checkpointOnly: true);
         mapComponent.RefreshWarehouseMaterializedCounts();
         return true;
     }
@@ -192,7 +197,8 @@ internal static class LivingWorldSettlementMapLiveSyncService
         Faction faction)
     {
         var trackedByPawnId = mapComponent.Animals.ToDictionary(animal => animal.PawnThingId);
-        if (trackedByPawnId.Count == 0)
+        var lineageByPawnId = mapComponent.AnimalLineages.ToDictionary(animal => animal.PawnThingId);
+        if (trackedByPawnId.Count == 0 && lineageByPawnId.Count == 0)
         {
             return;
         }
@@ -208,9 +214,17 @@ internal static class LivingWorldSettlementMapLiveSyncService
             var parent = pawn.relations?.DirectRelations
                 .Where(relation => relation.def == PawnRelationDefOf.Parent && relation.otherPawn != null)
                 .Select(relation => relation.otherPawn)
-                .FirstOrDefault(candidate => trackedByPawnId.ContainsKey(candidate.thingIDNumber));
-            if (parent == null
-                || !trackedByPawnId.TryGetValue(parent.thingIDNumber, out var parentRecord)
+                .FirstOrDefault(candidate => trackedByPawnId.ContainsKey(candidate.thingIDNumber)
+                    || lineageByPawnId.ContainsKey(candidate.thingIDNumber));
+            var parentRecord = parent != null && trackedByPawnId.TryGetValue(parent.thingIDNumber, out var activeParent)
+                ? activeParent
+                : parent != null && lineageByPawnId.TryGetValue(parent.thingIDNumber, out var historicParent)
+                    ? historicParent
+                    : mapComponent.AnimalLineages
+                        .Where(candidate => string.Equals(candidate.AnimalKind, pawn.kindDef?.defName, StringComparison.Ordinal))
+                        .OrderBy(candidate => candidate.CohortIdValue)
+                        .FirstOrDefault();
+            if (parentRecord == null
                 || !string.Equals(parentRecord.AnimalKind, pawn.kindDef?.defName, StringComparison.Ordinal))
             {
                 continue;

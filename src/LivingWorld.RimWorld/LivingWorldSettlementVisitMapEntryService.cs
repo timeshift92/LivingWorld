@@ -36,6 +36,7 @@ public static class LivingWorldSettlementVisitMapEntryService
         string caravanLabel)
     {
         Map? map = null;
+        var mapExistedBeforeEntry = visitSite.HasMap;
         visitSite.BeginMapSession();
 
         try
@@ -121,7 +122,7 @@ public static class LivingWorldSettlementVisitMapEntryService
         {
             Log.Error($"[LivingWorld] Could not enter settlement '{visitSite.Label}' with caravan '{caravanLabel}': {exception}");
             var caravanPawnIds = caravanPawns.Select(pawn => pawn.thingIDNumber).ToHashSet();
-            var enteredPlayerPawns = map?.mapPawns.PawnsInFaction(Faction.OfPlayer)
+            var enteredPlayerPawns = map?.mapPawns.AllPawns
                 .Where(pawn => pawn != null
                     && caravanPawnIds.Contains(pawn.thingIDNumber)
                     && pawn.Spawned
@@ -138,6 +139,12 @@ public static class LivingWorldSettlementVisitMapEntryService
                     "LW_SettlementVisitSitePartialEntry".Translate(caravanLabel, enteredPlayerPawns.Count),
                     MessageTypeDefOf.CautionInput,
                     historical: false);
+                return;
+            }
+
+            if (mapExistedBeforeEntry)
+            {
+                Reject(caravan, exception.Message);
                 return;
             }
 

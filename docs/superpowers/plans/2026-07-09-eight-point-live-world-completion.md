@@ -43,18 +43,25 @@ and disrupt scout/diplomat missions before arrival.
 
 ## Task 3: Economy Movement And Daily Delta
 
-- [ ] Add a Core daily activity summary service that groups recent events into production, consumption, construction, military, trade, ecology and technology deltas.
+- [x] Add a Core daily activity summary service that groups recent events into production, consumption, construction, military, trade, ecology and technology deltas.
 - [x] Surface this in docs and, where safe, RimWorld observer UI.
 - [x] Ensure it uses bands unless exact knowledge is justified.
 
-Status: observer/debug visibility improved; a dedicated Core grouped summary remains useful
-future cleanup rather than a blocker.
+Status: `WorldActivitySummaryService` groups recent activity by domain and the observer/economy UI
+surfaces trends subject to the player's knowledge. Population and economy values come from current
+ledger aggregates or direct-visit snapshots, not the bootstrap baseline.
 
 ## Task 4: Settlement Materialization Roadmap
 
 - [x] Keep current attacked-settlement materialization real and conservative.
 - [x] Add explicit docs and tests for what is real now: defenders, resources, animals.
-- [x] Mark what remains larger: generated layout, facility buildings, per-animal fate, exact loot pickup reconciliation.
+- [x] Generate districts, housing, storage, work, defense, power and facility structures from the ledger.
+- [x] Reconcile loot pickup, animal fate, resident fate, floors and facility damage back to the ledger.
+
+Status: the visit site is a persistent map projection. A second visit reuses the same settlement
+identity and observes prior casualties, removed warehouse stock and facility damage. Materialized
+gear is excluded from daily warehouse checkpoints so equipment cannot be duplicated or stripped by
+the resource synchronizer.
 
 ## Task 5: Animal Fate Sync Next Slice
 
@@ -80,9 +87,10 @@ Status: exact observer details remain debug-only globally. A new direct settleme
 
 ## Task 8: World-Map UX And Review Closure
 
-- [ ] Keep marker filters/clustering as a UI task if not safe headless.
+- [x] Keep marker filters/clustering bounded and preserve physical contact independently of visual filters.
 - [x] Update the task board with exact status.
-- [ ] Run full verification, push, install mod, store ICM summary.
+- [x] Run full automated verification (`521` tests, Release adapter build, localization parity).
+- [ ] Install the final merged build and run the live smoke gate.
 
 ---
 

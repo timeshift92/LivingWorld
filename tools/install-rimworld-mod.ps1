@@ -1,10 +1,15 @@
+param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release"
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sourceModPath = Join-Path $repoRoot "mod"
 $projectPath = Join-Path $repoRoot "src\LivingWorld.RimWorld\LivingWorld.RimWorld.csproj"
-$buildOutputPath = Join-Path $repoRoot "src\LivingWorld.RimWorld\bin\Debug\net472"
+$buildOutputPath = Join-Path $repoRoot "src\LivingWorld.RimWorld\bin\$Configuration\net472"
 $compiledDllPath = Join-Path $buildOutputPath "LivingWorld.RimWorld.dll"
 $compiledCoreDllPath = Join-Path $buildOutputPath "LivingWorld.Core.dll"
 $rimWorldModPath = "C:\Games\RimWorld\Mods\LivingWorld"
@@ -14,7 +19,7 @@ if (-not (Test-Path -LiteralPath $sourceModPath)) {
     throw "Source mod path does not exist: $sourceModPath"
 }
 
-dotnet build $projectPath
+dotnet build $projectPath -c $Configuration
 
 if (-not (Test-Path -LiteralPath $compiledDllPath)) {
     throw "Compiled RimWorld mod DLL does not exist: $compiledDllPath"

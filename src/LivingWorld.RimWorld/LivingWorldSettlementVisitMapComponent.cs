@@ -13,7 +13,8 @@ public enum LivingWorldMapMaterializationLifecycle
     Preparing,
     Materialized,
     Reconciled,
-    Failed
+    Failed,
+    Reconciling
 }
 
 [Flags]
@@ -48,7 +49,10 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
     private List<LivingWorldTrackedMapThing> facilityThings = new();
     private List<LivingWorldTrackedMapFloor> floors = new();
     private List<LivingWorldTrackedMapAnimal> animals = new();
+    private List<LivingWorldTrackedMapAnimal> animalLineages = new();
     private List<long> reconciledFacilityIds = new();
+    private List<long> facilityCheckpointIds = new();
+    private List<int> facilityCheckpointSurvivors = new();
     private List<LivingWorldWarehouseManifestEntry> warehouseManifest = new();
     private int lastLiveSyncTick = -1;
 
@@ -95,6 +99,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
 
     public IReadOnlyList<LivingWorldTrackedMapAnimal> Animals => animals;
 
+    public IReadOnlyList<LivingWorldTrackedMapAnimal> AnimalLineages => animalLineages;
+
     public IReadOnlyList<LivingWorldWarehouseManifestEntry> WarehouseManifest => warehouseManifest;
 
     public void ConfigureFrom(WorldObject_LivingWorldSettlementVisitSite visitSite)
@@ -135,7 +141,10 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         facilityThings.Clear();
         floors.Clear();
         animals.Clear();
+        animalLineages.Clear();
         reconciledFacilityIds.Clear();
+        facilityCheckpointIds.Clear();
+        facilityCheckpointSurvivors.Clear();
         warehouseManifest.Clear();
         lastLiveSyncTick = -1;
         lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Preparing;
@@ -198,7 +207,48 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         }
     }
 
-    public void TrackResource(Thing thing, EntityId returnOwnerId, string resourceKey, int reservedQuantity = -1)
+    public void BeginReconciliation()
+    {
+        if (Lifecycle is LivingWorldMapMaterializationLifecycle.Materialized
+            or LivingWorldMapMaterializationLifecycle.Reconciling)
+        {
+            lifecycleValue = (int)LivingWorldMapMaterializationLifecycle.Reconciling;
+        }
+    }
+
+    public int GetFacilitySurvivorCheckpoint(EntityId facilityId, int initialCount)
+    {
+        var index = facilityCheckpointIds.IndexOf(facilityId.Value);
+        return index >= 0 && index < facilityCheckpointSurvivors.Count
+            ? Math.Max(0, facilityCheckpointSurvivors[index])
+            : Math.Max(0, initialCount);
+    }
+
+    public void SetFacilitySurvivorCheckpoint(EntityId facilityId, int survivingCount)
+    {
+        if (facilityId.Kind != EntityKind.SettlementFacility)
+        {
+            return;
+        }
+
+        var index = facilityCheckpointIds.IndexOf(facilityId.Value);
+        if (index < 0)
+        {
+            facilityCheckpointIds.Add(facilityId.Value);
+            facilityCheckpointSurvivors.Add(Math.Max(0, survivingCount));
+        }
+        else
+        {
+            facilityCheckpointSurvivors[index] = Math.Max(0, survivingCount);
+        }
+    }
+
+    public void TrackResource(
+        Thing thing,
+        EntityId returnOwnerId,
+        string resourceKey,
+        int reservedQuantity = -1,
+        bool checkpointEligible = true)
     {
         if (thing == null || returnOwnerId.Value <= 0 || string.IsNullOrWhiteSpace(resourceKey))
         {
@@ -212,7 +262,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             returnOwnerId.Value,
             resourceKey.Trim(),
             Math.Max(1, thing.stackCount),
-            reservedQuantity >= 0 ? reservedQuantity : Math.Max(1, thing.stackCount)));
+            reservedQuantity >= 0 ? reservedQuantity : Math.Max(1, thing.stackCount),
+            checkpointEligible));
     }
 
     public bool TryGetResource(int thingId, out LivingWorldTrackedMapResource resource)
@@ -265,6 +316,14 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             animal.CohortId.Value,
             animal.AnimalKind,
             (int)animal.Type));
+        if (animalLineages.All(entry => entry.CohortIdValue != animal.CohortId.Value))
+        {
+            animalLineages.Add(new LivingWorldTrackedMapAnimal(
+                pawn.thingIDNumber,
+                animal.CohortId.Value,
+                animal.AnimalKind,
+                (int)animal.Type));
+        }
     }
 
     public bool TryGetAnimal(int pawnThingId, out LivingWorldTrackedMapAnimal animal)
@@ -284,7 +343,10 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         facilityThings.Clear();
         floors.Clear();
         animals.Clear();
+        animalLineages.Clear();
         warehouseManifest.Clear();
+        facilityCheckpointIds.Clear();
+        facilityCheckpointSurvivors.Clear();
     }
 
     public void ConfigureWarehouseManifest(IReadOnlyDictionary<string, int> requested)
@@ -301,7 +363,8 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         foreach (var entry in warehouseManifest)
         {
             var quantity = resources
-                .Where(resource => string.Equals(resource.ResourceKey, entry.ResourceKey, StringComparison.Ordinal))
+                .Where(resource => resource.CheckpointEligible
+                    && string.Equals(resource.ResourceKey, entry.ResourceKey, StringComparison.Ordinal))
                 .Sum(resource =>
                 {
                     var thing = FindTrackedThing(resource.ThingId);
@@ -418,7 +481,10 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
         Scribe_Collections.Look(ref facilityThings, "livingWorld_trackedFacilityThings", LookMode.Deep);
         Scribe_Collections.Look(ref floors, "livingWorld_trackedFloors", LookMode.Deep);
         Scribe_Collections.Look(ref animals, "livingWorld_trackedAnimals", LookMode.Deep);
+        Scribe_Collections.Look(ref animalLineages, "livingWorld_animalLineages", LookMode.Deep);
         Scribe_Collections.Look(ref reconciledFacilityIds, "livingWorld_reconciledFacilityIds", LookMode.Value);
+        Scribe_Collections.Look(ref facilityCheckpointIds, "livingWorld_facilityCheckpointIds", LookMode.Value);
+        Scribe_Collections.Look(ref facilityCheckpointSurvivors, "livingWorld_facilityCheckpointSurvivors", LookMode.Value);
         Scribe_Collections.Look(ref warehouseManifest, "livingWorld_warehouseManifest", LookMode.Deep);
         Scribe_Values.Look(ref lastLiveSyncTick, "livingWorld_lastLiveSyncTick", -1);
 
@@ -428,13 +494,30 @@ public sealed class LivingWorldSettlementVisitMapComponent : MapComponent
             facilityThings ??= new List<LivingWorldTrackedMapThing>();
             floors ??= new List<LivingWorldTrackedMapFloor>();
             animals ??= new List<LivingWorldTrackedMapAnimal>();
+            animalLineages ??= new List<LivingWorldTrackedMapAnimal>();
             reconciledFacilityIds ??= new List<long>();
+            facilityCheckpointIds ??= new List<long>();
+            facilityCheckpointSurvivors ??= new List<int>();
             warehouseManifest ??= new List<LivingWorldWarehouseManifestEntry>();
             resources.RemoveAll(entry => entry == null || entry.ThingId <= 0 || entry.ReturnOwnerValue <= 0);
             facilityThings.RemoveAll(entry => entry == null || entry.ThingId <= 0 || entry.FacilityIdValue <= 0);
             floors.RemoveAll(entry => entry == null || entry.FacilityIdValue <= 0);
             animals.RemoveAll(entry => entry == null || entry.PawnThingId <= 0 || entry.CohortIdValue <= 0);
+            animalLineages.RemoveAll(entry => entry == null || entry.CohortIdValue <= 0 || string.IsNullOrWhiteSpace(entry.AnimalKind));
+            if (animalLineages.Count == 0 && animals.Count > 0)
+            {
+                animalLineages = animals
+                    .GroupBy(entry => entry.CohortIdValue)
+                    .Select(group => group.First())
+                    .ToList();
+            }
             reconciledFacilityIds.RemoveAll(value => value <= 0);
+            var checkpointCount = Math.Min(facilityCheckpointIds.Count, facilityCheckpointSurvivors.Count);
+            facilityCheckpointIds = facilityCheckpointIds.Take(checkpointCount).ToList();
+            facilityCheckpointSurvivors = facilityCheckpointSurvivors
+                .Take(checkpointCount)
+                .Select(value => Math.Max(0, value))
+                .ToList();
             warehouseManifest.RemoveAll(entry => entry == null || string.IsNullOrWhiteSpace(entry.ResourceKey));
 
             if (reconciled)
@@ -544,6 +627,7 @@ public sealed class LivingWorldTrackedMapResource : IExposable
     private long creditOwnerValue;
     private int creditLedgerQuantityBefore;
     private int creditQuantity;
+    private bool checkpointEligible = true;
     private int trackingVersion;
 
     public LivingWorldTrackedMapResource()
@@ -556,7 +640,8 @@ public sealed class LivingWorldTrackedMapResource : IExposable
         long returnOwnerValue,
         string resourceKey,
         int physicalQuantity,
-        int remainingQuantity)
+        int remainingQuantity,
+        bool checkpointEligible = true)
     {
         this.thingId = thingId;
         this.returnOwnerKind = returnOwnerKind;
@@ -565,6 +650,7 @@ public sealed class LivingWorldTrackedMapResource : IExposable
         this.physicalQuantity = Math.Max(1, physicalQuantity);
         this.remainingQuantity = Math.Max(0, remainingQuantity);
         reservedQuantity = this.remainingQuantity;
+        this.checkpointEligible = checkpointEligible;
         trackingVersion = CurrentTrackingVersion;
     }
 
@@ -584,6 +670,7 @@ public sealed class LivingWorldTrackedMapResource : IExposable
     public EntityId CreditOwnerId => EntityId.Create((EntityKind)creditOwnerKind, creditOwnerValue);
     public int CreditLedgerQuantityBefore => creditLedgerQuantityBefore;
     public int CreditQuantity => creditQuantity;
+    public bool CheckpointEligible => checkpointEligible;
 
     public void SynchronizePhysicalQuantity(int currentPhysicalQuantity)
     {
@@ -709,6 +796,7 @@ public sealed class LivingWorldTrackedMapResource : IExposable
         Scribe_Values.Look(ref creditOwnerValue, "creditOwnerValue", 0L);
         Scribe_Values.Look(ref creditLedgerQuantityBefore, "creditLedgerQuantityBefore", 0);
         Scribe_Values.Look(ref creditQuantity, "creditQuantity", 0);
+        Scribe_Values.Look(ref checkpointEligible, "checkpointEligible", true);
         Scribe_Values.Look(ref trackingVersion, "trackingVersion", 0);
 
         if (Scribe.mode == LoadSaveMode.PostLoadInit && trackingVersion <= 0)

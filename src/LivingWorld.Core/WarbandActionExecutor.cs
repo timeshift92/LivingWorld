@@ -39,7 +39,9 @@ internal static class WarbandActionExecutor
                 $"{plan.FactionId} warband",
                 Math.Max(1, request.RaidCombatants),
                 FoodPerCitizen: travelDays,
-                TransferFoodToArmy: true));
+                TransferFoodToArmy: true,
+                EquipmentResourceKey: request.WarbandEquipmentResourceKey,
+                EquipmentPerCombatant: Math.Max(0, request.WarbandEquipmentPerCombatant)));
 
         if (reservation.Army == null)
         {

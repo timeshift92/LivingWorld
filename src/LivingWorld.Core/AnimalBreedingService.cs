@@ -38,6 +38,16 @@ public static class AnimalBreedingService
             .ThenBy(project => project.Id.Value)
             .ToList())
         {
+            var settlement = state.GetSettlement(project.SettlementId);
+            var source = state.GetAnimalCohort(project.SourceCohortId);
+            if (settlement?.IsActive != true
+                || source == null
+                || source.OwnerId != settlement.Id)
+            {
+                state.RecordAnimalBreedingProjectForSimulation(project with { Status = AnimalBreedingProjectStatus.Cancelled });
+                continue;
+            }
+
             CompleteProject(state, project);
             completed++;
         }
@@ -66,7 +76,7 @@ public static class AnimalBreedingService
 
         state.AdvanceToTick(request.Tick);
         var settlement = state.GetSettlement(request.SettlementId);
-        if (settlement == null)
+        if (settlement?.IsActive != true)
         {
             return new AnimalBreedingStartResult(
                 AnimalBreedingStartStatus.MissingSettlement,

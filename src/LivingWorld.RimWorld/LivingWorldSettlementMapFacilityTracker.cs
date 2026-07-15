@@ -20,6 +20,16 @@ public static class LivingWorldSettlementMapFacilityTracker
 
     public static int ReconcileMap(WorldState state, Map? map, string reason)
     {
+        return Reconcile(state, map, reason, finalize: true);
+    }
+
+    public static int ReconcileLiveMap(WorldState state, Map? map, string reason)
+    {
+        return Reconcile(state, map, reason, finalize: false);
+    }
+
+    private static int Reconcile(WorldState state, Map? map, string reason, bool finalize)
+    {
         if (state == null || map == null)
         {
             return 0;
@@ -40,7 +50,7 @@ public static class LivingWorldSettlementMapFacilityTracker
             .ToList();
         foreach (var facilityId in facilityIds)
         {
-            if (component.IsFacilityReconciled(facilityId))
+            if (finalize && component.IsFacilityReconciled(facilityId))
             {
                 continue;
             }
@@ -60,23 +70,32 @@ public static class LivingWorldSettlementMapFacilityTracker
                     && map.terrainGrid.TerrainAt(cell)?.defName == entry.TerrainDefName;
             });
 
-            var result = SettlementMapDamageService.ReconcileFacilityDamage(
-                state,
-                new SettlementMapDamageRequest(
-                    facilityId,
-                    total,
-                    survivingThings + survivingFloors,
-                    reason));
-            if (result.Status == SettlementMapDamageStatus.Success)
+            var surviving = survivingThings + survivingFloors;
+            var previousSurviving = component.GetFacilitySurvivorCheckpoint(facilityId, total);
+            if (surviving < previousSurviving)
             {
-                updates++;
-            }
-            else if (result.Status is not SettlementMapDamageStatus.NoDamage)
-            {
-                throw new System.InvalidOperationException(result.Reason);
+                var result = SettlementMapDamageService.ReconcileFacilityDamage(
+                    state,
+                    new SettlementMapDamageRequest(
+                        facilityId,
+                        previousSurviving,
+                        surviving,
+                        reason));
+                if (result.Status == SettlementMapDamageStatus.Success)
+                {
+                    updates++;
+                }
+                else if (result.Status is not SettlementMapDamageStatus.NoDamage)
+                {
+                    throw new System.InvalidOperationException(result.Reason);
+                }
             }
 
-            component.MarkFacilityReconciled(facilityId);
+            component.SetFacilitySurvivorCheckpoint(facilityId, surviving);
+            if (finalize)
+            {
+                component.MarkFacilityReconciled(facilityId);
+            }
         }
 
         return updates;

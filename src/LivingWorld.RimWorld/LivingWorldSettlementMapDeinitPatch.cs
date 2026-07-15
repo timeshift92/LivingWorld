@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using HarmonyLib;
 using LivingWorld.Core;
+using RimWorld;
 using RimWorld.Planet;
 using Verse;
 
@@ -50,10 +51,16 @@ public static class LivingWorldSettlementMapDeinitPatch
             return true;
         }
 
-        if (mapComponent.Lifecycle != LivingWorldMapMaterializationLifecycle.Materialized)
+        if (mapComponent.Lifecycle is not (LivingWorldMapMaterializationLifecycle.Materialized
+            or LivingWorldMapMaterializationLifecycle.Reconciling))
         {
             return true;
         }
+
+        mapComponent.BeginReconciliation();
+        var trackedAnimalPawnIds = mapComponent.Animals
+            .Select(animal => animal.PawnThingId)
+            .ToHashSet();
 
         var reconciled = TryReconcile(
             mapComponent,
@@ -94,11 +101,25 @@ public static class LivingWorldSettlementMapDeinitPatch
         }
 
         mapComponent.MarkReconciled();
+        DestroyReconciledMaterializations(map, trackedAnimalPawnIds);
         var visitSite = Find.WorldObjects?.AllWorldObjects
             .OfType<WorldObject_LivingWorldSettlementVisitSite>()
             .FirstOrDefault(worldObject => worldObject.ID == mapComponent.VisitSiteWorldObjectId);
         visitSite?.MarkReconciled();
         return true;
+    }
+
+    private static void DestroyReconciledMaterializations(Map map, System.Collections.Generic.HashSet<int> trackedAnimalPawnIds)
+    {
+        foreach (var pawn in map.mapPawns.AllPawns
+            .Where(pawn => pawn != null
+                && pawn.Faction != Faction.OfPlayer
+                && (pawn.GetComp<CompLivingWorldIdentity>()?.HasLedgerId == true
+                    || trackedAnimalPawnIds.Contains(pawn.thingIDNumber)))
+            .ToList())
+        {
+            LivingWorldSettlementMapMaterializationService.DetachRelationsAndDestroy(pawn);
+        }
     }
 
     public static void Postfix(WorldObject_LivingWorldSettlementVisitSite? __state)

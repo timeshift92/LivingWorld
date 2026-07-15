@@ -176,6 +176,22 @@ public static class MaterializationLeaseService
                 lease);
         }
 
+        if (lease.PawnThingId.HasValue)
+        {
+            if (lease.PawnThingId.Value == pawnThingId)
+            {
+                return new MaterializationLeaseBindResult(
+                    MaterializationLeaseBindStatus.Success,
+                    $"Pawn {pawnThingId} is already bound to materialization lease {leaseId}.",
+                    lease);
+            }
+
+            return new MaterializationLeaseBindResult(
+                MaterializationLeaseBindStatus.PawnAlreadyLeased,
+                $"Materialization lease {leaseId} is already bound to pawn {lease.PawnThingId.Value}.",
+                lease);
+        }
+
         if (state.MaterializationLeases.Any(existing =>
             existing.Id != leaseId
             && existing.IsActive

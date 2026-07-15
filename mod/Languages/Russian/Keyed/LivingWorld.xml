@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LanguageData>
   <LW_MainTitle>Живой мир</LW_MainTitle>
+  <LW_PlayerKnowledgeSummary>Известных поселений: {known}; недавно проверено лично: {exact}</LW_PlayerKnowledgeSummary>
   <LW_WaitingForWorld>Живой мир ждёт загрузки мира RimWorld.</LW_WaitingForWorld>
   <LW_SummaryLine>Поселения: {settlements}, Жители: {citizens}, Армии: {armies}, Профили производства: {productionProfiles}, Разведданные: {intelReports}, Поводы для рейда: {activeRaidOpportunities}, Внешний резерв: {drifterReservoir}, События: {events}</LW_SummaryLine>
   <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Источник: {source} | Статус: {status} | Объектов мира: {totalWorldObjects} | Vanilla-поселений: {vanillaSettlements} | Объектов с фракцией: {factionWorldObjects} | Импортируемых: {importableWorldObjects} | Ошибок сканирования: {scanErrors} | Отброшено: {rejectedTypes}</LW_DiagnosticLine>
@@ -50,6 +51,42 @@
   <LW_MigrationReasonNone>нет</LW_MigrationReasonNone>
   <LW_MigrationReasonStarvation>голод</LW_MigrationReasonStarvation>
   <LW_KnowledgeUnknown>Известные сведения: неизвестно</LW_KnowledgeUnknown>
+  <LW_KnowledgeSummary>население {population}; еда {food}; миграция {migration}; производство {production}</LW_KnowledgeSummary>
+  <LW_Common_Yes>да</LW_Common_Yes>
+  <LW_Common_No>нет</LW_Common_No>
+  <LW_IntelSource_Public>открытые сведения</LW_IntelSource_Public>
+  <LW_IntelSource_Trade>торговцы</LW_IntelSource_Trade>
+  <LW_IntelSource_Scout>разведчики</LW_IntelSource_Scout>
+  <LW_IntelSource_Refugee>беженцы</LW_IntelSource_Refugee>
+  <LW_IntelSource_Prisoner>пленные</LW_IntelSource_Prisoner>
+  <LW_IntelSource_DirectVisit>личное посещение</LW_IntelSource_DirectVisit>
+  <LW_IntelSource_Survivor>выжившие</LW_IntelSource_Survivor>
+  <LW_IntelSource_Rumor>слухи</LW_IntelSource_Rumor>
+  <LW_KnowledgeConfidence_Low>низкая</LW_KnowledgeConfidence_Low>
+  <LW_KnowledgeConfidence_Medium>средняя</LW_KnowledgeConfidence_Medium>
+  <LW_KnowledgeConfidence_High>высокая</LW_KnowledgeConfidence_High>
+  <LW_KnowledgeConfidence_Confirmed>подтверждена</LW_KnowledgeConfidence_Confirmed>
+  <LW_KnowledgePopulation_Unknown>неизвестно</LW_KnowledgePopulation_Unknown>
+  <LW_KnowledgePopulation_Tiny>крошечное</LW_KnowledgePopulation_Tiny>
+  <LW_KnowledgePopulation_Small>малое</LW_KnowledgePopulation_Small>
+  <LW_KnowledgePopulation_Medium>среднее</LW_KnowledgePopulation_Medium>
+  <LW_KnowledgePopulation_Large>крупное</LW_KnowledgePopulation_Large>
+  <LW_KnowledgeFood_Unknown>неизвестно</LW_KnowledgeFood_Unknown>
+  <LW_KnowledgeFood_Stable>стабильно</LW_KnowledgeFood_Stable>
+  <LW_KnowledgeFood_Shortage>дефицит</LW_KnowledgeFood_Shortage>
+  <LW_KnowledgeMigration_Unknown>неизвестно</LW_KnowledgeMigration_Unknown>
+  <LW_KnowledgeMigration_Stable>стабильна</LW_KnowledgeMigration_Stable>
+  <LW_KnowledgeMigration_Pressure>отток</LW_KnowledgeMigration_Pressure>
+  <LW_KnowledgeMigration_Refugees>беженцы</LW_KnowledgeMigration_Refugees>
+  <LW_KnowledgeProduction_Unknown>неизвестно</LW_KnowledgeProduction_Unknown>
+  <LW_KnowledgeProduction_Poor>слабое</LW_KnowledgeProduction_Poor>
+  <LW_KnowledgeProduction_Adequate>достаточное</LW_KnowledgeProduction_Adequate>
+  <LW_KnowledgeProduction_Strong>сильное</LW_KnowledgeProduction_Strong>
+  <LW_SettlementVisitUnavailableChanged>Поселение больше нельзя посетить.</LW_SettlementVisitUnavailableChanged>
+  <LW_SettlementVisitFailure_MissingSource>исходное поселение больше не существует</LW_SettlementVisitFailure_MissingSource>
+  <LW_SettlementVisitFailure_InvalidLedgerId>у поселения нет корректной записи Living World</LW_SettlementVisitFailure_InvalidLedgerId>
+  <LW_SettlementVisitFailure_WorldUnavailable>объекты мира недоступны</LW_SettlementVisitFailure_WorldUnavailable>
+  <LW_SettlementVisitFailure_DefMissing>отсутствует описание посещения Living World</LW_SettlementVisitFailure_DefMissing>
   <LW_KnowledgeLine>Известные сведения: источник {source} | уверенность {confidence} | давность {ageDays} дн. | устарело {stale} | население {populationBand} | еда {food} | миграция {migration} | производство {production}</LW_KnowledgeLine>
   <LW_ProductionLine>Производство: рабочие {workers} | еда/день {food} | сталь/день {steel} | медицина/день {medicine} | компоненты/день {components} | биом {biome} | холмы {hilliness} | техуровень {tech}</LW_ProductionLine>
   <LW_ProductionHiddenLine>Точное производство неизвестно. Нужны свежие сведения или посещение карты поселения.</LW_ProductionHiddenLine>
@@ -80,6 +117,7 @@
   <LW_ArmyLine>{name} [{faction}] | Живые {citizens} | Погибшие {deadCitizens} | Вернулись {returnedCitizens} | Пленены {prisonerCitizens} | Еда {meals} | Сталь {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Ушло {sent} | Погибло {dead} | Вернулось {returned} | Пленено {prisoner} | Пропало {missing}</LW_RaidOutcomeLine>
   <LW_FactionCollapseLine>{faction} коллапсировала на тике {tick}: {reason}</LW_FactionCollapseLine>
+  <LW_FactionCollapseKnownLine>По сообщениям, фракция {faction} распалась (тик сообщения: {tick}).</LW_FactionCollapseKnownLine>
   <LW_DrifterLine>{name} | возраст {age} | пол {sex} | бой {combat} | организация {organization}</LW_DrifterLine>
   <LW_KnownIntelFreshnessLine>{name} | источник {source} | уверенность {confidence} | давность {ageDays} дн. | устарело {stale} | {summary}</LW_KnownIntelFreshnessLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>

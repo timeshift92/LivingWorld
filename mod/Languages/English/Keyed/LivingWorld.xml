@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LanguageData>
   <LW_MainTitle>Living World</LW_MainTitle>
+  <LW_PlayerKnowledgeSummary>Known settlements: {known}; recently verified in person: {exact}</LW_PlayerKnowledgeSummary>
   <LW_WaitingForWorld>Living World is waiting for a RimWorld world to load.</LW_WaitingForWorld>
   <LW_SummaryLine>Settlements: {settlements}, Citizens: {citizens}, Armies: {armies}, Production profiles: {productionProfiles}, Intel: {intelReports}, Raid opportunities: {activeRaidOpportunities}, External reserve: {drifterReservoir}, Events: {events}</LW_SummaryLine>
   <LW_DiagnosticLine>Bootstrap: {bootstrapped} | Source: {source} | Status: {status} | World objects: {totalWorldObjects} | Vanilla settlements: {vanillaSettlements} | Faction objects: {factionWorldObjects} | Importable: {importableWorldObjects} | Scan errors: {scanErrors} | Rejected: {rejectedTypes}</LW_DiagnosticLine>
@@ -50,6 +51,42 @@
   <LW_MigrationReasonNone>none</LW_MigrationReasonNone>
   <LW_MigrationReasonStarvation>starvation</LW_MigrationReasonStarvation>
   <LW_KnowledgeUnknown>Known info: unknown</LW_KnowledgeUnknown>
+  <LW_KnowledgeSummary>population {population}; food {food}; migration {migration}; production {production}</LW_KnowledgeSummary>
+  <LW_Common_Yes>yes</LW_Common_Yes>
+  <LW_Common_No>no</LW_Common_No>
+  <LW_IntelSource_Public>public records</LW_IntelSource_Public>
+  <LW_IntelSource_Trade>traders</LW_IntelSource_Trade>
+  <LW_IntelSource_Scout>scouts</LW_IntelSource_Scout>
+  <LW_IntelSource_Refugee>refugees</LW_IntelSource_Refugee>
+  <LW_IntelSource_Prisoner>prisoners</LW_IntelSource_Prisoner>
+  <LW_IntelSource_DirectVisit>direct visit</LW_IntelSource_DirectVisit>
+  <LW_IntelSource_Survivor>survivors</LW_IntelSource_Survivor>
+  <LW_IntelSource_Rumor>rumors</LW_IntelSource_Rumor>
+  <LW_KnowledgeConfidence_Low>low</LW_KnowledgeConfidence_Low>
+  <LW_KnowledgeConfidence_Medium>medium</LW_KnowledgeConfidence_Medium>
+  <LW_KnowledgeConfidence_High>high</LW_KnowledgeConfidence_High>
+  <LW_KnowledgeConfidence_Confirmed>confirmed</LW_KnowledgeConfidence_Confirmed>
+  <LW_KnowledgePopulation_Unknown>unknown</LW_KnowledgePopulation_Unknown>
+  <LW_KnowledgePopulation_Tiny>tiny</LW_KnowledgePopulation_Tiny>
+  <LW_KnowledgePopulation_Small>small</LW_KnowledgePopulation_Small>
+  <LW_KnowledgePopulation_Medium>medium</LW_KnowledgePopulation_Medium>
+  <LW_KnowledgePopulation_Large>large</LW_KnowledgePopulation_Large>
+  <LW_KnowledgeFood_Unknown>unknown</LW_KnowledgeFood_Unknown>
+  <LW_KnowledgeFood_Stable>stable</LW_KnowledgeFood_Stable>
+  <LW_KnowledgeFood_Shortage>shortage</LW_KnowledgeFood_Shortage>
+  <LW_KnowledgeMigration_Unknown>unknown</LW_KnowledgeMigration_Unknown>
+  <LW_KnowledgeMigration_Stable>stable</LW_KnowledgeMigration_Stable>
+  <LW_KnowledgeMigration_Pressure>outward pressure</LW_KnowledgeMigration_Pressure>
+  <LW_KnowledgeMigration_Refugees>refugees</LW_KnowledgeMigration_Refugees>
+  <LW_KnowledgeProduction_Unknown>unknown</LW_KnowledgeProduction_Unknown>
+  <LW_KnowledgeProduction_Poor>weak</LW_KnowledgeProduction_Poor>
+  <LW_KnowledgeProduction_Adequate>adequate</LW_KnowledgeProduction_Adequate>
+  <LW_KnowledgeProduction_Strong>strong</LW_KnowledgeProduction_Strong>
+  <LW_SettlementVisitUnavailableChanged>The settlement can no longer be visited.</LW_SettlementVisitUnavailableChanged>
+  <LW_SettlementVisitFailure_MissingSource>the source settlement no longer exists</LW_SettlementVisitFailure_MissingSource>
+  <LW_SettlementVisitFailure_InvalidLedgerId>the settlement has no valid Living World identity</LW_SettlementVisitFailure_InvalidLedgerId>
+  <LW_SettlementVisitFailure_WorldUnavailable>world objects are unavailable</LW_SettlementVisitFailure_WorldUnavailable>
+  <LW_SettlementVisitFailure_DefMissing>the Living World visit definition is missing</LW_SettlementVisitFailure_DefMissing>
   <LW_KnowledgeLine>Known info: source {source} | confidence {confidence} | age {ageDays} days | stale {stale} | population {populationBand} | food {food} | migration {migration} | production {production}</LW_KnowledgeLine>
   <LW_ProductionLine>Production: workers {workers} | food/day {food} | steel/day {steel} | medicine/day {medicine} | components/day {components} | biome {biome} | hills {hilliness} | tech {tech}</LW_ProductionLine>
   <LW_ProductionHiddenLine>Exact production is unknown. Get fresher intel or visit the settlement map.</LW_ProductionHiddenLine>
@@ -80,6 +117,7 @@
   <LW_ArmyLine>{name} [{faction}] | Alive {citizens} | Dead {deadCitizens} | Returned {returnedCitizens} | Captured {prisonerCitizens} | Meals {meals} | Steel {steel}</LW_ArmyLine>
   <LW_RaidOutcomeLine>{name} [{faction}] | Sent {sent} | Dead {dead} | Returned {returned} | Captured {prisoner} | Missing {missing}</LW_RaidOutcomeLine>
   <LW_FactionCollapseLine>{faction} collapsed at tick {tick}: {reason}</LW_FactionCollapseLine>
+  <LW_FactionCollapseKnownLine>{faction} is reported to have collapsed (report tick {tick}).</LW_FactionCollapseKnownLine>
   <LW_DrifterLine>{name} | age {age} | sex {sex} | combat {combat} | organization {organization}</LW_DrifterLine>
   <LW_KnownIntelFreshnessLine>{name} | source {source} | confidence {confidence} | age {ageDays} days | stale {stale} | {summary}</LW_KnownIntelFreshnessLine>
   <LW_EventLine>{tick}: {kind} - {summary}</LW_EventLine>

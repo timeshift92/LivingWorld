@@ -25,8 +25,15 @@ remain valid when the executor materializes the action.
 - Caravans do not target player settlements or hostile settlements.
 - Diplomats do not target player factions or irreconcilable factions.
 - Executors revalidate the planned target before dispatching a world object.
+- Travelling actions revalidate again before arrival. Scouts recall if their target becomes owned by
+  their faction or allied; caravans recall instead of trading with a hostile captor; invalid migration
+  destinations reroute or return their conserved people and cargo.
 - Travelling scouts, diplomats, caravans and warbands survive save/load.
 - Arrival or interception writes consequences to the ledger and to world events.
+- A visible NPC settlement map remains bound to one ledger settlement. Loaded-map checkpoints and
+  deinit reconciliation persist resident/animal fate, warehouse stock and facility damage.
+- Terminal armies release all citizen ownership, including casualties, and consume or return cargo
+  through an explicit terminal path.
 
 ## Acceptance Test
 
@@ -39,6 +46,8 @@ remain valid when the executor materializes the action.
 5. On arrival, battle resolves, citizens die, the settlement can be captured, diplomacy changes,
    and the history remains visible through events/activity summary.
 
-This does not make every NPC settlement a full active-map town yet. It makes world decisions
-causal and ledger-backed, which is the foundation that active-map materialization can safely
-build on.
+NPC settlements now have a bounded active-map projection generated from facilities, population,
+warehouse stock, technology, biome and defense posture. It is not a permanently ticking off-screen
+RimWorld map: the lightweight ledger remains authoritative while unloaded, and the same persistent
+projection is synchronized while loaded and reconciled on exit. This is the intended performance
+boundary rather than a second simulation.

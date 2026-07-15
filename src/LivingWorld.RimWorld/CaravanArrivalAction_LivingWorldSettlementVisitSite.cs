@@ -47,8 +47,13 @@ public sealed class CaravanArrivalAction_LivingWorldSettlementVisitSite : Carava
             return baseReport;
         }
 
-        return TryResolveLiveSource(out var sourceSettlement, out _)
-            && sourceSettlement.Tile == destinationTile;
+        if (!TryResolveLiveSource(out var sourceSettlement, out _)
+            || sourceSettlement.Tile != destinationTile)
+        {
+            return false;
+        }
+
+        return LivingWorldSettlementVisitFloatMenuPatch.CanVisit(sourceSettlement);
     }
 
     public override void Arrived(Caravan caravan)
@@ -56,6 +61,12 @@ public sealed class CaravanArrivalAction_LivingWorldSettlementVisitSite : Carava
         if (!TryResolveLiveSource(out var sourceSettlement, out var settlementId))
         {
             Messages.Message("MessageCaravanArrivalActionNoLongerValid".Translate(Label), MessageTypeDefOf.RejectInput, false);
+            return;
+        }
+
+        if (!LivingWorldSettlementVisitFloatMenuPatch.CanVisit(sourceSettlement))
+        {
+            Messages.Message("LW_SettlementVisitUnavailableChanged".Translate(), MessageTypeDefOf.RejectInput, false);
             return;
         }
 

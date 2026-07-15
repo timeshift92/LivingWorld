@@ -15,7 +15,9 @@ public sealed record RaidPopulationAllocationRequest(
     string FoodResourceKey = "PackagedSurvivalMeal",
     int FoodPerCitizen = 1,
     bool TransferFoodToArmy = false,
-    bool RequireExactCombatants = false);
+    bool RequireExactCombatants = false,
+    string EquipmentResourceKey = "Steel",
+    int EquipmentPerCombatant = 0);
 
 public sealed record RaidPopulationAllocationResult(
     RaidPopulationAllocationStatus Status,
@@ -173,6 +175,26 @@ public static class RaidPopulationAllocator
             }
         }
 
+        var equipment = combatants.Count * Math.Max(0, request.EquipmentPerCombatant);
+        if (equipment > 0)
+        {
+            var transfer = state.TransferResource(
+                sourceSettlement.Id,
+                army.Id,
+                request.EquipmentResourceKey,
+                equipment,
+                "raid equipment reserved");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                RaidReconciliationService.ReleaseUndeployedReserves(state, army.Id);
+                return RaidPopulationAllocationResult.Failed(
+                    RaidPopulationAllocationStatus.NoAvailableCombatants,
+                    transfer.Reason,
+                    request.RequestedCombatants,
+                    0);
+            }
+        }
+
         state.RecordEvent(
             WorldEventKind.RaidLaunched,
             army.Id,
@@ -213,6 +235,13 @@ public static class RaidPopulationAllocator
         {
             var supported = state.GetOwnedResourceQuantity(settlementId, request.FoodResourceKey)
                 / request.FoodPerCitizen;
+            adults = Math.Min(adults, supported);
+        }
+
+        if (request.EquipmentPerCombatant > 0)
+        {
+            var supported = state.GetOwnedResourceQuantity(settlementId, request.EquipmentResourceKey)
+                / request.EquipmentPerCombatant;
             adults = Math.Min(adults, supported);
         }
 

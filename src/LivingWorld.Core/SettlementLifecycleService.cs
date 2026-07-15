@@ -34,6 +34,23 @@ public static class SettlementLifecycleService
             dangerBand: RuinDangerBand.Medium,
             tick: state.CurrentTick);
         MoveAllResources(state, settlementId, ruin.Id, "settlement destroyed");
+        foreach (var cohort in state.GetAnimalCohorts(settlementId).ToList())
+        {
+            var transfer = state.TransferAsset(cohort.Id, settlementId, ruin.Id, "settlement animals stranded in ruins");
+            if (transfer.Status != OwnershipTransferStatus.Success)
+            {
+                throw new InvalidOperationException(transfer.Reason);
+            }
+
+            state.RecordAnimalCohortForSimulation(cohort with { OwnerId = ruin.Id, LastUpdatedTick = state.CurrentTick });
+        }
+
+        foreach (var project in state.AnimalBreedingProjects
+            .Where(project => project.SettlementId == settlementId && project.Status == AnimalBreedingProjectStatus.Active)
+            .ToList())
+        {
+            state.RecordAnimalBreedingProjectForSimulation(project with { Status = AnimalBreedingProjectStatus.Cancelled });
+        }
 
         var refugees = 0;
         foreach (var citizen in state.GetCitizensBySettlement(settlementId)

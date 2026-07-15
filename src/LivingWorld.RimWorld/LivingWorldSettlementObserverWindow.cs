@@ -196,7 +196,7 @@ public sealed class LivingWorldSettlementObserverWindow : Window
                 snapshot.FoodStock.Named("food"),
                 snapshot.DailyFoodNeed.Named("need"),
                 snapshot.FoodDays.Named("days"),
-                known.Migration.Named("migration")).ToString()),
+                LivingWorldKnowledgeLabels.Migration(known.Migration).Named("migration")).ToString()),
             Line("LW_SettlementObserver_SnapshotTrend".Translate(
                 births.Named("births"),
                 losses.Named("losses"),
@@ -398,14 +398,14 @@ public sealed class LivingWorldSettlementObserverWindow : Window
             currentTick,
             PlayerKnowledgeService.ExactIntelStaleAfterTicks);
         lines.Add(Line("LW_SettlementObserver_KnowledgeSummary".Translate(
-            known.SourceKind.Named("source"),
-            known.Confidence.Named("confidence"),
+            LivingWorldKnowledgeLabels.Source(known.SourceKind).Named("source"),
+            LivingWorldKnowledgeLabels.Confidence(known.Confidence).Named("confidence"),
             freshness.AgeDays.Named("ageDays"),
             freshness.IsStale.Named("stale"),
-            known.PopulationBand.Named("population"),
-            known.Food.Named("food"),
-            known.Migration.Named("migration"),
-            known.Production.Named("production")).ToString(), 92f));
+            LivingWorldKnowledgeLabels.Population(known.PopulationBand).Named("population"),
+            LivingWorldKnowledgeLabels.Food(known.Food).Named("food"),
+            LivingWorldKnowledgeLabels.Migration(known.Migration).Named("migration"),
+            LivingWorldKnowledgeLabels.Production(known.Production).Named("production")).ToString(), 92f));
         lines.Add(Line(known.Summary));
         return lines;
     }

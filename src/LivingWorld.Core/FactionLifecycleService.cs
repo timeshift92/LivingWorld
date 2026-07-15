@@ -45,8 +45,11 @@ public static class FactionLifecycleService
         state.AdvanceToTick(request.Tick);
 
         var collapsed = 0;
-        foreach (var factionId in state.Settlements
-            .Select(settlement => settlement.FactionId)
+        var knownFactionIds = state.Settlements.Select(settlement => settlement.FactionId)
+            .Concat(state.FactionBehaviors.Keys)
+            .Concat(state.Armies.Select(army => army.FactionId))
+            .Concat(state.FactionRecords.Select(record => record.FactionId));
+        foreach (var factionId in knownFactionIds
             .Distinct(StringComparer.Ordinal)
             .OrderBy(faction => faction, StringComparer.Ordinal))
         {

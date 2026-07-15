@@ -41,7 +41,7 @@ public static class LivingWorldSettlementVisitFloatMenuPatch
         }
     }
 
-    private static FloatMenuAcceptanceReport CanVisit(Settlement settlement)
+    internal static FloatMenuAcceptanceReport CanVisit(Settlement settlement)
     {
         if (settlement == null || !settlement.Spawned)
         {

@@ -48,7 +48,7 @@ public static class AnimalEcologyService
             .ThenBy(cohort => cohort.Id.Value)
             .ToList())
         {
-            if (cohort.Count <= 0)
+            if (cohort.Count <= 0 || !IsActiveSettlementOwner(state, cohort.OwnerId))
             {
                 continue;
             }
@@ -118,6 +118,11 @@ public static class AnimalEcologyService
         }
 
         return new AnimalEcologyResult(births, deaths);
+    }
+
+    private static bool IsActiveSettlementOwner(WorldState state, EntityId ownerId)
+    {
+        return ownerId.Kind == EntityKind.Settlement && state.GetSettlement(ownerId)?.IsActive == true;
     }
 
     public static AnimalMigrationResult MigratePressure(WorldState state, AnimalMigrationRequest request)

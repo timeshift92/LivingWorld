@@ -39,6 +39,30 @@ the ledger changes or a marker is drawn. Every strategic action must close the s
 | Animals | lightweight cohorts | bounded map sample | death/taming/escape returned to the cohort exactly once | settlement knowledge or direct map view |
 | Mech threat | finite node units + steel + energy | world site and raid | launch consumes the node; failure rolls back reservation | physically visible world site |
 
+## Implemented completion state (2026-07-15)
+
+The repository now closes the causal loop for the supported strategic systems rather than only
+changing counters:
+
+- daily simulation commits its day watermark before applying non-idempotent effects, so a partial
+  failure is never replayed as duplicated production, births or projects;
+- raids reserve concrete adults, food and equipment material; only pawns actually bound to those
+  citizens consume equipment, while unused reserves return to a surviving same-faction settlement;
+- scouts, diplomats, caravans, settlers and refugees revalidate ownership, hostility and destination
+  viability while travelling and either complete, reroute, return or record an explicit loss;
+- hostile physical traffic can intercept armies, caravans and missions, while allied or neutral
+  traffic does not become combat merely because markers overlap;
+- a loaded NPC settlement remains a persistent projection of the same ledger settlement. Resident
+  deaths, captures and departures, animals, warehouse withdrawals, facility condition and map
+  damage are checkpointed while loaded and reconciled on deinit;
+- settlement destruction stops local ecology, breeding and production, moves remaining cohorts and
+  resources to the ruin, and launches real refugee groups toward viable same-faction destinations;
+- normal UI is knowledge-gated and localized. Exact global diagnostics and raw event reasons are
+  available only in debug/developer mode.
+
+Automated status at this revision: `521` tests pass; the RimWorld adapter builds in Release with
+zero warnings and zero errors; English and Russian keyed files contain the same `418` unique keys.
+
 ## Automated release gate
 
 - Core solution Release build: zero warnings and zero errors.
@@ -54,3 +78,5 @@ The release is ready for player verification only after these observable checks 
 installed build: world traffic is bounded, unknown traffic is hidden, a known marker moves through
 outbound/return phases, hostile physical contact resolves, a player-contact scout/diplomat reaches
 the colony, and an NPC settlement can be revisited with its prior casualties, loot and damage intact.
+This live smoke gate remains distinct from automated completion because RimWorld object lifetime,
+map deinitialization and third-party Harmony interactions cannot be proven by the headless suite.

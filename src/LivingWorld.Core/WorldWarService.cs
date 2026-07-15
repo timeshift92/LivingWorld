@@ -26,6 +26,10 @@ public sealed record WorldWarRequest(
     public int DevelopmentSilverCost { get; init; } = 0;
 
     public int DevelopmentSpecialistGrowthStep { get; init; } = 0;
+
+    public string WarbandEquipmentResourceKey { get; init; } = "Steel";
+
+    public int WarbandEquipmentPerCombatant { get; init; }
 }
 
 public sealed record WorldWarResult(

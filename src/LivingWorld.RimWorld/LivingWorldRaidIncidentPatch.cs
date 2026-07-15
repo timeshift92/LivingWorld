@@ -71,7 +71,8 @@ public static class LivingWorldRaidIncidentPatch
                 new RaidPopulationAllocationRequest(
                     factionId!,
                     $"Vanilla raid {Find.TickManager?.TicksGame ?? 0}",
-                    EstimateRequestedCombatants(parms.points)));
+                    EstimateRequestedCombatants(parms.points),
+                    EquipmentPerCombatant: 5));
         }
         catch (Exception ex)
         {

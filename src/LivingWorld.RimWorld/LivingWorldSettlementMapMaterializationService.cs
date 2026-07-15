@@ -763,7 +763,8 @@ public static class LivingWorldSettlementMapMaterializationService
                 thing,
                 settlementId,
                 resourceKey,
-                reservedQuantity: quantity);
+                reservedQuantity: quantity,
+                checkpointEligible: false);
         }
     }
 

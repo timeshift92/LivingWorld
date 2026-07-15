@@ -44,6 +44,8 @@ public static class ArmyTerminalResolutionService
             TransferArmyAssets(state, armyId, destination.Id, reason);
         }
 
+        ReleaseDeadOwnership(state, armyId);
+
         state.SetArmyMovementStatus(armyId, status);
     }
 
@@ -62,6 +64,7 @@ public static class ArmyTerminalResolutionService
         }
 
         TransferArmyAssets(state, armyId, settlementId, reason);
+        ReleaseDeadOwnership(state, armyId);
         state.SetArmyMovementStatus(armyId, status);
     }
 
@@ -149,6 +152,17 @@ public static class ArmyTerminalResolutionService
         foreach (var resource in state.ResourcesForOwner(armyId).ToList())
         {
             state.SetResourceQuantityForLedger(armyId, resource.ResourceKey, 0);
+        }
+    }
+
+    private static void ReleaseDeadOwnership(WorldState state, EntityId armyId)
+    {
+        foreach (var citizen in state.GetCitizensOwnedBy(armyId)
+            .Where(candidate => candidate.Status == CitizenStatus.Dead)
+            .OrderBy(candidate => candidate.Id.Value)
+            .ToList())
+        {
+            state.SetOwnerForLedger(citizen.Id, citizen.Id);
         }
     }
 }

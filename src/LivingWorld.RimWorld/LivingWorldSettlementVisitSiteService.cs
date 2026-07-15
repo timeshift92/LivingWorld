@@ -25,20 +25,20 @@ public static class LivingWorldSettlementVisitSiteService
 
         if (sourceSettlement == null)
         {
-            failureReason = "missing source settlement";
+            failureReason = "LW_SettlementVisitFailure_MissingSource".Translate();
             return false;
         }
 
         if (settlementId.Kind != EntityKind.Settlement || settlementId.Value <= 0)
         {
-            failureReason = "invalid Living World settlement id";
+            failureReason = "LW_SettlementVisitFailure_InvalidLedgerId".Translate();
             return false;
         }
 
         var worldObjects = Find.WorldObjects;
         if (worldObjects == null)
         {
-            failureReason = "world objects are not available";
+            failureReason = "LW_SettlementVisitFailure_WorldUnavailable".Translate();
             return false;
         }
 
@@ -62,7 +62,7 @@ public static class LivingWorldSettlementVisitSiteService
         var def = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_SettlementVisitSite");
         if (def == null)
         {
-            failureReason = "LivingWorld_SettlementVisitSite def is missing";
+            failureReason = "LW_SettlementVisitFailure_DefMissing".Translate();
             return false;
         }
 
@@ -100,9 +100,7 @@ public static class LivingWorldSettlementVisitSiteService
             .FirstOrDefault(candidate =>
                 candidate != null
                 && !candidate.Destroyed
-                && candidate.SettlementId == settlementId
-                && (candidate.SourceSettlementWorldObjectId == sourceSettlement.ID
-                    || !candidate.HasMap));
+                && candidate.SettlementId == settlementId);
 
         return site != null;
     }

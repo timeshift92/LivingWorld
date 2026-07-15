@@ -93,15 +93,15 @@ public static class LivingWorldSettlementInspectPatch
         var knowledgeLine = known == null
             ? "LW_KnowledgeUnknown".Translate()
             : "LW_KnowledgeLine".Translate(
-                known.SourceKind.Named("source"),
-                known.Confidence.Named("confidence"),
+                LivingWorldKnowledgeLabels.Source(known.SourceKind).Named("source"),
+                LivingWorldKnowledgeLabels.Confidence(known.Confidence).Named("confidence"),
                 known.Tick.Named("tick"),
                 freshness.AgeDays.Named("ageDays"),
-                freshness.IsStale.Named("stale"),
-                known.PopulationBand.Named("populationBand"),
-                known.Food.Named("food"),
-                known.Migration.Named("migration"),
-                known.Production.Named("production"));
+                LivingWorldKnowledgeLabels.Boolean(freshness.IsStale).Named("stale"),
+                LivingWorldKnowledgeLabels.Population(known.PopulationBand).Named("populationBand"),
+                LivingWorldKnowledgeLabels.Food(known.Food).Named("food"),
+                LivingWorldKnowledgeLabels.Migration(known.Migration).Named("migration"),
+                LivingWorldKnowledgeLabels.Production(known.Production).Named("production"));
 
         var inspectLine = "LW_InspectPopulationLine".Translate(
             knowledgeLine.Named("knowledge")).ToString();
@@ -143,6 +143,7 @@ public static class LivingWorldSettlementInspectPatch
         {
             if (movement.Status == ArmyMovementStatus.Traveling
                 && movement.TargetSettlementId == settlementId
+                && IsMovementVisible(movement.ArmyId)
                 && movement.ArrivalTick < soonestArrival)
             {
                 soonestArrival = movement.ArrivalTick;
@@ -156,6 +157,15 @@ public static class LivingWorldSettlementInspectPatch
 
         var days = Math.Max(0, (int)Math.Round((soonestArrival - currentTick) / 60000f));
         return "LW_InspectThreatLine".Translate(days.Named("days")).ToString();
+    }
+
+    private static bool IsMovementVisible(EntityId armyId)
+    {
+        var markerKey = $"army:{armyId.Value}";
+        return Find.WorldObjects?.AllWorldObjects
+            .OfType<WorldObject_LivingWorldArmy>()
+            .Any(marker => string.Equals(marker.MarkerKey, markerKey, StringComparison.Ordinal)
+                && marker.IsKnownToPlayer) == true;
     }
 
     private static string AppendVisiblePawnsLine(string inspectLine, int visiblePawns)
