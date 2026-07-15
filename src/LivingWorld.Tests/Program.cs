@@ -11293,8 +11293,19 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("WorldObjects?.Caravans", cleaner);
     AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
     AssertContains("ownedPawns.RemoveAt(index)", cleaner);
+    // Lord members are pruned only when saved nowhere (destroyed/discarded), never when
+    // merely off-map-but-alive: removing a live member out-of-band desyncs the vanilla lord
+    // and makes it log "Lord lost pawn X it didn't have. Condition=ChangedFaction/LeftVoluntarily".
+    AssertContains("if (IsPawnSavedAnywhere(pawn))", cleaner);
     AssertContains("IsPawnDeepSavedByMap", cleaner);
     AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
+    // Heal the pawn side of a broken lord backlink: a pawn whose Pawn.lord points to a lord that is gone
+    // from the lordManager (or no longer owns it) runs duty ThinkNodes with a null duty ("X doing
+    // ThinkNode_DutyConstant with no duty") and spams "Lord lost pawn X it didn't have" on faction change.
+    // Clear pawn.lord + mindState.duty exactly as vanilla Lord.RemovePawn does.
+    AssertContains("CleanDesyncedPawnLordBacklinks", cleaner);
+    AssertContains("pawn.mindState.duty = null", cleaner);
+    AssertRimWorldMethodExists("Verse.AI.Group.Lord", "RemovePawn");
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
     AssertDoesNotContain("CleanOrphanedDirectPawnRelations", component);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
