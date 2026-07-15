@@ -212,7 +212,8 @@ public sealed class MobilizationMapComponent : MapComponent
             return default;
         }
 
-        var hostiles = pawns.Where(p => p != null && !p.Downed && !p.IsPrisoner && p.HostileTo(player) && IsAwakeThreat(p)).ToList();
+        var hostiles = pawns.Where(p => p != null && !p.Downed && !p.IsPrisoner && p.HostileTo(player)
+                                        && IsAwakeThreat(p) && !IsHuntedByColony(p, liveMap)).ToList();
         if (hostiles.Count == 0)
         {
             return default;
@@ -246,6 +247,43 @@ public sealed class MobilizationMapComponent : MapComponent
             HostileCount = hostiles.Count,
             BigRaid = hostiles.Count >= settings.mobilizationBigRaidThreshold,
         };
+    }
+
+    // An animal a colonist is actively HUNTING is not a colony threat — the fight was provoked by us and is
+    // already handled by the hunter. Without this, going hunting made a retaliating animal read as an attack:
+    // the colony mobilized, drafted the hunter, and dragged them off to muster while the animal mauled them,
+    // then "stood down" the moment the animal dropped and the pawn wandered off. Only wild animals can be a hunt
+    // target (a humanlike raider never is), so this never suppresses a real raid.
+    private static bool IsHuntedByColony(Pawn animal, Map map)
+    {
+        try
+        {
+            if (animal?.RaceProps?.Animal != true)
+            {
+                return false;
+            }
+
+            var colonists = map.mapPawns?.FreeColonistsSpawned;
+            if (colonists == null)
+            {
+                return false;
+            }
+
+            foreach (var c in colonists)
+            {
+                var job = c?.CurJob;
+                if (job?.def == JobDefOf.Hunt && job.targetA.Thing == animal)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // A dormant threat (an un-woken mech cluster / Anomaly entity / hive) is hostile-by-faction but not an
