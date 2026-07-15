@@ -365,6 +365,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines world generation settings window", TestRimWorldWorldGenSettingsWindow),
     ("groups mod settings by player intent", TestLivingWorldSettingsAreGroupedByPlayerIntent),
     ("surfaces compatibility cede state in settings", TestCompatibilitySettingsSurfaceCedenceState),
+    ("cedes economics and demography lifecycle to living world", TestEconomicsDemographyLifecycleCompatibility),
     ("has EN/RU keys for grouped settings", TestLivingWorldSettingsHaveRussianAndEnglishKeys),
     ("shows world-war armies as world-map markers", TestRimWorldWorldArmyMarker),
     ("shows world action marker legend and filters", TestRimWorldWorldActionMarkerLegendAndFilters),
@@ -9004,6 +9005,31 @@ static void TestCompatibilitySettingsSurfaceCedenceState()
     AssertContains("ModsConfig.IsActive(\"Matathias.Empire\")", drawer);
     AssertContains("LW_WorldWarDisabledByRimWar", drawer);
     AssertContains("LW_Settings_CompatNoneActive", drawer);
+}
+
+static void TestEconomicsDemographyLifecycleCompatibility()
+{
+    var root = FindRepoRoot();
+    var compatibility = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldEconomicsDemographyCompatibility.cs"));
+    var component = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "LivingWorldWorldComponent.cs"));
+
+    AssertContains("helldan.economicsdemography", compatibility);
+    AssertContains("ManagerMethod(\"WorldComponentTick\")", compatibility);
+    AssertContains("ManagerMethod(\"ModifyPopulation\")", compatibility);
+    AssertContains("LivingWorldOwnsSimulation", compatibility);
+    AssertContains("RepairMissingPhysicalSettlements", compatibility);
+    AssertContains("faction.defeated = false", compatibility);
+    AssertContains("RebindPhysicalStableKey", compatibility);
+    AssertContains("RepairMissingPhysicalSettlements(State)", component);
+    AssertContains("SettlementSync.ReconcileNonDestructive()", component);
 }
 
 static void TestLivingWorldSettingsHaveRussianAndEnglishKeys()

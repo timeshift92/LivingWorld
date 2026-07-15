@@ -173,6 +173,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     {
         base.FinalizeInit(fromLoad);
         BootstrapFromRimWorldSettlements();
+        var recoveredEconomicsDemographySettlements =
+            LivingWorldEconomicsDemographyCompatibility.RepairMissingPhysicalSettlements(State);
         RefreshPlayerContactEndpoint(Find.TickManager?.TicksGame ?? 0);
         MigrateDrifterReservoirForLegacySave();
         RepairMissingProductionProfilesFromRimWorldSettlements();
@@ -202,7 +204,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         // One-shot: clear ghost ledger entries for settlements removed by other mods before this
         // fix existed, and import/re-faction any that drifted while saved. Safe at load time — every
         // real settlement is present and scannable.
-        SettlementSync.ReconcileWithDestructions();
+        if (recoveredEconomicsDemographySettlements > 0)
+        {
+            // The recovery pass deliberately recreated ledger-backed bases. Keep this first load
+            // non-destructive: a partial recovery must not erase the remaining authoritative ledger.
+            SettlementSync.ReconcileNonDestructive();
+        }
+        else
+        {
+            SettlementSync.ReconcileWithDestructions();
+        }
     }
 
     public override void WorldComponentTick()

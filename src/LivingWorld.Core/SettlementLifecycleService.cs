@@ -2,6 +2,24 @@ namespace LivingWorld.Core;
 
 public static class SettlementLifecycleService
 {
+    public static WorldSettlement RebindPhysicalStableKey(
+        WorldState state,
+        EntityId settlementId,
+        string stableKey)
+    {
+        if (state == null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        if (string.IsNullOrWhiteSpace(stableKey))
+        {
+            throw new ArgumentException("Physical stable key cannot be empty.", nameof(stableKey));
+        }
+
+        return state.SetSettlementSlugForLedger(settlementId, stableKey);
+    }
+
     public static SettlementDestructionResult DestroySettlement(
         WorldState state,
         EntityId settlementId,
