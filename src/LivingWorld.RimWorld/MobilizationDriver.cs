@@ -55,9 +55,18 @@ public sealed class MobilizationDriver
             // stand or apparel policy applies to them — they just fight when mobilized and stand down after.
             foreach (var creature in map.mapPawns?.SpawnedPawnsInFaction(Faction.OfPlayer)?.ToList() ?? new List<Pawn>())
             {
-                if (creature == null || !MobilizationCandidates.IsCombatCreature(creature))
+                // Loop 1 already owns colonists (draft/engage/release via Execute). SpawnedPawnsInFaction is a
+                // superset that includes them, so falling into the release branch below would ReleaseCreature
+                // (undraft + CAI-disengage) a fighter colonist that loop 1 just drafted this same tick — the
+                // whole mobilization would thrash. Only non-colonist combat creatures (ghouls) belong here.
+                if (creature == null || creature.IsColonist)
                 {
-                    if (creature != null && (engagedByUs.ContainsKey(creature) || draftedByUs.Contains(creature)))
+                    continue;
+                }
+
+                if (!MobilizationCandidates.IsCombatCreature(creature))
+                {
+                    if (engagedByUs.ContainsKey(creature) || draftedByUs.Contains(creature))
                     {
                         ReleaseCreature(creature);
                     }
@@ -192,7 +201,20 @@ public sealed class MobilizationDriver
                 action = "Hold";
                 break;
 
-            default: // Release
+            default: // Release — free engage
+                if (MobilizationCandidates.IsCombatCreature(pawn))
+                {
+                    // Ghouls are melee-only. CAI's ranged tactical layer (cover/duck/cast position
+                    // search) cannot position them, so handing a ghoul to CAI makes it retreat. Never
+                    // CAI-drive a combat creature: charge the nearest reachable hostile in melee.
+                    // Re-issued every drive (PushMeleeCharge keeps a still-valid attack) so the ghoul
+                    // re-targets when its victim dies.
+                    PushMeleeCharge(pawn);
+                    engagedByUs[pawn] = tier;
+                    action = "Charge";
+                    break;
+                }
+
                 if (engagedByUs.TryGetValue(pawn, out var engagedTier) && engagedTier == tier)
                 {
                     return; // already engaged at this tier — steady, no re-issue
@@ -228,6 +250,68 @@ public sealed class MobilizationDriver
 
         var job = JobMaker.MakeJob(JobDefOf.Goto, anchor);
         pawn.jobs.TryTakeOrderedJob(job, JobTag.DraftedOrder, requestQueueing: false);
+    }
+
+    // Melee charge for a combat creature (ghoul): order it to attack the nearest reachable hostile.
+    // Idempotent — a still-valid melee attack is left running so re-drives don't restart the swing;
+    // when the victim dies or none is reachable the ghoul falls back to its drafted stance until the
+    // next drive re-targets. Never routes through CAI, whose ranged position search flees a melee pawn.
+    private static void PushMeleeCharge(Pawn pawn)
+    {
+        if (pawn?.jobs == null || pawn.Map == null)
+        {
+            return;
+        }
+
+        var cur = pawn.CurJob;
+        if (cur != null && cur.def == JobDefOf.AttackMelee
+            && cur.targetA.Thing is Pawn ongoing && !ongoing.Dead && !ongoing.Downed && ongoing.HostileTo(pawn))
+        {
+            return;
+        }
+
+        var target = FindNearestHostile(pawn);
+        if (target == null)
+        {
+            return;
+        }
+
+        var job = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+        job.playerForced = true;
+        pawn.jobs.TryTakeOrderedJob(job, JobTag.DraftedOrder, requestQueueing: false);
+    }
+
+    private static Pawn? FindNearestHostile(Pawn pawn)
+    {
+        var map = pawn.Map;
+        if (map?.mapPawns == null)
+        {
+            return null;
+        }
+
+        Pawn? best = null;
+        var bestDist = float.MaxValue;
+        foreach (var other in map.mapPawns.AllPawnsSpawned.ToList())
+        {
+            if (other == null || other == pawn || other.Dead || other.Downed || !other.HostileTo(pawn))
+            {
+                continue;
+            }
+
+            if (!pawn.CanReach(other, PathEndMode.Touch, Danger.Deadly))
+            {
+                continue;
+            }
+
+            var dist = (other.Position - pawn.Position).LengthHorizontalSquared;
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = other;
+            }
+        }
+
+        return best;
     }
 
     private static bool AtAnchor(Pawn pawn, IntVec3 anchor, float holdRadius)
@@ -335,6 +419,15 @@ public sealed class MobilizationDriver
 
             case MobPhase.Wake:
                 RestUtility.WakeUp(pawn, startNewJob: false);
+                // Keep them up. A bare WakeUp lets an off-shift/exhausted pawn crawl straight back into bed
+                // before the next 250-tick recheck, so the machine just re-Wakes forever and the pawn never
+                // equips or fights (observed live: "Тиберий -> Wake" every recheck). Drafting holds them awake
+                // and in place; equipping still works (it is issued as an ordered job), and stand-down undrafts.
+                if (pawn.drafter != null)
+                {
+                    pawn.drafter.Drafted = true;
+                    draftedByUs.Add(pawn);
+                }
                 break;
 
             case MobPhase.SetCombatPolicy:

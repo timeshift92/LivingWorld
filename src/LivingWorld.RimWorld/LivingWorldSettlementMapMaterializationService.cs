@@ -1037,6 +1037,11 @@ public static class LivingWorldSettlementMapMaterializationService
             PawnGenerationContext.NonPlayer,
             forceGenerateNewPawn: true,
             canGeneratePawnRelations: false);
+
+        // Fail-safe: animal generation must never abort map generation. This runs inside the
+        // MapGenerator.GenerateMap postfix, so an uncaught GeneratePawn/Spawn throw (a DLC/mod generation
+        // constraint, a gene/xenotype issue) would corrupt the settlement map and block entry. Match
+        // TrySpawnDefender and swallow the failure — one missing animal is harmless.
         try
         {
             pawn = PawnGenerator.GeneratePawn(request);

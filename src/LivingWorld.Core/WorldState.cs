@@ -1407,6 +1407,14 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
         }
 
+        // A destroyed/abandoned settlement is a ruin: it must not change hands via capture (only
+        // ReclaimRuin may resurrect it), mirroring ChangeSettlementFaction. Capturing a ruin would flip
+        // its faction while leaving it Destroyed and fire a false SettlementCaptured event. No-op instead.
+        if (!settlement.IsActive)
+        {
+            return settlement;
+        }
+
         // Surviving residents keep their SettlementId and ownership, so they simply belong to
         // the capturing faction now.
         var previousFaction = settlement.FactionId;
@@ -5346,7 +5354,8 @@ public sealed class WorldState
 
             if (_settlements.TryGetValue(citizen.SettlementId, out var homeSettlement)
                 && citizen.Status != CitizenStatus.Dead
-                && citizen.Status != CitizenStatus.Missing)
+                && citizen.Status != CitizenStatus.Missing
+                && !IsStrandedRefugee(citizen))
             {
                 _factionLifecyclePopulation.TryGetValue(homeSettlement.FactionId, out var factionCount);
                 _factionLifecyclePopulation[homeSettlement.FactionId] = factionCount + 1;
@@ -5416,6 +5425,17 @@ public sealed class WorldState
         }
 
         return new SettlementPopulation(total, children, adults, elderly);
+    }
+
+    // A self-owned Refugee is stranded at a destroyed home settlement with no onward migration path (relocation
+    // refugees are group-owned and immediately flip to Migrating). It must not count toward its faction's
+    // lifecycle population, or a faction wiped down to only ruins never collapses (its ghosts keep it "alive"),
+    // while those same citizens are excluded from every active settlement aggregate.
+    private bool IsStrandedRefugee(WorldCitizen citizen)
+    {
+        return citizen.Status == CitizenStatus.Refugee
+            && _owners.TryGetValue(citizen.Id, out var ownerId)
+            && ownerId == citizen.Id;
     }
 
     private void AppendEvent(WorldEventKind kind, EntityId? subjectId, string summary)

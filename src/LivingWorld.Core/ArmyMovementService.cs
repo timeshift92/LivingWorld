@@ -48,6 +48,9 @@ public static class ArmyMovementService
             }
             else if (!IsStillValidTarget(state, movement))
             {
+                // IsStillValidTarget already gates on target?.IsActive, so a destroyed/abandoned settlement
+                // (kept in the ledger as a ruin) recalls the army here instead of letting it "arrive" on a
+                // ruin — routed through RecallArmy so the reserved pawns return to their faction.
                 RecallArmy(state, movement.ArmyId, "army target or diplomatic precondition changed");
                 recalled++;
             }

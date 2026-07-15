@@ -47,7 +47,8 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private bool? rimWarActive;
     private bool? empireActive;
     private int lastWorldWarLetterTick = int.MinValue;
-    private int notifiedCaptureCount;
+    private int notifiedCaptureCount; // legacy positional cursor; kept only for one-time save migration.
+    private long lastNotifiedCaptureEventId;
     private List<long> notifiedResolvedRaidArmyIds = new();
     private List<long> notifiedRaidWarningFactIds = new();
     private List<long> notifiedConflictIds = new();
@@ -650,23 +651,33 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             .OrderBy(worldEvent => worldEvent.Tick)
             .ThenBy(worldEvent => worldEvent.Id.Value)
             .ToList();
-        var captureCount = captureEvents.Count;
-        var newCaptures = captureEvents
-            .Skip(Math.Min(notifiedCaptureCount, captureCount))
-            .Count(worldEvent => worldEvent.SettlementId.HasValue
-                && LivingWorldTransitVisibility.CanRevealSettlement(State, worldEvent.SettlementId.Value));
+
+        // One-time migration off the legacy positional cursor: seed the monotonic event-Id cursor to the
+        // newest capture already present so upgrading a save does not re-announce historical captures. The
+        // positional cursor desynced whenever the event journal compacted (old captures archived out), which
+        // silently suppressed capture letters; the Id cursor is stable across compaction.
+        if (lastNotifiedCaptureEventId == 0 && notifiedCaptureCount > 0 && captureEvents.Count > 0)
+        {
+            lastNotifiedCaptureEventId = WorldWarNotificationCursor.AdvanceCursor(captureEvents, 0);
+            notifiedCaptureCount = 0;
+        }
+
+        var unnotified = WorldWarNotificationCursor.SelectNewer(captureEvents, lastNotifiedCaptureEventId);
+        var newCaptures = unnotified.Count(worldEvent => worldEvent.SettlementId.HasValue
+            && LivingWorldTransitVisibility.CanRevealSettlement(State, worldEvent.SettlementId.Value));
         if (newCaptures <= 0)
         {
-            // Unknown captures are not queued as omniscient future notifications. A later trader or
-            // scout can reveal the resulting owner through a fresh settlement snapshot instead.
-            notifiedCaptureCount = captureCount;
+            // Unknown captures are not queued as omniscient future notifications. A later trader or scout can
+            // reveal the resulting owner through a fresh settlement snapshot instead. Advance the cursor past
+            // everything currently live (archived events are never re-seen) so it can never stall.
+            lastNotifiedCaptureEventId = WorldWarNotificationCursor.AdvanceCursor(captureEvents, lastNotifiedCaptureEventId);
             return;
         }
 
         var cooldownTicks = Math.Max(0, settings.worldWarLetterCooldownDays) * TicksPerDay;
         if (currentTick - lastWorldWarLetterTick < cooldownTicks)
         {
-            // Within cooldown: hold off, let captures accumulate for the next letter.
+            // Within cooldown: hold off and do NOT advance the cursor, so captures accumulate for the next letter.
             return;
         }
 
@@ -675,7 +686,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             "LW_WorldWarLetterText".Translate(newCaptures.Named("captures")),
             LetterDefOf.NeutralEvent);
         lastWorldWarLetterTick = currentTick;
-        notifiedCaptureCount = captureCount;
+        lastNotifiedCaptureEventId = WorldWarNotificationCursor.AdvanceCursor(captureEvents, lastNotifiedCaptureEventId);
     }
 
     // Announces newly-declared wars between NPC factions — the political companion to the capture
@@ -3382,6 +3393,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         Scribe_Values.Look(ref nextDailySimulationRetryTick, "livingWorld_nextDailySimulationRetryTick", 0);
         Scribe_Values.Look(ref lastWorldWarLetterTick, "livingWorld_lastWorldWarLetterTick", int.MinValue);
         Scribe_Values.Look(ref notifiedCaptureCount, "livingWorld_notifiedCaptureCount", 0);
+        Scribe_Values.Look(ref lastNotifiedCaptureEventId, "livingWorld_lastNotifiedCaptureEventId", 0L);
         Scribe_Values.Look(ref migratedDrifterReservoir, "livingWorld_migratedDrifterReservoir", false);
         Scribe_Values.Look(ref appliedEconomicDiversity, "livingWorld_appliedEconomicDiversity", false);
         Scribe_Values.Look(ref migratedVisibleDynamics, "livingWorld_migratedVisibleDynamics", false);

@@ -148,6 +148,7 @@ public sealed class IncidentWorker_LivingWorldFactionRaid : IncidentWorker_RaidE
     {
         return state.Settlements
             .Where(settlement => string.Equals(settlement.FactionId, faction.def.defName, StringComparison.Ordinal))
+            .Where(settlement => settlement.IsActive)
             .Any(settlement => state.GetSettlementPopulation(settlement.Id).Adults > 0);
     }
 

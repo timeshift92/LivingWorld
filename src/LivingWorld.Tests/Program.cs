@@ -76,6 +76,8 @@ var tests = new List<(string Name, Action Test)>
     ("rejects raid when supplies are insufficient", TestRaidPlannerRejectsInsufficientSupplies),
     ("reserves vanilla raid combatants from faction population", TestRaidPopulationAllocatorReservesFactionCombatants),
     ("caps vanilla raid combatants to available adults", TestRaidPopulationAllocatorCapsToAvailableAdults),
+    ("skips inactive settlements when reserving raid combatants", TestRaidPopulationAllocatorSkipsInactiveSettlement),
+    ("vanilla raid interception fails safe if reservation throws", TestVanillaRaidInterceptorGuardsReservation),
     ("creates raid opportunity from valuable trade intel", TestTradeIntelCreatesRaidOpportunity),
     ("consumes raid opportunity before vanilla raid allocation", TestRaidOpportunityConsumesOnce),
     ("records faction knowledge from trade intel without exact values", TestFactionKnowledgeRecordsTradeIntelAboutPlayer),
@@ -189,6 +191,14 @@ var tests = new List<(string Name, Action Test)>
     ("army recalls when diplomacy makes its target an ally", TestArmyRecallsWhenTargetBecomesAlly),
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
     ("prunes old resolved army movements without losing history", TestArmyMovementPrunesOldResolvedMovements),
+    ("army movement recalls when target settlement is destroyed", TestArmyMovementRecallsWhenTargetSettlementDestroyed),
+    ("capture is refused for an inactive settlement", TestCaptureSettlementIgnoresInactiveSettlement),
+    ("faction with only ruins collapses (stranded refugees not counted)", TestDestroyedSettlementResidentsDoNotBlockFactionCollapse),
+    ("world-war capture cursor survives event-journal compaction", TestWorldWarCaptureCursorSurvivesJournalCompaction),
+    ("settlement animal spawn is exception-safe", TestRimWorldSettlementAnimalSpawnFailSafe),
+    ("mobilization skips colonists in the creature loop", TestRimWorldMobilizationCreatureLoopSkipsColonists),
+    ("pawn exit raid-return sync is exception-safe", TestRimWorldPawnExitSyncFailSafe),
+    ("pre-save relation sweep covers caravan pawns", TestRimWorldRelationSweepCoversCaravans),
     ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
     ("attacker survivors occupy captured settlement", TestBattleAttackerSurvivorsOccupyCapturedSettlement),
     ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
@@ -445,6 +455,7 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: a committed candidate holds steady", TestMobPlanReadyEngagedSteadies),
     ("mob plan: a standless candidate still engages so it does not idle", TestMobPlanStandlessEngages),
     ("mob plan: stand-down clears our CAI duty first", TestMobPlanStandDownClearsDuty),
+    ("mob driver: a mobilized ghoul charges in melee, never CAI", TestRimWorldGhoulMeleeChargeNotCai),
     ("mob plan: stand-down undrafts a pawn we drafted", TestMobPlanStandDownClearsDraft),
     ("mob plan: stand-down switches to the civilian policy", TestMobPlanSetCivilianPolicy),
     ("mob plan: stand-down returns the kit to the stand", TestMobPlanReturnKit),
@@ -2657,6 +2668,54 @@ static void TestRaidPopulationAllocatorCapsToAvailableAdults()
     AssertEqual(2, result.AvailableCombatants);
     AssertEqual(0, state.GetSettlementPopulation(settlement.Id).Total);
     AssertEqual(2, state.Citizens.Count(citizen => state.GetOwner(citizen.Id) == result.Army!.Id));
+}
+
+static void TestRaidPopulationAllocatorSkipsInactiveSettlement()
+{
+    var settlementId = EntityId.Create(EntityKind.Settlement, 1);
+    var citizenId = EntityId.Create(EntityKind.Citizen, 1);
+
+    // The faction's only settlement is Destroyed (inactive) yet still carries an alive adult in the ledger
+    // — exactly the residual state that made a storyteller raid pick it and throw "Settlement ... is not
+    // active." from WorldState.CreateArmy.
+    var state = WorldState.FromSnapshot(new WorldStateSnapshot(
+        12345,
+        0,
+        new[] { new WorldSettlement(settlementId, "dead-camp", "Dead Camp", "Pirate", SettlementLifecycleStatus.Destroyed) },
+        new[] { new WorldCitizen(citizenId, "Raider", 30, Sex.Male, "soldier", settlementId, CitizenStatus.Alive) },
+        Array.Empty<WorldArmy>(),
+        Array.Empty<WorldMigrationGroup>(),
+        Array.Empty<WorldIntelReport>(),
+        Array.Empty<KnownSettlementInfo>(),
+        Array.Empty<RaidOpportunity>(),
+        Array.Empty<RaidPawnLink>(),
+        Array.Empty<WorldRaidOutcome>(),
+        Array.Empty<SettlementProductionProfile>(),
+        Array.Empty<WorldFactionRecord>(),
+        new[] { new OwnershipRecord(citizenId, settlementId) },
+        Array.Empty<ResourceStack>(),
+        Array.Empty<WorldEvent>(),
+        Array.Empty<Drifter>()));
+
+    // FoodPerCitizen 0 removes the food gate so the adult would otherwise be raid-ready; the only reason
+    // no army is raised must be the inactive-settlement filter. Before the fix this call throws.
+    var result = RaidPopulationAllocator.ReserveForRaid(
+        state,
+        new RaidPopulationAllocationRequest("Pirate", "vanilla raid", 3, "PackagedSurvivalMeal", 0));
+
+    AssertEqual(RaidPopulationAllocationStatus.UnknownFaction, result.Status);
+    AssertEqual(0, state.Armies.Count);
+}
+
+static void TestVanillaRaidInterceptorGuardsReservation()
+{
+    var src = File.ReadAllText(
+        Path.Combine(FindRepoRoot(), "src", "LivingWorld.Core", "VanillaRaidInterceptor.cs"));
+
+    // Defense in depth: even if reserving throws (a residual ledger desync pointing a raid at an inactive
+    // settlement), the vanilla raid must fall through untouched, never crash the storyteller tick.
+    AssertContains("catch (InvalidOperationException", src);
+    AssertContains("PassThrough(", src);
 }
 
 static void TestTradeIntelCreatesRaidOpportunity()
@@ -5702,6 +5761,74 @@ static void TestArmyMovementArrivesOnEta()
     // Idempotent: an already-arrived army is not re-processed.
     var again = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(6 * 60_000));
     AssertEqual(0, again.Arrived);
+}
+
+static void TestArmyMovementRecallsWhenTargetSettlementDestroyed()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    var army = state.CreateArmy("Raiders", "Pirates", source.Id);
+    state.DispatchArmy(army.Id, target.Id, arrivalTick: 5 * 60_000);
+
+    // The target is destroyed while the army is in flight. Destroyed settlements stay in the ledger as
+    // ruins (never removed), so a plain null check would still see it and let the army "arrive" on a ruin.
+    SettlementLifecycleService.DestroySettlement(state, target.Id, tick: 3 * 60_000, reason: "collapsed");
+
+    var result = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(5 * 60_000));
+
+    AssertEqual(0, result.Arrived);
+    AssertEqual(1, result.Recalled);
+    AssertEqual(ArmyMovementStatus.Recalled, state.GetArmyMovement(army.Id)!.Status);
+}
+
+static void TestCaptureSettlementIgnoresInactiveSettlement()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("ruin", "Ruin", "Outlanders");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, tick: 1000, reason: "burned");
+
+    // A destroyed settlement must never change hands via capture (only ReclaimRuin may resurrect it) —
+    // otherwise a stray army arriving on a ruin silently flips its faction and fires a false capture event.
+    state.CaptureSettlement(settlement.Id, "Pirates");
+
+    AssertEqual("Outlanders", state.GetSettlement(settlement.Id)!.FactionId);
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(settlement.Id)!.Status);
+    AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestDestroyedSettlementResidentsDoNotBlockFactionCollapse()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("only", "Only Home", "Doomed");
+    state.CreateCitizen("A", 30, Sex.Male, "settler", settlement.Id);
+    state.CreateCitizen("B", 40, Sex.Female, "settler", settlement.Id);
+
+    // Destroying the faction's only settlement strands its residents as self-owned refugees at the ruin.
+    // They must not keep the (now landless) faction alive, or it can never collapse.
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, tick: 1000, reason: "wiped");
+
+    AssertEqual(0, state.GetFactionLifecyclePopulation("Doomed"));
+}
+
+static void TestWorldWarCaptureCursorSurvivesJournalCompaction()
+{
+    // The live event journal has been compacted: old capture events (Id <= 129) were archived out, so a
+    // positional Skip into the shrinking list would drop the genuinely-new captures (Id 130, 131). A
+    // monotonic event-Id cursor still selects them.
+    WorldEvent Capture(long id, int tick) => new WorldEvent(
+        EntityId.Create(EntityKind.Event, id), WorldEventKind.SettlementCaptured, tick, null, "captured")
+    {
+        SettlementId = EntityId.Create(EntityKind.Settlement, 1),
+    };
+
+    var liveCaptures = new[] { Capture(128, 10), Capture(130, 12), Capture(131, 12) };
+
+    var newer = WorldWarNotificationCursor.SelectNewer(liveCaptures, lastNotifiedEventId: 129);
+
+    AssertEqual(2, newer.Count);
+    AssertEqual(130L, newer[0].Id.Value);
+    AssertEqual(131L, WorldWarNotificationCursor.AdvanceCursor(liveCaptures, 129));
 }
 
 static void TestArmyMovementSerializationRoundTrip()
@@ -11622,8 +11749,19 @@ static void TestRimWorldCleansOrphanedLordReferences()
     AssertContains("WorldObjects?.Caravans", cleaner);
     AssertContains("AccessTools.Field(lord.GetType(), \"ownedPawns\")", cleaner);
     AssertContains("ownedPawns.RemoveAt(index)", cleaner);
+    // Lord members are pruned only when saved nowhere (destroyed/discarded), never when
+    // merely off-map-but-alive: removing a live member out-of-band desyncs the vanilla lord
+    // and makes it log "Lord lost pawn X it didn't have. Condition=ChangedFaction/LeftVoluntarily".
+    AssertContains("if (IsPawnSavedAnywhere(pawn))", cleaner);
     AssertContains("IsPawnDeepSavedByMap", cleaner);
     AssertContains("map.mapPawns?.AllPawns?.Contains(pawn) == true", cleaner);
+    // Heal the pawn side of a broken lord backlink: a pawn whose Pawn.lord points to a lord that is gone
+    // from the lordManager (or no longer owns it) runs duty ThinkNodes with a null duty ("X doing
+    // ThinkNode_DutyConstant with no duty") and spams "Lord lost pawn X it didn't have" on faction change.
+    // Clear pawn.lord + mindState.duty exactly as vanilla Lord.RemovePawn does.
+    AssertContains("CleanDesyncedPawnLordBacklinks", cleaner);
+    AssertContains("pawn.mindState.duty = null", cleaner);
+    AssertRimWorldMethodExists("Verse.AI.Group.Lord", "RemovePawn");
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanAllMaps()", component);
     AssertDoesNotContain("CleanOrphanedDirectPawnRelations", component);
     AssertContains("LivingWorldOrphanedLordReferenceCleaner.CleanMap(__result)", mapGeneration);
@@ -12527,6 +12665,67 @@ static void TestRimWorldCaravanArmoryPreparation()
     AssertEqual(1, RimWorldMethodMatchCount(
         "RimWorld.Planet.CaravanExitMapUtility", "ExitMapAndCreateCaravan",
         new[] { "IEnumerable`1", "Faction", "PlanetTile", "Direction8Way", "PlanetTile", "Boolean" }));
+}
+
+static void TestRimWorldGhoulMeleeChargeNotCai()
+{
+    var driver = File.ReadAllText(
+        Path.Combine(FindRepoRoot(), "src", "LivingWorld.RimWorld", "MobilizationDriver.cs"));
+
+    // Ghouls are melee-only. CAI's ranged tactical layer (cover/duck/cast position search) cannot
+    // position them, so it makes them flee. The free-engage path must route a combat creature to a
+    // melee charge on the nearest hostile (vanilla AttackMelee) and must NOT hand it to CAI.
+    AssertContains("MobilizationCandidates.IsCombatCreature(pawn)", driver);
+    AssertContains("PushMeleeCharge(pawn)", driver);
+    AssertContains("JobDefOf.AttackMelee", driver);
+    // The vanilla melee job def resolves in this build (the net472 compile of JobDefOf.AttackMelee
+    // already proves it, but assert the type is present for a clear failure if the API moves).
+    AssertRimWorldMethodExists("Verse.AI.JobDriver_AttackMelee", "MakeNewToils");
+}
+
+static void TestRimWorldSettlementAnimalSpawnFailSafe()
+{
+    var service = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+
+    // TrySpawnAnimal runs inside the MapGenerator.GenerateMap postfix; an unguarded GeneratePawn/Spawn
+    // throw would abort vanilla map generation and block settlement entry. Must fail safe like TrySpawnDefender.
+    AssertContains("animal generation must never abort map generation", service);
+    AssertRimWorldMethodExists("Verse.PawnGenerator", "GeneratePawn");
+}
+
+static void TestRimWorldMobilizationCreatureLoopSkipsColonists()
+{
+    var driver = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "MobilizationDriver.cs"));
+
+    // The creature loop iterates SpawnedPawnsInFaction(Player), a superset that includes colonists. It must
+    // skip colonists — loop 1 owns them — or it would ReleaseCreature (undraft + CAI-disengage) a fighter
+    // that loop 1 just drafted this same tick, thrashing the whole mobilization.
+    AssertContains("creature.IsColonist", driver);
+    AssertContains("Loop 1 already owns colonists", driver);
+}
+
+static void TestRimWorldPawnExitSyncFailSafe()
+{
+    var patch = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
+
+    // TryMarkReturned runs from Pawn.ExitMap/DeSpawn postfixes and routes into WorldState.MarkRaidPawnReturned,
+    // which throws when a raid link's army no longer resolves. That throw must never unwind into vanilla despawn.
+    AssertContains("pawn exit sync failed safely", patch);
+    AssertContains("catch (Exception", patch);
+}
+
+static void TestRimWorldRelationSweepCoversCaravans()
+{
+    var cleaner = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldOrphanedLordReferenceCleaner.cs"));
+
+    // Caravan pawns live in Caravan.pawns — not in map.mapPawns nor Find.WorldPawns — so the pre-save relation
+    // sweep must scan them too, or a caravan colonist's DirectPawnRelation to a discarded pawn dangles on save.
+    AssertContains("CleanOrphanedDirectPawnRelationsForCaravans", cleaner);
+    AssertContains("PawnsListForReading", cleaner);
 }
 
 static void TestLiveVisitAnimalCaravanDocs()

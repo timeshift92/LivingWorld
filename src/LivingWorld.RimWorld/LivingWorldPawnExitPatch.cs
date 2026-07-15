@@ -172,7 +172,10 @@ public static class LivingWorldPawnExitTracker
         }
         catch (Exception ex)
         {
-            Log.Warning($"[LivingWorld] Pawn exit sync skipped safely for {pawn.ThingID}: {ex.GetType().Name}: {ex.Message}");
+            // Fail-safe: TryMarkReturned runs from Pawn.ExitMap/DeSpawn postfixes and routes into WorldState
+            // ledger methods that throw on a raid-link/army desync. That throw must never unwind into vanilla
+            // despawn/exit — pawn exit sync failed safely.
+            Log.Warning($"[LivingWorld] Pawn exit sync failed safely for {pawn.ThingID}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }
