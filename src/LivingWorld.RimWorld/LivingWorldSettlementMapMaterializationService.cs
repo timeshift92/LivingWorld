@@ -511,9 +511,21 @@ public static class LivingWorldSettlementMapMaterializationService
             faction,
             PawnGenerationContext.NonPlayer,
             forceGenerateNewPawn: true);
-        pawn = PawnGenerator.GeneratePawn(request);
-        GenSpawn.Spawn(pawn, cell, map);
-        return true;
+
+        // Fail-safe: animal generation must never abort map generation. This runs inside the
+        // MapGenerator.GenerateMap postfix, so an uncaught GeneratePawn/Spawn throw (a DLC/mod generation
+        // constraint, a gene/xenotype issue) would corrupt the settlement map and block entry. Match
+        // TrySpawnDefender and swallow the failure — one missing animal is harmless.
+        try
+        {
+            pawn = PawnGenerator.GeneratePawn(request);
+            GenSpawn.Spawn(pawn, cell, map);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static int SpawnSettlementRooms(Map map, Faction faction, SettlementMapLayoutResult layout)

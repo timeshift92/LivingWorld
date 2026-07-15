@@ -935,6 +935,14 @@ public sealed class WorldState
             throw new InvalidOperationException($"Settlement {settlementId} does not exist.");
         }
 
+        // A destroyed/abandoned settlement is a ruin: it must not change hands via capture (only
+        // ReclaimRuin may resurrect it), mirroring ChangeSettlementFaction. Capturing a ruin would flip
+        // its faction while leaving it Destroyed and fire a false SettlementCaptured event. No-op instead.
+        if (!settlement.IsActive)
+        {
+            return settlement;
+        }
+
         // Surviving residents keep their SettlementId and ownership, so they simply belong to
         // the capturing faction now.
         var previousFaction = settlement.FactionId;

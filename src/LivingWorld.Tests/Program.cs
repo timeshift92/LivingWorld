@@ -158,6 +158,12 @@ var tests = new List<(string Name, Action Test)>
     ("army arrives at its target when the eta passes", TestArmyMovementArrivesOnEta),
     ("army movement survives a save/load round trip", TestArmyMovementSerializationRoundTrip),
     ("prunes old resolved army movements without losing history", TestArmyMovementPrunesOldResolvedMovements),
+    ("army movement recalls when target settlement is destroyed", TestArmyMovementRecallsWhenTargetSettlementDestroyed),
+    ("capture is refused for an inactive settlement", TestCaptureSettlementIgnoresInactiveSettlement),
+    ("settlement animal spawn is exception-safe", TestRimWorldSettlementAnimalSpawnFailSafe),
+    ("mobilization skips colonists in the creature loop", TestRimWorldMobilizationCreatureLoopSkipsColonists),
+    ("pawn exit raid-return sync is exception-safe", TestRimWorldPawnExitSyncFailSafe),
+    ("pre-save relation sweep covers caravan pawns", TestRimWorldRelationSweepCoversCaravans),
     ("attacker captures a weaker settlement and conserves population", TestBattleAttackerCapturesWeakSettlement),
     ("attacker survivors occupy captured settlement", TestBattleAttackerSurvivorsOccupyCapturedSettlement),
     ("defender holds and the beaten army stands down", TestBattleDefenderHoldsAndArmyStandsDown),
@@ -4618,6 +4624,40 @@ static void TestArmyMovementArrivesOnEta()
     // Idempotent: an already-arrived army is not re-processed.
     var again = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(6 * 60_000));
     AssertEqual(0, again.Arrived);
+}
+
+static void TestArmyMovementRecallsWhenTargetSettlementDestroyed()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("home", "Home", "Pirates");
+    var target = state.CreateSettlement("prey", "Prey", "Outlanders");
+    var army = state.CreateArmy("Raiders", "Pirates", source.Id);
+    state.DispatchArmy(army.Id, target.Id, arrivalTick: 5 * 60_000);
+
+    // The target is destroyed while the army is in flight. Destroyed settlements stay in the ledger as
+    // ruins (never removed), so a plain null check would still see it and let the army "arrive" on a ruin.
+    SettlementLifecycleService.DestroySettlement(state, target.Id, tick: 3 * 60_000, reason: "collapsed");
+
+    var result = ArmyMovementService.SimulateDay(state, new ArmyMovementRequest(5 * 60_000));
+
+    AssertEqual(0, result.Arrived);
+    AssertEqual(1, result.Recalled);
+    AssertEqual(ArmyMovementStatus.Recalled, state.GetArmyMovement(army.Id)!.Status);
+}
+
+static void TestCaptureSettlementIgnoresInactiveSettlement()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("ruin", "Ruin", "Outlanders");
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, tick: 1000, reason: "burned");
+
+    // A destroyed settlement must never change hands via capture (only ReclaimRuin may resurrect it) —
+    // otherwise a stray army arriving on a ruin silently flips its faction and fires a false capture event.
+    state.CaptureSettlement(settlement.Id, "Pirates");
+
+    AssertEqual("Outlanders", state.GetSettlement(settlement.Id)!.FactionId);
+    AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(settlement.Id)!.Status);
+    AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
 }
 
 static void TestArmyMovementSerializationRoundTrip()
@@ -10203,6 +10243,51 @@ static void TestRimWorldGhoulMeleeChargeNotCai()
     // The vanilla melee job def resolves in this build (the net472 compile of JobDefOf.AttackMelee
     // already proves it, but assert the type is present for a clear failure if the API moves).
     AssertRimWorldMethodExists("Verse.AI.JobDriver_AttackMelee", "MakeNewToils");
+}
+
+static void TestRimWorldSettlementAnimalSpawnFailSafe()
+{
+    var service = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldSettlementMapMaterializationService.cs"));
+
+    // TrySpawnAnimal runs inside the MapGenerator.GenerateMap postfix; an unguarded GeneratePawn/Spawn
+    // throw would abort vanilla map generation and block settlement entry. Must fail safe like TrySpawnDefender.
+    AssertContains("animal generation must never abort map generation", service);
+    AssertRimWorldMethodExists("Verse.PawnGenerator", "GeneratePawn");
+}
+
+static void TestRimWorldMobilizationCreatureLoopSkipsColonists()
+{
+    var driver = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "MobilizationDriver.cs"));
+
+    // The creature loop iterates SpawnedPawnsInFaction(Player), a superset that includes colonists. It must
+    // skip colonists — loop 1 owns them — or it would ReleaseCreature (undraft + CAI-disengage) a fighter
+    // that loop 1 just drafted this same tick, thrashing the whole mobilization.
+    AssertContains("creature.IsColonist", driver);
+    AssertContains("Loop 1 already owns colonists", driver);
+}
+
+static void TestRimWorldPawnExitSyncFailSafe()
+{
+    var patch = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldPawnExitPatch.cs"));
+
+    // TryMarkReturned runs from Pawn.ExitMap/DeSpawn postfixes and routes into WorldState.MarkRaidPawnReturned,
+    // which throws when a raid link's army no longer resolves. That throw must never unwind into vanilla despawn.
+    AssertContains("pawn exit sync failed safely", patch);
+    AssertContains("catch (Exception", patch);
+}
+
+static void TestRimWorldRelationSweepCoversCaravans()
+{
+    var cleaner = File.ReadAllText(Path.Combine(
+        FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldOrphanedLordReferenceCleaner.cs"));
+
+    // Caravan pawns live in Caravan.pawns — not in map.mapPawns nor Find.WorldPawns — so the pre-save relation
+    // sweep must scan them too, or a caravan colonist's DirectPawnRelation to a discarded pawn dangles on save.
+    AssertContains("CleanOrphanedDirectPawnRelationsForCaravans", cleaner);
+    AssertContains("PawnsListForReading", cleaner);
 }
 
 static void TestLiveVisitAnimalCaravanDocs()

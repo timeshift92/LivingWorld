@@ -41,8 +41,11 @@ public static class ArmyMovementService
                 state.SetArmyMovementStatus(movement.ArmyId, ArmyMovementStatus.Disbanded);
                 disbanded++;
             }
-            else if (state.GetSettlement(movement.TargetSettlementId) == null)
+            else if (!state.IsActiveSettlement(movement.TargetSettlementId))
             {
+                // Destroyed/abandoned settlements stay in the ledger as ruins (never removed), so a null
+                // check would let the army march onto a ruin and "arrive". Recall it instead, matching the
+                // caravan (MarkCaravanArrived) and mission paths that both gate on IsActiveSettlement.
                 state.SetArmyMovementStatus(movement.ArmyId, ArmyMovementStatus.Recalled);
                 recalled++;
             }

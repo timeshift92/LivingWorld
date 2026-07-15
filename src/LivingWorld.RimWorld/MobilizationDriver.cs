@@ -55,9 +55,18 @@ public sealed class MobilizationDriver
             // stand or apparel policy applies to them — they just fight when mobilized and stand down after.
             foreach (var creature in map.mapPawns?.SpawnedPawnsInFaction(Faction.OfPlayer)?.ToList() ?? new List<Pawn>())
             {
-                if (creature == null || !MobilizationCandidates.IsCombatCreature(creature))
+                // Loop 1 already owns colonists (draft/engage/release via Execute). SpawnedPawnsInFaction is a
+                // superset that includes them, so falling into the release branch below would ReleaseCreature
+                // (undraft + CAI-disengage) a fighter colonist that loop 1 just drafted this same tick — the
+                // whole mobilization would thrash. Only non-colonist combat creatures (ghouls) belong here.
+                if (creature == null || creature.IsColonist)
                 {
-                    if (creature != null && (engagedByUs.ContainsKey(creature) || draftedByUs.Contains(creature)))
+                    continue;
+                }
+
+                if (!MobilizationCandidates.IsCombatCreature(creature))
+                {
+                    if (engagedByUs.ContainsKey(creature) || draftedByUs.Contains(creature))
                     {
                         ReleaseCreature(creature);
                     }

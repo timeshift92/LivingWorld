@@ -24,11 +24,15 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
             }
         }
 
-        // World pawns (colonists away in a caravan, world settlement pawns) also hold
-        // reciprocal DirectPawnRelations whose otherPawn can dangle. CleanMap only scans
-        // map pawns, so scan the world-pawn pool once here — before a save flushes them all.
-        // Not gated on maps existing: world pawns must be swept regardless.
+        // World pawns (world settlement pawns, quest pawns) also hold reciprocal DirectPawnRelations whose
+        // otherPawn can dangle. CleanMap only scans map pawns, so sweep the world-pawn pool once here —
+        // before a save flushes them all. Not gated on maps existing: world pawns must be swept regardless.
         cleaned += CleanOrphanedDirectPawnRelationsForWorldPawns();
+
+        // Caravan pawns (colonists away in a caravan) are deep-saved in Caravan.pawns and are in NEITHER
+        // map.mapPawns NOR Find.WorldPawns, so the two sweeps above miss them entirely. Scan them too, or a
+        // caravan colonist's relation to a discarded pawn dangles into the save.
+        cleaned += CleanOrphanedDirectPawnRelationsForCaravans();
 
         return cleaned;
     }
@@ -82,6 +86,23 @@ internal static class LivingWorldOrphanedLordReferenceCleaner
         // AllPawnsAliveOrDead covers pawns that are saved but not on any map — the exact
         // holders of orphaned relations that map-only scans miss.
         return CleanOrphanedDirectPawnRelations(Find.WorldPawns?.AllPawnsAliveOrDead);
+    }
+
+    private static int CleanOrphanedDirectPawnRelationsForCaravans()
+    {
+        var caravans = Find.WorldObjects?.Caravans;
+        if (caravans == null || caravans.Count == 0)
+        {
+            return 0;
+        }
+
+        var cleaned = 0;
+        foreach (var caravan in caravans.ToList())
+        {
+            cleaned += CleanOrphanedDirectPawnRelations(caravan?.PawnsListForReading);
+        }
+
+        return cleaned;
     }
 
     private static int CleanOrphanedDirectPawnRelations(IEnumerable<Pawn>? pawns)

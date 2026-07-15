@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using LivingWorld.Core;
 using Verse;
@@ -25,6 +26,21 @@ public static class LivingWorldPawnDeSpawnPatch
 public static class LivingWorldPawnExitTracker
 {
     public static void TryMarkReturned(Pawn pawn, string reason)
+    {
+        try
+        {
+            TryMarkReturnedCore(pawn, reason);
+        }
+        catch (Exception ex)
+        {
+            // Fail-safe: this runs from Pawn.ExitMap/DeSpawn postfixes and routes into WorldState ledger
+            // methods that throw on a raid-link/army desync (e.g. a link whose army no longer resolves).
+            // Such a throw must never unwind into vanilla despawn/exit — pawn exit sync failed safely.
+            Log.Warning($"[LivingWorld] Pawn exit sync failed safely for {pawn?.LabelShortCap}: {ex.Message}");
+        }
+    }
+
+    private static void TryMarkReturnedCore(Pawn pawn, string reason)
     {
         var component = LivingWorldWorldComponent.Instance;
         if (component == null || pawn == null)
