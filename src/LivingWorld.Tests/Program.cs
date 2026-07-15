@@ -189,6 +189,8 @@ var tests = new List<(string Name, Action Test)>
     ("prunes old resolved army movements without losing history", TestArmyMovementPrunesOldResolvedMovements),
     ("army movement recalls when target settlement is destroyed", TestArmyMovementRecallsWhenTargetSettlementDestroyed),
     ("capture is refused for an inactive settlement", TestCaptureSettlementIgnoresInactiveSettlement),
+    ("faction with only ruins collapses (stranded refugees not counted)", TestDestroyedSettlementResidentsDoNotBlockFactionCollapse),
+    ("world-war capture cursor survives event-journal compaction", TestWorldWarCaptureCursorSurvivesJournalCompaction),
     ("settlement animal spawn is exception-safe", TestRimWorldSettlementAnimalSpawnFailSafe),
     ("mobilization skips colonists in the creature loop", TestRimWorldMobilizationCreatureLoopSkipsColonists),
     ("pawn exit raid-return sync is exception-safe", TestRimWorldPawnExitSyncFailSafe),
@@ -5667,6 +5669,40 @@ static void TestCaptureSettlementIgnoresInactiveSettlement()
     AssertEqual("Outlanders", state.GetSettlement(settlement.Id)!.FactionId);
     AssertEqual(SettlementLifecycleStatus.Destroyed, state.GetSettlement(settlement.Id)!.Status);
     AssertEqual(0, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
+}
+
+static void TestDestroyedSettlementResidentsDoNotBlockFactionCollapse()
+{
+    var state = new WorldState(4242);
+    var settlement = state.CreateSettlement("only", "Only Home", "Doomed");
+    state.CreateCitizen("A", 30, Sex.Male, "settler", settlement.Id);
+    state.CreateCitizen("B", 40, Sex.Female, "settler", settlement.Id);
+
+    // Destroying the faction's only settlement strands its residents as self-owned refugees at the ruin.
+    // They must not keep the (now landless) faction alive, or it can never collapse.
+    SettlementLifecycleService.DestroySettlement(state, settlement.Id, tick: 1000, reason: "wiped");
+
+    AssertEqual(0, state.GetFactionLifecyclePopulation("Doomed"));
+}
+
+static void TestWorldWarCaptureCursorSurvivesJournalCompaction()
+{
+    // The live event journal has been compacted: old capture events (Id <= 129) were archived out, so a
+    // positional Skip into the shrinking list would drop the genuinely-new captures (Id 130, 131). A
+    // monotonic event-Id cursor still selects them.
+    WorldEvent Capture(long id, int tick) => new WorldEvent(
+        EntityId.Create(EntityKind.Event, id), WorldEventKind.SettlementCaptured, tick, null, "captured")
+    {
+        SettlementId = EntityId.Create(EntityKind.Settlement, 1),
+    };
+
+    var liveCaptures = new[] { Capture(128, 10), Capture(130, 12), Capture(131, 12) };
+
+    var newer = WorldWarNotificationCursor.SelectNewer(liveCaptures, lastNotifiedEventId: 129);
+
+    AssertEqual(2, newer.Count);
+    AssertEqual(130L, newer[0].Id.Value);
+    AssertEqual(131L, WorldWarNotificationCursor.AdvanceCursor(liveCaptures, 129));
 }
 
 static void TestArmyMovementSerializationRoundTrip()
