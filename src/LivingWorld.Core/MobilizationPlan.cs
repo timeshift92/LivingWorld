@@ -108,8 +108,10 @@ public static class MobilizationPlan
             return MobPhase.SetCombatPolicy;
         }
 
-        // Kit lives only on the stand, so only a stand owner with a stocked stand can arm. Equip until armed.
-        if (s.HasStand && s.KitAvailable && !s.InCombatKit)
+        // Kit lives only on the stand, so only a stand owner with a stocked stand can arm. Equip until armed —
+        // but NOT once already committed to the fight: a fighter disarmed mid-battle should keep fighting
+        // (unarmed / melee) rather than be yanked all the way back to the stand under fire to re-equip.
+        if (s.HasStand && s.KitAvailable && !s.InCombatKit && !s.HasLwDuty && !s.WasEngagedByUs)
         {
             return MobPhase.Equip;
         }

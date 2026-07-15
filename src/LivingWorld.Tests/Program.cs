@@ -464,6 +464,7 @@ var tests = new List<(string Name, Action Test)>
     ("mob plan: without CAI an equipped candidate still engages (musters)", TestMobPlanReadyWithoutCaiEngages),
     ("mob plan: a committed candidate holds steady", TestMobPlanReadyEngagedSteadies),
     ("mob plan: a standless candidate still engages so it does not idle", TestMobPlanStandlessEngages),
+    ("mob plan: an engaged fighter disarmed mid-fight does not retreat to re-equip", TestMobPlanEngagedDisarmedDoesNotReEquip),
     ("mob plan: stand-down clears our CAI duty first", TestMobPlanStandDownClearsDuty),
     ("mob driver: a mobilized ghoul charges in melee, never CAI", TestRimWorldGhoulMeleeChargeNotCai),
     ("mob plan: stand-down undrafts a pawn we drafted", TestMobPlanStandDownClearsDraft),
@@ -13722,6 +13723,19 @@ static void TestMobPlanStandlessEngages()
         CaiAvailable = true, HasLwDuty = false,
     };
     AssertEqual(MobPhase.Engage, MobilizationPlan.NextAction(mobilized: true, s));
+}
+
+static void TestMobPlanEngagedDisarmedDoesNotReEquip()
+{
+    // A fighter already committed to the fight (HasLwDuty) that loses its weapon must NOT be marched back to
+    // the stand to re-equip under fire — it fights on. With a stand + kit available but not in kit, the pre-fix
+    // logic returned Equip; now it stays SteadyCombat.
+    var s = new PawnMobState
+    {
+        IsCandidate = true, PolicyIsCombat = true, HasStand = true, KitAvailable = true, InCombatKit = false,
+        CaiAvailable = true, HasLwDuty = true,
+    };
+    AssertEqual(MobPhase.SteadyCombat, MobilizationPlan.NextAction(mobilized: true, s));
 }
 
 static void TestMobPlanStandDownClearsDuty()

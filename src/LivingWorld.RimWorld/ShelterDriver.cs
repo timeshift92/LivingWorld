@@ -18,7 +18,7 @@ public sealed class ShelterDriver
     // pawn thingIDNumber -> the Area.ID they had before we sheltered them (-1 = was unrestricted).
     private readonly Dictionary<int, int> prevAreaByPawn = new();
 
-    public void Drive(Map map, ThreatTier tier)
+    public void Drive(Map map, ThreatTier tier, bool shelterWorthy)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
         if (!settings.armoryMobilizationEnabled || !ModsConfig.OdysseyActive)
@@ -43,7 +43,10 @@ public sealed class ShelterDriver
                 return;
             }
 
-            var wantsShelter = tier >= ThreatTier.Raid;
+            // shelterWorthy is decided by the caller: a Serious threat, or a non-animal Raid. A lone dangerous
+            // animal (a revenge elephant) grades Raid so the FIGHTERS deal with it, but does NOT send the whole
+            // colony to cover — matching the module's stated "proportionate response" intent.
+            var wantsShelter = shelterWorthy;
             var shelter = wantsShelter ? ShelterAreaService.ShelterAreaFor(map) : null;
 
             var diagnostics = settings.mobilizationDiagnostics;

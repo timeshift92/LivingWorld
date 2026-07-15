@@ -68,6 +68,21 @@ public static class CaiBridge
             {
                 AutoControlField = CompType.GetField("aiAutoControl", BindingFlags.Public | BindingFlags.Instance);
             }
+
+            // Surface a SILENT partial resolution: GetMethod/GetField return null (not throw) when a signature or
+            // name changes, so a CAI update can flip Available false with zero log output — presenting only as
+            // "fighters mysteriously never get CAI control". If CAI is installed but any member is missing, say so
+            // at load, naming which ones, instead of failing quietly.
+            if (utility != null && (HuntMethod == null || DefendMethod == null || StartMethod == null
+                                    || GetTrackerMethod == null || CurDutyDefProp == null
+                                    || FinishAllDutiesMethod == null || AutoControlField == null))
+            {
+                Log.Warning("[LivingWorld] CAI 5000 is installed but the bridge could not resolve every member "
+                            + $"(Hunt={HuntMethod != null}, Defend={DefendMethod != null}, Start={StartMethod != null}, "
+                            + $"Tracker={GetTrackerMethod != null}, CurDuty={CurDutyDefProp != null}, "
+                            + $"Finish={FinishAllDutiesMethod != null}, AutoControl={AutoControlField != null}). "
+                            + "CAI's API likely changed — fighters fall back to vanilla control.");
+            }
         }
         catch (Exception ex)
         {

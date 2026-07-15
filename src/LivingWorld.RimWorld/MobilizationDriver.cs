@@ -99,10 +99,17 @@ public sealed class MobilizationDriver
 
             foreach (var p in map.mapPawns.FreeColonistsSpawned?.ToList() ?? new List<Pawn>())
             {
-                // Exclude busy-urgent fighters (firefight/tend/rescue) from the denominator — they will never
-                // march to the line, so counting them would hold the gate below 100% until the timeout fires.
                 if (p == null || !MobilizationCandidates.IsCandidate(p)
                     || MobilizationCandidates.IsBusyUrgent(p) || !CanReach(p, anchor))
+                {
+                    continue;
+                }
+
+                // Exclude a "ghost": a fighter WE drafted that the player has since manually undrafted — it has
+                // quit the line, so counting it (especially if it happens to linger near the anchor) would tip
+                // the ready-fraction and release the squad early. A not-yet-drafted fighter still equipping is
+                // NOT a ghost (never in draftedByUs) and still counts — we are waiting for it to arrive.
+                if (draftedByUs.Contains(p) && !p.Drafted)
                 {
                     continue;
                 }
@@ -161,11 +168,7 @@ public sealed class MobilizationDriver
     // Drafting is done up front (needed for both hold and engage); a held pawn carries NO CAI duty.
     private void EngageOrMuster(Pawn pawn, ThreatTier tier, in MusterContext muster, bool diagnostics, string tag)
     {
-        if (pawn.drafter != null)
-        {
-            pawn.drafter.Drafted = true;
-            draftedByUs.Add(pawn);
-        }
+        ClaimDraft(pawn);
 
         var state = new MusterState
         {
@@ -374,6 +377,20 @@ public sealed class MobilizationDriver
         }
     }
 
+    // Draft a pawn for mobilization, but ONLY claim ownership of the draft if the pawn was not already drafted —
+    // a pawn the player drafted first (for their own reason) must not be added to draftedByUs, or stand-down
+    // would force-undraft the player's own order. An already-drafted candidate still fights; we just don't own it.
+    private void ClaimDraft(Pawn pawn)
+    {
+        if (pawn?.drafter == null || pawn.Drafted)
+        {
+            return;
+        }
+
+        pawn.drafter.Drafted = true;
+        draftedByUs.Add(pawn);
+    }
+
     private void PrunePawns()
     {
         foreach (var dead in engagedByUs.Keys.Where(p => p == null || !p.Spawned).ToList())
@@ -423,11 +440,7 @@ public sealed class MobilizationDriver
                 // before the next 250-tick recheck, so the machine just re-Wakes forever and the pawn never
                 // equips or fights (observed live: "Тиберий -> Wake" every recheck). Drafting holds them awake
                 // and in place; equipping still works (it is issued as an ordered job), and stand-down undrafts.
-                if (pawn.drafter != null)
-                {
-                    pawn.drafter.Drafted = true;
-                    draftedByUs.Add(pawn);
-                }
+                ClaimDraft(pawn);
                 break;
 
             case MobPhase.SetCombatPolicy:
@@ -447,11 +460,7 @@ public sealed class MobilizationDriver
                 return;
 
             case MobPhase.Draft:
-                if (pawn.drafter != null)
-                {
-                    pawn.drafter.Drafted = true;
-                    draftedByUs.Add(pawn);
-                }
+                ClaimDraft(pawn);
                 break;
 
             case MobPhase.ClearCombat:
@@ -460,10 +469,18 @@ public sealed class MobilizationDriver
                     CaiBridge.Disengage(pawn);
                 }
 
+                // Undraft (only a draft WE placed), then immediately re-dress + send to stow the kit in the SAME
+                // tick. Previously we only undrafted here and left policy/kit for two later rechecks, so vanilla
+                // AI grabbed the freshly-freed pawn and it wandered off in full armour ("стоял в бою -> ушёл сам").
+                // Giving it the civilian policy + return-to-stand order at once keeps it walking to re-dress
+                // instead of picking a random job.
                 if (draftedByUs.Remove(pawn) && pawn.drafter != null && pawn.Drafted)
                 {
                     pawn.drafter.Drafted = false;
                 }
+
+                MobilizationPolicyService.ApplyCivilian(pawn);
+                OutfitStandKit.PushReturn(pawn);
                 break;
 
             case MobPhase.SetCivilianPolicy:

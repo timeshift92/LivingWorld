@@ -58,8 +58,10 @@ public static class MusterAnchorService
         }
     }
 
-    // Centroid of the Home area if it has cells, else the raw map centre.
-    private static IntVec3 ColonyCenter(Map map)
+    // Centroid of the Home area if it has cells, else the raw map centre. Public because the threat scan needs
+    // the SAME "where is the colony" point to measure EnemyAtBase from (map.Center is the geometric middle of
+    // the map, unrelated to where the base actually sits).
+    public static IntVec3 ColonyCenter(Map map)
     {
         var home = map.areaManager?.Home;
         if (home == null || home.TrueCount == 0)
@@ -132,23 +134,27 @@ public static class MusterAnchorService
         dir = dir.normalized;
         var best = center.Standable(map) && home[center] ? center : IntVec3.Invalid;
 
-        for (var step = 1; step <= MaxPerimeterSteps; step++)
+        // Walk the true grid line (half-cell steps + dedupe so thin diagonal walls are not skipped). Stop at the
+        // FIRST cell that leaves the Home area OR is un-standable (a wall/edifice) — that cell is the perimeter,
+        // we hold just inside it. Previously an un-standable Home cell was silently skipped, so the walk could
+        // pass straight THROUGH an interior wall and anchor the line on the far side, disconnected from any real
+        // edge.
+        var prev = center;
+        for (var d = 0.5f; d <= MaxPerimeterSteps; d += 0.5f)
         {
-            var cell = (center.ToVector3Shifted() + dir * step).ToIntVec3();
-            if (!cell.InBounds(map))
+            var cell = (center.ToVector3Shifted() + dir * d).ToIntVec3();
+            if (cell == prev)
+            {
+                continue;
+            }
+
+            prev = cell;
+            if (!cell.InBounds(map) || !home[cell] || !cell.Standable(map))
             {
                 break;
             }
 
-            if (home[cell] && cell.Standable(map))
-            {
-                best = cell;
-            }
-            else if (!home[cell])
-            {
-                // Left the base — the previous kept cell is the perimeter.
-                break;
-            }
+            best = cell;
         }
 
         return best;

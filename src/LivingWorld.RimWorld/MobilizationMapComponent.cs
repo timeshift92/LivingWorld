@@ -38,6 +38,10 @@ public sealed class MobilizationMapComponent : MapComponent
     private ThreatTier anchorTier = ThreatTier.None;
     private bool musterReleased;
     private int musterHoldRechecks;
+    // The ready-fraction must hold for TWO consecutive rechecks before releasing, so the recheck where the last
+    // fighter arrives shows a real Hold phase before the line breaks (otherwise arrival and release land on the
+    // same recheck and Hold is skipped entirely). A breach still releases immediately.
+    private bool musterGateArmed;
 
     public MobilizationMapComponent(Map map)
         : base(map)
@@ -93,7 +97,12 @@ public sealed class MobilizationMapComponent : MapComponent
 
         var muster = BuildMusterContext(settings);
         driver.Drive(map, IsMobilized, currentTier, muster);
-        shelterDriver.Drive(map, currentTier);
+
+        // Non-combatants shelter for a Serious threat or a non-animal Raid. A lone dangerous animal grades Raid
+        // (so fighters respond) but must NOT drive the whole colony to cover — that is a fighter's job.
+        var shelterWorthy = currentTier == ThreatTier.Serious
+                            || (currentTier == ThreatTier.Raid && !lastSignals.OnlyAnimals);
+        shelterDriver.Drive(map, currentTier, shelterWorthy);
     }
 
     // Resolve the muster anchor (cached, recomputed only when the tier changes) and advance the one-way release
@@ -112,11 +121,15 @@ public sealed class MobilizationMapComponent : MapComponent
             {
                 musterReleased = false;
                 musterHoldRechecks = 0;
+                musterGateArmed = false;
                 anchorTier = ThreatTier.None;
             }
             else
             {
-                if (wantsMuster && (currentTier != anchorTier || !cachedAnchor.IsValid))
+                // Re-resolve the anchor whenever the tier changes OR the threat's centre of mass has swung to a
+                // different facing (a second wave from another side) — not only on a tier transition, which left
+                // the line pointing the wrong way for the rest of a same-tier raid. Cheap (a bounded walk).
+                if (wantsMuster && (currentTier != anchorTier || !cachedAnchor.IsValid || AnchorStale()))
                 {
                     cachedAnchor = MusterAnchorService.Resolve(map, hostileCentroid, lastSignals.EnemyAtBase, out _);
                     anchorTier = currentTier;
@@ -139,10 +152,22 @@ public sealed class MobilizationMapComponent : MapComponent
                         LineBreached = breached,
                     };
 
-                    if (MusterGate.WantsRelease(progress, settings.musterReadyFraction)
-                        || musterHoldRechecks >= settings.musterReleaseTimeoutRechecks)
+                    // A breach or the timeout releases immediately. The ready-fraction, however, must hold for two
+                    // consecutive rechecks (arm, then fire) — so the recheck the last fighter arrives shows Hold
+                    // before the line breaks, instead of arrival and release colliding on the same recheck.
+                    if (breached || musterHoldRechecks >= settings.musterReleaseTimeoutRechecks)
                     {
                         musterReleased = true;
+                    }
+                    else
+                    {
+                        var fractionMet = MusterGate.WantsRelease(progress, settings.musterReadyFraction);
+                        if (fractionMet && musterGateArmed)
+                        {
+                            musterReleased = true;
+                        }
+
+                        musterGateArmed = fractionMet;
                     }
                 }
             }
@@ -169,13 +194,47 @@ public sealed class MobilizationMapComponent : MapComponent
         };
     }
 
+    // The cached anchor faces where the threat WAS. If the hostiles' centre of mass has swung to a materially
+    // different bearing from the colony (a second wave from another side), the held line now faces the wrong way
+    // and should be re-resolved. Compares the two bearings by their cosine (~50° divergence trips it).
+    private bool AnchorStale()
+    {
+        try
+        {
+            if (!cachedAnchor.IsValid || !hostileCentroid.IsValid)
+            {
+                return false;
+            }
+
+            var center = MusterAnchorService.ColonyCenter(map);
+            double ax = cachedAnchor.x - center.x, az = cachedAnchor.z - center.z;
+            double hx = hostileCentroid.x - center.x, hz = hostileCentroid.z - center.z;
+            var aLen = Math.Sqrt(ax * ax + az * az);
+            var hLen = Math.Sqrt(hx * hx + hz * hz);
+            if (aLen < 0.5 || hLen < 0.5)
+            {
+                return false;
+            }
+
+            var cos = (ax * hx + az * hz) / (aLen * hLen);
+            return cos < 0.64;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // Fire a one-shot alert on the rising/falling edge of an AUTOMATIC threat so the player notices the colony
     // arming itself (a manual toggle stays silent — they initiated it). Rising edge = a letter (draws the eye,
     // can pause); falling edge = a lightweight message. Edge-tracked via announcedThreat, which is persisted so
     // a mid-raid reload does not re-announce.
     private void AnnounceThreatEdge(LivingWorldSettings settings)
     {
-        if (!settings.armoryMobilizationEnabled || !settings.autoMobilizeOnThreat)
+        // Gate the alert on Odyssey too: without it the whole mobilization/shelter machinery is a no-op (the
+        // drivers early-return on !OdysseyActive), so a "colony mobilized" letter with nobody actually arming
+        // would be a lie.
+        if (!settings.armoryMobilizationEnabled || !settings.autoMobilizeOnThreat || !ModsConfig.OdysseyActive)
         {
             announcedThreat = threatPresent;
             return;
@@ -219,7 +278,11 @@ public sealed class MobilizationMapComponent : MapComponent
             return default;
         }
 
-        var center = liveMap.Center;
+        // Measure "at the base" from where the colony actually IS (Home-area centroid), not the geometric middle
+        // of the map — bases are almost never map-centred, so map.Center made EnemyAtBase fire for a hostile near
+        // the map middle and NEVER fire for a raider on the real doorstep. This drives Serious grading, full
+        // shelter, and the muster breach-release, so the wrong reference point broke all three.
+        var center = MusterAnchorService.ColonyCenter(liveMap);
         var atBaseRadius = settings.mobilizationAtBaseRadius;
 
         // Centroid of the live hostiles — the muster anchor faces this direction (perimeter-facing hold).
@@ -242,7 +305,7 @@ public sealed class MobilizationMapComponent : MapComponent
             AnyMechanoid = hostiles.Any(p => p.RaceProps?.IsMechanoid == true),
             AnyEntity = hostiles.Any(p => p.IsEntity || p.IsMutant),
             AnyInsect = hostiles.Any(p => p.RaceProps?.Insect == true),
-            AnySapper = false,
+            AnySapper = hostiles.Any(IsSapper),
             EnemyAtBase = hostiles.Any(p => (p.Position - center).LengthHorizontal <= atBaseRadius),
             HostileCount = hostiles.Count,
             BigRaid = hostiles.Count >= settings.mobilizationBigRaidThreshold,
@@ -272,13 +335,38 @@ public sealed class MobilizationMapComponent : MapComponent
             foreach (var c in colonists)
             {
                 var job = c?.CurJob;
-                if (job?.def == JobDefOf.Hunt && job.targetA.Thing == animal)
+                // Any way the PLAYER provoked this fight: the hunt work-job, or a manual drafted order to attack
+                // or tame the animal. In all of these the player is already handling it — do not mobilize over it.
+                if (job != null && job.targetA.Thing == animal
+                    && (job.def == JobDefOf.Hunt || job.def == JobDefOf.AttackMelee
+                        || job.def == JobDefOf.AttackStatic || job.def == JobDefOf.Tame))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // A raider actively breaching/sapping the wall — flagged so the threat grades Serious and the muster line
+    // releases immediately (holding a forward line is pointless once the wall is coming down). AnySapper was
+    // previously hardcoded false, so the entire sapper fast-path was dead.
+    private static bool IsSapper(Pawn p)
+    {
+        try
+        {
+            var dutyDef = p?.mindState?.duty?.def;
+            if (dutyDef != null && (dutyDef == DutyDefOf.Sapper || dutyDef == DutyDefOf.Breaching))
+            {
+                return true;
+            }
+
+            return p?.CurJob?.def == JobDefOf.Mine;
         }
         catch
         {
@@ -294,7 +382,24 @@ public sealed class MobilizationMapComponent : MapComponent
         try
         {
             var dormant = p.GetComp<CompCanBeDormant>();
-            return dormant == null || dormant.Awake;
+            if (dormant != null && !dormant.Awake)
+            {
+                return false;
+            }
+
+            // Anomaly entities (nociosphere, fleshmass heart) use a SEPARATE passive/active mechanism —
+            // CompActivity, not CompCanBeDormant. While still "charging" (Passive) they are hostile-by-faction
+            // but harmless and wandering; without this they held the colony at Serious the whole charge-up.
+            if (ModsConfig.AnomalyActive)
+            {
+                var activity = p.GetComp<CompActivity>();
+                if (activity != null && activity.IsDormant)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
         catch
         {
@@ -332,6 +437,13 @@ public sealed class MobilizationMapComponent : MapComponent
         Scribe_Values.Look(ref cachedAnchor, "livingWorld_musterAnchor", IntVec3.Invalid);
         Scribe_Values.Look(ref anchorTier, "livingWorld_musterAnchorTier", ThreatTier.None);
         Scribe_Values.Look(ref musterReleased, "livingWorld_musterReleased", false);
+        // Persist the release timeout counter + arm flag so a mid-raid reload does not silently restart the
+        // hold timer; and the tier/debounce so external readers (gizmos, other patches) don't see a false
+        // "all clear" for the ~250-tick window before the first post-load recheck.
+        Scribe_Values.Look(ref musterHoldRechecks, "livingWorld_musterHoldRechecks", 0);
+        Scribe_Values.Look(ref musterGateArmed, "livingWorld_musterGateArmed", false);
+        Scribe_Values.Look(ref currentTier, "livingWorld_currentTier", ThreatTier.None);
+        Scribe_Values.Look(ref belowCount, "livingWorld_belowCount", 0);
 
         if (Scribe.mode == LoadSaveMode.Saving)
         {

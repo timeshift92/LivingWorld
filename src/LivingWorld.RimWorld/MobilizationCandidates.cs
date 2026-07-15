@@ -1,5 +1,6 @@
 using LivingWorld.Core;
 using RimWorld;
+using RimWorld.Planet;
 using Verse;
 using Verse.AI;
 
@@ -24,6 +25,14 @@ public static class MobilizationCandidates
 
             // Hard floor: never mobilize a colonist who cannot fight, even if rostered.
             if (pawn.WorkTagIsDisabled(WorkTags.Violent) || pawn.drafter == null)
+            {
+                return false;
+            }
+
+            // Never drag a colonist out of childbirth or the middle of forming a caravan: drafting a mother in
+            // labour can abort the birth ritual, and drafting a caravan-forming pawn leaves the caravan Lord
+            // waiting on a member who never returns (it is not a voluntarily-joinable lord that self-heals).
+            if (IsInLabor(pawn) || pawn.IsFormingCaravan())
             {
                 return false;
             }
@@ -111,13 +120,27 @@ public static class MobilizationCandidates
         }
     }
 
-    // On a life-or-base-saving job we must not yank them off: firefighting, tending a patient, rescuing downed.
+    // On a job we must not yank them off: firefighting, tending, rescuing — plus running a bill (an in-progress
+    // SURGERY aborts mid-operation, wasting medicine and leaving the patient cut open) and carrying anyone (a
+    // downed ally would be dropped on the spot). Drafting/ordering force-interrupts all of these.
     public static bool IsBusyUrgent(Pawn pawn)
     {
         try
         {
             var job = pawn?.CurJobDef;
-            return job == JobDefOf.BeatFire || job == JobDefOf.TendPatient || job == JobDefOf.Rescue;
+            if (job == JobDefOf.BeatFire || job == JobDefOf.TendPatient || job == JobDefOf.Rescue)
+            {
+                return true;
+            }
+
+            // Any bill-driven job (surgery, and other operations) — do not interrupt a running bill.
+            if (pawn?.CurJob?.bill != null)
+            {
+                return true;
+            }
+
+            // Carrying a pawn (rescue/capture/haul-to-bed variants, drafted or not) — do not make them drop it.
+            return pawn?.carryTracker?.CarriedThing is Pawn;
         }
         catch
         {
@@ -156,6 +179,35 @@ public static class MobilizationCandidates
 
             // War-trained (Release) animals are combatants — leave them to fight, do not herd them to shelter.
             return pawn.training?.HasLearned(TrainableDefOf.Release) != true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // In active childbirth. Matched by defName (string) so it needs no hard Biotech dependency: "Labor" is the
+    // early stage, "PregnancyLaborPushing" the active push. Fail-safe.
+    private static bool IsInLabor(Pawn pawn)
+    {
+        try
+        {
+            var hediffs = pawn?.health?.hediffSet?.hediffs;
+            if (hediffs == null)
+            {
+                return false;
+            }
+
+            foreach (var h in hediffs)
+            {
+                var name = h?.def?.defName;
+                if (name == "Labor" || name == "PregnancyLaborPushing")
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
         catch
         {
