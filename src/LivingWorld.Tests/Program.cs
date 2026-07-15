@@ -9022,13 +9022,20 @@ static void TestEconomicsDemographyLifecycleCompatibility()
         "LivingWorldWorldComponent.cs"));
 
     AssertContains("helldan.economicsdemography", compatibility);
+    var about = File.ReadAllText(Path.Combine(root, "mod", "About", "About.xml"));
+    AssertContains("<li>helldan.economicsdemography</li>", about);
     AssertContains("ManagerMethod(\"WorldComponentTick\")", compatibility);
     AssertContains("ManagerMethod(\"ModifyPopulation\")", compatibility);
     AssertContains("LivingWorldOwnsSimulation", compatibility);
     AssertContains("RepairMissingPhysicalSettlements", compatibility);
+    AssertContains("RemoveOwnedLegacyRuins", compatibility);
+    AssertContains("ruinsExpiration", compatibility);
+    AssertContains("WorldObjectDefOf.DestroyedSettlement", compatibility);
+    AssertContains("trackedRuins.Clear()", compatibility);
     AssertContains("faction.defeated = false", compatibility);
     AssertContains("RebindPhysicalStableKey", compatibility);
     AssertContains("RepairMissingPhysicalSettlements(State)", component);
+    AssertContains("RemoveOwnedLegacyRuins()", component);
     AssertContains("SettlementSync.ReconcileNonDestructive()", component);
 }
 

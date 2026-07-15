@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -23,6 +24,63 @@ internal static class LivingWorldEconomicsDemographyCompatibility
 
     internal static MethodBase? ManagerMethod(string methodName) =>
         AccessTools.Method(ManagerTypeName + ":" + methodName);
+
+    /// <summary>
+    /// E&amp;D records every ruin it creates in its private ruinsExpiration dictionary. Odyssey's
+    /// DestroyedSettlement may contain a grav-core, so those compatibility ruins must be removed
+    /// before their world-object comps tick. Matching by E&amp;D's persisted IDs keeps genuine
+    /// vanilla and Living World ruins untouched.
+    /// </summary>
+    internal static int RemoveOwnedLegacyRuins()
+    {
+        if (!IsActive || Find.WorldObjects == null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var managerType = AccessTools.TypeByName(ManagerTypeName);
+            var manager = AccessTools.Field(managerType, "Instance")?.GetValue(null);
+            var trackedRuins = AccessTools.Field(managerType, "ruinsExpiration")?.GetValue(manager) as IDictionary;
+            if (trackedRuins == null || trackedRuins.Count == 0)
+            {
+                return 0;
+            }
+
+            var ids = trackedRuins.Keys.Cast<object>()
+                .OfType<int>()
+                .OrderBy(id => id)
+                .ToList();
+            var removed = 0;
+            foreach (var id in ids)
+            {
+                var ruin = Find.WorldObjects.AllWorldObjects.FirstOrDefault(worldObject =>
+                    worldObject.ID == id
+                    && worldObject.def == WorldObjectDefOf.DestroyedSettlement);
+                if (ruin == null || ruin.Destroyed)
+                {
+                    continue;
+                }
+
+                Find.WorldObjects.Remove(ruin);
+                removed++;
+            }
+
+            trackedRuins.Clear();
+            if (removed > 0)
+            {
+                Log.Warning($"[LivingWorld] Removed {removed} legacy abandoned settlement(s) created by Economics & Demography before Odyssey grav-core comps could activate.");
+            }
+
+            return removed;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"[LivingWorld] E&D legacy ruin cleanup failed safely: {ex.GetType().Name}: {ex.Message}");
+            return 0;
+        }
+    }
 
     /// <summary>
     /// E&amp;D can destroy every physical base and mark its faction defeated when its separate

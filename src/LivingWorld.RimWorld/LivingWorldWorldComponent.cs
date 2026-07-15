@@ -173,6 +173,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     {
         base.FinalizeInit(fromLoad);
         BootstrapFromRimWorldSettlements();
+        LivingWorldEconomicsDemographyCompatibility.RemoveOwnedLegacyRuins();
         var recoveredEconomicsDemographySettlements =
             LivingWorldEconomicsDemographyCompatibility.RepairMissingPhysicalSettlements(State);
         RefreshPlayerContactEndpoint(Find.TickManager?.TicksGame ?? 0);

@@ -15,6 +15,7 @@
   </modDependencies>
   <loadAfter>
     <li>brrainz.harmony</li>
+    <li>helldan.economicsdemography</li>
   </loadAfter>
   <description>Living World turns RimWorld's dead world map into a living, self-running simulation of every NPC faction - cheaply.
 
