@@ -120,9 +120,10 @@ public static class MobilizationCandidates
         }
     }
 
-    // On a job we must not yank them off: firefighting, tending, rescuing — plus running a bill (an in-progress
-    // SURGERY aborts mid-operation, wasting medicine and leaving the patient cut open) and carrying anyone (a
-    // downed ally would be dropped on the spot). Drafting/ordering force-interrupts all of these.
+    // On a job we must not yank them off: firefighting, tending, rescuing — plus performing a MEDICAL operation
+    // (a surgery aborts mid-operation, wasting medicine and leaving the patient cut open) and carrying anyone (a
+    // downed ally would be dropped on the spot). Drafting/ordering force-interrupts all of these. NOTE: only a
+    // medical bill counts — an ordinary crafting/cooking bill does NOT stop a fighter answering a raid.
     public static bool IsBusyUrgent(Pawn pawn)
     {
         try
@@ -133,8 +134,8 @@ public static class MobilizationCandidates
                 return true;
             }
 
-            // Any bill-driven job (surgery, and other operations) — do not interrupt a running bill.
-            if (pawn?.CurJob?.bill != null)
+            // A surgery / medical operation in progress — do not interrupt it. (Bill_Medical, not any bill.)
+            if (pawn?.CurJob?.bill is Bill_Medical)
             {
                 return true;
             }
@@ -186,8 +187,8 @@ public static class MobilizationCandidates
         }
     }
 
-    // In active childbirth. Matched by defName (string) so it needs no hard Biotech dependency: "Labor" is the
-    // early stage, "PregnancyLaborPushing" the active push. Fail-safe.
+    // In active childbirth. Matched by defName (string) so it needs no hard Biotech dependency: "PregnancyLabor"
+    // is the dilation stage, "PregnancyLaborPushing" the active push. Fail-safe.
     private static bool IsInLabor(Pawn pawn)
     {
         try
@@ -201,7 +202,7 @@ public static class MobilizationCandidates
             foreach (var h in hediffs)
             {
                 var name = h?.def?.defName;
-                if (name == "Labor" || name == "PregnancyLaborPushing")
+                if (name == "PregnancyLabor" || name == "PregnancyLaborPushing")
                 {
                     return true;
                 }

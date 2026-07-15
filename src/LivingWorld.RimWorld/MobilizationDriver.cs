@@ -479,8 +479,14 @@ public sealed class MobilizationDriver
                     pawn.drafter.Drafted = false;
                 }
 
-                MobilizationPolicyService.ApplyCivilian(pawn);
-                OutfitStandKit.PushReturn(pawn);
+                // Re-dress ONLY a pawn we actually released. A pawn still drafted here was drafted by the PLAYER
+                // (ClaimDraft never claimed it), so leave it under their command — don't yank it to the stand.
+                if (pawn.drafter == null || !pawn.Drafted)
+                {
+                    MobilizationPolicyService.ApplyCivilian(pawn);
+                    OutfitStandKit.PushReturn(pawn);
+                }
+
                 break;
 
             case MobPhase.SetCivilianPolicy:
