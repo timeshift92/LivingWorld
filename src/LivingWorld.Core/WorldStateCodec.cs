@@ -30,7 +30,9 @@ public static class WorldStateCodec
                         new XAttribute("factionId", snapshot.PlayerContactEndpoint.FactionId),
                         new XAttribute("stableKey", snapshot.PlayerContactEndpoint.StableKey),
                         new XAttribute("isAvailable", snapshot.PlayerContactEndpoint.IsAvailable),
-                        new XAttribute("updatedTick", snapshot.PlayerContactEndpoint.UpdatedTick)),
+                        new XAttribute("updatedTick", snapshot.PlayerContactEndpoint.UpdatedTick),
+                        new XAttribute("valueBand", snapshot.PlayerContactEndpoint.ValueBand),
+                        new XAttribute("combatantDemand", snapshot.PlayerContactEndpoint.CombatantDemand)),
                 new XElement(
                     "Settlements",
                     snapshot.Settlements.Select(settlement =>
@@ -930,6 +932,10 @@ public static class WorldStateCodec
                         RequiredString(contact, "stableKey"),
                         RequiredBool(contact, "isAvailable"),
                         RequiredInt(contact, "updatedTick"))
+                    {
+                        ValueBand = OptionalEnum(contact, "valueBand", RaidIntelValueBand.Moderate),
+                        CombatantDemand = Math.Max(1, Math.Min(100, OptionalInt(contact, "combatantDemand", 3))),
+                    }
                     : null,
             DrifterArrivalReservoir = OptionalInt(root, "drifterArrivalReservoir", 0),
             EventArchive = DecodeEventArchive(root),

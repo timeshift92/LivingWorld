@@ -127,7 +127,7 @@ internal static class LivingWorldCaravanEncounterGate
                 return !string.IsNullOrWhiteSpace(factionId)
                     && component.State.Settlements.Any(ledger => ledger.IsActive
                         && string.Equals(ledger.FactionId, factionId, StringComparison.Ordinal)
-                        && SettlementSlug.ParseTile(ledger.Slug) == candidate.Settlement.Tile);
+                        && LivingWorld.Core.SettlementSlug.ParseTile(ledger.Slug) == candidate.Settlement.Tile);
             })
             .OrderBy(candidate => candidate.Distance)
             .ThenBy(candidate => candidate.Settlement.ID)

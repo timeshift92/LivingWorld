@@ -14,6 +14,9 @@ public sealed record WorldMissionResult(int ScoutingArrivals, int DiplomaticArri
 /// </summary>
 public static class WorldMissionService
 {
+    private const int PlayerScoutIntelConfidence = 70;
+    private const int PlayerScoutIntelLifetimeTicks = 20 * 60_000;
+
     public static WorldMissionResult SimulateDay(WorldState state, WorldMissionRequest request)
     {
         if (state == null)
@@ -89,6 +92,25 @@ public static class WorldMissionService
             switch (mission.Kind)
             {
                 case WorldMissionKind.Scout:
+                    if (mission.TargetsPlayerContact)
+                    {
+                        var playerEndpoint = state.PlayerContactEndpoint!;
+                        var playerSummary =
+                            $"Scouts from {mission.OriginSettlementId} confirmed a {playerEndpoint.ValueBand} player colony opportunity.";
+                        state.RecordRaidIntelFact(
+                            IntelSourceKind.Scout,
+                            mission.FactionId,
+                            RaidIntelTargetKind.PlayerColony,
+                            playerEndpoint.StableKey,
+                            playerEndpoint.ValueBand,
+                            PlayerScoutIntelConfidence,
+                            PlayerScoutIntelLifetimeTicks,
+                            Math.Max(1, Math.Min(100, playerEndpoint.CombatantDemand)),
+                            playerSummary);
+                        scouting++;
+                        break;
+                    }
+
                     if (!mission.TargetSettlementId.HasValue)
                     {
                         state.RecallMission(mission.Id, "scout mission has no settlement target");

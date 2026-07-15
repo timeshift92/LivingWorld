@@ -201,7 +201,9 @@ public sealed class WorldState
         string factionId,
         string stableKey,
         bool isAvailable,
-        int updatedTick)
+        int updatedTick,
+        RaidIntelValueBand valueBand = RaidIntelValueBand.Moderate,
+        int combatantDemand = 3)
     {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
         ThrowIfNullOrWhiteSpace(stableKey, nameof(stableKey));
@@ -209,7 +211,11 @@ public sealed class WorldState
             factionId.Trim(),
             stableKey.Trim(),
             isAvailable,
-            Math.Max(0, updatedTick));
+            Math.Max(0, updatedTick))
+        {
+            ValueBand = valueBand,
+            CombatantDemand = Math.Max(1, Math.Min(100, combatantDemand)),
+        };
         return playerContactEndpoint;
     }
 
@@ -1130,7 +1136,31 @@ public sealed class WorldState
         int amount,
         EntityId? crewCitizenId = null)
     {
+        return DispatchPlayerContactMission(
+            WorldMissionKind.Diplomat,
+            factionId,
+            originSettlementId,
+            departTick,
+            arrivalTick,
+            amount,
+            crewCitizenId);
+    }
+
+    public WorldMission DispatchPlayerContactMission(
+        WorldMissionKind kind,
+        string factionId,
+        EntityId originSettlementId,
+        int departTick,
+        int arrivalTick,
+        int amount,
+        EntityId? crewCitizenId = null)
+    {
         ThrowIfNullOrWhiteSpace(factionId, nameof(factionId));
+        if (kind is not WorldMissionKind.Diplomat and not WorldMissionKind.Scout)
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind), "Only scouts and diplomats can use the player contact endpoint.");
+        }
+
         var endpoint = playerContactEndpoint;
         if (endpoint?.IsAvailable != true || string.IsNullOrWhiteSpace(endpoint.FactionId))
         {
@@ -1144,7 +1174,7 @@ public sealed class WorldState
 
         var mission = new WorldMission(
             NextId(EntityKind.Mission),
-            WorldMissionKind.Diplomat,
+            kind,
             factionId.Trim(),
             originSettlementId,
             null,

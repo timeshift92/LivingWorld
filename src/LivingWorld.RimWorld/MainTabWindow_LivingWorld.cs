@@ -431,6 +431,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
             .ToList();
         cachedFactionCollapseRows = state.FactionRecords
             .Where(record => record.Status == WorldFactionStatus.Collapsed)
+            .Where(record => debugExact || state.Settlements.Any(settlement =>
+                string.Equals(settlement.FactionId, record.FactionId, System.StringComparison.Ordinal)
+                && LivingWorldTransitVisibility.CanRevealSettlement(state, settlement.Id)))
             .OrderByDescending(record => record.Tick)
             .ThenBy(record => record.FactionId, System.StringComparer.Ordinal)
             .Take(MaxFactionCollapseRows)
@@ -452,11 +455,13 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
                     drifter.CombatAptitude.Named("combat"),
                     drifter.OrganizationAptitude.Named("organization")).ToString())
             .ToList();
-        var knownSettlementIds = new HashSet<EntityId>(state.KnownSettlementInfos.Select(info => info.SettlementId));
+        var knownSettlementIds = new HashSet<EntityId>(state.Settlements
+            .Where(settlement => LivingWorldTransitVisibility.CanRevealSettlement(state, settlement.Id))
+            .Select(settlement => settlement.Id));
         cachedEventRows = state.Events
             .Where(worldEvent => debugExact
-                || (worldEvent.SettlementId.HasValue && knownSettlementIds.Contains(worldEvent.SettlementId.Value))
-                || worldEvent.Kind == WorldEventKind.SettlementIntelUpdated)
+                || (worldEvent.SettlementId.HasValue
+                    && LivingWorldTransitVisibility.CanRevealSettlement(state, worldEvent.SettlementId.Value)))
             .Skip(System.Math.Max(0, state.Events.Count - MaxEventRows))
             .Take(MaxEventRows)
             .Select(worldEvent =>
@@ -617,6 +622,7 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         // never implies false precision about battles the player has not witnessed.
         cachedConflictRows = state.Conflicts
             .Where(conflict => conflict.Status != WorldConflictStatus.Resolved)
+            .Where(conflict => debugExact || IsConflictKnownToPlayer(state, conflict))
             .OrderByDescending(conflict => conflict.WarExhaustionA + conflict.WarExhaustionB)
             .ThenBy(conflict => conflict.Id.Value)
             .Take(MaxWarRows)
@@ -735,7 +741,9 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         rows.AddRange(scouts.Take(3).Select(mission =>
         {
-            var target = state.GetSettlement(mission.TargetSettlementId);
+            var target = mission.TargetSettlementId.HasValue
+                ? state.GetSettlement(mission.TargetSettlementId.Value)
+                : null;
             return "LW_WorldActionRow".Translate(
                 "LW_MissionKind_Scout".Translate().Named("kind"),
                 mission.FactionId.Named("faction"),
@@ -747,13 +755,17 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
 
         rows.AddRange(diplomats.Take(3).Select(mission =>
         {
-            var target = state.GetSettlement(mission.TargetSettlementId);
+            var target = mission.TargetSettlementId.HasValue
+                ? state.GetSettlement(mission.TargetSettlementId.Value)
+                : null;
             return "LW_WorldActionRow".Translate(
                 "LW_MissionKind_Diplomat".Translate().Named("kind"),
                 mission.FactionId.Named("faction"),
-                (target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
-                    ? target.Name
-                    : "LW_UnknownDestination".Translate().ToString()).Named("target"),
+                (mission.TargetsPlayerContact
+                    ? "LW_PlayerContactDestination".Translate().ToString()
+                    : target != null && LivingWorldTransitVisibility.CanRevealSettlement(state, target.Id)
+                        ? target.Name
+                        : "LW_UnknownDestination".Translate().ToString()).Named("target"),
                 DaysUntil(mission.ArrivalTick, state.CurrentTick).Named("days")).ToString();
         }));
 
@@ -790,6 +802,20 @@ public sealed class MainTabWindow_LivingWorld : MainTabWindow
         }));
 
         return rows;
+    }
+
+    private static bool IsConflictKnownToPlayer(WorldState state, WorldConflict conflict)
+    {
+        var playerId = state.PlayerFactionId;
+        if (!string.IsNullOrWhiteSpace(playerId) && conflict.Involves(playerId!))
+        {
+            return true;
+        }
+
+        return state.Settlements.Any(settlement => settlement.IsActive
+            && (string.Equals(settlement.FactionId, conflict.FactionA, System.StringComparison.Ordinal)
+                || string.Equals(settlement.FactionId, conflict.FactionB, System.StringComparison.Ordinal))
+            && LivingWorldTransitVisibility.CanRevealSettlement(state, settlement.Id));
     }
 
     private static int DaysUntil(int arrivalTick, int currentTick)

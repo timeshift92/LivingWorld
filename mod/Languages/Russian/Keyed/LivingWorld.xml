@@ -375,6 +375,7 @@
   <LW_Settings_DangerousAnimalBodySize>Порог размера тела «опасного» зверя</LW_Settings_DangerousAnimalBodySize>
   <LW_Settings_DangerousAnimalBodySizeTip>Одиночный дикий зверь с размером тела не меньше этого порога считается серьёзной угрозой (рейд), а не мелкой докукой. По умолчанию 2.0 — ловит слонов, трумбо, носорогов, медведей; мелочь (крысы, белки) остаётся докукой.</LW_Settings_DangerousAnimalBodySizeTip>
   <LW_UnknownDestination>неизвестная цель</LW_UnknownDestination>
+  <LW_PlayerContactDestination>ваша колония</LW_PlayerContactDestination>
   <LW_PlayerScoutDetectedLabel>Обнаружен вражеский разведчик</LW_PlayerScoutDetectedLabel>
   <LW_PlayerScoutDetectedText>Поселенцы обнаружили и прогнали вражеского разведчика до того, как он смог вернуться с донесением.</LW_PlayerScoutDetectedText>
   <LW_ActionAttemptsHeader>Решения симуляции (отладка)</LW_ActionAttemptsHeader>

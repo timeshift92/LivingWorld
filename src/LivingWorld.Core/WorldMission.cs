@@ -49,7 +49,6 @@ public sealed record WorldMission(
     public string TargetContactKey { get; init; } = string.Empty;
 
     public bool TargetsPlayerContact =>
-        Kind == WorldMissionKind.Diplomat
-        && !TargetSettlementId.HasValue
+        !TargetSettlementId.HasValue
         && !string.IsNullOrWhiteSpace(TargetContactKey);
 }

@@ -76,6 +76,13 @@ public static class RaidPreparationService
             throw new InvalidOperationException(allocation.Reason);
         }
 
+        if (allocation.ReservedCombatants < desiredCombatants)
+        {
+            RaidReconciliationService.ReleaseUndeployedReserves(state, allocation.Army.Id);
+            throw new InvalidOperationException(
+                $"Raid preparation required {desiredCombatants} combatants but only {allocation.ReservedCombatants} could be supplied.");
+        }
+
         var supplies = Math.Max(0, allocation.ReservedCombatants * Math.Max(0, request.SupplyPerCombatant));
         if (supplies > 0)
         {

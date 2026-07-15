@@ -175,6 +175,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     {
         base.FinalizeInit(fromLoad);
         BootstrapFromRimWorldSettlements();
+        RefreshPlayerContactEndpoint(Find.TickManager?.TicksGame ?? 0);
         MigrateDrifterReservoirForLegacySave();
         RepairMissingProductionProfilesFromRimWorldSettlements();
         MigrateEconomicDiversityForLegacySave();
@@ -603,10 +604,21 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             return;
         }
 
-        var captureCount = State.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured);
-        var newCaptures = captureCount - notifiedCaptureCount;
+        var captureEvents = State.Events
+            .Where(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured)
+            .OrderBy(worldEvent => worldEvent.Tick)
+            .ThenBy(worldEvent => worldEvent.Id.Value)
+            .ToList();
+        var captureCount = captureEvents.Count;
+        var newCaptures = captureEvents
+            .Skip(Math.Min(notifiedCaptureCount, captureCount))
+            .Count(worldEvent => worldEvent.SettlementId.HasValue
+                && LivingWorldTransitVisibility.CanRevealSettlement(State, worldEvent.SettlementId.Value));
         if (newCaptures <= 0)
         {
+            // Unknown captures are not queued as omniscient future notifications. A later trader or
+            // scout can reveal the resulting owner through a fresh settlement snapshot instead.
+            notifiedCaptureCount = captureCount;
             return;
         }
 
@@ -641,6 +653,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var known = new HashSet<long>(notifiedConflictIds);
         var newConflicts = State.Conflicts
             .Where(conflict => conflict.Status == WorldConflictStatus.Active
+                && IsConflictKnownToPlayer(conflict)
                 && !known.Contains(conflict.Id.Value))
             .OrderBy(conflict => conflict.StartedTick)
             .ThenBy(conflict => conflict.Id.Value)
@@ -668,6 +681,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
     private void SimulateWorldDay(int day)
     {
         var settings = LivingWorldSettings.Instance ?? new LivingWorldSettings();
+        RefreshPlayerContactEndpoint(day * TicksPerDay);
         // Release stale raid preparations and materialization leases whose window elapsed, so
         // reserved citizens/supplies return to their settlements instead of leaking. Cheap: both only
         // touch active records past their expiry.
@@ -914,16 +928,17 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     continue;
                 }
 
+                var returning = caravan.Phase == WorldTransitPhase.Returning;
                 EnsureMissionMarker(
                     worldObjects, markerDef, existing, live,
                     $"caravan:{caravan.Id.Value}",
                     "World/LivingWorld_Trader",
                     "LW_MissionKind_Trader".Translate(),
                     caravan.FactionId,
-                    caravan.SourceSettlementId,
-                    caravan.TargetSettlementId,
-                    caravan.DepartTick,
-                    caravan.ArrivalTick,
+                    returning ? caravan.TargetSettlementId : caravan.SourceSettlementId,
+                    returning ? caravan.SourceSettlementId : caravan.TargetSettlementId,
+                    returning ? caravan.StatusTick : caravan.DepartTick,
+                    returning ? caravan.ReturnArrivalTick : caravan.ArrivalTick,
                     BuildCaravanMarkerDetails(caravan));
             }
 
@@ -942,17 +957,32 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     ? "LW_MissionKind_Scout"
                     : "LW_MissionKind_Diplomat";
 
-                EnsureMissionMarker(
-                    worldObjects, markerDef, existing, live,
-                    $"mission:{mission.Id.Value}",
-                    texture,
-                    kindKey.Translate(),
-                    mission.FactionId,
-                    mission.OriginSettlementId,
-                    mission.TargetSettlementId,
-                    mission.DepartTick,
-                    mission.ArrivalTick,
-                    BuildMissionMarkerDetails(mission));
+                if (mission.TargetSettlementId.HasValue)
+                {
+                    var returning = mission.Phase == WorldTransitPhase.Returning;
+                    EnsureMissionMarker(
+                        worldObjects, markerDef, existing, live,
+                        $"mission:{mission.Id.Value}",
+                        texture,
+                        kindKey.Translate(),
+                        mission.FactionId,
+                        returning ? mission.TargetSettlementId.Value : mission.OriginSettlementId,
+                        returning ? mission.OriginSettlementId : mission.TargetSettlementId.Value,
+                        returning ? mission.StatusTick : mission.DepartTick,
+                        returning ? mission.ReturnArrivalTick : mission.ArrivalTick,
+                        BuildMissionMarkerDetails(mission));
+                }
+                else if (mission.TargetsPlayerContact)
+                {
+                    EnsurePlayerContactMissionMarker(
+                        worldObjects,
+                        markerDef,
+                        existing,
+                        live,
+                        mission,
+                        texture,
+                        kindKey.Translate());
+                }
             }
 
             // Starvation/refugee migrations are physical traffic too. Settlement-founding groups
@@ -989,6 +1019,120 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         }
 
         LivingWorldSettlementExpansionWorldBridge.Synchronize(State, settlementExpansionWorldBindings);
+    }
+
+    private void RefreshPlayerContactEndpoint(int tick)
+    {
+        var playerFactionId = State.PlayerFactionId;
+        if (string.IsNullOrWhiteSpace(playerFactionId))
+        {
+            return;
+        }
+
+        var playerSettlement = Find.WorldObjects?.AllWorldObjects
+            .OfType<global::RimWorld.Planet.Settlement>()
+            .Where(settlement => settlement.Faction == Faction.OfPlayer && settlement.Tile >= 0)
+            .OrderByDescending(settlement => settlement.HasMap)
+            .ThenBy(settlement => settlement.ID)
+            .FirstOrDefault();
+        if (playerSettlement != null)
+        {
+            State.SetPlayerContactEndpoint(
+                playerFactionId!,
+                $"worldtile:{playerSettlement.Tile}",
+                isAvailable: true,
+                tick);
+            return;
+        }
+
+        if (State.PlayerContactEndpoint is { } existing)
+        {
+            State.SetPlayerContactEndpoint(
+                playerFactionId!,
+                existing.StableKey,
+                isAvailable: false,
+                tick);
+        }
+    }
+
+    private bool IsConflictKnownToPlayer(WorldConflict conflict)
+    {
+        var playerId = State.PlayerFactionId;
+        if (!string.IsNullOrWhiteSpace(playerId) && conflict.Involves(playerId!))
+        {
+            return true;
+        }
+
+        return State.Settlements.Any(settlement => settlement.IsActive
+            && (string.Equals(settlement.FactionId, conflict.FactionA, StringComparison.Ordinal)
+                || string.Equals(settlement.FactionId, conflict.FactionB, StringComparison.Ordinal))
+            && LivingWorldTransitVisibility.CanRevealSettlement(State, settlement.Id));
+    }
+
+    private void EnsurePlayerContactMissionMarker(
+        WorldObjectsHolder worldObjects,
+        WorldObjectDef markerDef,
+        Dictionary<string, WorldObject_LivingWorldArmy> existing,
+        HashSet<string> live,
+        WorldMission mission,
+        string texture,
+        string kindNoun)
+    {
+        var endpoint = State.PlayerContactEndpoint;
+        var origin = State.GetSettlement(mission.OriginSettlementId);
+        if (endpoint == null
+            || !string.Equals(endpoint.StableKey, mission.TargetContactKey, StringComparison.Ordinal)
+            || !TryParseWorldTileStableKey(endpoint.StableKey, out var contactTile)
+            || origin == null)
+        {
+            return;
+        }
+
+        var originTile = ParseSettlementTile(origin.Slug);
+        if (originTile < 0)
+        {
+            return;
+        }
+
+        var returning = mission.Phase == WorldTransitPhase.Returning;
+        var fromTile = returning ? contactTile : originTile;
+        var toTile = returning ? originTile : contactTile;
+        var departTick = returning ? mission.StatusTick : mission.DepartTick;
+        var arrivalTick = returning ? mission.ReturnArrivalTick : mission.ArrivalTick;
+        var key = $"mission:{mission.Id.Value}";
+        live.Add(key);
+
+        var faction = Find.FactionManager?.AllFactionsListForReading
+            .FirstOrDefault(candidate => candidate.def?.defName == mission.FactionId);
+        var isNew = !existing.TryGetValue(key, out var marker);
+        marker ??= (WorldObject_LivingWorldArmy)WorldObjectMaker.MakeWorldObject(markerDef);
+        marker.Tile = fromTile;
+        if (faction != null)
+        {
+            marker.SetFaction(faction);
+        }
+
+        marker.Configure(
+            key,
+            texture,
+            kindNoun,
+            fromTile,
+            toTile,
+            departTick,
+            arrivalTick,
+            faction?.Name ?? mission.FactionId,
+            returning ? origin.Name : "LW_PlayerContactDestination".Translate(),
+            1,
+            0,
+            string.Empty,
+            string.Empty);
+        // A group physically approaching the player's colony is observable; on the return leg it
+        // remains known because the player just received it at the contact endpoint.
+        marker.SetStrategicVisibility(true);
+        if (isNew)
+        {
+            worldObjects.Add(marker);
+        }
     }
 
     private void BindDrifterAssimilationOrigins()
@@ -3344,6 +3488,57 @@ public sealed class LivingWorldWorldComponent : WorldComponent
             else
             {
                 State.AssignFactionBehavior(factionId, FactionBehavior.Aggressive);
+            }
+        }
+
+        SeedFactionRelationsFromRimWorld();
+    }
+
+    private void SeedFactionRelationsFromRimWorld()
+    {
+        var factionIds = State.Settlements
+            .Where(settlement => settlement.IsActive)
+            .Select(settlement => settlement.FactionId)
+            .Concat(string.IsNullOrWhiteSpace(State.PlayerFactionId)
+                ? Array.Empty<string>()
+                : new[] { State.PlayerFactionId! })
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(factionId => factionId, StringComparer.Ordinal)
+            .ToList();
+
+        for (var leftIndex = 0; leftIndex < factionIds.Count; leftIndex++)
+        {
+            for (var rightIndex = leftIndex + 1; rightIndex < factionIds.Count; rightIndex++)
+            {
+                var factionA = factionIds[leftIndex];
+                var factionB = factionIds[rightIndex];
+                var relationKey = string.CompareOrdinal(factionA, factionB) <= 0
+                    ? (factionA, factionB)
+                    : (factionB, factionA);
+                if (State.FactionRelations.ContainsKey(relationKey))
+                {
+                    continue;
+                }
+
+                var rimFactionA = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == factionA);
+                var rimFactionB = Find.FactionManager?.AllFactionsListForReading
+                    .FirstOrDefault(candidate => candidate.def?.defName == factionB);
+                if (rimFactionA == null || rimFactionB == null)
+                {
+                    continue;
+                }
+
+                var goodwill = rimFactionA.RelationWith(rimFactionB)?.baseGoodwill ?? 0;
+                if (rimFactionA.def?.permanentEnemy == true || rimFactionB.def?.permanentEnemy == true)
+                {
+                    goodwill = DiplomacyService.MinGoodwill;
+                }
+
+                if (goodwill != 0)
+                {
+                    DiplomacyService.AdjustGoodwill(State, factionA, factionB, goodwill);
+                }
             }
         }
     }

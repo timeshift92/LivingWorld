@@ -58,6 +58,21 @@ public static class WorldWarTargetSelector
             .FirstOrDefault();
     }
 
+    public static bool CanScoutPlayerContact(WorldState state, string factionId)
+    {
+        var endpoint = state.PlayerContactEndpoint;
+        if (endpoint?.IsAvailable != true
+            || string.Equals(endpoint.FactionId, factionId, StringComparison.Ordinal)
+            || DiplomacyService.GetStance(state, factionId, endpoint.FactionId) == RelationStance.Ally)
+        {
+            return false;
+        }
+
+        return !FactionKnowledgeService.GetActiveRaidIntelFacts(state, factionId).Any(fact =>
+            fact.TargetKind == RaidIntelTargetKind.PlayerColony
+            && string.Equals(fact.TargetKey, endpoint.StableKey, StringComparison.Ordinal));
+    }
+
     public static WorldSettlement? FindExpansionSource(WorldState state, string factionId)
     {
         return state.Settlements

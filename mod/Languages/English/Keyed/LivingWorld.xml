@@ -375,6 +375,7 @@
   <LW_Settings_DangerousAnimalBodySize>Dangerous-animal body-size threshold</LW_Settings_DangerousAnimalBodySize>
   <LW_Settings_DangerousAnimalBodySizeTip>A lone wild beast whose body size is at least this threshold counts as a serious threat (a raid) rather than a nuisance. Default 2.0 — catches elephants, thrumbos, rhinos, bears; small critters (rats, squirrels) stay a nuisance.</LW_Settings_DangerousAnimalBodySizeTip>
   <LW_UnknownDestination>unknown destination</LW_UnknownDestination>
+  <LW_PlayerContactDestination>your colony</LW_PlayerContactDestination>
   <LW_PlayerScoutDetectedLabel>Hostile scout detected</LW_PlayerScoutDetectedLabel>
   <LW_PlayerScoutDetectedText>Your colonists detected and drove off an enemy scout before the report could return home.</LW_PlayerScoutDetectedText>
   <LW_ActionAttemptsHeader>Simulation decisions (debug)</LW_ActionAttemptsHeader>

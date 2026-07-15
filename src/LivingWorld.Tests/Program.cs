@@ -202,6 +202,7 @@ var tests = new List<(string Name, Action Test)>
     ("hostile armies can disrupt missions in transit", TestHostileArmiesDisruptMissionsInTransit),
     ("travelling missions reserve and return real citizens", TestWorldMissionReservesAndReturnsRealCitizen),
     ("missions fail without intel when the target is inactive", TestWorldMissionFailsWhenTargetInactive),
+    ("npc scouts learn about the player only after a physical round trip", TestNpcScoutPlayerContactRoundTrip),
     ("world traffic caps simultaneous scout waves", TestWorldTrafficCapsSimultaneousScoutWaves),
     ("world traffic repairs legacy scout spam without losing crews", TestWorldTrafficRepairsLegacyScoutSpam),
     ("faction behavior survives a save/load round trip", TestFactionBehaviorPersists),
@@ -3933,8 +3934,8 @@ static void TestSettlementMapDamageLowersFacilityCondition()
             Reason: "attacked settlement map deinit"));
 
     AssertEqual(SettlementMapDamageStatus.Success, result.Status);
-    AssertEqual(48, result.DamagePercent);
-    AssertEqual(32, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
+    AssertEqual(60, result.DamagePercent);
+    AssertEqual(40, state.GetSettlementFacility(facility.Id)!.ConditionPercent);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementFacilityDamaged));
 }
 
@@ -5858,6 +5859,7 @@ static void TestOpposingArmiesInterceptInTransit()
     var redArmy = redReserve.Army!;
     var blueArmy = blueReserve.Army!;
 
+    FactionConflictPolicy.DeclareWar(state, "Red", "Blue", 0);
     state.DispatchArmy(redArmy.Id, blueHome.Id, arrivalTick: 5 * 60_000);
     state.DispatchArmy(blueArmy.Id, redHome.Id, arrivalTick: 5 * 60_000);
 
@@ -5888,6 +5890,7 @@ static void TestHostileArmiesInterceptCaravansInTransit()
     var reservation = RaidPopulationAllocator.ReserveForRaid(
         state,
         new RaidPopulationAllocationRequest("Raiders", "Road patrol", 4, FoodPerCitizen: 0));
+    FactionConflictPolicy.DeclareWar(state, "Raiders", "Traders", 0);
     state.DispatchArmy(reservation.Army!.Id, traderHome.Id, 5 * 60_000);
 
     var result = TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(2 * 60_000));
@@ -5919,6 +5922,7 @@ static void TestHostileArmiesContestSameTargetInTransit()
         state,
         new RaidPopulationAllocationRequest("Blue", "Blue warband", 6, FoodPerCitizen: 0));
 
+    FactionConflictPolicy.DeclareWar(state, "Red", "Blue", 0);
     state.DispatchArmy(redReserve.Army!.Id, prize.Id, arrivalTick: 5 * 60_000);
     state.DispatchArmy(blueReserve.Army!.Id, prize.Id, arrivalTick: 5 * 60_000);
 
@@ -5950,6 +5954,7 @@ static void TestHostileArmiesInterceptSameTargetCaravansInTransit()
     var reservation = RaidPopulationAllocator.ReserveForRaid(
         state,
         new RaidPopulationAllocationRequest("Raiders", "Road patrol", 4, FoodPerCitizen: 0));
+    FactionConflictPolicy.DeclareWar(state, "Raiders", "Traders", 0);
     state.DispatchArmy(reservation.Army!.Id, market.Id, 5 * 60_000);
 
     var result = TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(2 * 60_000));
@@ -5975,6 +5980,7 @@ static void TestHostileArmiesDisruptMissionsInTransit()
     var reservation = RaidPopulationAllocator.ReserveForRaid(
         state,
         new RaidPopulationAllocationRequest("Raiders", "Road patrol", 4, FoodPerCitizen: 0));
+    FactionConflictPolicy.DeclareWar(state, "Raiders", "Scouts", 0);
     state.DispatchArmy(reservation.Army!.Id, scouts.Id, 5 * 60_000);
 
     var result = TransitEncounterService.SimulateDay(state, new TransitEncounterRequest(2 * 60_000));
@@ -6000,13 +6006,23 @@ static void TestWorldMissionReservesAndReturnsRealCitizen()
     AssertEqual(0, state.GetSettlementPopulation(scouts.Id).Total);
 
     WorldMissionService.SimulateDay(state, new WorldMissionRequest(60_000));
+    AssertEqual(WorldTransitPhase.AtTarget, state.GetMission(mission.Id)!.Phase);
+    AssertEqual(mission.Id, state.GetOwner(citizen.Id));
+    AssertEqual(false, state.HasFactionSettlementIntel("Scouts", target.Id));
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(120_000));
+    AssertEqual(WorldTransitPhase.Returning, state.GetMission(mission.Id)!.Phase);
+    AssertEqual(mission.Id, state.GetOwner(citizen.Id));
+    AssertEqual(true, state.HasFactionSettlementIntel("Scouts", target.Id));
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(180_000));
 
     AssertEqual(scouts.Id, state.GetOwner(citizen.Id));
     AssertEqual(CitizenStatus.Alive, state.GetCitizen(citizen.Id)!.Status);
     AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
-    AssertEqual(0, state.Missions.Count);
+    AssertEqual(WorldMissionStatus.Arrived, state.GetMission(mission.Id)!.Status);
+    AssertEqual(WorldTransitPhase.Completed, state.GetMission(mission.Id)!.Phase);
     AssertEqual(null, state.GetKnownSettlementInfo(target.Id));
-    AssertEqual(true, state.HasFactionSettlementIntel("Scouts", target.Id));
     AssertEqual(0, state.Validate().Count());
 }
 
@@ -6022,12 +6038,65 @@ static void TestWorldMissionFailsWhenTargetInactive()
 
     WorldMissionService.SimulateDay(state, new WorldMissionRequest(60_000));
 
-    AssertEqual(WorldMissionStatus.Failed, state.GetMission(mission.Id)!.Status);
+    AssertEqual(WorldMissionStatus.Traveling, state.GetMission(mission.Id)!.Status);
+    AssertEqual(WorldTransitPhase.Returning, state.GetMission(mission.Id)!.Phase);
+    AssertEqual(mission.Id, state.GetOwner(citizen.Id));
     AssertEqual(null, state.GetKnownSettlementInfo(target.Id));
+
+    WorldMissionService.SimulateDay(state, new WorldMissionRequest(120_000));
+
+    AssertEqual(WorldMissionStatus.Failed, state.GetMission(mission.Id)!.Status);
+    AssertEqual(WorldTransitPhase.Completed, state.GetMission(mission.Id)!.Phase);
     AssertEqual(scouts.Id, state.GetOwner(citizen.Id));
     AssertEqual(1, state.GetSettlementPopulation(scouts.Id).Total);
     AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WorldMissionDisrupted));
     AssertEqual(0, state.Validate().Count());
+}
+
+static void TestNpcScoutPlayerContactRoundTrip()
+{
+    var state = new WorldState(4242);
+    var source = state.CreateSettlement("scouts", "Scout Post", "Raiders");
+    for (var index = 0; index < 6; index++)
+    {
+        state.CreateCitizen("Scout " + index, 30, Sex.Male, "scout", source.Id);
+    }
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    state.SetPlayerFactionId("PlayerFaction");
+    state.SetPlayerContactEndpoint(
+        "PlayerFaction",
+        "worldtile:77",
+        true,
+        0,
+        RaidIntelValueBand.High,
+        combatantDemand: 8);
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
+    var mission = state.Missions.Single(candidate => candidate.Kind == WorldMissionKind.Scout);
+    var crewId = mission.CrewCitizenId!.Value;
+    AssertEqual(true, mission.TargetsPlayerContact);
+    AssertEqual("worldtile:77", mission.TargetContactKey);
+    AssertEqual(mission.Id, state.GetOwner(crewId));
+    AssertEqual(0, FactionKnowledgeService.GetActiveRaidIntelFacts(state, "Raiders").Count);
+
+    var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
+    WorldWarService.SimulateDay(restored, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(WorldTransitPhase.AtTarget, restored.GetMission(mission.Id)!.Phase);
+    AssertEqual(0, FactionKnowledgeService.GetActiveRaidIntelFacts(restored, "Raiders").Count);
+
+    WorldWarService.SimulateDay(restored, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
+    var fact = FactionKnowledgeService.GetActiveRaidIntelFacts(restored, "Raiders").Single();
+    AssertEqual(RaidIntelTargetKind.PlayerColony, fact.TargetKind);
+    AssertEqual("worldtile:77", fact.TargetKey);
+    AssertEqual(RaidIntelValueBand.High, fact.ValueBand);
+    AssertEqual(8, fact.CombatantDemand);
+    AssertEqual(WorldTransitPhase.Returning, restored.GetMission(mission.Id)!.Phase);
+
+    WorldWarService.SimulateDay(restored, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(source.Id, restored.GetOwner(crewId));
+    AssertEqual(WorldTransitPhase.Completed, restored.GetMission(mission.Id)!.Phase);
+    AssertEqual(0, restored.Validate().Count());
 }
 
 static void TestWorldTrafficCapsSimultaneousScoutWaves()
@@ -6157,9 +6226,14 @@ static void TestFactionActionPlannerScoutsBeforeUnknownWarTarget()
     AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Scout));
 
     WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(false, state.HasFactionSettlementIntel("Raiders", victim.Id));
+
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Excluded);
+    WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
     AssertEqual(true, state.HasFactionSettlementIntel("Raiders", victim.Id));
 
-    var known = FactionActionPlanner.Plan(state, "Raiders", 180_000);
+    state.AssignFactionBehavior("Raiders", FactionBehavior.Warmonger);
+    var known = FactionActionPlanner.Plan(state, "Raiders", 240_000);
     AssertEqual(WarAction.Warband, known.Action);
     AssertEqual(victim.Id, known.TargetSettlementId);
 }
@@ -6429,12 +6503,8 @@ static void TestFactionActionPlannerSkipsPlayerFactionTarget()
 static void TestWorldWarNonCombatActionsSkipPlayerFaction()
 {
     var state = new WorldState(4242);
-    var playerBase = state.CreateSettlement("player-base", "Player Base", "PlayerFaction");
     state.SetPlayerFactionId("PlayerFaction");
-    for (var i = 0; i < 6; i++)
-    {
-        state.CreateCitizen("C" + i, 30, Sex.Female, "colonist", playerBase.Id);
-    }
+    state.SetPlayerContactEndpoint("PlayerFaction", "player-contact:home", true, 0);
 
     var village = state.CreateSettlement("village", "Village", "Villagers");
     for (var i = 0; i < 6; i++)
@@ -6450,14 +6520,7 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
 
     state.AddResource(market.Id, "Steel", 40);
     state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
-    state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
-    WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
-
-    state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
-    WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
-
-    AssertEqual(0, state.GetOwnedResourceQuantity(playerBase.Id, "Steel"));
-    AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
+    AssertEqual(village.Id, WorldWarTargetSelector.FindTradeTarget(state, "Traders")!.Id);
 
     var watch = state.CreateSettlement("watch", "Watch", "Scouts");
     for (var i = 0; i < 3; i++)
@@ -6465,11 +6528,9 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
         state.CreateCitizen("S" + i, 30, Sex.Male, "scout", watch.Id);
     }
 
-    state.AssignFactionBehavior("Scouts", FactionBehavior.Cautious);
-    WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
-    var scoutMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Scout);
-    AssertEqual(false, state.IsPlayerFaction(state.GetSettlement(scoutMission.TargetSettlementId)!.FactionId));
-    AssertEqual(null, state.GetKnownSettlementInfo(playerBase.Id));
+    var scoutTarget = WorldWarTargetSelector.FindScoutingTarget(state, "Scouts");
+    AssertEqual(true, scoutTarget != null);
+    AssertEqual(false, state.IsPlayerFaction(scoutTarget!.FactionId));
 
     var envoys = state.CreateSettlement("envoys", "Envoys", "Envoys");
     for (var i = 0; i < 3; i++)
@@ -6477,20 +6538,12 @@ static void TestWorldWarNonCombatActionsSkipPlayerFaction()
         state.CreateCitizen("E" + i, 30, Sex.Female, "diplomat", envoys.Id);
     }
 
-    state.AssignFactionBehavior("Scouts", FactionBehavior.Excluded);
-    state.RecordFactionSettlementIntel("Envoys", village.Id, IntelSourceKind.Scout, 180_000, 70);
     state.AssignFactionBehavior("Envoys", FactionBehavior.Random);
-    WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
-    AssertEqual(null, state.GetKnownSettlementInfo(scoutMission.TargetSettlementId));
-    AssertEqual(true, state.HasFactionSettlementIntel("Scouts", scoutMission.TargetSettlementId));
-    var diplomaticMission = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat);
-    AssertEqual(false, state.IsPlayerFaction(state.GetSettlement(diplomaticMission.TargetSettlementId)!.FactionId));
-    AssertEqual(false, string.Equals("PlayerFaction", diplomaticMission.TargetFactionId, StringComparison.Ordinal));
-    AssertEqual(0, DiplomacyService.GetGoodwill(state, "Envoys", "PlayerFaction"));
-
-    state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
-    WorldWarService.SimulateDay(state, new WorldWarRequest(300_000, TravelDays: 1, RaidCombatants: 3));
-    AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", diplomaticMission.TargetFactionId));
+    var diplomacy = FactionActionPlanner.Plan(state, "Envoys", 4 * 60_000);
+    AssertEqual(WarAction.Diplomat, diplomacy.Action);
+    AssertEqual(null, diplomacy.TargetSettlementId);
+    AssertEqual("PlayerFaction", diplomacy.TargetFactionId);
+    AssertEqual(0, state.Settlements.Count(settlement => state.IsPlayerFaction(settlement.FactionId)));
 }
 
 static void TestWorldWarScoutingAvoidsPressuredTargets()
@@ -6623,6 +6676,7 @@ static void TestWorldWarLaunchesAndResolvesWarband()
     {
         state.CreateCitizen("R" + i, 30, Sex.Male, "raider", horde.Id);
     }
+    state.AddResource(horde.Id, "PackagedSurvivalMeal", 100);
 
     var village = state.CreateSettlement("village", "Village", "Settlers");
     for (var i = 0; i < 2; i++)
@@ -6653,7 +6707,9 @@ static void TestWorldWarLaunchesAndResolvesWarband()
     AssertEqual("Raiders", state.GetSettlement(village.Id)!.FactionId);
 
     // The attack soured relations, and population is conserved (only battle losses turned Dead).
-    AssertEqual(-WorldWarService.AggressionSeverity, DiplomacyService.GetGoodwill(state, "Raiders", "Settlers"));
+    AssertEqual(
+        DiplomacyService.HostileThreshold - WorldWarService.AggressionSeverity,
+        DiplomacyService.GetGoodwill(state, "Raiders", "Settlers"));
     AssertEqual(totalCitizens, state.Citizens.Count);
 
     // The war is legible in world history: the warband set out and the settlement fell.
@@ -6669,6 +6725,7 @@ static void TestWorldWarScoutAttackConsequenceLoop()
     {
         state.CreateCitizen("R" + i, 30, Sex.Male, "raider", horde.Id);
     }
+    state.AddResource(horde.Id, "PackagedSurvivalMeal", 100);
 
     var village = state.CreateSettlement("village", "Village", "Settlers");
     for (var i = 0; i < 2; i++)
@@ -6692,29 +6749,36 @@ static void TestWorldWarScoutAttackConsequenceLoop()
     // The scout is persistent: after save/load it still arrives, records intel, and unlocks a warband.
     var afterScoutLaunch = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
     var day2 = WorldWarService.SimulateDay(afterScoutLaunch, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 6));
-    AssertEqual(1, day2.ScoutingReports);
-    AssertEqual(1, day2.WarbandsLaunched);
+    AssertEqual(0, day2.ScoutingReports);
+    AssertEqual(0, day2.WarbandsLaunched);
+    AssertEqual(false, afterScoutLaunch.HasFactionSettlementIntel("Raiders", village.Id));
+
+    var day3 = WorldWarService.SimulateDay(afterScoutLaunch, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 6));
+    AssertEqual(1, day3.ScoutingReports);
+    AssertEqual(1, day3.WarbandsLaunched);
     AssertEqual(true, afterScoutLaunch.HasFactionSettlementIntel("Raiders", village.Id));
-    AssertEqual(0, afterScoutLaunch.Missions.Count);
+    AssertEqual(WorldTransitPhase.Returning, afterScoutLaunch.Missions.Single().Phase);
     AssertEqual(1, afterScoutLaunch.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Traveling));
 
     // The army is persistent too: after another save/load it arrives, resolves combat and writes consequences.
     var beforeBattle = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(afterScoutLaunch));
     beforeBattle.AssignFactionBehavior("Raiders", FactionBehavior.Excluded);
-    var day3 = WorldWarService.SimulateDay(beforeBattle, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 6));
-    AssertEqual(1, day3.BattlesResolved);
-    AssertEqual(1, day3.SettlementsCaptured);
+    var day4 = WorldWarService.SimulateDay(beforeBattle, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 6));
+    AssertEqual(1, day4.BattlesResolved);
+    AssertEqual(1, day4.SettlementsCaptured);
     AssertEqual("Raiders", beforeBattle.GetSettlement(village.Id)!.FactionId);
     AssertEqual(totalCitizens, beforeBattle.Citizens.Count);
     AssertEqual(true, beforeBattle.Citizens.Count(citizen => citizen.Status == CitizenStatus.Dead) > 0);
     AssertEqual(true, beforeBattle.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementIntelUpdated) >= 1);
     AssertEqual(1, beforeBattle.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.WarbandLaunched));
     AssertEqual(1, beforeBattle.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.SettlementCaptured));
-    AssertEqual(-WorldWarService.AggressionSeverity, DiplomacyService.GetGoodwill(beforeBattle, "Raiders", "Settlers"));
+    AssertEqual(
+        DiplomacyService.HostileThreshold - WorldWarService.AggressionSeverity,
+        DiplomacyService.GetGoodwill(beforeBattle, "Raiders", "Settlers"));
 
     var summary = WorldActivitySummaryService.Summarize(
         beforeBattle,
-        new WorldActivitySummaryRequest(180_000, LookbackTicks: 180_000));
+        new WorldActivitySummaryRequest(240_000, LookbackTicks: 240_000));
     AssertEqual(true, summary.MilitaryEvents > 0);
     AssertEqual(true, summary.TotalEvents > 0);
     AssertEqual(0, beforeBattle.Validate().Count());
@@ -6953,8 +7017,13 @@ static void TestRimWorldWarResolutionAndVictoryWiring()
     AssertContains("Scribe_Collections.Look(ref rewardedVictoryConflictIds", component);
     AssertContains("LW_PlayerVictoryLetterText", component);
 
-    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
-    AssertContains("LW_AllianceObjectiveLetterText", mainTab);
+    var choiceLetter = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "ChoiceLetter_LivingWorldAlliance.cs"));
+    AssertContains("LivingWorldFactionRelations.FormRealAlliance", choiceLetter);
+    AssertContains("LivingWorldFactionRelations.FormRealEnmity", choiceLetter);
 
     var en = File.ReadAllText(Path.Combine(root, "mod", "Languages", "English", "Keyed", "LivingWorld.xml"));
     var ru = File.ReadAllText(Path.Combine(root, "mod", "Languages", "Russian", "Keyed", "LivingWorld.xml"));
@@ -7068,6 +7137,7 @@ static void TestWorldWarWarbandCooldownThrottlesLaunches()
     {
         state.CreateCitizen("R" + i, 30, Sex.Male, "raider", horde.Id);
     }
+    state.AddResource(horde.Id, "PackagedSurvivalMeal", 100);
 
     var villageOne = state.CreateSettlement("v1", "Village One", "Settlers");
     for (var i = 0; i < 2; i++)
@@ -7335,6 +7405,7 @@ static void TestWorldWarCaravanTransfersRealGoods()
 
     state.AddResource(market.Id, "Steel", 40);
     var village = state.CreateSettlement("village", "Village", "Settlers");
+    state.AddResource(village.Id, "Silver", 100);
     state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
 
@@ -7348,12 +7419,22 @@ static void TestWorldWarCaravanTransfersRealGoods()
 
     state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
     WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(WorldTransitPhase.AtTarget, state.GetCaravan(caravan.Id)!.Phase);
+    AssertEqual(0, state.GetOwnedResourceQuantity(village.Id, "Steel"));
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(WorldTransitPhase.Returning, state.GetCaravan(caravan.Id)!.Phase);
+    AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
+    AssertEqual(30, state.GetOwnedResourceQuantity(caravan.Id, "Silver"));
+
+    WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
 
     AssertEqual(CaravanStatus.Arrived, state.GetCaravan(caravan.Id)!.Status);
     AssertEqual(10, state.GetOwnedResourceQuantity(village.Id, "Steel"));
     AssertEqual(0, state.GetOwnedResourceQuantity(caravan.Id, "Steel"));
-    AssertEqual(1, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanArrived));
-    AssertEqual(4, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.OwnershipTransferred));
+    AssertEqual(30, state.GetOwnedResourceQuantity(market.Id, "Silver"));
+    AssertEqual(70, state.GetOwnedResourceQuantity(village.Id, "Silver"));
+    AssertEqual(2, state.Events.Count(worldEvent => worldEvent.Kind == WorldEventKind.CaravanArrived));
 }
 
 static void TestWorldWarCaravanReservesAndReturnsRealCrew()
@@ -7367,6 +7448,7 @@ static void TestWorldWarCaravanReservesAndReturnsRealCrew()
 
     state.AddResource(market.Id, "Steel", 40);
     var village = state.CreateSettlement("village", "Village", "Settlers");
+    state.AddResource(village.Id, "Silver", 100);
     state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
 
@@ -7379,6 +7461,10 @@ static void TestWorldWarCaravanReservesAndReturnsRealCrew()
 
     state.AssignFactionBehavior("Traders", FactionBehavior.Excluded);
     WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(caravan.Id, state.GetOwner(caravan.CrewCitizenId.Value));
+    WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(caravan.Id, state.GetOwner(caravan.CrewCitizenId.Value));
+    WorldWarService.SimulateDay(state, new WorldWarRequest(240_000, TravelDays: 1, RaidCombatants: 3));
 
     AssertEqual(CaravanStatus.Arrived, state.GetCaravan(caravan.Id)!.Status);
     AssertEqual(market.Id, state.GetOwner(caravan.CrewCitizenId.Value));
@@ -7465,6 +7551,13 @@ static void TestCaravanRecallsWhenTargetInactive()
     var result = CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(60_000));
 
     AssertEqual(0, result.Arrived);
+    AssertEqual(CaravanStatus.Traveling, state.GetCaravan(caravan.Id)!.Status);
+    AssertEqual(WorldTransitPhase.Returning, state.GetCaravan(caravan.Id)!.Phase);
+    AssertEqual(30, state.GetOwnedResourceQuantity(source.Id, "Steel"));
+    AssertEqual(caravan.Id, state.GetOwner(crew.Id));
+
+    CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(120_000));
+
     AssertEqual(CaravanStatus.Recalled, state.GetCaravan(caravan.Id)!.Status);
     AssertEqual(50, state.GetOwnedResourceQuantity(source.Id, "Steel"));
     AssertEqual(0, state.GetOwnedResourceQuantity(target.Id, "Steel"));
@@ -7499,18 +7592,24 @@ static void TestCaravanPruneRemovesTerminalCaravans()
     var source = state.CreateSettlement("source", "Source", "Traders");
     var target = state.CreateSettlement("target", "Target", "Settlers");
     state.AddResource(source.Id, "Steel", 50);
+    state.AddResource(target.Id, "Silver", 100);
 
-    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000);
+    var caravan = state.CreateCaravan(
+        "Steel caravan", "Traders", source.Id, target.Id, 0, 60_000,
+        tradeResourceKey: "Steel", requestedTradeQuantity: 20);
     state.TransferResource(source.Id, caravan.Id, "Steel", 20, "test cargo");
-    state.MarkCaravanArrived(caravan.Id); // delivers 20 Steel to target, status Arrived at tick 60_000
+    CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(60_000));
+    CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(120_000));
+    CaravanMovementService.SimulateDay(state, new CaravanMovementRequest(180_000));
+    AssertEqual(CaravanStatus.Arrived, state.GetCaravan(caravan.Id)!.Status);
     AssertEqual(1, state.Caravans.Count);
 
     // Within the retention window: the arrived caravan is kept.
-    CaravanPruneService.Prune(state, new CaravanPruneRequest(60_000 + (10 * 60_000), 30));
+    CaravanPruneService.Prune(state, new CaravanPruneRequest(180_000 + (10 * 60_000), 30));
     AssertEqual(1, state.Caravans.Count);
 
     // Past retention: pruned with its ownership entry — goods stay delivered, no dangling refs.
-    var result = CaravanPruneService.Prune(state, new CaravanPruneRequest(60_000 + (31 * 60_000), 30));
+    var result = CaravanPruneService.Prune(state, new CaravanPruneRequest(180_000 + (31 * 60_000), 30));
     AssertEqual(1, result.Pruned);
     AssertEqual(0, state.Caravans.Count);
     AssertEqual(20, state.GetOwnedResourceQuantity(target.Id, "Steel"));
@@ -7544,11 +7643,16 @@ static void TestWorldMissionSurvivesSaveLoadAndArrives()
     AssertEqual(target.Id, restoredMission.TargetSettlementId);
     AssertEqual(100, restoredMission.Amount);
 
-    // ...and still arrives and applies its effect (and is removed) after load.
+    // ...and still reaches the target, applies its effect, and physically returns after load.
     WorldMissionService.SimulateDay(restored, new WorldMissionRequest(60_000));
+    AssertEqual(WorldTransitPhase.AtTarget, restored.GetMission(mission.Id)!.Phase);
+    AssertEqual(false, restored.HasFactionSettlementIntel("Scouts", target.Id));
+    WorldMissionService.SimulateDay(restored, new WorldMissionRequest(120_000));
     AssertEqual(null, restored.GetKnownSettlementInfo(target.Id));
     AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", target.Id));
-    AssertEqual(0, restored.Missions.Count);
+    AssertEqual(WorldTransitPhase.Returning, restored.GetMission(mission.Id)!.Phase);
+    WorldMissionService.SimulateDay(restored, new WorldMissionRequest(180_000));
+    AssertEqual(WorldMissionStatus.Arrived, restored.GetMission(mission.Id)!.Status);
 }
 
 static void TestPersistentCaravanArrivesAfterLoad()
@@ -7557,12 +7661,18 @@ static void TestPersistentCaravanArrivesAfterLoad()
     var source = state.CreateSettlement("source", "Source", "Traders");
     var target = state.CreateSettlement("target", "Target", "Settlers");
     state.AddResource(source.Id, "Steel", 50);
-    var caravan = state.CreateCaravan("Steel caravan", "Traders", source.Id, target.Id, 0, 60_000);
+    state.AddResource(target.Id, "Silver", 100);
+    var caravan = state.CreateCaravan(
+        "Steel caravan", "Traders", source.Id, target.Id, 0, 60_000,
+        tradeResourceKey: "Steel", requestedTradeQuantity: 20);
     state.TransferResource(source.Id, caravan.Id, "Steel", 20, "cargo");
 
-    // A caravan saved mid-flight must still deliver its cargo when it arrives after load.
+    // A caravan saved mid-flight must still trade and return after load.
     var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
-    var arrived = restored.MarkCaravanArrived(caravan.Id);
+    CaravanMovementService.SimulateDay(restored, new CaravanMovementRequest(60_000));
+    CaravanMovementService.SimulateDay(restored, new CaravanMovementRequest(120_000));
+    CaravanMovementService.SimulateDay(restored, new CaravanMovementRequest(180_000));
+    var arrived = restored.GetCaravan(caravan.Id)!;
 
     AssertEqual(CaravanStatus.Arrived, arrived.Status);
     AssertEqual(20, restored.GetOwnedResourceQuantity(target.Id, "Steel"));
@@ -7948,8 +8058,12 @@ static void TestWorldWarScoutingRecordsIntel()
     AssertEqual(0, state.IntelReports.Count(report => report.SourceKind == IntelSourceKind.Scout));
     AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Scout));
 
-    // Day 2: the party arrives and records intel about the target.
+    // Day 2: the party reaches the target; effect is applied only after surviving the arrival.
     WorldWarService.SimulateDay(state, new WorldWarRequest(120_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(false, state.HasFactionSettlementIntel("Scouts", village.Id));
+
+    // Day 3: the scout reports and starts a physical return journey.
+    WorldWarService.SimulateDay(state, new WorldWarRequest(180_000, TravelDays: 1, RaidCombatants: 3));
 
     AssertEqual(null, state.GetKnownSettlementInfo(village.Id));
     AssertEqual(true, state.HasFactionSettlementIntel("Scouts", village.Id));
@@ -7974,8 +8088,12 @@ static void TestWorldWarDiplomatChangesGoodwill()
     AssertEqual(0, DiplomacyService.GetGoodwill(state, "Envoys", "Neighbors"));
     AssertEqual(1, state.Missions.Count(mission => mission.Kind == WorldMissionKind.Diplomat));
 
-    // Day 2: the mission arrives and improves relations.
+    // Day 2: the mission reaches the target but has not completed the audience yet.
     WorldWarService.SimulateDay(state, new WorldWarRequest(5 * 60_000, TravelDays: 1, RaidCombatants: 3));
+    AssertEqual(0, DiplomacyService.GetGoodwill(state, "Envoys", "Neighbors"));
+
+    // Day 3: the surviving envoy applies the effect and begins returning.
+    WorldWarService.SimulateDay(state, new WorldWarRequest(6 * 60_000, TravelDays: 1, RaidCombatants: 3));
     AssertEqual(5, DiplomacyService.GetGoodwill(state, "Envoys", "Neighbors"));
 }
 
@@ -8007,6 +8125,7 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     }
 
     state.AddResource(market.Id, "Steel", 40);
+    state.AddResource(village.Id, "Silver", 100);
     state.RecordFactionSettlementIntel("Traders", village.Id, IntelSourceKind.Scout, 0, 70);
     state.AssignFactionBehavior("Traders", FactionBehavior.Merchant);
     WorldWarService.SimulateDay(state, new WorldWarRequest(60_000, TravelDays: 1, RaidCombatants: 3));
@@ -8024,15 +8143,16 @@ static void TestWorldWarNonWarbandEffectsPersistThroughSaveLoad()
     WorldWarService.SimulateDay(state, new WorldWarRequest(4 * 60_000, TravelDays: 1, RaidCombatants: 3));
     var diplomatTargetFactionId = state.Missions.Single(mission => mission.Kind == WorldMissionKind.Diplomat).TargetFactionId;
 
-    // Let the in-flight scout and diplomat missions arrive before saving (they apply on arrival now).
+    // Let each physical action progress through target processing before saving.
     state.AssignFactionBehavior("Envoys", FactionBehavior.Excluded);
     WorldWarService.SimulateDay(state, new WorldWarRequest(6 * 60_000, TravelDays: 1, RaidCombatants: 3));
+    WorldWarService.SimulateDay(state, new WorldWarRequest(7 * 60_000, TravelDays: 1, RaidCombatants: 3));
 
     var restored = WorldStateCodec.Deserialize(WorldStateCodec.Serialize(state));
 
     AssertEqual(10, restored.GetOwnedResourceQuantity(caravanTargetId, "Steel"));
-    AssertEqual(null, restored.GetKnownSettlementInfo(scoutTargetId));
-    AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", scoutTargetId));
+    AssertEqual(null, restored.GetKnownSettlementInfo(scoutTargetId!.Value));
+    AssertEqual(true, restored.HasFactionSettlementIntel("Scouts", scoutTargetId.Value));
     AssertEqual(5, DiplomacyService.GetGoodwill(restored, "Envoys", diplomatTargetFactionId));
 }
 
@@ -8543,8 +8663,8 @@ static void TestRimWorldWorldConflictsSection()
     AssertContains("ResolveFactionName(conflict.FactionB)", mainTab);
     // Alliance decisions must not appear from an omniscient conflict scan. A conserved diplomat
     // has to arrive before the world component sends the accept/decline letter.
-    AssertFalse(mainTab.Contains("cachedAllianceOffers", StringComparison.Ordinal));
-    AssertFalse(mainTab.Contains("TryAddAllianceOffer", StringComparison.Ordinal));
+    AssertEqual(false, mainTab.Contains("cachedAllianceOffers", StringComparison.Ordinal));
+    AssertEqual(false, mainTab.Contains("TryAddAllianceOffer", StringComparison.Ordinal));
     var worldComponent = File.ReadAllText(Path.Combine(
         FindRepoRoot(), "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
     AssertContains("WorldEventKind.DiplomaticMissionArrived", worldComponent);
@@ -9912,11 +10032,16 @@ static void TestRimWorldRealFactionRelationsBridge()
     // The stand-down is announced (debug-gated) rather than silent, so the collision is observable.
     AssertContains("[LivingWorld]", bridge);
 
-    // Wired into both ends of the arc.
-    var mainTab = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "MainTabWindow_LivingWorld.cs"));
-    AssertContains("LivingWorldFactionRelations.FormRealAlliance", mainTab);
-    AssertContains("LivingWorldFactionRelations.FormRealEnmity", mainTab);
+    // A conserved diplomat arrival opens the choice letter; accepting it bridges both real relations.
+    var choiceLetter = File.ReadAllText(Path.Combine(
+        root,
+        "src",
+        "LivingWorld.RimWorld",
+        "ChoiceLetter_LivingWorldAlliance.cs"));
+    AssertContains("LivingWorldFactionRelations.FormRealAlliance", choiceLetter);
+    AssertContains("LivingWorldFactionRelations.FormRealEnmity", choiceLetter);
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    AssertContains("WorldEventKind.DiplomaticMissionArrived", component);
     AssertContains("LivingWorldFactionRelations.ApplyGoodwill", component);
 }
 
@@ -10772,6 +10897,7 @@ static void TestPhysicalMarkerContactResolvesCrossingArmies()
         state, new RaidPopulationAllocationRequest("Blue", "Blue crossing", 6, FoodPerCitizen: 0)).Army!;
     state.DispatchArmy(red.Id, redTarget.Id, 10 * 60_000);
     state.DispatchArmy(blue.Id, blueTarget.Id, 10 * 60_000);
+    FactionConflictPolicy.DeclareWar(state, "Red", "Blue", 0);
 
     AssertEqual(true, ArmyInterceptionService.TryResolvePhysicalContact(state, red.Id, blue.Id, 60_000));
     AssertEqual(1, state.ArmyMovements.Count(movement => movement.Status == ArmyMovementStatus.Traveling));
@@ -10799,6 +10925,7 @@ static void TestPhysicalMarkerContactResolvesArmyTraffic()
     var army = RaidPopulationAllocator.ReserveForRaid(
         state, new RaidPopulationAllocationRequest("Raiders", "Crossing army", 4, FoodPerCitizen: 0)).Army!;
     state.DispatchArmy(army.Id, armyTarget.Id, 600_000);
+    FactionConflictPolicy.DeclareWar(state, "Raiders", "Traders", 0);
 
     AssertEqual(true, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, caravan.Id, 60_000));
     AssertEqual(CaravanStatus.Destroyed, state.GetCaravan(caravan.Id)!.Status);
@@ -10835,6 +10962,7 @@ static void TestPhysicalArmyContactDisruptsSettlerExpedition()
         state,
         new RaidPopulationAllocationRequest("Raiders", "Interception army", 4, FoodPerCitizen: 0)).Army!;
     state.DispatchArmy(army.Id, armyTarget.Id, 600_000);
+    FactionConflictPolicy.DeclareWar(state, "Raiders", "Settlers", 0);
 
     AssertEqual(true, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, group.Id, 90_000));
     AssertEqual(MigrationGroupStatus.Lost, state.GetMigrationGroup(group.Id)!.Status);
@@ -10880,10 +11008,18 @@ static void TestPhysicalArmyContactDisruptsDrifterFounding()
         state,
         new RaidPopulationAllocationRequest("Raiders", "Interception army", 4, FoodPerCitizen: 0)).Army!;
     state.DispatchArmy(army.Id, armyTarget.Id, 600_000);
+    FactionConflictPolicy.DeclareWar(state, "Raiders", "Outlander", 0);
 
     AssertEqual(true, TransitEncounterService.TryResolvePhysicalContact(state, army.Id, journey.Id, 90_000));
     AssertEqual(DrifterFoundingJourneyStatus.Cancelled, state.GetDrifterFoundingJourney(journey.Id)!.Status);
-    AssertEqual(3, state.Drifters.Count);
+    AssertEqual(0, state.Drifters.Count);
+    AssertEqual(3, state.GetDrifterFoundingJourney(journey.Id)!.MemberOutcomes.Count(outcome =>
+        outcome.Fate == DrifterFoundingMemberFate.Captured
+        && outcome.CitizenId.HasValue
+        && outcome.SettlementId == raiderHome.Id));
+    AssertEqual(3, state.Citizens.Count(citizen =>
+        citizen.SettlementId == raiderHome.Id
+        && string.Equals(citizen.Profession, "captive", StringComparison.Ordinal)));
     AssertEqual(false, state.IsDrifterReserved(leader.Id));
     AssertEqual(0, state.ResourcesForOwner(journey.Id).Sum(resource => resource.Quantity));
     AssertEqual(true, state.ResourcesForOwner(army.Id).Sum(resource => resource.Quantity) > 0);

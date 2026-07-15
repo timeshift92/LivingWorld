@@ -11,9 +11,14 @@ internal static class ScoutingActionExecutor
     {
         var source = WorldWarTargetSelector.FindReadySourceSettlement(state, plan.FactionId);
         var target = ResolveTarget(state, plan);
-        if (source == null || target == null)
+        var endpoint = state.PlayerContactEndpoint;
+        var targetsPlayerContact = target == null
+            && endpoint?.IsAvailable == true
+            && string.Equals(endpoint.FactionId, plan.TargetFactionId, StringComparison.Ordinal)
+            && WorldWarTargetSelector.CanScoutPlayerContact(state, plan.FactionId);
+        if (source == null || (target == null && !targetsPlayerContact))
         {
-            return ActionAttemptResult.Failed(ActionAttemptReason.NoTarget, "no unknown non-player scouting target");
+            return ActionAttemptResult.Failed(ActionAttemptReason.NoTarget, "no unknown scouting target or player contact endpoint");
         }
 
         var crew = TravelCrewService.FindAvailableCrew(state, source.Id);
@@ -28,15 +33,24 @@ internal static class ScoutingActionExecutor
         }
 
         var arrivalTick = request.Tick + (Math.Max(1, request.TravelDays) * 60_000);
-        var mission = state.DispatchMission(
-            WorldMissionKind.Scout,
-            plan.FactionId,
-            source.Id,
-            target.Id,
-            request.Tick,
-            arrivalTick,
-            amount: ScoutIntelValue,
-            crewCitizenId: crew.Id);
+        var mission = targetsPlayerContact
+            ? state.DispatchPlayerContactMission(
+                WorldMissionKind.Scout,
+                plan.FactionId,
+                source.Id,
+                request.Tick,
+                arrivalTick,
+                ScoutIntelValue,
+                crew.Id)
+            : state.DispatchMission(
+                WorldMissionKind.Scout,
+                plan.FactionId,
+                source.Id,
+                target!.Id,
+                request.Tick,
+                arrivalTick,
+                amount: ScoutIntelValue,
+                crewCitizenId: crew.Id);
         if (TravelCrewService.ReserveCrew(state, source.Id, mission.Id, crew.Id, "scouting mission launched"))
         {
             return ActionAttemptResult.Success("scouting party launched");

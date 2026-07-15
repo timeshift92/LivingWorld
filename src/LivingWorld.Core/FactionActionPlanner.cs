@@ -68,6 +68,8 @@ public static class FactionActionPlanner
         var target = FindEnemyTarget(state, factionId, tick, plannedTargets);
         var tradeTarget = WorldWarTargetSelector.FindTradeTarget(state, factionId, plannedTargets);
         var scoutingTarget = WorldWarTargetSelector.FindScoutingTarget(state, factionId, plannedTargets);
+        var scoutsPlayerContact = scoutingTarget == null
+            && WorldWarTargetSelector.CanScoutPlayerContact(state, factionId);
         var diplomacyTargetFaction = WorldWarTargetSelector.FindDiplomacyTargetFaction(state, factionId, plannedTargets);
         var diplomacyTarget = diplomacyTargetFaction == null
             ? null
@@ -77,7 +79,7 @@ public static class FactionActionPlanner
                 diplomacyTargetFaction,
                 plannedTargets);
         var hasTradeRoute = CanSendCaravan(state, factionId, tradeTarget);
-        var hasScoutingTarget = scoutingTarget != null;
+        var hasScoutingTarget = scoutingTarget != null || scoutsPlayerContact;
         var hasDiplomacyTarget = diplomacyTarget != null
             || (state.PlayerContactEndpoint is { IsAvailable: true } endpoint
                 && string.Equals(endpoint.FactionId, diplomacyTargetFaction, StringComparison.Ordinal));
@@ -102,7 +104,12 @@ public static class FactionActionPlanner
             WarAction.Diplomat => diplomacyTarget?.Id,
             _ => null,
         };
-        var planTargetFaction = action == WarAction.Diplomat ? diplomacyTargetFaction : null;
+        var planTargetFaction = action switch
+        {
+            WarAction.Diplomat => diplomacyTargetFaction,
+            WarAction.ScoutingParty when scoutsPlayerContact => state.PlayerContactEndpoint!.FactionId,
+            _ => null,
+        };
         return new FactionActionPlan(factionId, action, planTarget, planTargetFaction);
     }
 

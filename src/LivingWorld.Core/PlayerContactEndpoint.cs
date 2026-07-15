@@ -9,4 +9,11 @@ public sealed record PlayerContactEndpoint(
     string FactionId,
     string StableKey,
     bool IsAvailable,
-    int UpdatedTick);
+    int UpdatedTick)
+{
+    /// <summary>Coarse player-colony value signal supplied by the runtime bridge.</summary>
+    public RaidIntelValueBand ValueBand { get; init; } = RaidIntelValueBand.Moderate;
+
+    /// <summary>Bounded force estimate; never an exact player pawn or wealth count.</summary>
+    public int CombatantDemand { get; init; } = 3;
+}
