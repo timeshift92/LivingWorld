@@ -3203,15 +3203,16 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         return SettlementSlug.ParseTile(slug);
     }
 
-    // Turns the ledger's active ruins into REAL, lootable RimWorld sites (abandoned settlements the
-    // player can caravan to and clear for salvage) instead of display-only markers. Built once per
-    // ruin (tracked in ruinSiteIds); vanilla owns the site's lifecycle afterwards. Fail-open: a site
-    // that cannot be built is skipped, never throwing inside the daily tick.
+    // Turns ledger ruins into lootable sites without using Odyssey's AbandonedSettlement site part.
+    // In Odyssey that vanilla part is specifically a gravcore location, so using it for every defeated
+    // settlement invents gravcores and draws the gravcore icon. Legacy sites are replaced only when the
+    // corresponding ruin ID is tracked by Living World; unrelated Odyssey quest sites are untouched.
     public void EnsureRuinSites()
     {
         var worldObjects = Find.WorldObjects;
-        var sitePart = SitePartDefOf.AbandonedSettlement;
-        if (worldObjects == null || sitePart == null)
+        var sitePart = DefDatabase<SitePartDef>.GetNamedSilentFail("LivingWorld_RuinSettlement");
+        var worldObjectDef = DefDatabase<WorldObjectDef>.GetNamedSilentFail("LivingWorld_RuinSite");
+        if (worldObjects == null || sitePart == null || worldObjectDef == null)
         {
             return;
         }
@@ -3219,7 +3220,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
         var alreadyBuilt = new HashSet<long>(ruinSiteIds);
         foreach (var ruin in State.Ruins)
         {
-            if (ruin.Status != RuinStatus.Active || alreadyBuilt.Contains(ruin.Id.Value))
+            if (ruin.Status != RuinStatus.Active)
             {
                 continue;
             }
@@ -3230,6 +3231,43 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                 continue;
             }
 
+            var currentSite = worldObjects.AllWorldObjects
+                .OfType<Site>()
+                .FirstOrDefault(candidate =>
+                    candidate.Tile == (PlanetTile)tile
+                    && candidate.def == worldObjectDef
+                    && candidate.parts.Any(part => part.def == sitePart));
+            if (currentSite != null)
+            {
+                if (alreadyBuilt.Add(ruin.Id.Value))
+                {
+                    ruinSiteIds.Add(ruin.Id.Value);
+                }
+
+                continue;
+            }
+
+            var migratedLegacySite = false;
+            if (alreadyBuilt.Contains(ruin.Id.Value))
+            {
+                var legacySite = worldObjects.AllWorldObjects
+                    .OfType<Site>()
+                    .FirstOrDefault(candidate =>
+                        candidate.Tile == (PlanetTile)tile
+                        && candidate.parts.Any(part => part.def == SitePartDefOf.AbandonedSettlement));
+                if (legacySite == null || legacySite.HasMap)
+                {
+                    continue;
+                }
+
+                // Do not call Site.Destroy(): Odyssey's worker would leave another vanilla abandoned
+                // settlement behind. This site was created by Living World and has no quest owner.
+                worldObjects.Remove(legacySite);
+                ruinSiteIds.Remove(ruin.Id.Value);
+                alreadyBuilt.Remove(ruin.Id.Value);
+                migratedLegacySite = true;
+            }
+
             try
             {
                 var site = SiteMaker.MakeSite(
@@ -3238,7 +3276,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
                     faction: null,
                     ifHostileThenMustRemainHostile: false,
                     threatPoints: RuinThreatPoints(ruin.DangerBand),
-                    worldObjectDef: null);
+                    worldObjectDef: worldObjectDef);
                 if (site == null)
                 {
                     continue;
@@ -3251,7 +3289,7 @@ public sealed class LivingWorldWorldComponent : WorldComponent
 
                 // Surface the ruin as a loot opportunity the player can act on (jump to it), not a
                 // silent marker. Only in-game, so loading a save never re-announces old ruins.
-                if (Current.ProgramState == ProgramState.Playing)
+                if (!migratedLegacySite && Current.ProgramState == ProgramState.Playing)
                 {
                     Find.LetterStack?.ReceiveLetter(
                         "LW_RuinSiteLetterLabel".Translate(),

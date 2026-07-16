@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <SitePartDef>
+    <defName>LivingWorld_RuinSettlement</defName>
+    <label>destroyed settlement</label>
+    <description>The ruins and remaining salvage of a settlement destroyed by war.</description>
+    <workerClass>SitePartWorker</workerClass>
+    <siteTexture>World/WorldObjects/TribalSettlement</siteTexture>
+    <expandingIconTexture>World/WorldObjects/Expanding/DestroyedSettlement</expandingIconTexture>
+    <wantsThreatPoints>true</wantsThreatPoints>
+    <minMapSize>(200, 0, 200)</minMapSize>
+    <considerEnteringAsAttack>false</considerEnteringAsAttack>
+  </SitePartDef>
+
+  <GenStepDef>
+    <defName>LivingWorld_RuinSettlement</defName>
+    <linkWithSite>LivingWorld_RuinSettlement</linkWithSite>
+    <order>400</order>
+    <genStep Class="GenStep_Settlement">
+      <count>1</count>
+      <generatePawns>false</generatePawns>
+    </genStep>
+  </GenStepDef>
+</Defs>

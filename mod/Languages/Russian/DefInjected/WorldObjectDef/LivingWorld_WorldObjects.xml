@@ -2,4 +2,6 @@
 <LanguageData>
   <LivingWorld_ArmyMarker.label>варбанд</LivingWorld_ArmyMarker.label>
   <LivingWorld_ArmyMarker.description>Армия фракции Living World, идущая по карте мира к поселению.</LivingWorld_ArmyMarker.description>
+  <LivingWorld_RuinSite.label>разрушенное поселение</LivingWorld_RuinSite.label>
+  <LivingWorld_RuinSite.description>Сохранившиеся руины поселения, разрушенного симуляцией Living World. Здесь могут остаться трофеи, но гравиядро Odyssey не появляется без реального источника.</LivingWorld_RuinSite.description>
 </LanguageData>

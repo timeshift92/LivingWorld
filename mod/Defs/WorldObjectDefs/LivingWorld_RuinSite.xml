@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorldObjectDef ParentName="Site">
+    <defName>LivingWorld_RuinSite</defName>
+    <label>destroyed settlement</label>
+    <description>The persistent ruins of a settlement destroyed in the Living World simulation. It may still contain salvage, but it never contains an Odyssey gravcore unless one physically existed there.</description>
+    <worldObjectClass>Site</worldObjectClass>
+    <texture>World/WorldObjects/TribalSettlement</texture>
+    <expandingIconTexture>World/WorldObjects/Expanding/DestroyedSettlement</expandingIconTexture>
+    <expandingIconPriority>20</expandingIconPriority>
+  </WorldObjectDef>
+</Defs>

@@ -11809,28 +11809,44 @@ static void TestRimWorldWorldActionMarkersStartAtOrigin()
     AssertDoesNotContain("marker.Tile = raid.TargetTile;", component);
 }
 
-// Task 5 RW-side, made live: destroyed settlements become REAL, lootable RimWorld sites (abandoned
-// settlements) the player can caravan to and clear for salvage — not display-only markers. Built once
-// per ruin (persisted), fail-open, via the reflection-verified SiteMaker API.
+// Task 5 RW-side: destroyed settlements become real lootable sites, but never Odyssey's
+// AbandonedSettlement site part: that part is a gravcore location in 1.6.
 static void TestRimWorldRuinSites()
 {
     var root = FindRepoRoot();
     var component = File.ReadAllText(Path.Combine(root, "src", "LivingWorld.RimWorld", "LivingWorldWorldComponent.cs"));
+    var worldObjectDef = File.ReadAllText(Path.Combine(root, "mod", "Defs", "WorldObjectDefs", "LivingWorld_RuinSite.xml"));
+    var sitePartDef = File.ReadAllText(Path.Combine(root, "mod", "Defs", "SitePartDefs", "LivingWorld_RuinSettlement.xml"));
 
     AssertContains("EnsureRuinSites()", component);
     AssertContains("SiteMaker.MakeSite", component);
-    AssertContains("SitePartDefOf.AbandonedSettlement", component);
+    AssertContains("GetNamedSilentFail(\"LivingWorld_RuinSettlement\")", component);
+    AssertContains("GetNamedSilentFail(\"LivingWorld_RuinSite\")", component);
+    AssertContains("worldObjectDef: worldObjectDef", component);
+    AssertContains("candidate.parts.Any(part => part.def == SitePartDefOf.AbandonedSettlement)", component);
+    AssertContains("worldObjects.Remove(legacySite);", component);
+    AssertContains("legacySite.HasMap", component);
+    AssertContains("!migratedLegacySite", component);
     AssertContains("State.Ruins", component);
     AssertContains("RuinStatus.Active", component);
     AssertContains("ParseSettlementTile(ruin.Slug)", component);
+    AssertContains("<defName>LivingWorld_RuinSite</defName>", worldObjectDef);
+    AssertContains("<worldObjectClass>Site</worldObjectClass>", worldObjectDef);
+    AssertContains("World/WorldObjects/Expanding/DestroyedSettlement", worldObjectDef);
+    AssertContains("<defName>LivingWorld_RuinSettlement</defName>", sitePartDef);
+    AssertContains("<linkWithSite>LivingWorld_RuinSettlement</linkWithSite>", sitePartDef);
+    AssertContains("<generatePawns>false</generatePawns>", sitePartDef);
+    AssertDoesNotContain("requiredGravcoreRooms", sitePartDef);
+    AssertDoesNotContain("GravcoreLocation", sitePartDef);
     // Built once per ruin, persisted so a site is never re-created after save/load.
     AssertContains("ruinSiteIds", component);
     AssertContains("Scribe_Collections.Look(ref ruinSiteIds", component);
     var ruinMethod = component.Substring(component.IndexOf("public void EnsureRuinSites()", StringComparison.Ordinal));
+    var creationBlock = ruinMethod.Substring(ruinMethod.IndexOf("var site = SiteMaker.MakeSite", StringComparison.Ordinal));
     AssertEqual(
         true,
-        ruinMethod.IndexOf("worldObjects.Add(site);", StringComparison.Ordinal)
-            < ruinMethod.IndexOf("ruinSiteIds.Add(ruin.Id.Value);", StringComparison.Ordinal));
+        creationBlock.IndexOf("worldObjects.Add(site);", StringComparison.Ordinal)
+            < creationBlock.IndexOf("ruinSiteIds.Add(ruin.Id.Value);", StringComparison.Ordinal));
     // Fail-open: a site that cannot be built is caught, never thrown inside the tick.
     AssertContains("ruin site creation failed safely", component);
     // The real RimWorld site-building API exists in this build.
