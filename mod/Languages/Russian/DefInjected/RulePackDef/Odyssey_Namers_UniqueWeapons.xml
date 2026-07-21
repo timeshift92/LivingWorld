@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <!-- Keep Odyssey unique weapon namer grammar syntactically valid under Russian + Auto Translation. -->
+  <NamerUniqueWeapon.rulePack.rulesStrings.0>r_weapon_name(p=2)-&gt;[weapon_adjective] [weapon_noun]</NamerUniqueWeapon.rulePack.rulesStrings.0>
+  <NamerUniqueWeapon.rulePack.rulesStrings.1>r_weapon_name(p=0.5)-&gt;[weapon_type] [badass_concept]</NamerUniqueWeapon.rulePack.rulesStrings.1>
+  <NamerUniqueWeapon.rulePack.rulesStrings.2>r_weapon_name(p=0.5)-&gt;[weapon_adjective] [weapon_type]</NamerUniqueWeapon.rulePack.rulesStrings.2>
+  <NamerUniqueWeapon.rulePack.rulesStrings.3>r_weapon_name(p=0.5)-&gt;[badass_concept]: [weapon_type]</NamerUniqueWeapon.rulePack.rulesStrings.3>
+  <NamerUniqueWeapon.rulePack.rulesStrings.4>r_weapon_name(p=0.3)-&gt;оружие [ANYPAWN_nameIndef]</NamerUniqueWeapon.rulePack.rulesStrings.4>
+  <NamerUniqueWeapon.rulePack.rulesStrings.5>r_weapon_name(p=0.3)-&gt;[weapon_adjective] оружие [ANYPAWN_nameIndef]</NamerUniqueWeapon.rulePack.rulesStrings.5>
+  <NamerUniqueWeapon.rulePack.rulesStrings.6>r_weapon_name(p=0.3)-&gt;[badass_concept] [ANYPAWN_nameIndef]</NamerUniqueWeapon.rulePack.rulesStrings.6>
+  <NamerUniqueWeapon.rulePack.rulesStrings.7>weapon_noun(p=2)-&gt;[weapon_type]</NamerUniqueWeapon.rulePack.rulesStrings.7>
+  <NamerUniqueWeapon.rulePack.rulesStrings.8>weapon_noun-&gt;[badass_noun]</NamerUniqueWeapon.rulePack.rulesStrings.8>
+  <NamerUniqueWeapon.rulePack.rulesStrings.9>weapon_noun-&gt;[badass_concept]</NamerUniqueWeapon.rulePack.rulesStrings.9>
+  <NamerUniqueWeapon.rulePack.rulesStrings.10>weapon_adjective(p=2)-&gt;[trait_adjective]</NamerUniqueWeapon.rulePack.rulesStrings.10>
+  <NamerUniqueWeapon.rulePack.rulesStrings.11>weapon_adjective-&gt;[badass_adjective]</NamerUniqueWeapon.rulePack.rulesStrings.11>
+  <NamerUniqueWeapon.rulePack.rulesStrings.12>badass_adjective-&gt;мрачное</NamerUniqueWeapon.rulePack.rulesStrings.12>
+  <NamerUniqueWeapon.rulePack.rulesStrings.13>badass_adjective-&gt;вечное</NamerUniqueWeapon.rulePack.rulesStrings.13>
+  <NamerUniqueWeapon.rulePack.rulesStrings.14>badass_adjective-&gt;ночное</NamerUniqueWeapon.rulePack.rulesStrings.14>
+  <NamerUniqueWeapon.rulePack.rulesStrings.15>badass_adjective-&gt;могильное</NamerUniqueWeapon.rulePack.rulesStrings.15>
+  <NamerUniqueWeapon.rulePack.rulesStrings.16>badass_adjective-&gt;исключительное</NamerUniqueWeapon.rulePack.rulesStrings.16>
+  <NamerUniqueWeapon.rulePack.rulesStrings.17>badass_adjective-&gt;смертоносное</NamerUniqueWeapon.rulePack.rulesStrings.17>
+  <NamerUniqueWeapon.rulePack.rulesStrings.18>badass_adjective-&gt;печально известное</NamerUniqueWeapon.rulePack.rulesStrings.18>
+  <NamerUniqueWeapon.rulePack.rulesStrings.19>badass_adjective-&gt;особое</NamerUniqueWeapon.rulePack.rulesStrings.19>
+  <NamerUniqueWeapon.rulePack.rulesStrings.20>badass_adjective-&gt;грозовое</NamerUniqueWeapon.rulePack.rulesStrings.20>
+  <NamerUniqueWeapon.rulePack.rulesStrings.21>badass_adjective-&gt;проклятое</NamerUniqueWeapon.rulePack.rulesStrings.21>
+  <NamerUniqueWeapon.rulePack.rulesStrings.22>badass_adjective-&gt;великое</NamerUniqueWeapon.rulePack.rulesStrings.22>
+  <NamerUniqueWeapon.rulePack.rulesStrings.23>badass_adjective-&gt;неумолимое</NamerUniqueWeapon.rulePack.rulesStrings.23>
+  <NamerUniqueWeapon.rulePack.rulesStrings.24>badass_noun-&gt;жнец</NamerUniqueWeapon.rulePack.rulesStrings.24>
+  <NamerUniqueWeapon.rulePack.rulesStrings.25>badass_noun-&gt;конец</NamerUniqueWeapon.rulePack.rulesStrings.25>
+  <NamerUniqueWeapon.rulePack.rulesStrings.26>badass_noun-&gt;вой</NamerUniqueWeapon.rulePack.rulesStrings.26>
+  <NamerUniqueWeapon.rulePack.rulesStrings.27>badass_noun-&gt;буря</NamerUniqueWeapon.rulePack.rulesStrings.27>
+  <NamerUniqueWeapon.rulePack.rulesStrings.28>badass_noun-&gt;призрак</NamerUniqueWeapon.rulePack.rulesStrings.28>
+  <NamerUniqueWeapon.rulePack.rulesStrings.29>badass_noun-&gt;вдова</NamerUniqueWeapon.rulePack.rulesStrings.29>
+  <NamerUniqueWeapon.rulePack.rulesStrings.30>badass_noun-&gt;титан</NamerUniqueWeapon.rulePack.rulesStrings.30>
+  <NamerUniqueWeapon.rulePack.rulesStrings.31>badass_noun-&gt;исполин</NamerUniqueWeapon.rulePack.rulesStrings.31>
+  <NamerUniqueWeapon.rulePack.rulesStrings.32>badass_noun-&gt;змей</NamerUniqueWeapon.rulePack.rulesStrings.32>
+  <NamerUniqueWeapon.rulePack.rulesStrings.33>badass_noun-&gt;наковальня</NamerUniqueWeapon.rulePack.rulesStrings.33>
+  <NamerUniqueWeapon.rulePack.rulesStrings.34>badass_noun-&gt;убийца</NamerUniqueWeapon.rulePack.rulesStrings.34>
+  <NamerUniqueWeapon.rulePack.rulesStrings.35>badass_noun-&gt;возлюбленный</NamerUniqueWeapon.rulePack.rulesStrings.35>
+  <NamerUniqueWeapon.rulePack.rulesStrings.36>badass_noun-&gt;зверь</NamerUniqueWeapon.rulePack.rulesStrings.36>
+  <NamerUniqueWeapon.rulePack.rulesStrings.37>badass_noun-&gt;клык</NamerUniqueWeapon.rulePack.rulesStrings.37>
+  <NamerUniqueWeapon.rulePack.rulesStrings.38>badass_noun-&gt;рука</NamerUniqueWeapon.rulePack.rulesStrings.38>
+  <NamerUniqueWeapon.rulePack.rulesStrings.39>badass_noun-&gt;рог</NamerUniqueWeapon.rulePack.rulesStrings.39>
+  <NamerUniqueWeapon.rulePack.rulesStrings.40>badass_concept-&gt;правосудие</NamerUniqueWeapon.rulePack.rulesStrings.40>
+  <NamerUniqueWeapon.rulePack.rulesStrings.41>badass_concept-&gt;месть</NamerUniqueWeapon.rulePack.rulesStrings.41>
+  <NamerUniqueWeapon.rulePack.rulesStrings.42>badass_concept-&gt;возмездие</NamerUniqueWeapon.rulePack.rulesStrings.42>
+  <NamerUniqueWeapon.rulePack.rulesStrings.43>badass_concept-&gt;боль</NamerUniqueWeapon.rulePack.rulesStrings.43>
+  <NamerUniqueWeapon.rulePack.rulesStrings.44>badass_concept-&gt;агония</NamerUniqueWeapon.rulePack.rulesStrings.44>
+  <NamerUniqueWeapon.rulePack.rulesStrings.45>badass_concept-&gt;мука</NamerUniqueWeapon.rulePack.rulesStrings.45>
+  <NamerUniqueWeapon.rulePack.rulesStrings.46>badass_concept-&gt;легенда</NamerUniqueWeapon.rulePack.rulesStrings.46>
+  <NamerUniqueWeapon.rulePack.rulesStrings.47>badass_concept-&gt;наслаждение</NamerUniqueWeapon.rulePack.rulesStrings.47>
+  <NamerUniqueWeapon.rulePack.rulesStrings.48>badass_concept-&gt;сожаление</NamerUniqueWeapon.rulePack.rulesStrings.48>
+  <NamerUniqueWeapon.rulePack.rulesStrings.49>badass_concept-&gt;гордость</NamerUniqueWeapon.rulePack.rulesStrings.49>
+  <NamerUniqueWeapon.rulePack.rulesStrings.50>badass_concept-&gt;тщеславие</NamerUniqueWeapon.rulePack.rulesStrings.50>
+  <NamerUniqueWeapon.rulePack.rulesStrings.51>badass_concept-&gt;честь</NamerUniqueWeapon.rulePack.rulesStrings.51>
+  <NamerUniqueWeapon.rulePack.rulesStrings.52>badass_concept-&gt;ярость</NamerUniqueWeapon.rulePack.rulesStrings.52>
+  <NamerUniqueWeapon.rulePack.rulesStrings.53>badass_concept-&gt;расплата</NamerUniqueWeapon.rulePack.rulesStrings.53>
+  <NamerUniqueWeapon.rulePack.rulesStrings.54>badass_concept-&gt;безмятежность</NamerUniqueWeapon.rulePack.rulesStrings.54>
+  <NamerUniqueWeapon.rulePack.rulesStrings.55>badass_concept-&gt;любовь</NamerUniqueWeapon.rulePack.rulesStrings.55>
+  <NamerUniqueWeapon.rulePack.rulesStrings.56>badass_concept-&gt;смех</NamerUniqueWeapon.rulePack.rulesStrings.56>
+</LanguageData>

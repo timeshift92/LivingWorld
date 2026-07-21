@@ -401,6 +401,7 @@ var tests = new List<(string Name, Action Test)>
     ("defines English and Russian keyed translations", TestRimWorldKeyedTranslations),
     ("keeps English and Russian keyed translations in parity", TestKeyedLanguageParity),
     ("keeps Odyssey Russian faction namer grammar valid", TestRimWorldRussianOdysseyRulePackOverride),
+    ("keeps Odyssey Russian unique weapon namer grammar valid", TestRimWorldRussianOdysseyUniqueWeaponRulePackOverride),
     ("uses translations in RimWorld UI", TestRimWorldUiUsesTranslations),
     ("defines the drifter arrival incident def", TestRimWorldDrifterArrivalIncidentDef),
     ("defines the drifter arrival incident worker", TestRimWorldDrifterArrivalWorker),
@@ -12405,6 +12406,36 @@ static void TestRimWorldRussianOdysseyRulePackOverride()
     AssertContains("tradeAdj-&gt;", xml);
     AssertContains("tradeNoun-&gt;", xml);
     AssertDoesNotContain("[tradeAdj_fem] [tradeNoun_fem]", xml);
+}
+
+static void TestRimWorldRussianOdysseyUniqueWeaponRulePackOverride()
+{
+    var rulePackPath = Path.Combine(
+        FindRepoRoot(),
+        "mod",
+        "Languages",
+        "Russian",
+        "DefInjected",
+        "RulePackDef",
+        "Odyssey_Namers_UniqueWeapons.xml");
+
+    AssertFileExists(rulePackPath);
+
+    var xml = File.ReadAllText(rulePackPath);
+
+    AssertContains("<NamerUniqueWeapon.rulePack.rulesStrings.0>r_weapon_name(p=2)-&gt;[weapon_adjective] [weapon_noun]</NamerUniqueWeapon.rulePack.rulesStrings.0>", xml);
+    AssertContains("weapon_noun(p=2)-&gt;[weapon_type]", xml);
+    AssertContains("weapon_adjective(p=2)-&gt;[trait_adjective]", xml);
+    AssertContains("badass_adjective-&gt;", xml);
+    AssertContains("badass_noun-&gt;", xml);
+    AssertContains("badass_concept-&gt;", xml);
+    AssertDoesNotContain("weapon_noun(p=2)_mas", xml);
+    AssertDoesNotContain("weapon_noun(p=2)_fem", xml);
+    AssertDoesNotContain("weapon_noun(p=2)_neu", xml);
+    AssertDoesNotContain("weapon_adjective(p=2)_fem", xml);
+    AssertDoesNotContain("weapon_adjective(p=2)_neu", xml);
+    AssertDoesNotContain("[weapon_type_mas]", xml);
+    AssertDoesNotContain("[trait_adjective_fem]", xml);
 }
 
 static void TestRimWorldIdentityComp()
